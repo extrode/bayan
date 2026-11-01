@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using Bayan.Cli;
 using Bayan.Semantics;
 using Bayan.Syntax.Diagnostics;
@@ -18,12 +20,15 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
 {
     private static string CorpusDir => Path.Combine(Golden.RepoRoot, "tmp", "semantics-corpus");
 
-    /// <summary>The C# checker's diagnostics for <paramref name="source"/>, tests included.</summary>
+    /// <summary>
+    /// The C# checker's diagnostics for <paramref name="source"/>, tests excluded as <c>bayan check</c> compiles
+    /// (CliApp.cs:274 passes no <c>includeTests</c>), so both oracles see the same declarations.
+    /// </summary>
     internal static IReadOnlyList<Diagnostic> Check(string name, string source) =>
         Check(SourceText.FromString(Path.Combine(CorpusDir, name), source));
 
     internal static IReadOnlyList<Diagnostic> Check(SourceText source) =>
-        Compilation.Create([source], CorpusDir, new CompilationOptions(IncludeTests: true)).Diagnostics.Items;
+        Compilation.Create([source], CorpusDir, new CompilationOptions(IncludeTests: false)).Diagnostics.Items;
 
     private static string Render(IReadOnlyList<Diagnostic> diagnostics) => DiagnosticRenderer.RenderAll(diagnostics);
 
@@ -82,6 +87,81 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
 
     internal static GeneratedProgram[] Corpus(ulong[] seeds) => GenerateValid(seeds).Concat(GenerateFaulty(seeds)).ToArray();
 
+    /// <summary>
+    /// R6 regression pin: the SHA-256 of every generated program (name, newline, source, NUL), so any change to the
+    /// generator or to the lambda and interface generators it calls shows up. Regenerate it deliberately (Q651).
+    /// </summary>
+    [Fact]
+    public void GeneratedCorpusIsPinned()
+    {
+        var sb = new StringBuilder();
+        foreach (var p in Corpus(Seeds)) sb.Append(p.Name).Append('\n').Append(p.Source).Append('\0');
+        Assert.Equal(PinnedCorpus, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()))));
+    }
+
+    private const string PinnedCorpus = "A38F8E5995F343C0EEDF3062FE05E6119377DCF5114301DF67504A53436290DF";
+
+    /// <summary>
+    /// Writes each corpus program alone to <c>tmp/semantics-corpus/seeds/&lt;name&gt;/main.byn</c>: <c>bayan check</c>
+    /// on a file reads its whole directory (CliApp.cs:274, Compilation.cs:117-121), so one directory per program.
+    /// </summary>
+    internal static List<(GeneratedProgram Program, string Path)> WriteCorpus()
+    {
+        var dir = Path.Combine(CorpusDir, "seeds");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        var written = new List<(GeneratedProgram, string)>();
+        foreach (var p in Corpus(Seeds))
+        {
+            var programDir = Path.Combine(dir, Path.GetFileNameWithoutExtension(p.Name));
+            Directory.CreateDirectory(programDir);
+            var path = Path.Combine(programDir, "main.byn");
+            File.WriteAllText(path, p.Source);
+            written.Add((p, path));
+        }
+        return written;
+    }
+
+    /// <summary><c>bayan check</c> in-process: exit code, stdout without the timed success summary (CliApp.cs:436), and stderr.</summary>
+    internal static (int Exit, string Out, string Err) CliCheck(string path)
+    {
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var exit = CliApp.Run(["check", path], stdout, stderr);
+        return (exit, WithoutSummary(stdout.ToString()), stderr.ToString());
+    }
+
+    internal static string WithoutSummary(string text) =>
+        string.Join('\n', text.Split('\n').Where(l => !l.StartsWith("◆ checked ", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// R6 through the CLI: <c>bayan check</c> on each written corpus file sees that program alone. A valid program
+    /// exits 0 with no error line; a faulty one exits nonzero with exactly one error, the code the in-process
+    /// checker gives, located on one of the injected lines of that file.
+    /// </summary>
+    [Fact]
+    public void CliCheckSeesEachCorpusProgramAlone()
+    {
+        var clock = Stopwatch.StartNew();
+        var written = WriteCorpus();
+        foreach (var (p, path) in written)
+        {
+            var (exit, _, err) = CliCheck(path);
+            var errorLines = err.Split('\n').Where(l => l.StartsWith("error BYN", StringComparison.Ordinal)).ToList();
+            if (p.Fault is null)
+            {
+                Assert.True(exit == 0 && errorLines.Count == 0, $"{path}: exit {exit}\n{err}");
+                continue;
+            }
+            var expected = Check(p.Name, p.Source).Single(d => d.IsError);
+            Assert.True(exit != 0 && errorLines.Count == 1 && errorLines[0].StartsWith($"error {expected.Code}:", StringComparison.Ordinal),
+                $"{path}: exit {exit}, expected one {expected.Code}\n{err}");
+            var at = err.Split('\n').Single(l => l.TrimStart().StartsWith($"--> {path}:", StringComparison.Ordinal));
+            var line = int.Parse(at[(at.IndexOf($"{path}:", StringComparison.Ordinal) + path.Length + 1)..].Split(':')[0]);
+            Assert.True(line >= p.FirstLine && line <= p.LastLine, $"{path}: error at line {line}, fault at {p.FirstLine}-{p.LastLine}\n{err}");
+        }
+        output.WriteLine($"{written.Count} corpus files checked through CliApp in {clock.ElapsedMilliseconds} ms");
+    }
+
     /// <summary>R7 input: <see cref="OneMegabyte"/> is exactly 1 MiB, well typed, and written to <c>tmp/semantics-corpus/big.byn</c>.</summary>
     [Fact]
     public void OneMegabyteIsWrittenAndWellTyped()
@@ -107,33 +187,21 @@ public sealed class SelfhostSemanticsCorpusParityTests(ITestOutputHelper output)
     private static string BayanCheck =>
         SelfhostSemanticsHarness.Build(File.ReadAllText(Path.Combine(SelfhostSemanticsHarness.SemanticsDir, "main.byn")));
 
-    /// <summary><c>bayan check</c> in-process: exit code and stderr without the timed success summary.</summary>
-    private static (int Exit, string Err) CSharpCheck(string path)
-    {
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        var exit = CliApp.Run(["check", path], stdout, stderr);
-        return (exit, WithoutSummary(stderr.ToString()));
-    }
-
-    private static string WithoutSummary(string err) =>
-        string.Join('\n', err.Split('\n').Where(l => !l.StartsWith("◆ checked ", StringComparison.Ordinal)));
-
-    /// <summary>R6: every valid and faulty program under <c>tmp/semantics-corpus/</c> gets the same diagnostics and exit code.</summary>
+    /// <summary>
+    /// R6: every valid and faulty program, each alone under <c>tmp/semantics-corpus/seeds/&lt;name&gt;/</c>, gets the same
+    /// exit code, stdout (minus the timed <c>◆ checked</c> summary) and stderr from <c>bayan-check</c> and <c>bayan check</c>.
+    /// </summary>
     [Fact(Skip = "T28 enables the corpus comparison once bayan-check runs the passes (T26 CLI)")]
     public void GeneratedSeedsAgree()
     {
-        var dir = Path.Combine(Golden.RepoRoot, "tmp", "semantics-corpus", "seeds");
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-        Directory.CreateDirectory(dir);
-        foreach (var p in SelfhostSemanticsGeneratorTests.Corpus(Seeds))
+        foreach (var (_, path) in SelfhostSemanticsGeneratorTests.WriteCorpus())
         {
-            var path = Path.Combine(dir, p.Name);
-            File.WriteAllText(path, p.Source);
-            var expected = CSharpCheck(path);
-            var (exit, _, err) = SelfhostParserTests.Run(BayanCheck, path);
-            Assert.True(exit == expected.Exit && WithoutSummary(err) == expected.Err,
-                $"{path}: bayan-check exited {exit}, bayan check {expected.Exit}\n--- bayan-check\n{err}\n--- bayan check\n{expected.Err}");
+            var expected = SelfhostSemanticsGeneratorTests.CliCheck(path);
+            var (exit, stdout, stderr) = SelfhostParserTests.Run(BayanCheck, path);
+            var actualOut = SelfhostSemanticsGeneratorTests.WithoutSummary(stdout);
+            Assert.True(exit == expected.Exit && actualOut == expected.Out && stderr == expected.Err,
+                $"{path}: bayan-check exited {exit}, bayan check {expected.Exit}\n--- bayan-check stdout\n{actualOut}\n--- bayan check stdout\n{expected.Out}"
+                + $"\n--- bayan-check stderr\n{stderr}\n--- bayan check stderr\n{expected.Err}");
         }
     }
 
@@ -158,7 +226,7 @@ public sealed class SelfhostSemanticsCorpusParityTests(ITestOutputHelper output)
             }
             return times.Order().ElementAt(2);
         }
-        var csharp = Median(() => Assert.Equal(0, CSharpCheck(path).Exit));
+        var csharp = Median(() => Assert.Equal(0, SelfhostSemanticsGeneratorTests.CliCheck(path).Exit));
         var selfhost = Median(() => Assert.Equal(0, SelfhostParserTests.Run(program, path).Exit));
         output.WriteLine($"bayan check {csharp:F0} ms, bayan-check {selfhost:F0} ms, ratio {selfhost / csharp:F2}");
         Assert.True(selfhost <= 10 * csharp, $"bayan-check {selfhost:F0} ms is more than 10x bayan check {csharp:F0} ms");
