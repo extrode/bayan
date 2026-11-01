@@ -641,12 +641,6 @@ public sealed class SelfhostSemanticsT20Tests
             }
         }
 
-        void tcParam(ref Ctx c,for FuncId f, by string name, at TextSpan span, as Type type, to parser.ParamModifier modifier) {
-            let ordinal = c.functions[f].parameters.length
-            let p = newLocal(ref c, by: LocalSymbol { name: name, nameSpan: span, span: span, type: type, kind: .parameter, isParameter: true, modifier: modifier, ordinal: ordinal })
-            c.functions[f].parameters.append(p)
-        }
-
         /// The `k`th function named `name` of the entry module, in declaration order.
         FuncId tcNth(in Ctx c, by string name, at i64 k) {
             var seen: i64 = 0
@@ -657,10 +651,6 @@ public sealed class SelfhostSemanticsT20Tests
                 }
             }
             return -1
-        }
-
-        void t20Signatures(ref Ctx c) {
-        SIGNATURES
         }
 
         /// Every function of the entry module bound, as the C# `BindAll` does (generics.byn:163).
@@ -708,21 +698,19 @@ public sealed class SelfhostSemanticsT20Tests
                 declare(ref c)
                 print($"== {args[i]}.{args[i + 1]}")
                 if isDiag {
-                    tcDiagSignatures(ref c, by: args[i + 1])
                     tcBindAll(ref c)
                     tcT20Diags(ref c)
                 } else {
-                    t20Signatures(ref c)
                     runCase(ref c, for: args[i], by: args[i + 1])
                 }
                 i += 2
             }
             return 0
         }
-        """.Replace("WORLD", Escape(Source)).Replace("SIGNATURES", Signatures(Source + "\n", library: true))
+        """.Replace("WORLD", Escape(Source))
             .Replace("KEEP", string.Concat(T20Codes.Select(k => $"    keep[\"{k}\"] = true\n"))).Replace("DIAGS", Diags());
 
-    /// <summary>The Bayan functions that load and declare each of <see cref="DiagCases"/>: its text and its signatures.</summary>
+    /// <summary>The Bayan functions that load and declare each of <see cref="DiagCases"/>: its text; T38's <c>declare</c> declares the signatures.</summary>
     private static string Diags()
     {
         var sb = new System.Text.StringBuilder();
@@ -730,121 +718,6 @@ public sealed class SelfhostSemanticsT20Tests
         foreach (var d in DiagCases) sb.AppendLine($"    if name == \"{d}\" {{ return \"{Escape(DiagSource(d))}\" }}");
         sb.AppendLine("    return \"\"");
         sb.AppendLine("}");
-        sb.AppendLine("void tcDiagSignatures(ref Ctx c, by string name) {");
-        for (var i = 0; i < DiagCases.Length; i++) sb.AppendLine($"    if name == \"{DiagCases[i]}\" {{ tcSigs{i}(ref c) }}");
-        sb.AppendLine("}");
-        for (var i = 0; i < DiagCases.Length; i++)
-        {
-            sb.AppendLine($"void tcSigs{i}(ref Ctx c) {{");
-            sb.Append(Signatures(DiagSource(DiagCases[i]), library: false));
-            sb.AppendLine("}");
-        }
-        return sb.ToString();
-    }
-
-    private static string Lower(bool b) => b ? "true" : "false";
-
-    /// <summary>The Bayan expression for type <paramref name="t"/>; statements it needs first go to <paramref name="sb"/>.</summary>
-    private static string BayanType(System.Text.StringBuilder sb, TypeSymbol t, Dictionary<string, string> tps, ref int n)
-    {
-        switch (t)
-        {
-            case TypeParameterType p: return $"typeParamTypeOf({tps[p.Name]})";
-            case PrimitiveType p: return $"prim(.{p.DisplayName})";
-            case ListType l: return $"internList(ref c, by: {BayanType(sb, l.Element, tps, ref n)})";
-            case SpanType sp: return $"internSpan(ref c, by: {BayanType(sb, sp.Element, tps, ref n)}, readOnly: {Lower(sp.ReadOnly)})";
-            case Bayan.Semantics.Symbols.OptionalType o: return $"internOptional(ref c, by: {BayanType(sb, o.Inner, tps, ref n)})";
-            case MapType m: return $"internMap(ref c, by: {BayanType(sb, m.KeyType, tps, ref n)}, to: {BayanType(sb, m.ValueType, tps, ref n)})";
-            case FunctionType f when f.Fails.Count == 0:
-            {
-                var i = n++;
-                var ps = new List<string>();
-                foreach (var p in f.Parameters) ps.Add(BayanType(sb, p, tps, ref n));
-                var ret = BayanType(sb, f.Return, tps, ref n);
-                sb.AppendLine($"    var fp{i} = List<Type>()");
-                foreach (var p in ps) sb.AppendLine($"    fp{i}.append({p})");
-                sb.AppendLine($"    let fe{i} = List<ErrorSetId>()");
-                sb.AppendLine($"    let fu{i} = List<string>()");
-                return $"internFunction(ref c, for: in fp{i}, to: {ret}, by: in fe{i}, as: in fu{i})";
-            }
-            case Bayan.Semantics.Symbols.TupleType tt:
-            {
-                var i = n++;
-                var fs = new List<string>();
-                foreach (var f in tt.Fields) fs.Add(BayanType(sb, f.Type, tps, ref n));
-                sb.AppendLine($"    var tf{i} = List<TupleField>()");
-                for (var k = 0; k < fs.Count; k++)
-                    sb.AppendLine(tt.Fields[k].Name is { } fn ? $"    tf{i}.append(TupleField {{ name: \"{fn}\", type: {fs[k]} }})" : $"    tf{i}.append(TupleField {{ type: {fs[k]} }})");
-                return $"internTuple(ref c, for: in tf{i})";
-            }
-            case UnionSymbol { Template: { } u } us: return Instance(sb, u.Name, us.TypeArguments, tps, ref n);
-            case StructSymbol { Template: { } s } ss: return Instance(sb, s.Name, ss.TypeArguments, tps, ref n);
-            case StructSymbol s: return $"c.modules[c.entryModule].types[\"{s.Name}\"]";
-            default: throw new InvalidOperationException(t.DisplayName);
-        }
-    }
-
-    /// <summary>The entry module's generic struct or union <paramref name="name"/> at <paramref name="args"/>.</summary>
-    private static string Instance(System.Text.StringBuilder sb, string name, IReadOnlyList<TypeSymbol> args, Dictionary<string, string> tps, ref int n)
-    {
-        var i = n++;
-        var ts = new List<string>();
-        foreach (var a in args) ts.Add(BayanType(sb, a, tps, ref n));
-        sb.AppendLine($"    var ta{i} = List<Type>()");
-        foreach (var a in ts) sb.AppendLine($"    ta{i}.append({a})");
-        return $"instantiateType(ref c, for: c.modules[c.entryModule].types[\"{name}\"], by: in ta{i}, from: c.modules[c.entryModule].files[0], at: TextSpan {{ start: 0, length: 0 }})";
-    }
-
-    /// <summary>
-    /// What T11's stubbed <c>declareSignature</c>/<c>declareParameters</c> (declare2.byn:15, :18) would set on each free
-    /// function but <c>probes</c>, generated from the C# symbols as SelfhostSemanticsT17Tests.Signature does (Q618).
-    /// </summary>
-    private static string Signatures(string text, bool library)
-    {
-        Directory.CreateDirectory(Dir);
-        var path = Path.Combine(Dir, "main.byn");
-        var c = Compilation.Create([SourceText.FromString(path, text)], packageRoot: Dir, options: new CompilationOptions(Library: library));
-        var sb = new System.Text.StringBuilder();
-        var n = 0;
-        foreach (var (name, fns) in c.EntryModule.Functions)
-        {
-            // `main` of top-level statements has no declaration for the stubs to miss.
-            if (name == "probes" || fns.All(f => f.Decl is null)) continue;
-            for (var i = 0; i < fns.Count; i++)
-            {
-                var fn = fns[i];
-                var v = $"f{n++}";
-                sb.AppendLine($"    let {v} = tcNth(in c, by: \"{name}\", at: {i})");
-                var tps = new Dictionary<string, string>();
-                for (var k = 0; k < fn.TypeParameters.Count; k++)
-                {
-                    // declare already gives a generic its type parameters; only their uses in the signature are filled.
-                    var tv = $"tp{n++}";
-                    tps[fn.TypeParameters[k].Name] = tv;
-                    sb.AppendLine($"    let {tv} = c.functions[{v}].typeParams[{k}]");
-                }
-                var ret = BayanType(sb, fn.ReturnType, tps, ref n);
-                sb.AppendLine($"    c.functions[{v}].returnType = {ret}");
-                sb.AppendLine($"    c.functions[{v}].hasFails = {Lower(fn.Fails)}");
-                foreach (var p in fn.Parameters)
-                {
-                    var span = p.Location!.Value.Span;
-                    var modifier = p.Modifier switch
-                    {
-                        ParamModifier.None => "none", ParamModifier.Ref => "refKeyword", ParamModifier.Move => "moveKeyword",
-                        ParamModifier.Out => "outKeyword", _ => "inKeyword",
-                    };
-                    var type = BayanType(sb, p.Type, tps, ref n);
-                    sb.AppendLine($"    tcParam(ref c, for: {v}, by: \"{p.Name}\", at: TextSpan {{ start: {span.Start}, length: {span.Length} }}, as: {type}, to: .{modifier})");
-                }
-            }
-            if (fns.Count < 2) continue;
-            // T12's checkOverloads ran on the empty signatures and dropped the later overloads as duplicates; with the
-            // signatures above it keeps them, as the C# does.
-            sb.AppendLine($"    var ov{n} = List<FuncId>()");
-            for (var i = 0; i < fns.Count; i++) sb.AppendLine($"    ov{n}.append(tcNth(in c, by: \"{name}\", at: {i}))");
-            sb.AppendLine($"    c.modules[c.entryModule].functions[\"{name}\"] = move ov{n++}");
-        }
         return sb.ToString();
     }
 }
