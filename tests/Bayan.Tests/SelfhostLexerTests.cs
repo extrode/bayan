@@ -67,7 +67,7 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         }
         p.WaitForExit();
         copy.Wait();
-        return (p.ExitCode, stdout.ToArray(), stderr.Result);
+        return (p.ExitCode, ProcessText.Lf(stdout.ToArray()), stderr.Result);
     }
 
     [Theory]
@@ -293,7 +293,7 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
             if (!done) p.Kill(entireProcessTree: true);
             p.WaitForExit();
             copy.Wait();
-            runs[i] = (inputs[i], done ? p.ExitCode : -1, stdout.ToArray(), stderr.Result, !done);
+            runs[i] = (inputs[i], done ? p.ExitCode : -1, ProcessText.Lf(stdout.ToArray()), stderr.Result, !done);
         });
         return runs;
     });

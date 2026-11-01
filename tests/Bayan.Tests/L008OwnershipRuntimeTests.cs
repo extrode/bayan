@@ -127,7 +127,7 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output) : IDispo
         }
         stdout.Wait();
         var exit = p.ExitCode;
-        if (OperatingSystem.IsWindows() && exit == 3) exit = 134;
+        exit = PanicExit.Portable(exit);
         return new Run(exit, stderr.Result, null);
     }
 }

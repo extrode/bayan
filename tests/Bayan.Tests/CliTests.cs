@@ -367,7 +367,7 @@ public sealed class CliTests
     public void RunPassesTheProgramsOwnExitCodeThrough()
     {
         var (exit, _, _) = Run("run", Program("cli-run-panic", "panic(\"stop\")\n"));
-        Assert.Equal(134, exit);
+        Assert.Equal(PanicExit.Code, exit);
     }
 
     [Fact]
@@ -513,7 +513,7 @@ public sealed class CliTests
     }
 
     private static string WithoutTimes(string text) =>
-        System.Text.RegularExpressions.Regex.Replace(text, @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline).ReplaceLineEndings("\n");
+        System.Text.RegularExpressions.Regex.Replace(text.ReplaceLineEndings("\n"), @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline); // `$` stops before `\n`, so a `\r` (Windows) would hide the time
 
     [Fact]
     public void TestReportsPassFailAndPanicPerTest()

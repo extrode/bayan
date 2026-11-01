@@ -103,8 +103,8 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
             var actual = SelfhostParserTests.BeforeSpanLines(segment);
 
             var tree = SyntaxTree.Parse(new SourceText(inputs[i].Label, inputs[i].Bytes));
-            // On Windows the child's text is read with \r\n as \n (ProcessText.Lf), so the dump is compared the same way; elsewhere it is exact.
-            var expected = ProcessText.Lf(AstDump.Dump(tree));
+            // The child's text is already read with its text-mode \r\n as \n (ProcessText.Lf); a \r\n the dump itself prints must stay one.
+            var expected = AstDump.Dump(tree);
             if (actual != expected && !IsWrappingOnly(actual, expected, tree))
             {
                 var expectedPath = Path.Combine(dir, Path.ChangeExtension(Name(i), ".ast"));
