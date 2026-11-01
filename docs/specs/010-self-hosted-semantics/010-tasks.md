@@ -77,7 +77,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T25 Regions A — files: `region.byn` (`RegionAnalysis.cs` 1–~417: regions, borrows, loans, Stmt/Expr/Compute), `SelfhostSemanticsT25Tests.cs`, `SelfhostSemanticsT37Tests.cs` (one line, Q738) — covers: R4 — after: T4; parallel with: T6–T24, T26, T27, T34–T39 — done when:
   - rules 3–4 match the region diag cases; Q640–Q642 record the immutable-collection workaround.
   - Size: about 605 lines.
-- [x] T26 CLI, typed dump and golden harness — files: `main.byn` (the modes; cap line from `Messages.DiagCapped`; footer from `Messages.BuildFailed` with `ErrorsOne`/`ErrorsMany` and `WarningsOne`/`WarningsMany`; `Messages.BuildExplain`; `Messages.CheckSummary` minus timing; `programName`), `typed.byn`, `json.byn`, `SelfhostSemanticsTests.cs` (golden and CLI theories) — covers: R1, R2, R5, L020 (check) — after: T4; parallel with: T6–T25, T27, T34–T39 — done when:
+- [x] T26 CLI, typed dump and golden harness — files: `main.byn` (the modes; cap line from `Messages.DiagCapped`; footer from `Messages.BuildFailed` with `ErrorsOne`/`ErrorsMany` and `WarningsOne`/`WarningsMany`; `Messages.BuildExplain`; `Messages.CheckSummary` minus timing; `programName`), `typed.byn`, `json.byn`, `SelfhostSemanticsTests.cs` (golden and CLI theories) — covers: R1, R2, R5, L023 (check) — after: T4; parallel with: T6–T25, T27, T34–T39 — done when:
   - modes run on the stub; `--types` emits valid JSON; golden mode takes `--tests`, `--package`, `--include-path`; a failing comparison names the input and first differing line; parity theories are `Skip = "T28 enables …"`; Q645–Q649 as needed.
   - Size: about 508 lines of Bayan and 350 of C#.
 - [x] T27 Generator and speed — files: `SelfhostSemanticsGenerator.cs` (XorShift seeds, one template per feature, single-fault injection, `OneMegabyte()`), `SelfhostSemanticsGeneratorTests.cs` — covers: R6, R7 — after: T4; parallel with: T6–T26, T34–T39 — done when:
@@ -86,16 +86,16 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T28 Integration: parity — files: any `selfhost/semantics/*.byn` (stand-ins removed, fixes only), `src/Bayan.*` (only a blocking compiler bug, with a test), `work/todo.md` (removes `t17Host`, `t18Host` and the `t11/t15/t16/t17ExprSpan` copies, Q674), `SelfhostSemanticsTests.cs` and `SelfhostSemanticsGeneratorTests.cs` (the `T28 enables` skips removed), `SelfhostSemanticsT*Tests.cs` (only harness stand-ins that a real port now replaces, removed), `docs/specs/010-self-hosted-semantics/010-api.md` (signatures a T28 fix widens), `tests/cases/diag/generic-guard-mutate-rebind.byn` and `tests/cases/diag/generic-guard-mutate-rebind.diag` (covers the generic `checkGuardWrite` branch and the `bindFunction` rollback, expected file from the C#) — covers: R1, R2, R4, R5, R6, R7, R8 — after: T6–T27, T34–T39; parallel with: none — done when:
   - every diag (golden and CLI), typed and generated row passes with equal stderr, `--types` bytes and exit code; the 1 MB median ratio is at most 10 and recorded; the full suite including L001/L002/L017/L018 passes; any blocking compiler bug is fixed here with a test; Q655–Q657.
   - Size: fixes only, no new files.
-- [ ] T29 prove L019 via /prove: binder equivalence — files: `SelfhostSemanticsEquivalenceLawTests.cs` [Trait Law L019], `docs/laws/019-binder-equivalence.md` — covers: L019 — after: T28; parallel with: T31 — done when:
-  - every parsed-clean diag case, typed case and valid/corrupted seed agree; a dropped-diagnostic or widened-conversion mutation makes it fail; `--filter "Law=L019"` holds; Q658–Q659.
+- [ ] T29 prove L022 via /prove: binder equivalence — files: `SelfhostSemanticsEquivalenceLawTests.cs` [Trait Law L022], `docs/laws/022-binder-equivalence.md` — covers: L022 — after: T28; parallel with: T31 — done when:
+  - every parsed-clean diag case, typed case and valid/corrupted seed agree; a dropped-diagnostic or widened-conversion mutation makes it fail; `--filter "Law=L022"` holds; Q658–Q659.
   - Size: about 250 lines of C# and the law page.
-- [ ] T30 enact L019 "Binder equivalence" — files: `docs/laws/019-binder-equivalence.md` — covers: L019 — after: T29 — done when:
+- [ ] T30 enact L022 "Binder equivalence" — files: `docs/laws/022-binder-equivalence.md` — covers: L022 — after: T29 — done when:
   - `status: enacted` lands with T29's passing proof (standing authorization, 2026-10-21).
   - Size: one status line and recorded measurements.
-- [ ] T31 prove L020 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L020], `docs/laws/020-no-checker-panic.md` — covers: L020 — after: T28; parallel with: T29 — done when:
+- [ ] T31 prove L023 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L023], `docs/laws/023-no-checker-panic.md` — covers: L023 — after: T28; parallel with: T29 — done when:
   - over every golden, seed corpus and random byte/token mutation (nesting bounded as in L018), exits are 0 or 1 and `--spans` prints nothing; a span mutation fails it; Q661–Q662.
   - Size: about 200 lines of C# and the law page.
-- [ ] T32 enact L020 "No checker panic" — files: `docs/laws/020-no-checker-panic.md` — covers: L020 — after: T31 — done when:
+- [ ] T32 enact L023 "No checker panic" — files: `docs/laws/023-no-checker-panic.md` — covers: L023 — after: T31 — done when:
   - `status: enacted` lands with T31's passing proof, unless a C# counterexample keeps it `proposed` (Q663).
   - Size: one status line and recorded measurements.
 - [ ] T33 Docs — files: `docs/bayan-handoff.md` (Q520+, spend, Road row 010, readiness), `CHANGELOG.md`, `work/todo.md`, `010-spec.md` status — covers: R8, R9 — after: T28, T30, T32 — done when:
