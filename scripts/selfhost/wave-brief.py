@@ -31,7 +31,7 @@ def owned_files(block):
     head = block[0]
     files = re.search(r'files: (.*?) — covers', head).group(1)
     files = re.sub(r'\([^()]*(\([^()]*\)[^()]*)*\)', '', files)
-    return re.findall(r'`([^`]+\.(?:byn|cs))`', files)
+    return re.findall(r'`([^`]+\.(?:byn|cs|md|diag))`', files)
 
 
 def plan_rows(byns):
@@ -52,13 +52,15 @@ for t in sys.argv[2:]:
     block = task_block(t)
     assert block, t
     files = owned_files(block)
-    byns = [f for f in files if f.endswith('.byn')]
-    tests = [f for f in files if f.endswith('.cs')]
-    paths = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in byns] + [f'tests/Bayan.Tests/{f}' for f in tests]
+    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/'))]
+    byns = [f for f in files if f.endswith('.byn') and f not in rooted]
+    tests = [f for f in files if f.endswith('.cs') and f not in rooted]
+    paths = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in byns] + [f'tests/Bayan.Tests/{f}' for f in tests] + rooted
     allow = ','.join(paths + ['docs/bayan-handoff.md', 'docs/specs/010-self-hosted-semantics/010-tasks.md'])
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = qrange(block)
-    test_class = tests[0][:-3] if tests else f'SelfhostSemantics{t}Tests'
+    # T28 integrates: its gate is every SelfhostSemantics* class, parity and corpus parity included
+    test_class = 'SelfhostSemantics' if t == 'T28' else tests[0][:-3] if tests else f'SelfhostSemantics{t}Tests'
     proto = '\n'.join(protocol[2:]).replace('SelfhostSemanticsT3Tests', test_class).replace('restore with `git checkout -- <file>`', 'restore by copying back a copy you took first (`cp f tmp/f.orig` … `cp tmp/f.orig f`; never `git checkout`, which reverts to the stub and loses your work)').replace('Skeleton by turn 12', 'Skeleton by turn 15')
     s = f"""You are doing task {t} of spec 010 (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). Other writers port the sibling files in parallel; every cross-file function already exists as a compiling stub with its final signature, so you call real names and never write stand-ins. A separate reviewer compares your port with the C# line by line before it lands; invented logic, sibling fallbacks and hand-typed test expectations fail that review.
 
