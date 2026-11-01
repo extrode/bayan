@@ -5,9 +5,10 @@
 # docs/specs/010-self-hosted-semantics/reviews/<T>.md exists on that branch, the branch's last commit touches only it and is
 # titled `docs(010): <T> review (PASS, …`, the file names that commit's parent, says `Verdict: PASS`, and lists no open HIGH
 # finding (earlier commits may hold earlier review rounds). Then merges the
-# commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task. When the guard run left mutation
-# reports (tmp/guard-run/quality-*.json, from a guard given --mutate), the tick commit also raises tests/quality-baseline.json
-# to their scores (quality-baseline.py update; a lower score never replaces a baseline entry).
+# commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task. When the guard run left reports
+# (tmp/guard-run/quality-*.json: mutation ones from a guard given --mutate, quality-coverage.json from the coverage the guard
+# measures on every run over the changed selfhost .byn files; dropping --mutate leaves coverage on), the tick commit also raises
+# tests/quality-baseline.json to their scores (quality-baseline.py update; a lower score never replaces a baseline entry).
 set -eu
 T=$1; BR=$2; N=${T#T}; t=$(echo "$T" | tr '[:upper:]' '[:lower:]')
 BASE=$(git rev-parse --abbrev-ref HEAD)
