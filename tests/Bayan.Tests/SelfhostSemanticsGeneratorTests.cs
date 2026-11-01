@@ -18,7 +18,11 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
 {
-    private static string CorpusDir => Path.Combine(Golden.RepoRoot, "tmp", "semantics-corpus");
+    /// <summary>
+    /// This class's own directory; <see cref="SelfhostSemanticsCorpusParityTests"/> writes under another one, so the
+    /// two classes, which xUnit runs in parallel, never write or delete the same path.
+    /// </summary>
+    private static string CorpusDir => Path.Combine(Golden.RepoRoot, "tmp", "semantics-corpus", "generator");
 
     /// <summary>
     /// The C# checker's diagnostics for <paramref name="source"/>, tests excluded as <c>bayan check</c> compiles
@@ -102,12 +106,13 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
     private const string PinnedCorpus = "A38F8E5995F343C0EEDF3062FE05E6119377DCF5114301DF67504A53436290DF";
 
     /// <summary>
-    /// Writes each corpus program alone to <c>tmp/semantics-corpus/seeds/&lt;name&gt;/main.byn</c>: <c>bayan check</c>
-    /// on a file reads its whole directory (CliApp.cs:274, Compilation.cs:117-121), so one directory per program.
+    /// Writes each corpus program alone to <c>&lt;root&gt;/seeds/&lt;name&gt;/main.byn</c>: <c>bayan check</c> on a file
+    /// reads its whole directory (CliApp.cs:274, Compilation.cs:117-121), so one directory per program. Each test
+    /// class passes its own <paramref name="root"/>.
     /// </summary>
-    internal static List<(GeneratedProgram Program, string Path)> WriteCorpus()
+    internal static List<(GeneratedProgram Program, string Path)> WriteCorpus(string root)
     {
-        var dir = Path.Combine(CorpusDir, "seeds");
+        var dir = Path.Combine(root, "seeds");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         var written = new List<(GeneratedProgram, string)>();
         foreach (var p in Corpus(Seeds))
@@ -142,7 +147,7 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
     public void CliCheckSeesEachCorpusProgramAlone()
     {
         var clock = Stopwatch.StartNew();
-        var written = WriteCorpus();
+        var written = WriteCorpus(CorpusDir);
         foreach (var (p, path) in written)
         {
             var (exit, _, err) = CliCheck(path);
@@ -162,7 +167,7 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
         output.WriteLine($"{written.Count} corpus files checked through CliApp in {clock.ElapsedMilliseconds} ms");
     }
 
-    /// <summary>R7 input: <see cref="OneMegabyte"/> is exactly 1 MiB, well typed, and written to <c>tmp/semantics-corpus/big.byn</c>.</summary>
+    /// <summary>R7 input: <see cref="OneMegabyte"/> is exactly 1 MiB, well typed, and written to <c>tmp/semantics-corpus/generator/big.byn</c>.</summary>
     [Fact]
     public void OneMegabyteIsWrittenAndWellTyped()
     {
@@ -184,17 +189,20 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
 /// </summary>
 public sealed class SelfhostSemanticsCorpusParityTests(ITestOutputHelper output)
 {
+    /// <summary>This class's own directory, apart from <see cref="SelfhostSemanticsGeneratorTests"/>'s (they run in parallel).</summary>
+    private static string CorpusDir => Path.Combine(Golden.RepoRoot, "tmp", "semantics-corpus", "parity");
+
     private static string BayanCheck =>
         SelfhostSemanticsHarness.Build(File.ReadAllText(Path.Combine(SelfhostSemanticsHarness.SemanticsDir, "main.byn")));
 
     /// <summary>
-    /// R6: every valid and faulty program, each alone under <c>tmp/semantics-corpus/seeds/&lt;name&gt;/</c>, gets the same
+    /// R6: every valid and faulty program, each alone under <c>tmp/semantics-corpus/parity/seeds/&lt;name&gt;/</c>, gets the same
     /// exit code, stdout (minus the timed <c>◆ checked</c> summary) and stderr from <c>bayan-check</c> and <c>bayan check</c>.
     /// </summary>
     [Fact(Skip = "T28 enables the corpus comparison once bayan-check runs the passes (T26 CLI)")]
     public void GeneratedSeedsAgree()
     {
-        foreach (var (_, path) in SelfhostSemanticsGeneratorTests.WriteCorpus())
+        foreach (var (_, path) in SelfhostSemanticsGeneratorTests.WriteCorpus(CorpusDir))
         {
             var expected = SelfhostSemanticsGeneratorTests.CliCheck(path);
             var (exit, stdout, stderr) = SelfhostParserTests.Run(BayanCheck, path);
@@ -210,9 +218,8 @@ public sealed class SelfhostSemanticsCorpusParityTests(ITestOutputHelper output)
     public void OneMegabyteWithinTenTimes()
     {
         if (Environment.GetEnvironmentVariable("BAYAN_SKIP_TIMING") == "1") return;
-        var dir = Path.Combine(Golden.RepoRoot, "tmp", "semantics-corpus");
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "big.byn");
+        Directory.CreateDirectory(CorpusDir);
+        var path = Path.Combine(CorpusDir, "big.byn");
         File.WriteAllBytes(path, OneMegabyte().Bytes.ToArray());
         var program = BayanCheck;
         double Median(Action run)
