@@ -239,7 +239,6 @@ OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move O
                 }
                 entry = move next
             }
-            return move state
         case .doWhile:
             let condition = c.bDoWhiles[i].condition
             let body = c.bDoWhiles[i].body
@@ -260,7 +259,6 @@ OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move O
                 }
                 entry = move next
             }
-            return move state
         case .forStmt:
             let body = c.bFors[i].body
             let target = c.bFors[i].target
@@ -277,7 +275,6 @@ OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move O
                 if t24SameAs(in next, by: in entry) { return t24Exit(ref a, for: target, by: move entry) }
                 entry = move next
             }
-            return move state
         case .switchStmt:
             let target = c.bSwitches[i].target
             state = t24Expr(ref a, through: ref c, for: c.bSwitches[i].value, by: move state)
@@ -583,7 +580,7 @@ void t24CheckStore(ref Ownership a, through ref Ctx c, for BExpr value, bool cap
     let why = whyUnique(ref c, for: exprType(in c, for: value)) ?? return
     let core = t24StripConversions(in c, for: value)
     let span = nodeSpan(in c, for: core)
-    let text = getText(c.files[a.file].text.span, at: span)
+    let text = $"{getText(c.files[a.file].text.span, at: span)}"
     // A lambda copies its captures; a copy or a move of the local would be captured the same way.
     if captured {
         t24Report(ref a, through: ref c, for: .implicitCopy, at: span, by: why, help: $"copy what the lambda needs from `{text}` into `let` values first")
@@ -592,8 +589,8 @@ void t24CheckStore(ref Ownership a, through ref Ctx c, for BExpr value, bool cap
     if boundKind(core) == .withExpr {
         let target = t24StripConversions(in c, for: c.bWiths[boundIndex(core)].target)
         if t24IsMovable(in c, for: target) {
-            let name = getText(c.files[a.file].text.span, at: nodeSpan(in c, for: target))
-            t24Report(ref a, through: ref c, for: .implicitCopy, at: span, by: why, help: $"write `move {name} with \{ … \}` to give up `{name}`")
+            let name = $"{getText(c.files[a.file].text.span, at: nodeSpan(in c, for: target))}"
+            t24Report(ref a, through: ref c, for: .implicitCopy, at: span, by: why, help: $"write `move {name} with {{ … }}` to give up `{name}`")
             return
         }
     }
@@ -895,8 +892,11 @@ void checkPanicHandler(ref Ctx c, for FuncId fn) {
     let file = c.functions[fn].file
     let body = c.functions[fn].body
     if file == -1 || body == -1 { return }
-    if fn == c.onPanic { t24CheckHandler(ref c, for: fn, at: body, whole: true) }
-    else { t24FindHandlers(ref c, for: fn, at: body) }
+    if fn == c.onPanic {
+        t24CheckHandler(ref c, for: fn, at: body, whole: true)
+    } else {
+        t24FindHandlers(ref c, for: fn, at: body)
+    }
 }
 
 /// Checks each outermost `defer panicking` body; its nested handlers are checked with it.

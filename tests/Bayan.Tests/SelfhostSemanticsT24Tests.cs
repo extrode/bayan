@@ -140,7 +140,7 @@ public sealed class SelfhostSemanticsT24Tests
 
         void errdeferMove() fails E {
             let xs = List<i64>()
-            errdefer print($"{xs.length}")
+            defer failing print($"{xs.length}")
             sink(move xs)
             let n = try step()
             print($"{n}")
@@ -362,6 +362,7 @@ public sealed class SelfhostSemanticsT24Tests
                 case Bayan.Semantics.Symbols.OptionalType o: return $"internOptional(ref c, by: {Ty(o.Inner)})";
                 case BuiltinType b: return $"builtinType(.{Lower(b.Kind.ToString())})";
                 case StructSymbol s: return $"structTypeOf(t24mStruct(ref c, by: \"{s.Name}\"))";
+                case EnumSymbol n: return $"enumTypeOf(t24mEnum(ref c, by: \"{n.Name}\"))";
                 default: throw new NotSupportedException(t.GetType().Name);
             }
         }
@@ -623,6 +624,9 @@ public sealed class SelfhostSemanticsT24Tests
                     // The lambda's body is not walked by the four analyses, which run on their own function.
                     break;
                 }
+                case BoundEnumMember m:
+                    Line($"let {id} = addEnumMember(ref c, from: BEnumMember {{ span: {sp}, member: t24mEnumMember(ref c, by: \"{m.Member.Enum.Name}\", for: \"{m.Member.Name}\") }})");
+                    break;
                 case BoundErrorExpr:
                     Line($"let {id} = addErrorExpr(ref c, from: BErrorExpr {{ span: {sp} }})");
                     break;
@@ -803,6 +807,20 @@ public sealed class SelfhostSemanticsT24Tests
                     if c.structs[k].name == name { return StructId(k) }
                 }
                 panic($"no struct {name}")
+            }
+
+            EnumId t24mEnum(ref Ctx c, by string name) {
+                for k in 0..c.enums.length {
+                    if c.enums[k].name == name { return EnumId(k) }
+                }
+                panic($"no enum {name}")
+            }
+
+            EnumMemberId t24mEnumMember(ref Ctx c, by string owner, for string name) {
+                for k in 0..c.enumMembers.length {
+                    if c.enumMembers[k].name == name && c.enums[c.enumMembers[k].owner].name == owner { return EnumMemberId(k) }
+                }
+                panic($"no enum member {owner}.{name}")
             }
 
             FieldId t24mField(ref Ctx c, by string owner, for string name) {
