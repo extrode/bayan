@@ -168,7 +168,7 @@ BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
         && (localIsMutable(ref c, by: c.bLocals[boundIndex(iterable)].local) || paramIsByRef(ref c, by: c.bLocals[boundIndex(iterable)].local))
     var sequence: LocalId = -1
     if !inPlace {
-        sequence = declareLocal(ref b, through: ref c, at: t28SyntheticName(ref c, for: $"<sequence {b.nextLocalId}>"), as: itType, for: .temp)
+        sequence = declareLocal(ref b, through: ref c, at: t28SyntheticName(ref c, for: $"<sequence {b.nextLocalId}>", at: span), as: itType, for: .temp)
         // C# `new Location(Source, name.Span)`: the synthetic name stands at the iterable.
         c.locals[sequence].nameSpan = span
         c.locals[sequence].span = span
@@ -176,8 +176,8 @@ BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
     // f.Iterable cannot be copied out of its Owned tree (Q471), so the in-place receiver is rebuilt from its spans (Q679).
     let sequenceName = sequence == -1 ? "" : c.locals[sequence].name
     let receiver = sequence == -1 ? t28CloneLocalName(in f.iterable)
-        : parser.Expr.nameExpr(Owned(NameExpr { span: span, name: t28SyntheticName(ref c, for: sequenceName), typeArgs: List<parser.TypeSyntax>() }))
-    let member = parser.Expr.memberExpr(Owned(T28MemberExpr { span: span, target: move receiver, member: t28SyntheticName(ref c, for: "next"), nullConditional: false }))
+        : parser.Expr.nameExpr(Owned(NameExpr { span: span, name: t28SyntheticName(ref c, for: sequenceName, at: span), typeArgs: List<parser.TypeSyntax>() }))
+    let member = parser.Expr.memberExpr(Owned(T28MemberExpr { span: span, target: move receiver, member: t28SyntheticName(ref c, for: "next", at: span), nullConditional: false }))
     let call = parser.Expr.callExpr(Owned(T28CallExpr { span: span, callee: move member, args: List<parser.Argument>() }))
     let next = parser.Expr.tryExpr(Owned(T28TryExpr { span: span, operand: move call }))
     let step = bindExpr(ref b, through: ref c, for: in next)
@@ -206,9 +206,11 @@ BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
 }
 
 /// A name the C# synthesizes for `for try` (`<sequence N>`, `next`): its text is not in the source, so it gets its own
-/// span, `start` -1 - index into `c.syntheticNames`, which `t15Text` and `t18Text` read (Q679).
-TextSpan t28SyntheticName(ref Ctx c, for string text) {
+/// span, `start` -1 - index into `c.syntheticNames`, which `t15Text` and `t18Text` read (Q679); `at` is the C# span
+/// (`f.Iterable.Span`), kept in `c.syntheticSpans` for `addDiag` to report at (Q739).
+TextSpan t28SyntheticName(ref Ctx c, for string text, at TextSpan span) {
     c.syntheticNames.append(text)
+    c.syntheticSpans.append(span)
     return TextSpan { start: -c.syntheticNames.length, length: 0 }
 }
 

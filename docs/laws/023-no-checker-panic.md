@@ -43,7 +43,7 @@ diagnostic span lies outside the file, that `--spans` prints no line, and that e
 `exit 1`. A panic aborts `--many` after the panicking input's header; the test records the input, renames
 every input up to it out of `*.byn`, resumes on the rest, and finally asserts that nothing panicked. An
 input on which C# throws is replaced by an empty input; the replaced names must equal `KnownCSharpThrows`.
-The test then runs the default CLI path, `bayan-check --spans <path>`, over the 891 golden paths (each flat
+The test then runs the default CLI path, `bayan-check --spans <path>`, over the 892 golden paths (each flat
 golden alone in its own directory, since `check` on a file reads its whole directory, and each directory
 case's `main.byn`), asserting exit 0 or 1, no `panic:` and no span line.
 
@@ -54,11 +54,11 @@ Measured 2026-11-01 (the two facts 39 s; the corpus part 24.5 s, the CLI part 14
 
 | | inputs | compared | no lexer/parser diagnostic | panicked | C# throws (replaced) | C# span outside file | rendered as C# |
 |---|---|---|---|---|---|---|---|
-| golden (flat + 11 directory cases) | 893 | 893 | 774 | 0 | 0 | 0 | 893 |
+| golden (flat + 12 directory cases) | 894 | 894 | 775 | 0 | 0 | 0 | 894 |
 | seeds | 79 | 79 | 79 | 0 | 0 | 0 | 79 |
 | random | 10,000 | 10,000 | 2,022 | 0 | 5 | 0 | 9,999 |
-| total | 10,972 | 10,972 | 2,875 | 0 | 5 | 0 | 10,971 |
-| CLI path (goldens) | 891 | 891 | | 0 | | | |
+| total | 10,973 | 10,973 | 2,876 | 0 | 5 | 0 | 10,972 |
+| CLI path (goldens) | 892 | 892 | | 0 | | | |
 
 "Rendered as C#" counts the inputs whose `--many` section (span and exit lines removed) equals
 `DiagnosticRenderer.RenderAll`; it is reported, not asserted (L022 owns parity).
