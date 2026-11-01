@@ -21,7 +21,7 @@ for t in sys.argv[2:]:
     head = re.sub(r'\([^()]*(\([^()]*\)[^()]*)*\)', '', re.search(r'files: (.*?) — covers', block[0]).group(1))
     files = re.findall(r'`([^`]+\.(?:byn|cs))`', head)
     # tests/, docs/ and src/ paths are written from the repo root; selfhost/ paths keep their own directory
-    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/'))]
+    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/', 'work/'))]
     byns = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in files if f.endswith('.byn') and f not in rooted]
     tests = [f'tests/Bayan.Tests/{f}' for f in files if f.endswith('.cs') and f not in rooted] + rooted
     test_class = 'SelfhostSemantics' if t == 'T28' else f'SelfhostSemantics{t}Tests'
