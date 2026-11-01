@@ -24,7 +24,8 @@ for t in sys.argv[2:]:
     rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/', 'work/'))]
     byns = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in files if f.endswith('.byn') and f not in rooted]
     tests = [f'tests/Bayan.Tests/{f}' for f in files if f.endswith('.cs') and f not in rooted] + rooted
-    test_class = 'SelfhostSemantics' if t == 'T28' else f'SelfhostSemantics{t}Tests'
+    own_tests = [f for f in files if f.endswith('.cs') and f not in rooted]
+    test_class = 'SelfhostSemantics' if t == 'T28' else own_tests[0][:-3] if own_tests else f'SelfhostSemantics{t}Tests'
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))
     s = f"""You are the independent reviewer for task {t} of spec 010 (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). You did not write this code. Your job is to find where the port is not the C#. Do not edit any file except the review file below; do not run git commands that change state.
