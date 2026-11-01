@@ -16,7 +16,8 @@ namespace Bayan.Tests;
 /// calls the ported member on a bound node of that function: on the C# side by reflection on the private class, on the
 /// Bayan side through generated code. It then prints the mutations, the loans and the diagnostics the commands added.
 /// The Bayan siblings <c>exprRegions</c>, <c>unionBorrow</c>, <c>lent</c> and <c>declareBorrow</c> are T25's stubs (Q684):
-/// call arguments are kept to ones whose C# <c>Expr</c> is empty, and no case prints a union or a call's result.
+/// call arguments are ones whose C# <c>Expr</c> is empty or, like the ToDynRef in <c>call.dyn</c>, is never read by
+/// <c>Call</c>, and no case prints a union or a call's result.
 /// Every expected line is computed from the C#.
 /// </summary>
 public sealed class SelfhostSemanticsT37Tests
@@ -156,6 +157,45 @@ public sealed class SelfhostSemanticsT37Tests
             }
             print($"{k}")
         }
+
+        union error Bad {
+            oops
+        }
+
+        union Slot {
+            empty
+            full(List<i64> items)
+        }
+
+        union Mark {
+            none
+            some(i64 n)
+        }
+
+        union Cell {
+            none
+            some(i64[2] a)
+        }
+
+        struct unique Token {
+            i64 n
+        }
+
+        void ft<T>(string s, from Untrusted<string> u, to Untrusted<List<i64>> ul, until Result<string, Bad> rs, through Result<List<i64>, Bad> rl, at i64[2] ai, by List<i64>[2] al, as T tv) {
+        }
+
+        void fu(Slot sl, from Mark mk, to Token tk, until Bag bg, through Cell ce) {
+            switch sl {
+                case .full w:
+                    print("w")
+                default:
+                    print("d")
+            }
+            switch bg {
+                case { items: let its } whole:
+                    print("x")
+            }
+        }
         """;
 
     /// <summary>
@@ -168,6 +208,8 @@ public sealed class SelfhostSemanticsT37Tests
     private static readonly (string Name, string Fn, string Commands)[] Cases =
     [
         ("types", "fa", "types sp ro tu pl bg oi ar dr sb xs b r p h q m"),
+        ("types.more", "ft", "types s u ul rs rl ai al tv"),
+        ("types.union", "fu", "types sl mk tk ce"),
         ("root.index", "fa", "root 11"),
         ("root.span", "fa", "root 10"),
         ("root.arg", "fa", "root 2.a1"),
@@ -201,6 +243,8 @@ public sealed class SelfhostSemanticsT37Tests
         ("alloc.deep", "fa", "depth ar 2;alloc 17.a0"),
         ("pattern", "fa", "pattern 18 1:`bg`,@bg"),
         ("pattern.empty", "fa", "pattern 18 -"),
+        ("pattern.union", "fu", "pattern 0 1:`sl`,@sl"),
+        ("pattern.property", "fu", "pattern 1 1:`bg`,@bg"),
         ("store.loan", "fa", "depth h 2;store h 1:`x`,@xs=50 0 100"),
         ("store.lendlate", "fa", "store h @xs=150 0 100"),
         ("store.lendearly", "fa", "store h @xs=5 10 30"),

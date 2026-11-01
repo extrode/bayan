@@ -117,11 +117,13 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
     let builtin = c.functions[fn].builtin
     var result = Borrow { regions: [], owners: [] }
-    let fresh = builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch // mutation-exempt: Q684
+    // mutation-exempt: Q684
+    let fresh = builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
         || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .stringInvalidUtf8At || builtin == .hexEncode || builtin == .hexDecode
         || builtin == .symbolIntern
     if !fresh {
-        result = t37CopyBorrow(in receiver) // mutation-exempt: Q684
+        // mutation-exempt: Q684
+        result = t37CopyBorrow(in receiver)
         for k in 0..args.length {
             if k < parameters.length && kindOf(c.locals[parameters[k]].type) == .function {
                 var a = t37CopyBorrow(in args[k])
@@ -130,16 +132,19 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
                     if !t37HasRegion(in r.environments, for: in x) { kept.append(Region { depth: x.depth, name: x.name }) }
                 }
                 a.regions = move kept
-                result = unionBorrow(in result, by: in a) // mutation-exempt: Q684
+                // mutation-exempt: Q684
+                result = unionBorrow(in result, by: in a)
             } else {
-                result = unionBorrow(in result, by: in args[k]) // mutation-exempt: Q684
+                // mutation-exempt: Q684
+                result = unionBorrow(in result, by: in args[k])
             }
         }
     }
     // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
     if recv != -1 && t37SpanOrDynRef(callType) {
         let lentReceiver = lendBorrow(ref r, through: ref c, for: recv, by: in receiver, at: span.end)
-        result = unionBorrow(in result, by: in lentReceiver) // mutation-exempt: Q684
+        // mutation-exempt: Q684
+        result = unionBorrow(in result, by: in lentReceiver)
     }
     // So may a function returning one: the result lives no longer than any argument passed by `ref` (`in` is by value),
     // and borrows the storage of those with storage to lend.
@@ -150,12 +155,14 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
                 let lentArg = lendBorrow(ref r, through: ref c, for: arguments[k], by: in args[k], at: span.end)
                 var seen = List<Type>()
                 if mayLend(ref c, for: exprType(in c, for: arguments[k]), by: ref seen) {
-                    result = unionBorrow(in result, by: in lentArg) // mutation-exempt: Q684
+                    // mutation-exempt: Q684
+                    result = unionBorrow(in result, by: in lentArg)
                 } else {
                     var regions = List<Region>()
                     for x in lentArg.regions { regions.append(Region { depth: x.depth, name: x.name }) }
                     let bare = Borrow { regions: move regions, owners: [] }
-                    result = unionBorrow(in result, by: in bare) // mutation-exempt: Q684
+                    // mutation-exempt: Q684
+                    result = unionBorrow(in result, by: in bare)
                 }
             }
             k += 1
@@ -165,7 +172,8 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     var seenList = List<Type>()
     if r.contexts.length > 0 && (containsList(ref c, for: callType, by: ref seenList) || builtin == .ioReadText || builtin == .ioRun || builtin == .ioRunBatch || builtin == .strBufGrow || builtin == .strBufOver
             || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .hexEncode) {
-        result = unionBorrow(in result, by: in r.contexts[r.contexts.length - 1]) // mutation-exempt: Q684
+        // mutation-exempt: Q684
+        result = unionBorrow(in result, by: in r.contexts[r.contexts.length - 1])
     }
     return result
 }
@@ -177,15 +185,18 @@ Borrow lendBorrow(ref Regions r, through ref Ctx c, for BExpr source, by in Borr
     // Inside a method returning a span or `dyn ref`, its own fields are the caller's data; the call site lends the receiver (Q75).
     // Either way it is a loan on that field: changing it structurally invalidates the borrow.
     let field = thisField(ref r, through: ref c, for: source)
-    if field != -1 { b = lent(in b, for: field, at: at) } // mutation-exempt: Q684
+    // mutation-exempt: Q684
+    if field != -1 { b = lent(in b, for: field, at: at) }
     if t37SpanOrDynRef(c.functions[r.fn].returnType) && isThisRooted(in c, for: source) {
         let caller = Borrow { regions: [Region { depth: 0, name: "the caller's data" }], owners: [] }
-        return unionBorrow(in b, by: in caller) // mutation-exempt: Q684
+        // mutation-exempt: Q684
+        return unionBorrow(in b, by: in caller)
     }
     // In any other method they outlive the whole body, but cannot be returned.
     if isThisRooted(in c, for: source) {
         let temporary = Borrow { regions: [Region { depth: 1, name: $"the temporary on line {lineOf(ref r, through: ref c, at: nodeSpan(in c, for: source))}" }], owners: [] }
-        return unionBorrow(in b, by: in temporary) // mutation-exempt: Q684
+        // mutation-exempt: Q684
+        return unionBorrow(in b, by: in temporary)
     }
     let root = rootLocal(ref c, for: source)
     if root != -1 {
@@ -194,10 +205,12 @@ Borrow lendBorrow(ref Regions r, through ref Ctx c, for BExpr source, by in Borr
             let region = Region { depth: depth, name: $"`{c.locals[root].name}`" }
             if !t37HasRegion(in b.regions, for: in region) { b.regions.append(region) }
         }
-        return lent(in b, for: root, at: at) // mutation-exempt: Q684
+        // mutation-exempt: Q684
+        return lent(in b, for: root, at: at)
     }
     let temporary = Borrow { regions: [Region { depth: r.depth, name: $"the temporary on line {lineOf(ref r, through: ref c, at: nodeSpan(in c, for: source))}" }], owners: [] }
-    return unionBorrow(in b, by: in temporary) // mutation-exempt: Q684
+    // mutation-exempt: Q684
+    return unionBorrow(in b, by: in temporary)
 }
 
 /// Memory from the arena (or other allocator) `allocator`.
