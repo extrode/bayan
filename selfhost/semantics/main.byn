@@ -1,7 +1,310 @@
-// bayan-check: the self-hosted checker's entry point. Returns 0 until T26 wires the CLI's
-// `check`/`types`/`compile` commands to the passes. Ports `CliApp`'s `Check` subset.
+// bayan-check: the self-hosted checker. Ports the `check` and `types` subset of `CliApp` (CliApp.cs:139
+// `Types`, :245 `Compile`, :290 `Report`, :432 `Check`, :501 `Failed`, :517 `ProgramName` in json.byn) and
+// the golden harness's compilation (DiagTests.cs:20-26). Plain style only: no colour, and the symbols are
+// `Symbols.Unicode`, or `Symbols.Ascii` with `--ascii` (Q646).
+//
+//     bayan-check [--ascii] check [--all] [--spans] <path>   as `bayan check <path>`; `--spans` also prints
+//                                                              a `span out of range:` line per diagnostic
+//                                                              span outside its file (L020)
+//     bayan-check [--ascii] types [--all] <path>             as `bayan types <path>`
+//     bayan-check --golden [--tests] [--include-path] --package <dir> <file>
+//                                    `<file>` compiled alone with `<dir>` as package root, as `DiagTests`
+//                                    does, and its diagnostics rendered uncapped to stdout; exit 0
+//
+// Paths are absolute (R1): Bayan has no current directory (Q571).
 
 import lexer
 import parser
 
-i32 main() => 0
+const exitOk: i32 = 0
+const exitFailure: i32 = 1
+const exitUsage: i32 = 2
+
+/// CliApp.cs:288 `ErrorLimit`.
+const errorLimit: i64 = 20
+
+/// C# `int.MaxValue` as `RenderAll`'s uncapped limit.
+const noLimit: i64 = 2147483647
+
+/// The `Symbols` members the CLI prints (Style.cs:59-60).
+struct T26Symbols {
+    string dot
+    string cross
+    string ellipsis
+}
+
+/// The `BuildOptions` subset `check` and `types` read (CliApp.cs:146).
+struct T26Options {
+    string path
+    bool all = false
+    bool spans = false
+}
+
+/// A reported diagnostic as `Failed` reads it: its sort key (path, start), code and severity.
+struct T26Reported {
+    string path
+    i64 start
+    string code
+    bool isWarning
+}
+
+T26Symbols t26Symbols(bool ascii) =>
+    ascii ? T26Symbols { dot: "*", cross: "x", ellipsis: "..." } : T26Symbols { dot: "◆", cross: "✗", ellipsis: "…" }
+
+i32 usage() {
+    Io.stderr.write("usage: bayan-check [--ascii] check|types [--all] [--spans] <path> | --golden [--tests] [--include-path] --package <dir> <file>\n")
+    return exitUsage
+}
+
+/// The C# `File.Exists`: `path` reads and is not a directory.
+bool t26FileExists(string path) {
+    if t11DirectoryExists(path) { return false }
+    let _ = Io.readFile(path) catch return false
+    return true
+}
+
+/// CliApp.cs:148 `ParseBuildOptions` (`allowOutput: false`), the `--all` subset (Q646); null after reporting.
+T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) {
+    var path: string? = null
+    var all = false
+    var spans = false
+    for a in args {
+        if a == "--all" {
+            all = true
+        } else if a == "--spans" && allowSpans {
+            spans = true
+        } else {
+            if path is not null || a.startsWith("-") {
+                Io.stderr.write($"bayan: unexpected argument `{a}`\n")
+                return null
+            }
+            path = a
+        }
+    }
+    // `File.Exists("package.byn")` in the current directory has no Bayan form (Q571).
+    if (path is { } p) {
+        if !t26FileExists(p) && !t11DirectoryExists(p) {
+            Io.stderr.write($"bayan: not found: {p}\n")
+            return null
+        }
+        return T26Options { path: p, all: all, spans: spans }
+    }
+    Io.stderr.write("bayan: expected a file or directory (or run inside a project with a `package.byn`)\n")
+    return null
+}
+
+/// A `Ctx` with nothing in it, standing for C#'s `null` `Compiled`.
+Ctx t26EmptyCtx() => Ctx {
+    files: List<SourceFile>(),
+    modules: List<Mod>(),
+    diagnostics: List<Diag>(),
+    bags: List<DiagBag>(),
+}
+
+/// CliApp.cs:245 `Compile`: a project directory (one with `package.byn`), a script (a file starting with
+/// `#!`, compiled alone) or a file or directory (the whole directory is the entry module). Prints
+/// diagnostics and adds them to `reported`; `ok` is false where C# returns null.
+Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reported> reported, through ref bool ok) {
+    ok = false
+    let manifestPath = t11Combine(o.path, by: "package.byn")
+    if t11DirectoryExists(o.path) && t26FileExists(manifestPath) {
+        let root = t11FullPath(o.path)
+        var manifest = manifestRead(t11Combine(root, by: "package.byn"))
+        t26ReportManifest(in o, by: in symbols, for: in manifest, at: t11Combine(root, by: "package.byn"), to: ref reported)
+        if manifestErrorCount(in manifest) > 0 { return t26EmptyCtx() }
+        let entry = t10EntryModule(in manifest)
+        unless t11DirectoryExists(t11Combine(t11Combine(root, by: "src"), by: entry)) {
+            let kind = manifest.kind == .lib ? "a library" : "an app"
+            Io.stderr.write($"bayan: `{manifest.name}` is {kind}, so its code goes in `src/{entry}/`, which doesn't exist\n")
+            return t26EmptyCtx()
+        }
+        var capabilities: List<string>? = null
+        if (manifest.capabilities is { } caps) { capabilities = copyStrings(in caps) }
+        let options = CompilationOptions { library: manifest.kind == .lib, capabilities: move capabilities, packageName: manifest.name }
+        var c = fromProject(root, for: entry, by: in options)
+        c.manifest = move manifest
+        t26Report(in o, by: in symbols, for: ref c, to: ref reported)
+        ok = !t11HasErrors(in c)
+        return c
+    }
+    let options = CompilationOptions {}
+    var c = fromPath(o.path, by: in options, wholeDirectory: !t26IsScript(o.path))
+    t26Report(in o, by: in symbols, for: ref c, to: ref reported)
+    ok = !t11HasErrors(in c)
+    return c
+}
+
+/// CliApp.cs:290 `Report` for the compilation's diagnostics.
+void t26Report(in T26Options o, by in T26Symbols symbols, for ref Ctx c, to ref List<T26Reported> reported) {
+    for d in c.diagnostics {
+        reported.append(T26Reported { path: pathOf(in c, for: in d), start: d.span.start, code: d.code, isWarning: d.isWarning })
+    }
+    if c.diagnostics.length == 0 { return }
+    var omitted: i64 = 0
+    let rendered = renderAll(in c, from: in c.diagnostics, by: true, until: o.all ? noLimit : errorLimit, to: ref omitted)
+    Io.stderr.write(rendered)
+    if omitted > 0 { Io.stderr.write($"{capLine(symbols.ellipsis, by: omitted)}\n") }
+}
+
+/// CliApp.cs:290 `Report` for a manifest's diagnostics. They have no file (Q565), so they render against
+/// a `Ctx` holding the manifest's text as file 0, named `package.byn` as `Manifest.Read` names it.
+void t26ReportManifest(in T26Options o, by in T26Symbols symbols, for in Manifest m, at string path, to ref List<T26Reported> reported) {
+    if m.diagnostics.length == 0 { return }
+    var c = t26EmptyCtx()
+    let text = Io.readFile(path) catch List<u8>()
+    let empty = List<u8>()
+    var p = parser.Parser.create(lexer.lex(lexer.SourceText.create("package.byn", from: move empty), by: lexer.Keywords.build()))
+    let unit = parser.parseCompilationUnit(ref p)
+    c.files.append(SourceFile { path: "package.byn", displayPath: "package.byn", text: move text, unit: move unit, imports: Map<string, i64>() })
+    for d in m.diagnostics {
+        var copy = t10CopyDiag(in d)
+        copy.file = 0
+        c.diagnostics.append(move copy)
+    }
+    t26Report(in o, by: in symbols, for: ref c, to: ref reported)
+}
+
+/// CliApp.cs:350 `IsScript`: a file whose first two bytes are `#!`.
+bool t26IsScript(string path) {
+    unless t26FileExists(path) { return false }
+    let bytes = Io.readFile(path) catch return false
+    return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
+}
+
+/// CliApp.cs:432 `Check`.
+i32 check(in List<string> args, by in T26Symbols symbols) {
+    let clock = Io.monotonicNanos()
+    let o = t26ParseBuildOptions(in args, allowSpans: true) ?? return exitUsage
+    var reported = List<T26Reported>()
+    var ok = false
+    var c = t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    if o.spans { t26CheckSpans(ref c) }
+    unless ok { return t26Failed(in reported, by: in symbols) }
+    print(checkSummary(symbols.dot, for: programName(ref c, for: o.path), by: t26Seconds(Io.monotonicNanos() - clock)))
+    return exitOk
+}
+
+/// CliApp.cs:139 `Types`.
+i32 types(in List<string> args, by in T26Symbols symbols) {
+    let o = t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
+    var reported = List<T26Reported>()
+    var ok = false
+    var c = t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return exitFailure }
+    Io.stdout.write(typedDump(ref c))
+    return exitOk
+}
+
+/// CliApp.cs:495 `Seconds`: `{0}s` with two decimals (`0.00` rounds half away from zero).
+string t26Seconds(i64 nanos) {
+    let hundredths = (nanos + 5000000) / 10000000
+    let rest = hundredths % 100
+    return rest < 10 ? $"{hundredths / 100}.0{rest}s" : $"{hundredths / 100}.{rest}s"
+}
+
+/// CliApp.cs:501 `Failed`: the footer after a failed compile; nothing when no error caused the failure.
+/// The first error is the first of `DiagnosticRenderer.Sort` (path ordinal, then start; ties keep order).
+i32 t26Failed(in List<T26Reported> reported, by in T26Symbols symbols) {
+    var first: i64 = -1
+    var errors: i64 = 0
+    var warnings: i64 = 0
+    for i in 0..reported.length {
+        if reported[i].isWarning {
+            warnings += 1
+            continue
+        }
+        errors += 1
+        if first < 0 || pathLess(reported[i].path, by: reported[first].path) ||
+            (reported[i].path == reported[first].path && reported[i].start < reported[first].start) {
+            first = i
+        }
+    }
+    if first < 0 { return exitFailure }
+    Io.stderr.write("\n")
+    Io.stderr.write($"{buildFailed(symbols.cross, by: errors, as: warnings)}\n")
+    Io.stderr.write($"{buildExplain(reported[first].code)}\n")
+    return exitFailure
+}
+
+/// L020's check (Bayan only): a `span out of range:` line for each diagnostic, related or fix span that
+/// does not lie within its file.
+void t26CheckSpans(ref Ctx c) {
+    for d in c.diagnostics {
+        if d.file < 0 { continue }
+        let size = c.files[d.file].text.length
+        let path = c.files[d.file].displayPath
+        t26CheckSpan(d.span, until: size, for: d.code, at: path)
+        for r in d.related { t26CheckSpan(r.span, until: size, for: d.code, at: path) }
+        if d.hasFix { t26CheckSpan(d.fixSpan, until: size, for: d.code, at: path) }
+    }
+}
+
+void t26CheckSpan(TextSpan span, until i64 size, for string code, at string path) {
+    if span.start >= 0 && span.length >= 0 && span.end <= size { return }
+    print($"span out of range: {code} {path} {span.start}..{span.end} (size {size})")
+}
+
+/// DiagTests.cs:20-26: `<file>` compiled alone with `<dir>` as root, tests included with `--tests`, the
+/// capabilities and name of `<dir>/package.byn` when there is one, rendered by `RenderAll` uncapped.
+i32 golden(in List<string> args) {
+    var tests = false
+    var includePath = false
+    var dir: string? = null
+    var file: string? = null
+    var i: i64 = 0
+    while i < args.length {
+        let a = args[i]
+        if a == "--tests" {
+            tests = true
+        } else if a == "--include-path" {
+            includePath = true
+        } else if a == "--package" && i + 1 < args.length {
+            i += 1
+            dir = args[i]
+        } else if file is null && !a.startsWith("-") {
+            file = a
+        } else {
+            return usage()
+        }
+        i += 1
+    }
+    let root = dir ?? return usage()
+    let path = file ?? return usage()
+    var capabilities: List<string>? = null
+    var packageName: string? = null
+    let manifestPath = t11Combine(root, by: "package.byn")
+    if t26FileExists(manifestPath) {
+        let m = manifestRead(manifestPath)
+        if (m.capabilities is { } caps) { capabilities = copyStrings(in caps) }
+        packageName = m.name
+    }
+    let options = CompilationOptions { includeTests: tests, capabilities: move capabilities, packageName: packageName }
+    // `Golden.Load` names the source by its file name.
+    var sources = List<lexer.SourceText>()
+    sources.append(lexer.SourceText.create(t26FileName(path), from: t11ReadAllBytes(path)))
+    var c = create(from: move sources, at: root, by: in options)
+    var omitted: i64 = 0
+    Io.stdout.write(renderAll(in c, from: in c.diagnostics, by: includePath, until: noLimit, to: ref omitted))
+    return exitOk
+}
+
+i32 main(ReadOnlySpan<string> args) {
+    // CliApp.cs:300 `TakeGlobalOptions`: `--ascii` anywhere before the command's arguments.
+    var ascii = false
+    var rest = List<string>()
+    for a in args {
+        if a == "--ascii" {
+            ascii = true
+        } else {
+            rest.append(a)
+        }
+    }
+    if rest.length == 0 { return usage() }
+    let symbols = t26Symbols(ascii)
+    let command = rest[0]
+    rest.remove(at: 0)
+    if command == "check" { return check(in rest, by: in symbols) }
+    if command == "types" { return types(in rest, by: in symbols) }
+    if command == "--golden" { return golden(in rest) }
+    return usage()
+}

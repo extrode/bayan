@@ -1,16 +1,62 @@
-// T26: CliApp's JSON output.
+// T26: the CLI's lines around the diagnostics (Messages.cs:128-139) and `ProgramName` (CliApp.cs:517).
+// Each message is its `Messages.cs` format with the arguments in place; `mark` is the style's symbol
+// (`Symbols.Ellipsis`, `Cross` or `Dot`).
 
-// stub: T26 ports Messages.cs:128 DiagCapped
-string capLine(string mark, by i64 omitted) => ""
+/// Messages.cs:128 `DiagCapped`: `{0} and {1} more errors (use --all to show them)`.
+string capLine(string mark, by i64 omitted) => $"{mark} and {omitted} more errors (use --all to show them)"
 
-// stub: T26 ports Messages.cs:134 BuildFailed
-string buildFailed(string mark, by i64 errors, as i64 warnings) => ""
+/// Messages.cs:134 `BuildFailed`: `{0} build failed: {1}, {2}`, the counts from `ErrorsOne`/`ErrorsMany`
+/// (`{0} error`/`{0} errors`) and `WarningsOne`/`WarningsMany` (`{0} warning`/`{0} warnings`), as
+/// CliApp.cs:508-511 picks them.
+string buildFailed(string mark, by i64 errors, as i64 warnings) {
+    let e = errors == 1 ? $"{errors} error" : $"{errors} errors"
+    let w = warnings == 1 ? $"{warnings} warning" : $"{warnings} warnings"
+    return $"{mark} build failed: {e}, {w}"
+}
 
-// stub: T26 ports Messages.cs:139 BuildExplain
-string buildExplain(string code) => ""
+/// Messages.cs:139 `BuildExplain`: `  explain: bayan explain {0}`.
+string buildExplain(string code) => $"  explain: bayan explain {code}"
 
-// stub: T26 ports Messages.cs:133 CheckSummary
-string checkSummary(string mark, for string program, by string seconds) => ""
+/// Messages.cs:133 `CheckSummary`: `{0} checked {1} in {2}`; `seconds` is `Messages.Seconds` (`{0}s`).
+string checkSummary(string mark, for string program, by string seconds) => $"{mark} checked {program} in {seconds}"
 
-// stub: T26 ports CliApp.cs:517 ProgramName
-string programName(ref Ctx c, for string path) => ""
+/// CliApp.cs:517 `ProgramName`: a project's short name, else the file's (a `main.byn` is named after its
+/// directory) or the directory's.
+string programName(ref Ctx c, for string path) {
+    if (c.manifest is { } m) { return t10ShortName(in m) }
+    let full = t11FullPath(path)
+    var name = t11DirectoryExists(full) ? t26FileName(t26TrimEndSlash(full)) : t26FileNameWithoutExtension(full)
+    if name == "main" && !t11DirectoryExists(full) { name = t26FileName(t11DirectoryName(full)) }
+    return name
+}
+
+/// The C# `Path.GetFileName` of a `/` path: everything after the last `/`.
+string t26FileName(string path) {
+    var start: i64 = 0
+    var i: i64 = 0
+    for b in path.bytes {
+        if b == 0x2F { start = i + 1 }
+        i += 1
+    }
+    return path[start..path.length]
+}
+
+/// The C# `Path.GetFileNameWithoutExtension`: the file name up to its last `.`.
+string t26FileNameWithoutExtension(string path) {
+    let name = t26FileName(path)
+    var dot: i64 = -1
+    var i: i64 = 0
+    for b in name.bytes {
+        if b == 0x2E { dot = i }
+        i += 1
+    }
+    if dot < 0 { return name }
+    return name[0..dot]
+}
+
+/// The C# `TrimEnd(Path.DirectorySeparatorChar)`: `path` without its trailing `/`s.
+string t26TrimEndSlash(string path) {
+    var end = path.length
+    while end > 0 && path.bytes[end - 1] == 0x2F { end -= 1 }
+    return path[0..end]
+}
