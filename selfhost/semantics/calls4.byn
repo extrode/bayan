@@ -36,9 +36,9 @@ bool checkExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type 
     var all = true
     var hasSome = false
     var missing = List<string>()
-    if (domain is { } keys) {
+    if (domain is { } dom) {
         hasDomain = true
-        for k in keys {
+        for k in dom {
             if !listContainsString(in covered, by: k) {
                 all = false
                 missing.append(k == t39Some ? "a value" : k)
@@ -55,7 +55,7 @@ bool checkExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type 
         for s in c.errorUnionTypes[typeIndex(unwrapped)].sets { sets.append(s) }
         for set in sets {
             var keys = List<string>()
-            for v in c.errorSets[set].variants { keys.append(t39VariantKey(ref c, for: v, as: type)) }
+            for v in copyIds(in c.errorSets[set].variants) { keys.append(t39VariantKey(ref c, for: v, as: type)) }
             var every = true
             for k in keys {
                 if !listContainsString(in missing, by: k) { every = false }
@@ -81,7 +81,7 @@ bool checkExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type 
         for s in c.errorUnionTypes[typeIndex(unwrapped)].sets { sets.append(s) }
         var names: Map<string, string> = []
         for s in sets {
-            for v in c.errorSets[s].variants {
+            for v in copyIds(in c.errorSets[s].variants) {
                 let key = t39VariantKey(ref c, for: v, as: type)
                 names[key] = $"{displayNameAmong(ref c, by: c.errorVariants[v].set, for: in sets)}.{c.errorVariants[v].name}"
             }
@@ -128,7 +128,7 @@ List<string>? t39Domain(ref Ctx c, for Type type) {
     }
     switch kindOf(type) {
         case .errorSet:
-            for v in c.errorSets[i].variants { keys.append(t39VariantKey(ref c, for: v, as: type)) }
+            for v in copyIds(in c.errorSets[i].variants) { keys.append(t39VariantKey(ref c, for: v, as: type)) }
             return keys
         case .enumType:
             for m in c.enums[i].members { keys.append($".{c.enumMembers[m].name}") }
@@ -140,7 +140,7 @@ List<string>? t39Domain(ref Ctx c, for Type type) {
             if c.errorUnionTypes[i].sets.length == 0 { return null }
             var seen = List<i64>()
             for s in c.errorUnionTypes[i].sets {
-                for v in c.errorSets[s].variants {
+                for v in copyIds(in c.errorSets[s].variants) {
                     if listContains(in c.errorUnionTypes[i].excluded, by: v) || listContains(in seen, by: v) { continue }
                     seen.append(v)
                 }
@@ -336,7 +336,7 @@ BStmt bindAssign(ref Binder b, through ref Ctx c, for in parser.AssignStmt a) {
         let converted = convert(ref b, through: ref c, for: assigned, to: targetType, at: valueSpan, constrains: !pending)
         return addAssign(ref c, from: BAssign { span: a.span, target: target, value: converted })
     }
-    let bop = op ?? .add
+    let bop = op
     if bop == .coalesce {
         if kindOf(targetType) != .optional {
             report(ref b, through: ref c, for: .coalesceNotOptional, at: targetSpan, by: (typeDisplay(ref c, by: targetType), "", "", "", ""))
@@ -429,15 +429,15 @@ string? t39Invariant(ref Ctx c, for StructId s) {
     let d = c.structs[s].declIndex
     switch c.files[file].unit.members[d] {
         case .structDecl(let n):
-            var requires = n.value.rules.length > 0
+            var hasRequires = n.value.rules.length > 0
             for m in n.value.members {
                 switch m {
                     case .fieldDecl(let f):
-                        if f.value.requiresKeyword.length > 0 { requires = true }
+                        if f.value.requiresKeyword.length > 0 { hasRequires = true }
                     default: {}
                 }
             }
-            if requires { return "has `requires`" }
+            if hasRequires { return "has `requires`" }
             if n.value.states.length > 0 { return "has states" }
             if listContainsString(in c.structs[s].attributes, by: "sealed") { return "is `@sealed`" }
             return null
@@ -582,7 +582,7 @@ bool checkWritable(ref Binder b, through ref Ctx c, for BExpr target, at TextSpa
     }
 }
 
-/// The local a write lands in, even when the write is rejected (`x.f`, `x[i]`, `x.t.0`); -1 for none.
+/// The local a write lands in, even when the write is rejected (`x.f`, `x[i]`, a tuple element of `x`); -1 for none.
 LocalId writtenLocal(ref Ctx c, for BExpr e) {
     let i = boundIndex(e)
     switch boundKind(e) {
