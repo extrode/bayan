@@ -14,7 +14,7 @@ namespace Bayan.Tests;
 
 /// <summary>
 /// <c>selfhost/semantics</c>, the self-hosted checker: T1's skeleton checks, and T26's modes
-/// (<c>check</c>, <c>types</c>, <c>--golden</c>) against the C# <see cref="CliApp"/>, <see cref="Compilation"/>
+/// (<c>bayan-check &lt;path&gt;</c>, <c>--types</c>, <c>--golden</c>) against the C# <see cref="CliApp"/>, <see cref="Compilation"/>
 /// and <see cref="Messages"/>. Both sides use the Unicode symbols: <c>TestSetup</c> sets a UTF-8 <c>LANG</c>,
 /// and the self-hosted renderer has no ASCII style yet (Q646).
 /// </summary>
@@ -61,13 +61,13 @@ public sealed class SelfhostSemanticsTests
         Assert.True(File.Exists(Built));
     }
 
-    /// <summary>The stub with no command: <c>bayan</c>'s usage exit, nothing on stdout, a usage line on stderr.</summary>
+    /// <summary>No arguments is <c>bayan check</c> with no path (R1); a mode flag without its operand is usage.</summary>
     [Fact]
-    public void NoCommandIsUsage()
+    public void NoPathAndBadMode()
     {
-        var expected = CliApp.Run([], new StringWriter(), new StringWriter());
-        var (exit, output, error) = SelfhostParserTests.Run(Built);
-        Assert.Equal(expected, exit);
+        SameAsCli("no path", "check");
+        var (exit, output, error) = SelfhostParserTests.Run(Built, "--many");
+        Assert.Equal(CliApp.ExitUsage, exit);
         Assert.Equal("", output);
         Assert.StartsWith("usage: bayan-check", error);
     }
@@ -205,8 +205,32 @@ public sealed class SelfhostSemanticsTests
         }
     }
 
-    /// <summary><c>bayan-check args</c> against <c>CliApp.Run(args)</c>: exit, stderr and stdout.</summary>
-    internal static string SameAsCli(string input, params string[] args) => SameAsCli(input, args, args);
+    /// <summary><c>bayan-check</c> with <see cref="SelfArgs"/> of <paramref name="cli"/> against <c>CliApp.Run(cli)</c>: exit, stderr and stdout.</summary>
+    internal static string SameAsCli(string input, params string[] cli) => SameAsCli(input, cli, SelfArgs(cli));
+
+    /// <summary>
+    /// <c>bayan</c>'s arguments as <c>bayan-check</c> takes them: no <c>check</c> word (R1), and <c>types</c> as
+    /// <c>--types</c> (R2). The command is the first argument that is neither a global option nor its value.
+    /// </summary>
+    private static string[] SelfArgs(string[] cli)
+    {
+        for (var i = 0; i < cli.Length; i++)
+        {
+            if (cli[i] == "--color")
+            {
+                i++;
+                continue;
+            }
+            if (cli[i].StartsWith('-')) continue;
+            return cli[i] switch
+            {
+                "check" => [.. cli[..i], .. cli[(i + 1)..]],
+                "types" => [.. cli[..i], "--types", .. cli[(i + 1)..]],
+                _ => cli,
+            };
+        }
+        return cli;
+    }
 
     /// <summary><c>bayan-check self</c> against <c>CliApp.Run(cli)</c>, for a Bayan-only flag such as <c>--spans</c>.</summary>
     internal static string SameAsCli(string input, string[] cli, string[] self)
@@ -229,7 +253,7 @@ public sealed class SelfhostSemanticsTests
         var dir = Fixture("clean", ("hello.byn", Hello));
         SameAsCli("clean", "check", Path.Combine(dir, "hello.byn"));
         // `--spans` is bayan-check's alone; every span in range prints nothing more than `bayan check`.
-        SameAsCli("clean --spans", ["check", Path.Combine(dir, "hello.byn")], ["check", "--spans", Path.Combine(dir, "hello.byn")]);
+        SameAsCli("clean --spans", ["check", Path.Combine(dir, "hello.byn")], ["--spans", Path.Combine(dir, "hello.byn")]);
     }
 
     /// <summary>A <c>main.byn</c> is named after its directory, and a directory after itself.</summary>
@@ -292,6 +316,54 @@ public sealed class SelfhostSemanticsTests
         SameAsCli("types mode", "types", "--mode", "debug", file);
     }
 
+    /// <summary>
+    /// <c>--diagnostics json|text</c> (CliApp.cs:172): JSON lines with a fix, a label, a non-ASCII column, no cap
+    /// and a manifest's diagnostics, no footer and no summary; text as the default; a bad or missing format.
+    /// </summary>
+    [Fact]
+    public void CheckDiagnosticsFormats()
+    {
+        var warn = Path.Combine(Fixture("json-warn", ("warn.byn", "void main() {\n    var x = 1\n    print($\"{x}\")\n}\n")), "warn.byn");
+        var wrong = Path.Combine(Fixture("json-wrong", ("wrong.byn", "void main() {\n    let n: i32 = \"\u00e9\u00e9\"\n    print($\"{n}\")\n}\n")), "wrong.byn");
+        var many = Path.Combine(Fixture("json-many", ("many.byn", string.Concat(Enumerable.Range(0, 25).Select(i => $"void f{i}() {{ let x = }}\n")) + Hello)), "many.byn");
+        var manifest = Fixture("json-manifest", ("package.byn", "Package {\n    name \"local/shop\",\n}\n"), ("src/app/main.byn", Hello));
+        foreach (var format in new[] { "json", "text" })
+        {
+            SameAsCli($"{format} warn", "check", "--diagnostics", format, warn);
+            SameAsCli($"{format} wrong", "check", "--diagnostics", format, wrong);
+            SameAsCli($"{format} many", "check", "--diagnostics", format, many);
+            SameAsCli($"{format} manifest", "check", "--diagnostics", format, manifest);
+            SameAsCli($"{format} types", "types", "--diagnostics", format, wrong);
+        }
+        SameAsCli("unknown format", "check", "--diagnostics", "xml", warn);
+        SameAsCli("no format", "check", warn, "--diagnostics");
+    }
+
+    /// <summary>CliApp.cs:304 <c>TakeGlobalOptions</c>: <c>--color</c> in its forms, a bad value, and <c>--ascii</c> kept after <c>--</c>.</summary>
+    [Fact]
+    public void CheckGlobalOptions()
+    {
+        var file = Path.Combine(Fixture("global", ("hello.byn", Hello)), "hello.byn");
+        var broken = Path.Combine(Fixture("global-broken", ("broken.byn", "void main( {\n")), "broken.byn");
+        SameAsCli("color never", "--color", "never", "check", file);
+        SameAsCli("color=auto", "--color=auto", "check", broken);
+        SameAsCli("color after the path", "check", broken, "--color", "never");
+        SameAsCli("unknown color", "--color", "pink", "check", file);
+        SameAsCli("color without a value", "check", file, "--color");
+        SameAsCli("ascii summary", "--ascii", "check", file);
+        SameAsCli("ascii after --", "check", broken, "--", "--ascii");
+    }
+
+    /// <summary>CliApp.cs:274 and :351: a <c>#!</c> file is compiled alone, any other file with its whole directory.</summary>
+    [Fact]
+    public void CheckScriptAlone()
+    {
+        var dir = Fixture("script", ("tool.byn", "#!/usr/bin/env bayan\nprint(\"hi\")\n"), ("other.byn", "void f() {\n    let x: i32 = \"s\"\n}\n"));
+        SameAsCli("script", "check", Path.Combine(dir, "tool.byn"));
+        SameAsCli("not a script", "check", Path.Combine(dir, "other.byn"));
+        SameAsCli("types script", "types", Path.Combine(dir, "tool.byn"));
+    }
+
     /// <summary><c>--codes</c> against <c>DiagnosticCodes</c>: the semantic ranges, the three BYN1 codes the checker reports, and the three second message forms after their codes (Q527).</summary>
     [Fact]
     public void CodesMatchDiagnosticCodes()
@@ -348,6 +420,62 @@ public sealed class SelfhostSemanticsTests
         Assert.True(json.RootElement.GetProperty("functions").GetArrayLength() > 1);
     }
 
+    /// <summary>TypedDump.cs:92 <c>KindOf</c>: a <c>var</c>, a local <c>const</c>, a <c>for</c> variable, a pattern and a <c>catch</c> binding (<c>defer failing (e)</c>; <c>catch (e)</c> is BYN1025).</summary>
+    [Fact]
+    public void TypesBindingKinds()
+    {
+        var source = """
+            union error ParseError {
+                empty
+            }
+
+            i64 digit(string s) fails ParseError {
+                defer failing (e) print($"failed: {e}")
+                fail .empty if s.isEmpty
+                return 1
+            }
+
+            i64 total(List<i64> xs) {
+                const k = 2
+                var sum: i64 = 0
+                for x in xs { sum += x * k }
+                let first: i64? = xs.length > 0 ? xs[0] : null
+                if (first is { } f) { sum += f }
+                let d = digit("") catch 0
+                return sum + d
+            }
+
+            void main() {
+                var xs = List<i64>()
+                xs.append(1)
+                print($"{total(xs)}")
+            }
+
+            """;
+        var dir = Fixture("types-kinds", ("kinds.byn", source));
+        var output = SameAsCli("kinds", "types", Path.Combine(dir, "kinds.byn"));
+        foreach (var kind in new[] { "var", "const", "for", "pattern", "catch" }) Assert.Contains($"\"kind\": \"{kind}\"", output);
+    }
+
+    /// <summary>TypedDump.cs:29-31 across two files of one module: file order first, then a lambda before the function after it.</summary>
+    [Fact]
+    public void TypesModuleOrder()
+    {
+        var padding = string.Concat(Enumerable.Repeat("// padding so that main starts after every function of b.byn\n", 4));
+        var dir = Fixture("types-order", ("a.byn", padding + "void main() {\n    print($\"{twice(2)} {ten()}\")\n}\n"),
+            ("b.byn", "i64 twice(i64 x) {\n    let f: (i64 -> i64) = (y) => y * 2\n    return f(x)\n}\n\ni64 ten() => 10\n"));
+        SameAsCli("module order", "types", dir);
+    }
+
+    /// <summary>TypedDump.cs:89 <c>PathOf</c>: a project's files relative to its root.</summary>
+    [Fact]
+    public void TypesProjectPaths()
+    {
+        var dir = Fixture("types-project", ("package.byn", "Package {\n    name: \"local/shop\",\n    version: \"0.1.0\",\n    edition: 2027,\n    kind: .app,\n}\n"),
+            ("src/app/main.byn", "void main() {\n    print($\"{one()}\")\n}\n"), ("src/app/util.byn", "i64 one() => 1\n"));
+        SameAsCli("project", "types", dir);
+    }
+
     private const int TypedDumpVersion = Bayan.Semantics.Binding.TypedDump.Version;
 
     /// <summary>A typed case in a directory of its own, so the CLI checks it alone.</summary>
@@ -394,6 +522,35 @@ public sealed class SelfhostSemanticsTests
     [InlineData("diag/capability-exceeded/main.byn")]
     public void GoldenAgrees(string name) => GoldenSame(name);
 
+    /// <summary>
+    /// Plan :130's CLI comparison: the diag case copied to <c>tmp/t26-tests/cli/&lt;slug&gt;/</c> (a directory case
+    /// whole), then <c>CliApp.Run(["check", copy])</c> against <c>bayan-check copy</c>, stderr and exit.
+    /// </summary>
+    internal static void CheckSame(string name)
+    {
+        var source = Path.Combine(Golden.CasesRoot, name);
+        var caseDir = Path.GetDirectoryName(source)!;
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t26-tests", "cli", name.Replace('/', '_'));
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        if (Path.GetFileName(caseDir) == "diag") File.Copy(source, Path.Combine(dir, Path.GetFileName(source)));
+        else
+        {
+            foreach (var file in Directory.EnumerateFiles(caseDir, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(dir, Path.GetRelativePath(caseDir, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
+        }
+        var copy = Path.Combine(dir, Path.GetFileName(source));
+        var stderr = new StringWriter();
+        var exit = CliApp.Run(["check", copy], new StringWriter(), stderr);
+        var (actualExit, _, actualErr) = SelfhostParserTests.Run(Built, copy);
+        AssertSameLines(name, "stderr", stderr.ToString(), actualErr);
+        Assert.True(exit == actualExit, $"{name}: exit {actualExit}, expected {exit}");
+    }
+
     /// <summary><see cref="AssertSameLines"/> names the input, the stream and the first differing line.</summary>
     [Fact]
     public void ComparisonNamesInputAndLine()
@@ -422,4 +579,8 @@ public sealed class SelfhostSemanticsParityTests
     [Theory(Skip = "T28 enables diag parity: the binder, regions (T25/T37) and stand-ins are not all real yet, Q649")]
     [MemberData(nameof(DiagCases))]
     public void GoldenParity(string name) => SelfhostSemanticsTests.GoldenSame(name);
+
+    [Theory(Skip = "T28 enables check parity: the binder, regions (T25/T37) and stand-ins are not all real yet, Q649")]
+    [MemberData(nameof(DiagCases))]
+    public void CheckParity(string name) => SelfhostSemanticsTests.CheckSame(name);
 }

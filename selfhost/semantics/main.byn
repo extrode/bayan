@@ -1,12 +1,14 @@
 // bayan-check: the self-hosted checker. Ports the `check` and `types` subset of `CliApp` (CliApp.cs:139
-// `Types`, :245 `Compile`, :290 `Report`, :432 `Check`, :501 `Failed`, :517 `ProgramName` in json.byn) and
-// the golden harness's compilation (DiagTests.cs:20-26). Plain style only: no colour, and the symbols are
-// `Symbols.Unicode`, or `Symbols.Ascii` with `--ascii` (Q646).
+// `Types`, :149 `ParseBuildOptions`, :248 `Compile`, :287 `Report`, :304 `TakeGlobalOptions`, :351 `IsScript`,
+// :430 `Check`, :502 `Failed`, :517 `ProgramName` in json.byn), `DiagnosticJson` (json.byn) and the golden
+// harness's compilation (DiagTests.cs:20-26). Plain style only: `--color` is checked but paints nothing, and
+// the symbols are `Symbols.Unicode`, or `Symbols.Ascii` with `--ascii` (Q646).
 //
-//     bayan-check [--ascii] check [--all] [--spans] <path>   as `bayan check <path>`; `--spans` also prints
-//                                                              a `span out of range:` line per diagnostic
-//                                                              span outside its file (L020)
-//     bayan-check [--ascii] types [--all] <path>             as `bayan types <path>`
+//     bayan-check [--ascii] [--color <when>] [<check options>] [--spans] <path>
+//                                    as `bayan check <path>` (R1); `--spans` also prints a
+//                                    `span out of range:` line per diagnostic span outside its file (L020)
+//     bayan-check [--ascii] [--color <when>] --types [<check options>] <path>
+//                                    as `bayan types <path>` (R2)
 //     bayan-check --golden [--tests] [--include-path] [--spans] --package <dir> <file>
 //                                    `<file>` compiled alone with `<dir>` as package root, as `DiagTests`
 //                                    does, and its diagnostics rendered uncapped to stdout; exit 0
@@ -16,7 +18,9 @@
 //                                    `parse … check …` on stderr (R7)
 //     bayan-check --codes            `code\tmessage` for every `SemaCode`, in `DiagnosticCodes.cs` order
 //
-// Paths are absolute (R1): Bayan has no current directory (Q571).
+// `<check options>` are `ParseBuildOptions`'s with `allowOutput: false`: `--all`, `--mode <m>`,
+// `--diagnostics json|text` and `-- <ignored>`. A mode flag is the first argument after the global
+// options. Paths are absolute (R1): Bayan has no current directory (Q571).
 
 import lexer
 import parser
@@ -25,7 +29,7 @@ const exitOk: i32 = 0
 const exitFailure: i32 = 1
 const exitUsage: i32 = 2
 
-/// CliApp.cs:288 `ErrorLimit`.
+/// CliApp.cs:285 `ErrorLimit`.
 const errorLimit: i64 = 20
 
 /// C# `int.MaxValue` as `RenderAll`'s uncapped limit.
@@ -38,9 +42,10 @@ struct T26Symbols {
     string ellipsis
 }
 
-/// The `BuildOptions` subset `check` and `types` read (CliApp.cs:146).
+/// The `BuildOptions` subset `check` and `types` read (CliApp.cs:147).
 struct T26Options {
     string path
+    bool json = false
     bool all = false
     bool spans = false
 }
@@ -57,7 +62,7 @@ T26Symbols t26Symbols(bool ascii) =>
     ascii ? T26Symbols { dot: "*", cross: "x", ellipsis: "..." } : T26Symbols { dot: "◆", cross: "✗", ellipsis: "…" }
 
 i32 usage() {
-    Io.stderr.write("usage: bayan-check [--ascii] check|types [--all] [--spans] <path> | --golden [--tests] [--include-path] [--spans] --package <dir> <file> | --many <dir> | --time <path> | --codes\n")
+    Io.stderr.write("usage: bayan-check [--ascii] [--color <when>] [--types] [--all] [--mode <m>] [--diagnostics json|text] [--spans] <path> | --golden [--tests] [--include-path] [--spans] --package <dir> <file> | --many <dir> | --time <path> | --codes\n")
     return exitUsage
 }
 
@@ -68,10 +73,11 @@ bool t26FileExists(string path) {
     return true
 }
 
-/// CliApp.cs:148 `ParseBuildOptions` (`allowOutput: false`): `--`, `--mode`, `--all`; not `--diagnostics`
-/// (Q648). Null after reporting.
+/// CliApp.cs:149 `ParseBuildOptions` (`allowOutput: false`): `--`, `--mode`, `--diagnostics`, `--all`, and
+/// bayan-check's `--spans`. Null after reporting.
 T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) {
     var path: string? = null
+    var json = false
     var all = false
     var spans = false
     var i: i64 = 0
@@ -87,6 +93,17 @@ T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) {
             i += 1
             if m != "debug" && m != "safe" && m != "fast" {
                 Io.stderr.write($"bayan: unknown mode `{m}` (expected debug, safe or fast)\n")
+                return null
+            }
+        } else if a == "--diagnostics" && i < args.length {
+            let format = args[i]
+            i += 1
+            if format == "json" {
+                json = true
+            } else if format == "text" {
+                json = false
+            } else {
+                Io.stderr.write($"bayan: unknown diagnostics format `{format}` (expected json or text)\n")
                 return null
             }
         } else if a == "--all" {
@@ -107,7 +124,7 @@ T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) {
             Io.stderr.write($"bayan: not found: {p}\n")
             return null
         }
-        return T26Options { path: p, all: all, spans: spans }
+        return T26Options { path: p, json: json, all: all, spans: spans }
     }
     Io.stderr.write("bayan: expected a file or directory (or run inside a project with a `package.byn`)\n")
     return null
@@ -121,7 +138,7 @@ Ctx t26EmptyCtx() => Ctx {
     bags: List<DiagBag>(),
 }
 
-/// CliApp.cs:245 `Compile`: a project directory (one with `package.byn`), a script (a file starting with
+/// CliApp.cs:248 `Compile`: a project directory (one with `package.byn`), a script (a file starting with
 /// `#!`, compiled alone) or a file or directory (the whole directory is the entry module). Prints
 /// diagnostics and adds them to `reported`; `ok` is false where C# returns null.
 Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reported> reported, through ref bool ok) {
@@ -154,19 +171,23 @@ Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reporte
     return c
 }
 
-/// CliApp.cs:290 `Report` for the compilation's diagnostics.
+/// CliApp.cs:287 `Report` for the compilation's diagnostics.
 void t26Report(in T26Options o, by in T26Symbols symbols, for ref Ctx c, to ref List<T26Reported> reported) {
     for d in c.diagnostics {
         reported.append(T26Reported { path: pathOf(in c, for: in d), start: d.span.start, code: d.code, isWarning: d.isWarning })
     }
     if c.diagnostics.length == 0 { return }
+    if o.json {
+        Io.stderr.write(t26DiagnosticJsonAll(in c, from: in c.diagnostics))
+        return
+    }
     var omitted: i64 = 0
     let rendered = renderAll(in c, from: in c.diagnostics, by: true, until: o.all ? noLimit : errorLimit, to: ref omitted)
     Io.stderr.write(rendered)
     if omitted > 0 { Io.stderr.write($"{capLine(symbols.ellipsis, by: omitted)}\n") }
 }
 
-/// CliApp.cs:290 `Report` for a manifest's diagnostics. They have no file (Q565), so they render against
+/// CliApp.cs:287 `Report` for a manifest's diagnostics. They have no file (Q565), so they render against
 /// a `Ctx` holding the manifest's text as file 0, named `package.byn` as `Manifest.Read` names it.
 void t26ReportManifest(in T26Options o, by in T26Symbols symbols, for in Manifest m, at string path, to ref List<T26Reported> reported) {
     if m.diagnostics.length == 0 { return }
@@ -184,24 +205,11 @@ void t26ReportManifest(in T26Options o, by in T26Symbols symbols, for in Manifes
     t26Report(in o, by: in symbols, for: ref c, to: ref reported)
 }
 
-/// CliApp.cs:350 `IsScript`: a file whose first two bytes are `#!`.
+/// CliApp.cs:351 `IsScript`: a file whose first two bytes are `#!`.
 bool t26IsScript(string path) {
     unless t26FileExists(path) { return false }
     let bytes = Io.readFile(path) catch return false
     return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
-}
-
-/// CliApp.cs:432 `Check`.
-i32 check(in List<string> args, by in T26Symbols symbols) {
-    let clock = Io.monotonicNanos()
-    let o = t26ParseBuildOptions(in args, allowSpans: true) ?? return exitUsage
-    var reported = List<T26Reported>()
-    var ok = false
-    var c = t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
-    if o.spans { t26CheckSpans(ref c) }
-    unless ok { return t26Failed(in reported, by: in symbols) }
-    print(checkSummary(symbols.dot, for: programName(ref c, for: o.path), by: t26Seconds(Io.monotonicNanos() - clock)))
-    return exitOk
 }
 
 /// CliApp.cs:139 `Types`.
@@ -215,6 +223,19 @@ i32 types(in List<string> args, by in T26Symbols symbols) {
     return exitOk
 }
 
+/// CliApp.cs:430 `Check`.
+i32 check(in List<string> args, by in T26Symbols symbols) {
+    let clock = Io.monotonicNanos()
+    let o = t26ParseBuildOptions(in args, allowSpans: true) ?? return exitUsage
+    var reported = List<T26Reported>()
+    var ok = false
+    var c = t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    if o.spans { t26CheckSpans(ref c) }
+    unless ok { return t26Failed(in o, from: in reported, by: in symbols) }
+    unless o.json { print(checkSummary(symbols.dot, for: programName(ref c, for: o.path), by: t26Seconds(Io.monotonicNanos() - clock))) }
+    return exitOk
+}
+
 /// CliApp.cs:495 `Seconds`: `{0}s` with two decimals (`0.00` rounds half away from zero).
 string t26Seconds(i64 nanos) {
     let hundredths = (nanos + 5000000) / 10000000
@@ -222,9 +243,11 @@ string t26Seconds(i64 nanos) {
     return rest < 10 ? $"{hundredths / 100}.0{rest}s" : $"{hundredths / 100}.{rest}s"
 }
 
-/// CliApp.cs:501 `Failed`: the footer after a failed compile; nothing when no error caused the failure.
-/// The first error is the first of `DiagnosticRenderer.Sort` (path ordinal, then start; ties keep order).
-i32 t26Failed(in List<T26Reported> reported, by in T26Symbols symbols) {
+/// CliApp.cs:502 `Failed`: the footer after a failed compile; nothing in JSON mode, or when no error caused
+/// the failure. The first error is the first of `DiagnosticRenderer.Sort` (path ordinal, then start; ties
+/// keep order).
+i32 t26Failed(in T26Options o, from in List<T26Reported> reported, by in T26Symbols symbols) {
+    if o.json { return exitFailure }
     var first: i64 = -1
     var errors: i64 = 0
     var warnings: i64 = 0
@@ -356,25 +379,50 @@ i32 printCodes() {
 }
 
 i32 main(ReadOnlySpan<string> args) {
-    // CliApp.cs:300 `TakeGlobalOptions`: `--ascii` anywhere before the command's arguments.
+    // CliApp.cs:304 `TakeGlobalOptions`: `--color` and `--ascii` come out of everything before a `--`. The
+    // arguments are `check`'s (R1), so a command is always given and the script branch never applies.
     var ascii = false
     var rest = List<string>()
-    for a in args {
+    var i: i64 = 0
+    while i < args.length {
+        let a = args[i]
+        if a == "--" {
+            for k in i..args.length { rest.append(args[k]) }
+            break
+        }
+        var value: string? = null
         if a == "--ascii" {
             ascii = true
+        } else if a == "--color" && i + 1 < args.length {
+            i += 1
+            value = args[i]
+        } else if a.startsWith("--color=") {
+            value = a["--color=".length..a.length]
+        } else if a == "--color" {
+            value = ""
         } else {
             rest.append(a)
         }
+        if (value is { } v) {
+            if v != "auto" && v != "always" && v != "never" {
+                Io.stderr.write($"bayan: unknown color setting `{v}` (expected auto, always or never)\n")
+                return exitUsage
+            }
+        }
+        i += 1
     }
-    if rest.length == 0 { return usage() }
     let symbols = t26Symbols(ascii)
-    let command = rest[0]
-    rest.remove(at: 0)
-    if command == "check" { return check(in rest, by: in symbols) }
-    if command == "types" { return types(in rest, by: in symbols) }
-    if command == "--golden" { return golden(in rest) }
-    if command == "--many" && rest.length == 1 { return many(rest[0]) }
-    if command == "--time" && rest.length == 1 { return timed(rest[0], by: in symbols) }
-    if command == "--codes" && rest.length == 0 { return printCodes() }
-    return usage()
+    let mode = rest.length > 0 ? rest[0] : ""
+    if mode == "--types" {
+        rest.remove(at: 0)
+        return types(in rest, by: in symbols)
+    }
+    if mode == "--golden" {
+        rest.remove(at: 0)
+        return golden(in rest)
+    }
+    if mode == "--many" { return rest.length == 2 ? many(rest[1]) : usage() }
+    if mode == "--time" { return rest.length == 2 ? timed(rest[1], by: in symbols) : usage() }
+    if mode == "--codes" { return rest.length == 1 ? printCodes() : usage() }
+    return check(in rest, by: in symbols)
 }

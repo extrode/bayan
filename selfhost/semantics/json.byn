@@ -1,4 +1,5 @@
-// T26: the CLI's lines around the diagnostics (Messages.cs:128-139) and `ProgramName` (CliApp.cs:517).
+// T26: the CLI's lines around the diagnostics (Messages.cs:128-139), `ProgramName` (CliApp.cs:517) and
+// `--diagnostics json` (DiagnosticJson.cs).
 // Each message is its `Messages.cs` format with the arguments in place; `mark` is the style's symbol
 // (`Symbols.Ellipsis`, `Cross` or `Dot`).
 
@@ -60,3 +61,47 @@ string t26TrimEndSlash(string path) {
     while end > 0 && path.bytes[end - 1] == 0x2F { end -= 1 }
     return path[0..end]
 }
+
+/// DiagnosticJson.cs:18 `Render`: `d` as one compact JSON object, the bytes `Utf8JsonWriter` writes with
+/// `UnsafeRelaxedJsonEscaping`. `file` is the path the renderer prints; an empty label or help is the C#
+/// `null` (Q646).
+string t26DiagnosticJson(in Ctx c, for in Diag d) {
+    var sb = StrBuf()
+    sb.append($"{{\"code\":{t26JsonString(d.code)},\"severity\":{t26JsonString(severityName(d.isWarning))}")
+    if d.file >= 0 {
+        sb.append($",\"file\":{t26JsonString(c.files[d.file].displayPath)},\"span\":")
+        t26JsonSpan(ref sb, from: in c, for: d.file, at: d.span)
+    } else {
+        sb.append(",\"file\":null,\"span\":null")
+    }
+    sb.append($",\"message\":{t26JsonString(d.message)}")
+    sb.append($",\"label\":{t26JsonOptional(d.label)},\"help\":{t26JsonOptional(d.help)},\"fixes\":[")
+    if d.hasFix && d.file >= 0 {
+        sb.append("{\"span\":")
+        t26JsonSpan(ref sb, from: in c, for: d.file, at: d.fixSpan)
+        sb.append($",\"replacement\":{t26JsonString(d.fixReplacement)}}}")
+    }
+    sb.append("]}")
+    return $"{sb.finish()}"
+}
+
+/// DiagnosticJson.cs:61 `RenderAll`: one object per line, each line ending in `\n`.
+string t26DiagnosticJsonAll(in Ctx c, from in List<Diag> diags) {
+    var sb = StrBuf()
+    for d in diags {
+        sb.append(t26DiagnosticJson(in c, for: in d))
+        sb.append("\n")
+    }
+    return $"{sb.finish()}"
+}
+
+/// DiagnosticJson.cs:68 `WriteSpan`: byte offsets and one-based line and column (diag.byn `linePosition`).
+void t26JsonSpan(ref StrBuf sb, from in Ctx c, for FileId file, at TextSpan span) {
+    let start = linePosition(c.files[file].text.span, at: span.start)
+    let end = linePosition(c.files[file].text.span, at: span.end)
+    sb.append($"{{\"start\":{span.start},\"end\":{span.end},\"line\":{start.line},\"column\":{start.column}")
+    sb.append($",\"endLine\":{end.line},\"endColumn\":{end.column}}}")
+}
+
+/// DiagnosticJson.cs:82 `WriteOptional`.
+string t26JsonOptional(string value) => value.length == 0 ? "null" : t26JsonString(value)
