@@ -142,7 +142,7 @@ public static class SelfhostSemanticsHarness
 
     private static readonly Lock CoverageLock = new();
 
-    private static readonly List<(string Dir, Bayan.Testing.CoverageMap Map, string Prefix)> CoverageBuilds = [];
+    private static readonly List<(string Dir, Bayan.Testing.CoverageMap Map, string Prefix, List<(string File, int Start, int End)> Functions)> CoverageBuilds = [];
 
     private static readonly Dictionary<string, (Stopwatch Total, double BuildSeconds)> CoverageRuns = new(StringComparer.Ordinal);
 
@@ -152,12 +152,22 @@ public static class SelfhostSemanticsHarness
     /// counters in the files it lists (as <see cref="SnapshotSkip"/> picks them). The build returned runs through
     /// <c>&lt;dir&gt;/counters/&lt;n&gt;/run</c>, a script setting the runtime's <c>BAYAN_COVERAGE</c> to this build's
     /// own counter prefix, so every run of it counts; <see cref="WriteCoverage"/> writes the report when the process exits.
+    /// The line span of every function with a body in the counted files is kept for <c>functions.json</c>.
     /// </summary>
     private static NativeBuild BuildCovered(Compilation c, IReadOnlySet<string> generated, string dir, string? files)
     {
         var clock = Stopwatch.StartNew();
         var compiled = c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>();
-        var map = Bayan.Testing.CoverageInstrumenter.Instrument(c, SnapshotSkip(compiled, generated, files, "BAYAN_COVERAGE_FILES"));
+        var skip = SnapshotSkip(compiled, generated, files, "BAYAN_COVERAGE_FILES");
+        var map = Bayan.Testing.CoverageInstrumenter.Instrument(c, skip);
+        // A function's lines run from its declaration (a lambda: its body) to the end of its body.
+        var functions = c.Modules.SelectMany(m => m.AllFunctions)
+            .Where(f => f.File is { } file && !skip.Contains(file.Source.Path) && (f.Decl?.Span ?? f.Body?.Syntax.Span) is not null)
+            .Select(f =>
+            {
+                var (source, span) = (f.File!.Source, (f.Decl?.Span ?? f.Body!.Syntax.Span));
+                return (source.Path, source.GetLinePosition(span.Start).Line, source.GetLinePosition(Math.Max(span.Start, span.Start + span.Length - 1)).Line);
+            }).ToList();
         if (OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("BAYAN_COVERAGE: the run wrapper is a POSIX shell script");
         var build = Toolchain.Build(CEmitter.Emit(Lowerer.Lower(c, coverage: map.Probes), false), BuildMode.Fast);
         if (build.ExecutablePath is not { } binary) return build;
@@ -169,6 +179,7 @@ public static class SelfhostSemanticsHarness
                 if (CoverageRuns.Count == 0) AppDomain.CurrentDomain.ProcessExit += (_, _) => { foreach (var d in CoverageRuns.Keys) WriteCoverage(d); };
                 Directory.CreateDirectory(dir);
                 File.Delete(Path.Combine(dir, "bayan-quality.json"));
+                File.Delete(Path.Combine(dir, "functions.json"));
                 foreach (var listing in Directory.EnumerateFiles(dir, "*.cov.txt", SearchOption.AllDirectories)) File.Delete(listing);
                 if (Directory.Exists(Path.Combine(dir, "counters"))) Directory.Delete(Path.Combine(dir, "counters"), recursive: true);
                 run = (Stopwatch.StartNew(), 0);
@@ -181,7 +192,7 @@ public static class SelfhostSemanticsHarness
             static string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
             File.WriteAllText(wrapper, $"#!/bin/sh\nBAYAN_COVERAGE={Quote(prefix)} exec {Quote(binary)} \"$@\"\n");
             File.SetUnixFileMode(wrapper, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            CoverageBuilds.Add((dir, map, prefix));
+            CoverageBuilds.Add((dir, map, prefix, functions));
             return build with { ExecutablePath = wrapper };
         }
     }
@@ -191,7 +202,10 @@ public static class SelfhostSemanticsHarness
     /// and a <c>&lt;file&gt;.cov.txt</c> listing per file, its path relative to the repo root, as <c>bayan test --coverage</c>
     /// writes them. The counters of every build into <paramref name="dir"/> are merged by what they count (file, line,
     /// column, kind, outcome, error path), since counter ids are per build; an unreadable counter file makes what nothing
-    /// hit unknown, as in <c>bayan test</c>.
+    /// hit unknown, as in <c>bayan test</c>. Beside them, <c>functions.json</c> (<c>{"version": 1, "files": {"&lt;path&gt;":
+    /// [{"span": [first line, last line], "lines": [covered, total], "branches": [covered, total]}, …]}}</c>) gives each
+    /// counted file's functions, a counter counting in the innermost one holding its line, so the guard can gate only the
+    /// functions a task's diff touches.
     /// </summary>
     internal static void WriteCoverage(string dir)
     {
@@ -203,7 +217,7 @@ public static class SelfhostSemanticsHarness
             var counters = new List<Bayan.Testing.CoverageCounter>();
             var hits = new Dictionary<int, ulong>();
             var unknown = false;
-            foreach (var (_, map, prefix) in builds)
+            foreach (var (_, map, prefix, _) in builds)
             {
                 var counts = new Dictionary<int, ulong>();
                 foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(prefix)!, Path.GetFileName(prefix) + ".*"))
@@ -223,6 +237,24 @@ public static class SelfhostSemanticsHarness
             var report = Bayan.Testing.QualityReport.Coverage("dotnet test (BAYAN_COVERAGE)", new Bayan.Testing.CoverageMap(counters, builds[0].Map.Probes),
                 hits, unknown, buildSeconds, total.Elapsed.TotalSeconds);
             File.WriteAllText(Path.Combine(dir, "bayan-quality.json"), report.Json());
+            var spans = new JsonObject();
+            foreach (var g in builds.SelectMany(b => b.Functions).Distinct().GroupBy(f => f.File).OrderBy(g => g.Key, StringComparer.Ordinal))
+            {
+                var fns = g.OrderBy(f => f.Start).ThenBy(f => f.End).ToList();
+                var tally = fns.ToDictionary(f => f, _ => new int[4]);  // covered lines, lines, covered branches, branches
+                (string, int, int)? Innermost(int line) => fns.Where(f => f.Start <= line && line <= f.End).Select(f => ((string, int, int)?)f).MinBy(f => f!.Value.Item3 - f.Value.Item2);
+                foreach (var byLine in counters.Where(k => k.File == g.Key && k.Kind == Bayan.Testing.CoverageInstrumenter.Line).GroupBy(k => k.Line))
+                    if (Innermost(byLine.Key) is { } fn) { tally[fn][1]++; if (byLine.All(k => hits.ContainsKey(k.Id))) tally[fn][0]++; }
+                foreach (var k in counters.Where(k => k.File == g.Key && k.Kind == Bayan.Testing.CoverageInstrumenter.Branch))
+                    if (Innermost(k.Line) is { } fn) { tally[fn][3]++; if (hits.ContainsKey(k.Id)) tally[fn][2]++; }
+                spans[g.Key] = new JsonArray(fns.Select(f => (JsonNode)new JsonObject
+                {
+                    ["span"] = new JsonArray(f.Start, f.End),
+                    ["lines"] = new JsonArray(tally[f][0], tally[f][1]),
+                    ["branches"] = new JsonArray(tally[f][2], tally[f][3]),
+                }).ToArray());
+            }
+            File.WriteAllText(Path.Combine(dir, "functions.json"), new JsonObject { ["version"] = 1, ["files"] = spans }.ToJsonString() + "\n");
             foreach (var f in report.Files)
             {
                 if (!File.Exists(f.Path)) continue;

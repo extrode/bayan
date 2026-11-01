@@ -97,7 +97,10 @@ public sealed class SelfhostCoverageTests
     /// <summary>
     /// Spec 013 T26 C7: the report is built from the coverage map, so a function no run calls (<c>h</c>, beside the called
     /// <c>f</c>) and a file nothing calls into (<c>other.byn</c>) show as missed lines and branches, never absent.
-    /// Break-tests: report only the counters a counter file lists; drop the counters of a file no counter file mentions.
+    /// <c>functions.json</c> gives each counted file's functions, declaration to closing brace, with their own covered/total
+    /// lines and branches, and none of the generated <c>main.byn</c>. Break-tests: report only the counters a counter file
+    /// lists; drop the counters of a file no counter file mentions; end a span at its first line; keep the generated file's
+    /// spans; count a branch as hit when it is not.
     /// </summary>
     [Fact]
     public void AFunctionNoRunCallsIsMissedNotAbsent()
@@ -126,6 +129,10 @@ public sealed class SelfhostCoverageTests
         Assert.Equal((0, 2), ((int)file["branches"]!["covered"]!, (int)file["branches"]!["total"]!));
         Assert.Equal([(5, true), (5, false)], file["branches"]!["missed"]!.AsArray().Select(b => ((int)b!["line"]!, (bool)b["outcome"]!)));
         Assert.Equal([2], files[other]!["lines"]!["missed"]!.AsArray().Select(n => (int)n!));
+        var spans = JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "functions.json")))!["files"]!.AsObject();
+        Assert.Equal([lib, other], spans.Select(p => p.Key).Order(StringComparer.Ordinal));
+        Assert.Equal("""[{"span":[1,3],"lines":[1,1],"branches":[0,0]},{"span":[4,9],"lines":[0,3],"branches":[0,2]}]""", spans[lib]!.ToJsonString());
+        Assert.Equal("""[{"span":[1,3],"lines":[0,1],"branches":[0,0]}]""", spans[other]!.ToJsonString());
     }
 
     /// <summary>A <c>BAYAN_COVERAGE_FILES</c> entry matching no compiled source throws, as <c>BAYAN_SNAPSHOT_FILES</c> does;
