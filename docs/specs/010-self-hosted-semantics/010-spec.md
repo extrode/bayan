@@ -49,10 +49,11 @@ The handoff's "Road to self-hosting" puts semantics next: binder, flow and owner
 - **R7.** Given the 1 MB program, the median ratio is 10 or less.
 
 ## Law candidates
+Renumbered 2026-11-01 (user decision): spec 013 enacted L019–L021 first, so these are L022 and L023.
 
-- **L019 (binder equivalence).** For every program that parses without errors, `bayan-check --types` and `bayan types` print the same typed dump, and `bayan-check` and `bayan check` report the same diagnostics and exit with the same code.
-- **L020 (no checker panic).** For every input in the stated corpus (every golden, the generator's seeds, and random byte and token mutations of them, nesting bounded as in L018's proof), `bayan-check` terminates without a panic, and every diagnostic span lies within its file.
+- **L022 (binder equivalence).** For every program that parses without errors, `bayan-check --types` and `bayan types` print the same typed dump, and `bayan-check` and `bayan check` report the same diagnostics and exit with the same code.
+- **L023 (no checker panic).** For every input in the stated corpus (every golden, the generator's seeds, and random byte and token mutations of them, nesting bounded as in L018's proof), `bayan-check` terminates without a panic, and every diagnostic span lies within its file.
 
 ## Open questions
 
-- None. Gaps found while planning (2026-10-26) are folded in: per-case isolated compilation as reference, footer/cap/exit in R1, `--types` error behaviour, manifest in scope, absolute paths, L020's corpus. Inferred, not asked: full parity with `bayan check` and `bayan types` (the 001/009 standard); C# is the reference; trees come from the Bayan parser; speed bound and checks follow 009. Diagnostics outside `bayan check` stay out (finish line).
+- None. Gaps found while planning (2026-10-26) are folded in: per-case isolated compilation as reference, footer/cap/exit in R1, `--types` error behaviour, manifest in scope, absolute paths, L023's corpus. Inferred, not asked: full parity with `bayan check` and `bayan types` (the 001/009 standard); C# is the reference; trees come from the Bayan parser; speed bound and checks follow 009. Diagnostics outside `bayan check` stay out (finish line).

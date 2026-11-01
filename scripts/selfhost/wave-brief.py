@@ -52,7 +52,7 @@ for t in sys.argv[2:]:
     block = task_block(t)
     assert block, t
     files = owned_files(block)
-    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/'))]
+    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/', 'work/'))]
     byns = [f for f in files if f.endswith('.byn') and f not in rooted]
     tests = [f for f in files if f.endswith('.cs') and f not in rooted]
     paths = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in byns] + [f'tests/Bayan.Tests/{f}' for f in tests] + rooted
