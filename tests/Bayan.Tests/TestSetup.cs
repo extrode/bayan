@@ -33,10 +33,12 @@ internal static class TestSetup
     }
 }
 
-/// <summary>Child-process text with <c>\r\n</c> read as <c>\n</c>, the rule <c>Golden.Compare</c> applies: a program's newlines are not what its tests check.</summary>
+/// <summary>Child-process text. Only on Windows, where the C runtime's text-mode stdout turns every <c>\n</c> into <c>\r\n</c> (Q742), is <c>\r\n</c> read as <c>\n</c> (the <c>Golden.Compare</c> rule); elsewhere the bytes are kept, so a lost or added <c>\r</c> is still caught.</summary>
 internal static class ProcessText
 {
-    internal static string ReadToEndLf(this StreamReader reader) => reader.ReadToEnd().Replace("\r\n", "\n");
+    internal static string Lf(string text) => OperatingSystem.IsWindows() ? text.Replace("\r\n", "\n") : text;
 
-    internal static async Task<string> ReadToEndLfAsync(this StreamReader reader) => (await reader.ReadToEndAsync()).Replace("\r\n", "\n");
+    internal static string ReadToEndLf(this StreamReader reader) => Lf(reader.ReadToEnd());
+
+    internal static async Task<string> ReadToEndLfAsync(this StreamReader reader) => Lf(await reader.ReadToEndAsync());
 }
