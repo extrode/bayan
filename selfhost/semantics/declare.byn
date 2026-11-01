@@ -456,87 +456,95 @@ void declareEnumFields(ref Ctx c, for EnumId e) {
 
 void declareUnionVariants(ref Ctx c, for UnionId u) {
     let file = c.unions[u].file
-    let dIdx = c.unions[u].declIndex
-    switch c.files[file].unit.members[dIdx] {
+    switch c.files[file].unit.members[c.unions[u].declIndex] {
         case .unionDecl(let node):
-            let types = TypeResolver { file: file, typeArgs: t11CopyMap(in c.unions[u].typeMap) }
-            var values = Map<i64, VariantId>()
-            var tag: i64 = 0
-            for vIdx in 0..node.value.variants.length {
-                let vName = node.value.variants[vIdx].name
-                let vText = t12Text(in c, from: file, at: vName)
-                checkValue(ref c, from: file, at: vName)
-                let existing = findUnionVariant(ref c, by: u, for: vText)
-                if existing >= 0 {
-                    report(ref c, for: .duplicateUnionVariant, from: file, at: vName, by: (c.unions[u].name, vText, "", "", ""), label: $"already declared on line {t12Line(in c, by: loc(file, at: c.unionVariants[existing].nameSpan))}")
-                    continue
-                }
-                let hasValue = node.value.variants[vIdx].value is not .none
-                if hasValue {
-                    let valueSpan = t11ExprSpan(in node.value.variants[vIdx].value)
-                    if node.value.variants[vIdx].fields.length > 0 {
-                        report(ref c, for: .unionValueOnPayload, from: file, at: valueSpan, by: (vText, "", "", "", ""), label: "only a case without data can have a value", help: "remove the value")
-                    } else if (t12UnionValue(in node.value.variants[vIdx].value) is { } value) {
-                        tag = value
-                    } else {
-                        report(ref c, for: .unionValueNotInteger, from: file, at: valueSpan, by: ("", "", "", "", ""), label: "not an `i32` integer literal", help: "write the value as an integer literal, or remove it")
-                    }
-                }
-                let sym = newUnionVariant(ref c, by: UnionVariantSymbol {
-                    name: vText,
-                    nameSpan: vName,
-                    span: vName,
-                    owner: u,
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: vIdx,
-                    tag: tag,
-                    doc: node.value.variants[vIdx].doc,
-                })
-                if (values.tryGet(at: tag) is { } same) {
-                    let at = hasValue ? t11ExprSpan(in node.value.variants[vIdx].value) : vName
-                    let last = c.unions[u].variants[c.unions[u].variants.length - 1]
-                    let label = hasValue ? "already used" : $"follows `{c.unionVariants[last].name}`, so it is {tag}"
-                    report(ref c, for: .duplicateUnionValue, from: file, at: at, by: (c.unionVariants[same].name, vText, $"{tag}", "", ""), label: label, help: "give each case its own value")
-                } else {
-                    values[tag] = sym
-                }
-                // C# `tag++` on an `int`, unchecked: it wraps where Bayan's `+` traps.
-                if tag == 2147483647 {
-                    tag = -2147483648
-                } else {
-                    tag += 1
-                }
-                var names = Map<string, Location>()
-                for f in node.value.variants[vIdx].fields {
-                    let fText = t12Text(in c, from: file, at: f.name)
-                    checkValue(ref c, from: file, at: f.name)
-                    if (names.tryGet(at: fText) is { } prev) {
-                        reportDuplicate(ref c, from: file, at: f.name, as: prev)
-                        continue
-                    }
-                    names[fText] = loc(file, at: f.name)
-                    var type = resolve(ref c, through: in types, for: in f.type)
-                    if functionTypeNotHere(ref c, for: type, from: file, at: t8TypeSpan(in f.type), as: "a union payload") { type = errorType() }
-                    let p = newLocal(ref c, by: LocalSymbol {
-                        name: fText,
-                        nameSpan: f.name,
-                        span: f.name,
-                        type: type,
-                        kind: .parameter,
-                        isParameter: true,
-                        modifier: .none,
-                        ordinal: c.unionVariants[sym].fields.length,
-                    })
-                    c.unionVariants[sym].fields.append(p)
-                }
-                c.unions[u].variants.append(sym)
-            }
-            if c.unions[u].variants.length == 0 {
-                report(ref c, for: .emptyUnion, from: file, at: node.value.name, by: (c.unions[u].name, "", "", "", ""), help: "add the variants, or remove the union")
-            }
+            declareVariantList(ref c, for: u, from: node.value.variants, at: node.value.name)
+        // A states union (T38 `statesOf`, C# `StatesOf` Compilation.cs:1086) points at its struct.
+        case .structDecl(let node):
+            declareVariantList(ref c, for: u, from: node.value.states, at: node.value.name)
         default:
-            panic("a union is declared by a `UnionDecl`")
+            panic("a union is declared by a `UnionDecl` or its struct")
+    }
+}
+
+void declareVariantList(ref Ctx c, for UnionId u, from List<parser.UnionVariant> variants, at TextSpan nameSpan) {
+    let file = c.unions[u].file
+    let dIdx = c.unions[u].declIndex
+    let types = TypeResolver { file: file, typeArgs: t11CopyMap(in c.unions[u].typeMap) }
+    var values = Map<i64, VariantId>()
+    var tag: i64 = 0
+    for vIdx in 0..variants.length {
+        let vName = variants[vIdx].name
+        let vText = t12Text(in c, from: file, at: vName)
+        checkValue(ref c, from: file, at: vName)
+        let existing = findUnionVariant(ref c, by: u, for: vText)
+        if existing >= 0 {
+            report(ref c, for: .duplicateUnionVariant, from: file, at: vName, by: (c.unions[u].name, vText, "", "", ""), label: $"already declared on line {t12Line(in c, by: loc(file, at: c.unionVariants[existing].nameSpan))}")
+            continue
+        }
+        let hasValue = variants[vIdx].value is not .none
+        if hasValue {
+            let valueSpan = t11ExprSpan(in variants[vIdx].value)
+            if variants[vIdx].fields.length > 0 {
+                report(ref c, for: .unionValueOnPayload, from: file, at: valueSpan, by: (vText, "", "", "", ""), label: "only a case without data can have a value", help: "remove the value")
+            } else if (t12UnionValue(in variants[vIdx].value) is { } value) {
+                tag = value
+            } else {
+                report(ref c, for: .unionValueNotInteger, from: file, at: valueSpan, by: ("", "", "", "", ""), label: "not an `i32` integer literal", help: "write the value as an integer literal, or remove it")
+            }
+        }
+        let sym = newUnionVariant(ref c, by: UnionVariantSymbol {
+            name: vText,
+            nameSpan: vName,
+            span: vName,
+            owner: u,
+            file: file,
+            declIndex: dIdx,
+            memberIndex: vIdx,
+            tag: tag,
+            doc: variants[vIdx].doc,
+        })
+        if (values.tryGet(at: tag) is { } same) {
+            let at = hasValue ? t11ExprSpan(in variants[vIdx].value) : vName
+            let last = c.unions[u].variants[c.unions[u].variants.length - 1]
+            let label = hasValue ? "already used" : $"follows `{c.unionVariants[last].name}`, so it is {tag}"
+            report(ref c, for: .duplicateUnionValue, from: file, at: at, by: (c.unionVariants[same].name, vText, $"{tag}", "", ""), label: label, help: "give each case its own value")
+        } else {
+            values[tag] = sym
+        }
+        // C# `tag++` on an `int`, unchecked: it wraps where Bayan's `+` traps.
+        if tag == 2147483647 {
+            tag = -2147483648
+        } else {
+            tag += 1
+        }
+        var names = Map<string, Location>()
+        for f in variants[vIdx].fields {
+            let fText = t12Text(in c, from: file, at: f.name)
+            checkValue(ref c, from: file, at: f.name)
+            if (names.tryGet(at: fText) is { } prev) {
+                reportDuplicate(ref c, from: file, at: f.name, as: prev)
+                continue
+            }
+            names[fText] = loc(file, at: f.name)
+            var type = resolve(ref c, through: in types, for: in f.type)
+            if functionTypeNotHere(ref c, for: type, from: file, at: t8TypeSpan(in f.type), as: "a union payload") { type = errorType() }
+            let p = newLocal(ref c, by: LocalSymbol {
+                name: fText,
+                nameSpan: f.name,
+                span: f.name,
+                type: type,
+                kind: .parameter,
+                isParameter: true,
+                modifier: .none,
+                ordinal: c.unionVariants[sym].fields.length,
+            })
+            c.unionVariants[sym].fields.append(p)
+        }
+        c.unions[u].variants.append(sym)
+    }
+    if c.unions[u].variants.length == 0 {
+        report(ref c, for: .emptyUnion, from: file, at: nameSpan, by: (c.unions[u].name, "", "", "", ""), help: "add the variants, or remove the union")
     }
 }
 
