@@ -53,26 +53,547 @@ struct Regions {
     bool reporting = false
 }
 
-// stub: T25 ports RegionAnalysis.cs:83 Analyze
-void analyzeRegions(ref Ctx c, for FuncId fn) {}
+// ── The C# immutable sets (Q640): a `List` with no duplicates stands for `ImmutableHashSet`, copied on every change ──
 
-// stub: T25 ports RegionAnalysis.cs:89 Run
-void runRegions(ref Regions r, through ref Ctx c) {}
+/// C# `Borrow.None`.
+Borrow t25None() => Borrow { regions: [], owners: [] }
 
-// stub: T25 ports RegionAnalysis.cs:117 Stmt
-void stmtRegions(ref Regions r, through ref Ctx c, for BStmt s) {}
+/// C# `new Borrow([region], [])`.
+Borrow t25Region(i64 depth, as string name) {
+    var regions = List<Region>()
+    regions.append(Region { depth: depth, name: name })
+    return Borrow { regions: move regions, owners: [] }
+}
 
-// stub: T25 ports RegionAnalysis.cs:245 Expr
-Borrow exprRegions(ref Regions r, through ref Ctx c, for BExpr e) => Borrow { regions: [], owners: [] }
+/// C# `Borrow.IsEmpty`.
+bool t25IsEmpty(in Borrow b) => b.regions.length == 0 && b.owners.length == 0
 
-// stub: T25 ports RegionAnalysis.cs:251 Compute
-Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) => Borrow { regions: [], owners: [] }
+/// A copy of `b`: the C# records are immutable, so sharing one is copying it here.
+Borrow t25Copy(in Borrow b) {
+    var regions = List<Region>()
+    for x in b.regions { regions.append(x) }
+    var owners = List<LocalId>()
+    for o in b.owners { owners.append(o) }
+    return Borrow { regions: move regions, owners: move owners, lends: t25CopyLends(in b.lends) }
+}
 
-// stub: T25 ports RegionAnalysis.cs:237 Declare
-void declareBorrow(ref Regions r, through ref Ctx c, for LocalId local, at i64 position) {}
+/// C# `b with { Owners = [] }`.
+Borrow t25WithoutOwners(in Borrow b) {
+    var regions = List<Region>()
+    for x in b.regions { regions.append(x) }
+    return Borrow { regions: move regions, owners: [], lends: t25CopyLends(in b.lends) }
+}
 
-// stub: T25 ports RegionAnalysis.cs:31 Union
-Borrow unionBorrow(in Borrow a, by in Borrow b) => Borrow { regions: [], owners: [] }
+Map<LocalId, i64>? t25CopyLends(in Map<LocalId, i64>? lends) {
+    if (lends is { } l) {
+        var m: Map<LocalId, i64> = []
+        for (k, v) in l { m[k] = v }
+        return move m
+    }
+    return null
+}
 
-// stub: T25 ports RegionAnalysis.cs:35 Lent
-Borrow lent(in Borrow b, for LocalId owner, at i64 at) => Borrow { regions: [], owners: [] }
+/// C# `ImmutableHashSet<Region>.Add`.
+void t25AddRegion(to ref List<Region> regions, by Region x) {
+    for y in regions {
+        if y == x { return }
+    }
+    regions.append(x)
+}
+
+/// C# `ImmutableHashSet<LocalSymbol>.Add`.
+void t25AddOwner(to ref List<LocalId> owners, by LocalId x) {
+    for y in owners {
+        if y == x { return }
+    }
+    owners.append(x)
+}
+
+// ── RegionAnalysis.cs:31 Borrow.Union, :35 Lent, :38 Merge ──────────────────────
+
+Borrow unionBorrow(in Borrow a, by in Borrow b) {
+    if t25IsEmpty(in b) { return t25Copy(in a) }
+    if t25IsEmpty(in a) { return t25Copy(in b) }
+    var regions = List<Region>()
+    for x in a.regions { regions.append(x) }
+    for x in b.regions { t25AddRegion(to: ref regions, by: x) }
+    var owners = List<LocalId>()
+    for o in a.owners { owners.append(o) }
+    for o in b.owners { t25AddOwner(to: ref owners, by: o) }
+    return Borrow { regions: move regions, owners: move owners, lends: t25Merge(in a.lends, by: in b.lends) }
+}
+
+Borrow lent(in Borrow b, for LocalId owner, at i64 at) {
+    var regions = List<Region>()
+    for x in b.regions { regions.append(x) }
+    var owners = List<LocalId>()
+    for o in b.owners { owners.append(o) }
+    t25AddOwner(to: ref owners, by: owner)
+    var one: Map<LocalId, i64> = []
+    one[owner] = at
+    let added: Map<LocalId, i64>? = move one
+    return Borrow { regions: move regions, owners: move owners, lends: t25Merge(in b.lends, by: in added) }
+}
+
+Map<LocalId, i64>? t25Merge(in Map<LocalId, i64>? a, by in Map<LocalId, i64>? b) {
+    if a is null { return t25CopyLends(in b) }
+    if b is null { return t25CopyLends(in a) }
+    var result: Map<LocalId, i64> = []
+    if (a is { } x) {
+        for (k, v) in x { result[k] = v }
+    }
+    if (b is { } y) {
+        for (owner, at) in y {
+            if result.contains(owner) {
+                let other = result[owner]
+                result[owner] = at < other ? at : other
+            } else {
+                result[owner] = at
+            }
+        }
+    }
+    return move result
+}
+
+// ── RegionAnalysis.cs:83 Analyze, :89 Run ─────────────────────────────────────
+
+void analyzeRegions(ref Ctx c, for FuncId fn) {
+    if c.functions[fn].file == -1 || c.functions[fn].body == -1 { return }
+    var r = Regions { fn: fn, source: c.functions[fn].file }
+    runRegions(ref r, through: ref c)
+}
+
+void runRegions(ref Regions r, through ref Ctx c) {
+    let ps = copyIds(in c.functions[r.fn].parameters)
+    // C# `p.Syntax?.Rest`: T12's parameter syntax, one per parameter in order (Q641).
+    let syntax = t12Params(in c, for: r.fn)
+    for i in 0..ps.length {
+        let p = ps[i]
+        let type = c.locals[p].type
+        // An arena parameter is a handle to the caller's arena: what it allocates outlives the call.
+        let callerOwned = c.locals[p].modifier == .refKeyword || c.locals[p].modifier == .outKeyword || type == builtinType(.arena)
+        r.depthOf[p] = callerOwned ? 0 : 1
+        r.declaredAt[p] = -1
+        // What a parameter points to belongs to the caller; the marker keeps that known after unions.
+        var seen = List<Type>()
+        if mayBorrow(ref c, for: type, by: ref seen) { r.locals[p] = t25Region(0, as: "the caller's data") }
+        // A `rest` tail is borrowed for the call only (J62): it lives in the caller's frame for this statement.
+        if (syntax[i].syntax is { } x) && x.isRest && kindOf(type) == .span {
+            let tail = Region { depth: 1, name: $"`{c.locals[p].name}`" }
+            t25SetRestTail(ref r, for: tail, to: c.locals[p].name)
+            r.locals[p] = t25Region(1, as: $"`{c.locals[p].name}`")
+        }
+    }
+    // The first pass collects what each local may borrow (a loop can store into a local
+    // after its first use); the second reports against the complete picture.
+    let body = c.functions[r.fn].body
+    stmtRegions(ref r, through: ref c, for: body)
+    r.reporting = true
+    stmtRegions(ref r, through: ref c, for: body)
+    checkMutations(ref r, through: ref c)
+}
+
+/// C# `_restTails[tail] = name`.
+void t25SetRestTail(ref Regions r, for Region tail, to string name) {
+    for k in 0..r.restTails.length {
+        if r.restTails[k].region == tail {
+            r.restTails[k].tail = name
+            return
+        }
+    }
+    r.restTails.append(RestTail { region: tail, tail: name })
+}
+
+// ── Statements: RegionAnalysis.cs:117 Stmt, :229 Iterate, :237 Declare ─────────
+
+void stmtRegions(ref Regions r, through ref Ctx c, for BStmt s) {
+    let i = boundIndex(s)
+    switch boundKind(s) {
+        case .block:
+            r.depth += 1
+            let sts = copyIds(in c.bBlocks[i].statements)
+            for st in sts { stmtRegions(ref r, through: ref c, for: st) }
+            r.depth -= 1
+        case .localDecl:
+            let local = c.bLocalDecls[i].local
+            let init = c.bLocalDecls[i].initializer
+            declareBorrow(ref r, through: ref c, for: local, at: c.bLocalDecls[i].span.start)
+            if init != -1 {
+                let value = exprRegions(ref r, through: ref c, for: init)
+                storeBorrow(ref r, through: ref c, for: local, by: in value, at: nodeSpan(in c, for: init))
+                referBorrow(ref r, through: ref c, for: local, by: init)
+            }
+        case .exprStmt:
+            let _ = exprRegions(ref r, through: ref c, for: c.bExprStmts[i].expr)
+        case .assertStmt:
+            let _ = exprRegions(ref r, through: ref c, for: c.bAsserts[i].condition)
+        case .assign:
+            let target = c.bAssigns[i].target
+            let valueExpr = c.bAssigns[i].value
+            let value = exprRegions(ref r, through: ref c, for: valueExpr)
+            let _ = exprRegions(ref r, through: ref c, for: target)
+            storeIntoBorrow(ref r, through: ref c, for: target, by: in value, at: nodeSpan(in c, for: valueExpr))
+            if boundKind(target) == .local { referBorrow(ref r, through: ref c, for: c.bLocals[boundIndex(target)].local, by: valueExpr) }
+        case .returnStmt:
+            let valueExpr = c.bReturns[i].value
+            if valueExpr != -1 {
+                let value = exprRegions(ref r, through: ref c, for: valueExpr)
+                checkReturn(ref r, through: ref c, for: in value, at: nodeSpan(in c, for: valueExpr))
+            }
+        case .failStmt:
+            let _ = exprRegions(ref r, through: ref c, for: c.bFails[i].error)
+        case .ifStmt:
+            let then = c.bIfs[i].then
+            let elseBranch = c.bIfs[i].elseBranch
+            let _ = exprRegions(ref r, through: ref c, for: c.bIfs[i].condition)
+            stmtRegions(ref r, through: ref c, for: then)
+            if elseBranch != -1 { stmtRegions(ref r, through: ref c, for: elseBranch) }
+        case .whileStmt:
+            let body = c.bWhiles[i].body
+            let _ = exprRegions(ref r, through: ref c, for: c.bWhiles[i].condition)
+            iterateRegions(ref r, through: ref c, at: r.depth + 1, for: body)
+        case .doWhile:
+            let condition = c.bDoWhiles[i].condition
+            iterateRegions(ref r, through: ref c, at: r.depth + 1, for: c.bDoWhiles[i].body)
+            let _ = exprRegions(ref r, through: ref c, for: condition)
+        case .forStmt:
+            t25For(ref r, through: ref c, for: s)
+        case .switchStmt:
+            let value = exprRegions(ref r, through: ref c, for: c.bSwitches[i].value)
+            for k in 0..c.bSwitches[i].sections.length {
+                r.depth += 1
+                let pattern = c.bSwitches[i].sections[k].pattern
+                let guard = c.bSwitches[i].sections[k].guard
+                let body = copyIds(in c.bSwitches[i].sections[k].body)
+                if pattern != -1 { t25BindPattern(ref r, through: ref c, for: pattern, by: in value) }
+                if guard != -1 { let _ = exprRegions(ref r, through: ref c, for: guard) }
+                for st in body { stmtRegions(ref r, through: ref c, for: st) }
+                r.depth -= 1
+            }
+        case .deferStmt:
+            stmtRegions(ref r, through: ref c, for: c.bDefers[i].body)
+        case .errdeferStmt:
+            let body = c.bErrdefers[i].body
+            if c.bErrdefers[i].error != -1 { declareBorrow(ref r, through: ref c, for: c.bErrdefers[i].error, at: c.bErrdefers[i].span.start) }
+            stmtRegions(ref r, through: ref c, for: body)
+        case .panicDefer:
+            let body = c.bPanicDefers[i].body
+            if c.bPanicDefers[i].panic != -1 { declareBorrow(ref r, through: ref c, for: c.bPanicDefers[i].panic, at: c.bPanicDefers[i].span.start) }
+            stmtRegions(ref r, through: ref c, for: body)
+        case .contextStmt:
+            let body = c.bContexts[i].body
+            r.contexts.append(allocatedFrom(ref r, through: ref c, for: c.bContexts[i].allocator))
+            stmtRegions(ref r, through: ref c, for: body)
+            r.contexts.remove(at: r.contexts.length - 1)
+        default:
+            return
+    }
+}
+
+/// The C# `case BoundFor f:` arm of `Stmt`.
+void t25For(ref Regions r, through ref Ctx c, for BStmt s) {
+    let i = boundIndex(s)
+    let variable = c.bFors[i].variable
+    let iterableExpr = c.bFors[i].iterable
+    let body = c.bFors[i].body
+    let span = c.bFors[i].span
+    let user = c.bFors[i].userIteration is not null
+    let iterable = exprRegions(ref r, through: ref c, for: iterableExpr)
+    let iterableType = exprType(in c, for: iterableExpr)
+    let kind = kindOf(iterableType)
+    // The loop reads the collection on every iteration: it holds a loan on it.
+    if r.reporting {
+        var owners = List<LocalId>()
+        for o in iterable.owners { owners.append(o) }
+        var root = rootLocal(ref c, for: iterableExpr)
+        if root == -1 { root = thisField(ref r, through: ref c, for: iterableExpr) }
+        if root != -1 && (kind == .list || kind == .map || kind == .array || user) { t25AddOwner(to: ref owners, by: root) }
+        for owner in owners { r.loans.append(Loan { owner: owner, holder: -1, created: span.start, loopEnd: span.end }) }
+    }
+    r.depth += 1
+    declareBorrow(ref r, through: ref c, for: variable, at: span.start)
+    // A `dyn ref` variable points into an array or list, like `dyn ref I d = xs[i]`, or where a span points; any other is a copy.
+    let dynRef = kindOf(c.locals[variable].type) == .dynRef
+    let iterableSpan = nodeSpan(in c, for: iterableExpr)
+    var item = t25None()
+    if !dynRef {
+        item = t25WithoutOwners(in iterable)
+    } else if kind == .list || kind == .array {
+        item = lendBorrow(ref r, through: ref c, for: iterableExpr, by: in iterable, at: iterableSpan.end)
+    } else if kind == .span {
+        item = t25Copy(in iterable)
+    } else {
+        item = t25WithoutOwners(in iterable)
+    }
+    storeBorrow(ref r, through: ref c, for: variable, by: in item, at: iterableSpan)
+    if dynRef {
+        var seen = List<Type>()
+        var may = true
+        switch kind {
+            case .list: may = mayBorrow(ref c, for: c.listTypes[typeIndex(iterableType)], by: ref seen)
+            case .array: may = mayBorrow(ref c, for: c.arrayTypes[typeIndex(iterableType)].element, by: ref seen)
+            case .span: may = mayBorrow(ref c, for: c.spanTypes[typeIndex(iterableType)].element, by: ref seen)
+            default: may = true
+        }
+        r.referentMayBorrow[variable] = may
+    }
+    iterateRegions(ref r, through: ref c, at: r.depth, for: body)
+    r.depth -= 1
+}
+
+void iterateRegions(ref Regions r, through ref Ctx c, at i64 depth, for BStmt body) {
+    let outer = r.iteration
+    r.iteration = depth
+    stmtRegions(ref r, through: ref c, for: body)
+    r.iteration = outer
+}
+
+void declareBorrow(ref Regions r, through ref Ctx c, for LocalId local, at i64 position) {
+    r.depthOf[local] = r.depth
+    r.declaredAt[local] = position
+}
+
+// ── Expressions: RegionAnalysis.cs:245 Expr, :251 Compute, :367 Builtin ────────
+
+Borrow exprRegions(ref Regions r, through ref Ctx c, for BExpr e) {
+    let result = computeBorrow(ref r, through: ref c, for: e)
+    var seen = List<Type>()
+    if mayBorrow(ref c, for: exprType(in c, for: e), by: ref seen) { return move result }
+    return t25None()
+}
+
+Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local:
+            let local = c.bLocals[i].local
+            if r.locals.contains(local) { return t25Copy(in r.locals[local]) }
+            return t25None()
+        case .literal or .defaultValue or .thisRef or .errorVariant or .enumMember or .enumValues or .staticArray:
+            return t25None()
+        case .conversion:
+            let operandExpr = c.bConversions[i].operand
+            let kind = c.bConversions[i].kind
+            let span = c.bConversions[i].span
+            // A `dyn ref` to a span element points where the span points: it borrows what the span borrows.
+            if kind == .toDynRef && boundKind(operandExpr) == .index {
+                let target = c.bIndexes[boundIndex(operandExpr)].target
+                let index = c.bIndexes[boundIndex(operandExpr)].index
+                if kindOf(exprType(in c, for: target)) == .span {
+                    let spanBorrow = exprRegions(ref r, through: ref c, for: target)
+                    let _ = exprRegions(ref r, through: ref c, for: index)
+                    return move spanBorrow
+                }
+            }
+            let operand = exprRegions(ref r, through: ref c, for: operandExpr)
+            if kind == .arrayToSpan || kind == .listToSpan || kind == .toDynRef {
+                return lendBorrow(ref r, through: ref c, for: operandExpr, by: in operand, at: span.end)
+            }
+            return move operand
+        case .moveExpr:
+            // The new owner may grow or free the storage: a move ends every borrow into it.
+            let operandExpr = c.bMoves[i].operand
+            let span = c.bMoves[i].span
+            let operand = exprRegions(ref r, through: ref c, for: operandExpr)
+            let operandEnd = nodeSpan(in c, for: operandExpr).end
+            mutateBorrow(ref r, through: ref c, for: operandExpr, at: TextSpan.fromBounds(span.start, until: span.end > operandEnd ? span.end : operandEnd), moved: true)
+            return move operand
+        case .builtinCall:
+            return builtinBorrow(ref r, through: ref c, for: e)
+        case .call:
+            return callBorrow(ref r, through: ref c, for: e)
+        case .slice:
+            let targetExpr = c.bSlices[i].target
+            let start = c.bSlices[i].start
+            let end = c.bSlices[i].end
+            let span = c.bSlices[i].span
+            let target = exprRegions(ref r, through: ref c, for: targetExpr)
+            if start != -1 { let _ = exprRegions(ref r, through: ref c, for: start) }
+            if end != -1 { let _ = exprRegions(ref r, through: ref c, for: end) }
+            let kind = kindOf(exprType(in c, for: targetExpr))
+            if kind == .list || kind == .array { return lendBorrow(ref r, through: ref c, for: targetExpr, by: in target, at: span.end) }
+            return move target
+        case .index:
+            // The element is a copy: it may point where the collection's data points, but not into the collection.
+            let index = c.bIndexes[i].index
+            let target = exprRegions(ref r, through: ref c, for: c.bIndexes[i].target)
+            let _ = exprRegions(ref r, through: ref c, for: index)
+            return t25WithoutOwners(in target)
+        case .spread:
+            // Like an index: the elements are copies of what the sequence holds.
+            let operand = exprRegions(ref r, through: ref c, for: c.bSpreads[i].operand)
+            return t25WithoutOwners(in operand)
+        case .stackalloc:
+            let span = c.bStackallocs[i].span
+            return t25Region(r.depth, as: $"the `stackalloc` buffer on line {lineOf(ref r, through: ref c, at: span)}")
+        case .collection:
+            let elementExprs = copyIds(in c.bCollections[i].elements)
+            let type = c.bCollections[i].type
+            let span = c.bCollections[i].span
+            var elements = t25None()
+            for el in elementExprs {
+                let b = exprRegions(ref r, through: ref c, for: el)
+                elements = unionBorrow(in elements, by: in b)
+            }
+            switch kindOf(type) {
+                case .span:
+                    let literal = t25Region(r.depth, as: $"the array literal on line {lineOf(ref r, through: ref c, at: span)}")
+                    return unionBorrow(in elements, by: in literal)
+                case .list or .map:
+                    if r.contexts.length > 0 { return unionBorrow(in elements, by: in r.contexts[r.contexts.length - 1]) }
+                    return move elements
+                default:
+                    return move elements
+            }
+        case .interpolated:
+            // The text is a copy formatted into `context.allocator`: it borrows that, not its holes (Q43).
+            var values = List<BExpr>()
+            for part in c.bInterpolateds[i].parts {
+                if part.value != -1 { values.append(part.value) }
+            }
+            for v in values { let _ = exprRegions(ref r, through: ref c, for: v) }
+            if r.contexts.length > 0 { return t25Copy(in r.contexts[r.contexts.length - 1]) }
+            return t25None()
+        case .jump:
+            stmtRegions(ref r, through: ref c, for: c.bJumps[i].jump)
+            return t25None()
+        case .blockExpr:
+            stmtRegions(ref r, through: ref c, for: c.bBlockExprs[i].block)
+            return t25None()
+        case .isExpr:
+            let pattern = c.bIses[i].pattern
+            let value = exprRegions(ref r, through: ref c, for: c.bIses[i].value)
+            t25BindPattern(ref r, through: ref c, for: pattern, by: in value)
+            return t25None()
+        case .switchExpr:
+            let value = exprRegions(ref r, through: ref c, for: c.bSwitchExprs[i].value)
+            var result = t25None()
+            for k in 0..c.bSwitchExprs[i].arms.length {
+                let pattern = c.bSwitchExprs[i].arms[k].pattern
+                let guard = c.bSwitchExprs[i].arms[k].guard
+                let armValue = c.bSwitchExprs[i].arms[k].value
+                t25BindPattern(ref r, through: ref c, for: pattern, by: in value)
+                if guard != -1 { let _ = exprRegions(ref r, through: ref c, for: guard) }
+                let b = exprRegions(ref r, through: ref c, for: armValue)
+                result = unionBorrow(in result, by: in b)
+            }
+            return move result
+        case .catchExpr:
+            let binding = c.bCatches[i].binding
+            let handler = c.bCatches[i].handler
+            let span = c.bCatches[i].span
+            let operand = exprRegions(ref r, through: ref c, for: c.bCatches[i].operand)
+            if binding != -1 { declareBorrow(ref r, through: ref c, for: binding, at: span.start) }
+            let handled = exprRegions(ref r, through: ref c, for: handler)
+            return unionBorrow(in operand, by: in handled)
+        case .lambda:
+            // A lambda borrows what its captures borrow, and its captures live in this frame,
+            // overwritten by each iteration of the loop that creates it.
+            let captureExprs = copyIds(in c.bLambdas[i].captures)
+            let span = c.bLambdas[i].span
+            var captures = t25None()
+            for capture in captureExprs {
+                let b = exprRegions(ref r, through: ref c, for: capture)
+                captures = unionBorrow(in captures, by: in b)
+            }
+            if captureExprs.length == 0 { return move captures }
+            let environment = Region { depth: r.iteration > 1 ? r.iteration : 1, name: $"the lambda on line {lineOf(ref r, through: ref c, at: span)}" }
+            t25AddRegion(to: ref r.environments, by: environment)
+            let own = t25Region(environment.depth, as: environment.name)
+            return unionBorrow(in captures, by: in own)
+        default:
+            var result = t25None()
+            for child in children(in c, for: e) {
+                if child != -1 && isExprKind(boundKind(child)) {
+                    let b = exprRegions(ref r, through: ref c, for: child)
+                    result = unionBorrow(in result, by: in b)
+                }
+            }
+            return move result
+    }
+}
+
+Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    let receiverExpr = c.bBuiltinCalls[i].receiver
+    let argExprs = copyIds(in c.bBuiltinCalls[i].arguments)
+    let member = c.bBuiltinCalls[i].member
+    let span = c.bBuiltinCalls[i].span
+    let receiver = exprRegions(ref r, through: ref c, for: receiverExpr)
+    var args = List<Borrow>()
+    for a in argExprs { args.append(exprRegions(ref r, through: ref c, for: a)) }
+    switch member {
+        case .listAsSpan or .arrayAsSpan or .strBufAsString or .listMutableSpan or .arrayMutableSpan:
+            return lendBorrow(ref r, through: ref c, for: receiverExpr, by: in receiver, at: span.end)
+        default:
+            break
+    }
+    // C# `case … when b.Arguments.Length > 0`: with no argument the member falls to the cases below.
+    switch member {
+        case .spanCopy or .stringCopy or .listCopy or .mapCopy or .strBufCopy:
+            if argExprs.length > 0 { return allocatedFrom(ref r, through: ref c, for: argExprs[0]) }
+        default:
+            break
+    }
+    switch member {
+        case .ioReadAll or .intToString or .stringCopy or .stringLowercased or .stringUppercased
+            or .stringReplaced or .stringRepeated or .stringJoined or .utf16Copy
+            or .stringPadded or .bytesToString or .spanCopy or .listCopy:
+            // Fresh text from `context.allocator`, like `Io.readText`.
+            if r.contexts.length > 0 { return t25Copy(in r.contexts[r.contexts.length - 1]) }
+            return t25None()
+        case .listReplace:
+            storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[1], at: nodeSpan(in c, for: argExprs[1]))
+            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
+            return t25None()
+        case .listAdd:
+            storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[0], at: nodeSpan(in c, for: argExprs[0]))
+            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
+            return t25None()
+        case .mapIndexSet or .mapSlot:
+            storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[0], at: nodeSpan(in c, for: argExprs[0]))
+            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
+            return t25WithoutOwners(in receiver)
+        case .listTake or .mapTake or .strBufTake or .optionalTake:
+            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span, moved: true)
+            return move receiver
+        case .listRemoveLast:
+            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
+            return t25WithoutOwners(in receiver)
+        case .mapIndex or .mapTryGet or .listTryGet:
+            return t25WithoutOwners(in receiver)
+        // An interned `Symbol`'s text lives until exit, like a literal.
+        case .mapLength or .mapContains or .symbolText:
+            return t25None()
+        case .mapRemove or .mapClear or .listRemoveRange or .listRemoveThrough or .listRemoveAt
+            or .listRemoveAtRange or .listSort:
+            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
+            return t25None()
+        case .listClear or .strBufClear or .strBufInsert or .arenaReset:
+            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
+            return t25None()
+        default:
+            var acc = t25Copy(in receiver)
+            for a in args { acc = unionBorrow(in acc, by: in a) }
+            return move acc
+    }
+}
+
+// ── RegionAnalysis.cs:512 BindPattern (T37's range, no stub: Q642) ─────────────
+
+void t25BindPattern(ref Regions r, through ref Ctx c, for BPattern pattern, by in Borrow value) {
+    for node in descendants(in c, for: pattern) {
+        let i = boundIndex(node)
+        var local: LocalId = -1
+        switch boundKind(node) {
+            case .bindPattern: local = c.bBindPatterns[i].local
+            case .propertyPattern: local = c.bPropertyPatterns[i].designation
+            case .unionPattern: local = c.bUnionPatterns[i].designation
+            default: local = -1
+        }
+        if local == -1 { continue }
+        let span = nodeSpan(in c, for: node)
+        declareBorrow(ref r, through: ref c, for: local, at: span.start)
+        storeBorrow(ref r, through: ref c, for: local, by: in value, at: span)
+    }
+}
