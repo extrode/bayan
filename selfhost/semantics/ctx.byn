@@ -522,6 +522,8 @@ struct Ctx {
     // ── T21 state
     // ── T22 state
     // ── T23 state
+    /// C# `((CatchExpr)c.Syntax).Variant.Span` (FlowAnalysis.cs:314), by the `catchExpr` handle; the catch binder fills it (Q632).
+    Map<BExpr, TextSpan> catchVariantSpans = []
     // ── T24 state
     // ── T25 state
     // ── T26 state

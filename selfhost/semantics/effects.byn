@@ -6,8 +6,15 @@ void analyzeEffects(ref Ctx c) {}
 // stub: T23 ports ErrorFlow.cs:8 Propagated
 List<ErrorSetId> propagated(ref Ctx c, for BStmt body) => []
 
-// stub: T23 ports ErrorFlow.cs:31 Uncaught
-List<ErrorSetId> uncaught(ref Ctx c, for FuncId callee, by VariantId caught) => []
+/// The sets still propagated after `catch (Set.variant)` handles one variant.
+List<ErrorSetId> uncaught(ref Ctx c, for FuncId callee, by VariantId caught) {
+    var result = List<ErrorSetId>()
+    let caughtSet = c.errorVariants[caught].set
+    for s in c.functions[callee].errorSets {
+        if !(s == caughtSet && c.errorSets[s].variants.length == 1) { result.append(s) }
+    }
+    return result
+}
 
 // stub: T23 ports EffectAnalysis.cs:244 ReportUnknown
 void reportUnknown(ref Ctx c, from FileId f, at TextSpan name) {}
