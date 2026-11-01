@@ -1,6 +1,6 @@
 #!/bin/bash
 # guard.sh — run in a writer worktree before finishing. Prints GUARD PASS or GUARD FAIL + the items to fix.
-#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--mutate <file.byn>[,…]] [--mutations N] [--seed S]
+#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]] [--mutations N] [--seed S]
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
 # 3 build 0 warnings, 4 tests pass with 0 skipped, 5 banned C#-isms in changed .byn, 6 mutation: each of N semantic
 # mutations per --mutate file (random (line, operator) pairs; `mutation seed: S` is printed, --seed S repeats a run) must make
@@ -8,9 +8,9 @@
 # 7 content checks from guard-checks.py (C# oracle in the tests, no stubs or empty bodies left, ctx.byn only in the
 # task's own section, no open gating Question, docs: progress log entry and Question line citations that hold).
 set -u
-BASE=""; ALLOW=""; FILTER=""; MUTATE=""; N=6; SEED=""; TT=0
+BASE=""; ALLOW=""; FILTER=""; TASK=""; MUTATE=""; N=6; SEED=""; TT=0
 while [ $# -gt 0 ]; do case "$1" in
-  --base) BASE=$2; shift 2;; --allow) ALLOW=$2; shift 2;; --filter) FILTER=$2; shift 2;;
+  --base) BASE=$2; shift 2;; --allow) ALLOW=$2; shift 2;; --filter) FILTER=$2; shift 2;; --task) TASK=$2; shift 2;;
   --mutate) MUTATE=$2; shift 2;; --mutations) N=$2; shift 2;; --seed) SEED=$2; shift 2;; *) echo "unknown arg $1"; exit 2;; esac; done
 [ -n "$BASE" ] && [ -n "$FILTER" ] || { echo "need --base and --filter"; exit 2; }
 FAIL=(); note() { FAIL+=("$1"); }
@@ -48,10 +48,11 @@ for f in $CHANGED; do case "$f" in *.byn) [ -f "$f" ] || continue
 while read -r l; do [ -n "$l" ] && note "$l"; done < $LOG/banned.txt
 
 # 7 content checks (before mutations: they are cheap)
-TASK=$(echo "$FILTER" | grep -oE 'SelfhostSemanticsT[0-9]+Tests' | head -1 | sed -E 's/SelfhostSemantics(T[0-9]+)Tests/\1/')
+# the task comes from --task, else from a SelfhostSemanticsT<n>Tests class in --filter (T26/T27 test classes carry no number)
+[ -n "$TASK" ] || TASK=$(echo "$FILTER" | grep -oE 'SelfhostSemanticsT[0-9]+Tests' | head -1 | sed -E 's/SelfhostSemantics(T[0-9]+)Tests/\1/')
 if [ -n "$TASK" ]; then
   while read -r l; do [ -n "$l" ] && note "$l"; done < <(python3 -I "$(dirname "$0")/guard-checks.py" "$BASE" "$TASK" "$ALLOW")
-else note "checks: --filter names no SelfhostSemanticsT<n>Tests class, so the content checks cannot run"; fi
+else note "checks: no --task and --filter names no SelfhostSemanticsT<n>Tests class, so the content checks cannot run"; fi
 
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
