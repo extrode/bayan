@@ -414,7 +414,7 @@ public sealed class OwnershipCheckerTests
         var stdout = await p.StandardOutput.ReadToEndLfAsync();
         await stderrTask;
         await p.WaitForExitAsync();
-        return (p.ExitCode, stdout.Replace("\r\n", "\n"));
+        return (p.ExitCode, stdout);
     }
 
     [Theory]

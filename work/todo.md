@@ -384,3 +384,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `Toolchain.ReplaceFile` (and other readers of `out/` files) may hit the same Windows sharing violation as `bayan-rt.h` did (fixed in `CliApp.WriteIfChanged` only).
 - After the next Windows CI run, recheck the `Assert.Equal` "Values differ" cases and `OwnershipCheckerTests.Debug*`, which were judged from their error text only (abort exit code 3 vs 0xC0000409 depends on zig being the compiler).
 - `L005RunBatchTests.cs:276` already sets `Skip` on Windows (`Io.runBatch` runs cmd.exe there); an existing skip, not added by the CI fix.
+- review 13ec1ad..c9cf24d MEDIUM (unverified, Windows): CliApp.cs:436 ReadShared only stops the C# reader blocking the rename of bayan-rt.h/out files; zig cc holding the header or other Toolchain.ReplaceFile users (Toolchain.cs:230) can still hit a sharing violation under concurrent builds. Recheck after the Windows CI rerun.
+- review 13ec1ad..c9cf24d LOW (unverified): TestSetup.cs SetConsoleCodePage swallows IOException; with no console the 437 check in CliEnvironmentTests.cs:155 fails with a misleading message. Report the failed setter instead.
+- review 13ec1ad..c9cf24d LOW (unverified): SelfhostParserEquivalenceLawTests normalises the C# oracle dump with ProcessText.Lf too; on Windows a raw CRLF in a dump that the selfhost drops compares equal. Resolves with Q742.
+- review 13ec1ad..c9cf24d LOW: ci.yml mlugg/setup-zig@v2 is a third-party action on a moving tag; pin to a verified commit SHA.
