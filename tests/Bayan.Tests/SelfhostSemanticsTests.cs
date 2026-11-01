@@ -398,6 +398,7 @@ public sealed class SelfhostSemanticsTests
 
     /// <summary><c>--time</c> prints one nanosecond total, and the parse and check split on stderr.</summary>
     [Fact]
+    [Trait("Snapshot", "skip")]
     public void TimePrintsNanoseconds()
     {
         // no-oracle: Q648 (C# `check` has no `--time`; the numbers differ per run)

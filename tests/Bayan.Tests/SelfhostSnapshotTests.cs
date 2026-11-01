@@ -10,9 +10,8 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
 {
-    /// <summary>The recorded tests: <c>bayan-parse</c>'s CLI modes but the timing, whose microsecond output can repeat
-    /// across the two recording runs and then be compared.</summary>
-    private const string Filter = "FullyQualifiedName~SelfhostParserT13Tests&FullyQualifiedName!~TimePrintsANumber";
+    /// <summary>The recorded tests: <c>bayan-parse</c>'s CLI modes but the timing, tagged <c>Snapshot=skip</c>.</summary>
+    private const string Filter = "FullyQualifiedName~SelfhostParserT13Tests&Snapshot!=skip";
 
     /// <summary>The file whose sites the schemata build carries: the CLI those tests drive (a whole-module schemata
     /// build re-binds the module once per site, over ten minutes for the parser).</summary>
@@ -55,7 +54,7 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
     {
         const string scope = "selfhost/semantics/ctx.byn";
         var clock = Stopwatch.StartNew();
-        var (dir, runs) = Record("selfhost-snapshot-t5", "FullyQualifiedName~SelfhostSemanticsT5Tests", scope);
+        var (dir, runs) = Record("selfhost-snapshot-t5", "FullyQualifiedName~SelfhostSemanticsT5Tests&Snapshot!=skip", scope);
         output.WriteLine($"record {clock.Elapsed.TotalSeconds:F1} s");
         var build = Assert.Single(JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json")))!["builds"]!.AsArray());
         var sites = JsonNode.Parse(File.ReadAllText((string)build!["sites"]!))!["sites"]!.AsArray();
@@ -64,6 +63,20 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.All(runs, r => Assert.Equal((string?)build["binary"], (string?)r["program"]));
         var (exit, text) = Replay(dir, 0);
         Assert.True(exit == 0, text);
+    }
+
+    /// <summary>A program whose two recording runs differ (the shell's pid) fails the recording, naming the command
+    /// and the trait that leaves such a test out.</summary>
+    [Fact]
+    public void DifferingRecordRunsFailTheRecording()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-snapshot-differ");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        var e = Assert.Throws<InvalidOperationException>(() => SelfhostSemanticsHarness.RunRecorded(dir, "/bin/sh", null, ["-c", "echo $$"]));
+        Assert.Contains("/bin/sh -c echo $$", e.Message);
+        Assert.Contains("differ in stdout", e.Message);
+        Assert.Contains("tag the test [Trait(\"Snapshot\", \"skip\")] if its output is not deterministic", e.Message);
+        Assert.False(File.Exists(Path.Combine(dir, "runs.jsonl")));
     }
 
     /// <summary>Runs the tests matching <paramref name="filter"/> under <c>BAYAN_SNAPSHOT=tmp/&lt;name&gt;</c> with sites only in

@@ -97,17 +97,22 @@ public static class SelfhostSemanticsHarness
     private static readonly Lock SnapshotLock = new();
 
     /// <summary>
-    /// Under <c>BAYAN_SNAPSHOT</c>: runs <paramref name="program"/> twice and appends the run to <c>runs.jsonl</c> with
-    /// what the replay compares (exit code, stdout, stderr), leaving out an output the two runs disagree on (a timing).
+    /// Under <c>BAYAN_SNAPSHOT</c>: runs <paramref name="program"/> twice and appends the run to <c>runs.jsonl</c>; the
+    /// replay compares its exit code, stdout and stderr. The C# oracle checks run once, here at record time, and a
+    /// recording only completes if every recorded test passed them (013-plan.md:21, "compute the C# oracle once").
+    /// Two runs that differ in any of the three throw: such a test is tagged <c>[Trait("Snapshot", "skip")]</c>.
     /// </summary>
     internal static (int Exit, byte[] Out, byte[] Err) RunRecorded(string dir, string program, byte[]? input, string[] args)
     {
         var first = Exec(program, input, args);
         var second = Exec(program, input, args);
-        var compare = new JsonArray();
-        if (first.Exit == second.Exit) compare.Add("exit");
-        if (first.Out.AsSpan().SequenceEqual(second.Out)) compare.Add("stdout");
-        if (first.Err.AsSpan().SequenceEqual(second.Err)) compare.Add("stderr");
+        var differ = new List<string>();
+        if (first.Exit != second.Exit) differ.Add("exit code");
+        if (!first.Out.AsSpan().SequenceEqual(second.Out)) differ.Add("stdout");
+        if (!first.Err.AsSpan().SequenceEqual(second.Err)) differ.Add("stderr");
+        if (differ.Count > 0)
+            throw new InvalidOperationException($"BAYAN_SNAPSHOT: two runs of `{string.Join(' ', args.Prepend(program))}` differ in "
+                + $"{string.Join(", ", differ)}; tag the test [Trait(\"Snapshot\", \"skip\")] if its output is not deterministic");
         var record = new JsonObject
         {
             ["program"] = program,
@@ -117,7 +122,6 @@ public static class SelfhostSemanticsHarness
             ["stdout"] = Convert.ToBase64String(first.Out),
             ["stderr"] = Convert.ToBase64String(first.Err),
             ["exit"] = first.Exit,
-            ["compare"] = compare,
         };
         lock (SnapshotLock)
         {

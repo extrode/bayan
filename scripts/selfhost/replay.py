@@ -2,8 +2,12 @@
 #   python3 -I scripts/selfhost/replay.py <snapshot dir>
 # Runs every record of <dir>/runs.jsonl (program, args, cwd, stdin) with BAYAN_MUTANT inherited, as
 # `bayan mutate --binary <exe> --sites <map.json> -- python3 -I scripts/selfhost/replay.py <dir>` does per mutant.
-# Exit 0 when each run's exit code, stdout and stderr match the recording (those listed in its `compare`),
-# 1 at the first mismatch (named on stderr), 2 when the recording cannot be read or a program cannot start.
+# Exit 0 when each run's exit code, stdout and stderr match the recording, 1 at the first mismatch (named on stderr),
+# 2 when the recording cannot be read or a program cannot start.
+# The C# oracle checks run once, at record time, and a recording only completes if every recorded test passed them
+# (013-plan.md:21, "compute the C# oracle once"); the replay never runs C#.
+# A recording runs each program twice and fails when the runs differ; tests whose output is not deterministic carry
+# [Trait("Snapshot", "skip")], and a recording's `dotnet test --filter` ends in `&Snapshot!=skip` to leave them out.
 # Input files are read at replay time, so a recorded test must use unique input paths (one rewritten between runs cannot replay).
 import base64, json, os, subprocess, sys
 
@@ -36,15 +40,12 @@ for n, r in enumerate(records, 1):
         print(f'replay: run {n}: {e}', file=sys.stderr)
         sys.exit(2)
     exit = 128 - p.returncode if p.returncode < 0 else p.returncode  # killed by a signal: .NET's ExitCode is 128 + signal
-    for key in r['compare']:
-        if key == 'exit':
-            if exit != r['exit']:
-                print(f'replay: run {n} ({" ".join(command)}): exit {exit}, recorded {r["exit"]}', file=sys.stderr)
-                sys.exit(1)
-        else:
-            expected = base64.b64decode(r[key])
-            actual = p.stdout if key == 'stdout' else p.stderr
-            if actual != expected:
-                print(f'replay: run {n} ({" ".join(command)}): {key} differs at {first_difference(expected, actual)}', file=sys.stderr)
-                sys.exit(1)
+    if exit != r['exit']:
+        print(f'replay: run {n} ({" ".join(command)}): exit {exit}, recorded {r["exit"]}', file=sys.stderr)
+        sys.exit(1)
+    for key, actual in (('stdout', p.stdout), ('stderr', p.stderr)):
+        expected = base64.b64decode(r[key])
+        if actual != expected:
+            print(f'replay: run {n} ({" ".join(command)}): {key} differs at {first_difference(expected, actual)}', file=sys.stderr)
+            sys.exit(1)
 print(f'replay: {len(records)} runs match')
