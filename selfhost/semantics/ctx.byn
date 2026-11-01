@@ -654,6 +654,8 @@ struct Binder {
     /// The C# `_covered` (BinderCalls.cs:14): while a `try` operand is bound, the failing calls it does not handle; null outside one.
     List<CoveredCall>? covered = null
     // ── T21 state
+    /// The C# `_patternOwns` (BinderCalls.cs:906): the patterns being bound are on a `switch move x` subject, so their bindings own their parts.
+    bool patternOwns = false
     // ── T22 state
     // ── T23 state
     // ── T24 state

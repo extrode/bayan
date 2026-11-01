@@ -1,0 +1,790 @@
+using System.Reflection;
+using Bayan.Semantics;
+using Bayan.Semantics.Binding;
+using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
+using Bayan.Syntax.Diagnostics;
+using SourceText = Bayan.Syntax.Text.SourceText;
+
+namespace Bayan.Tests;
+
+/// <summary>
+/// T21: <c>selfhost/semantics/calls2.byn</c> against the C# <c>BinderCalls</c> (BinderCalls.cs 596-1005).
+/// One source, <see cref="Source"/>, is compiled by both sides: the C# side via <c>Compilation.Create</c> plus
+/// reflection on the C# <c>Binder</c>, the Bayan side via <c>loadModule</c> + <c>declare</c> in the generated main run
+/// by <c>SelfhostSemanticsHarness.RunSections</c>. Each case runs one operation on one <c>let</c> initializer of
+/// <c>probes</c> on both sides; every expected line is computed from the C#. T38's <c>declareCheck</c> and T15's
+/// <c>bindChecks</c> are stubs, so the Bayan side gets each struct's checks generated from the C# ones (<see cref="Checks"/>).
+/// </summary>
+public sealed class SelfhostSemanticsT21Tests
+{
+    private const string Dir = "tmp/t21-cases";
+
+    private const string Source = """
+        struct Plain {
+            i64 v
+        }
+
+        struct Deft {
+            i64 a = 1
+            string s = "x"
+        }
+
+        struct Need {
+            i64 a
+            i64 b
+            i64 c = 3
+        }
+
+        struct Made {
+            i64 v = 0
+
+            Made() {
+            }
+        }
+
+        @positional
+        struct Pt {
+            i64 x
+            i64 y
+        }
+
+        type distinct Tag = i64
+
+        type distinct Qty = i32 requires it > 0
+
+        struct Pos {
+            i64 v requires it > 0
+        }
+
+        struct Holder {
+            List<i64> items
+            i64 n
+        }
+
+        void probes(i64 n, i32 small, string s, ReadOnlySpan<u8> bytes, List<i64> ns, Map<string, i64> mp, ref StrBuf buf, Untrusted<string> un, move List<i64> mv, Holder h, ref i64 rn, rune ch, List<List<i64>> nested, Map<string, List<i64>> mnest, Map<string, Plain> mplain, List<i64> bw, i64 bn) {
+            let k1 = Plain()
+            let k2 = Plain(1)
+            let k3 = Deft()
+            let k4 = Need()
+            let k5 = Made()
+            let k6 = Pt(1, 2)
+            let k7 = Tag(5)
+            let k8 = List<i64>()
+            let k9 = List<i64>(1)
+            let k10 = Map<string, i64>()
+            let k11 = Arena()
+            let k12 = StrBuf()
+            let k13 = StrBuf(capacity: 8)
+            let k14 = StrBuf(bytes)
+            let k15 = i32(n)
+            let k16 = string(n)
+            let k17 = string(n, as: .hex)
+            let k18 = string(bytes)
+            let k19 = string(s)
+            let k20 = bool(1)
+            let k21 = i32(1, 2)
+            let k22 = Owned(n)
+            let k23 = Owned<i64>(n)
+            let k24 = Untrusted(s)
+            let k25 = Untrusted<string>(s)
+            let k26 = Owned(nope)
+            let k27 = string(nope)
+            let k28 = Pt(1)
+            let t1 = trust(un)
+            let t2 = trust()
+            let t3 = trust(un, why: "x")
+            let t4 = trust(un, "ok")
+            let t5 = trust(why: un)
+            let u1 = Untrusted(nope)
+            let u2 = Untrusted()
+            let u3 = Untrusted(s, n)
+            let u4 = Untrusted(value: s)
+            let u5 = Untrusted<string>(n)
+            let t6 = un.trustUnchecked() because "ok"
+            let t7 = n.trustUnchecked() because "x"
+            let t8 = nope.trustUnchecked() because "x"
+            let b1 = s.parts(by: ",")
+            let b2 = s.parts(by: ch)
+            let b3 = buf.append(n)
+            let b4 = buf.append(s)
+            let b5 = ns.remove(at: 0)
+            let b6 = ns.remove(at: 0..2)
+            let b8 = ns.remove(at: 0, through: 2)
+            let b9 = s.trimmed()
+            let b10 = s.trimmed(by: "ab")
+            let b11 = s.equals(s, as: .ignoreCase)
+            let b12 = mp.slot(at: "k")
+            let b13 = nested.copy()
+            let b14 = mnest.copy()
+            let b15 = ns.copy()
+            let b16 = ns.take()
+            let b17 = mplain.slot(at: "k")
+            let q1 = Qty(5)
+            let q2 = Qty(small)
+            let p1 = Pos { v: 1 }
+            let p2 = Pos { v: 0 }
+            let p3 = Pos { v: n }
+            let w1 = n
+            let w2 = move n
+            let w3 = (move mv)
+            let w4 = move nope
+            let w5 = move h.items
+            let w6 = move ns[0]
+            let w7 = move 1
+            let w8 = move rn
+            let w9 = move Plain { v: 1 }
+            let m1 = move ns
+            let m2 = move s
+            let m3 = move (n, s)
+            let m4 = move this
+            let x1 = h with { n: 1 }
+            let m5 = move bw
+            let m6 = move bn
+        }
+        """;
+
+    /// <summary>
+    /// The construction, builtin-call and move goldens of <c>tests/cases/diag/</c>: each is compiled whole on both sides and
+    /// compared on the codes only calls2.byn reports (<see cref="T21Codes"/>), so a sibling's stub does not show.
+    /// </summary>
+    private static readonly string[] DiagCases =
+    [
+        "no-constructor", "literal-needs-try", "trust-reason", "collection-copy-unique-element", "unique-move-from-field",
+        "move-with-parenthesized",
+    ];
+
+    /// <summary>The codes <c>calls2.byn</c> reports. BYN2783 is also reported by C# <c>CheckWritable</c> (T39, stubbed in calls4.byn), Q624.</summary>
+    private static readonly string[] T21Codes =
+    [
+        "BYN2112", "BYN2602", "BYN2787", "BYN2789", "BYN2782", "BYN2783", "BYN2784", "BYN2785", "BYN3207",
+    ];
+
+    private static readonly (string Op, string Name)[] Cases =
+    [
+        ("call", "k1"), ("call", "k2"), ("call", "k3"), ("call", "k4"), ("call", "k5"), ("call", "k6"), ("call", "k7"),
+        ("call", "k8"), ("call", "k9"), ("call", "k10"), ("call", "k11"), ("call", "k12"), ("call", "k13"), ("call", "k14"),
+        ("call", "k15"), ("call", "k16"), ("call", "k17"), ("call", "k18"), ("call", "k19"), ("call", "k20"), ("call", "k21"),
+        ("call", "k22"), ("call", "k23"), ("call", "k24"), ("call", "k25"), ("call", "k26"), ("call", "k27"), ("call", "k28"),
+        ("call", "t1"), ("call", "t2"), ("call", "t3"), ("call", "t4"), ("call", "t5"),
+        ("call", "u1"), ("call", "u2"), ("call", "u3"), ("call", "u4"), ("call", "u5"),
+        ("call", "t6"), ("call", "t7"), ("call", "t8"),
+        ("call", "b1"), ("call", "b2"), ("call", "b3"), ("call", "b4"), ("call", "b5"), ("call", "b6"), 
+        ("call", "b8"), ("call", "b9"), ("call", "b10"), ("call", "b11"), ("call", "b12"), ("call", "b13"), ("call", "b14"),
+        ("call", "b15"), ("call", "b16"), ("call", "b17"),
+        ("call", "q1"), ("call", "q2"), ("cov", "q2"), ("hand", "q2"),
+        ("expr", "p1"), ("expr", "p2"), ("expr", "p3"), ("cov", "p3"), ("hand", "p3"),
+        ("subj", "w1"), ("subj", "w2"), ("subj", "w3"), ("subj", "w4"), ("subj", "w5"), ("subj", "w6"), ("subj", "w7"),
+        ("subj", "w8"), ("subj", "w9"),
+        ("expr", "w2"), ("expr", "w3"), ("expr", "w4"), ("expr", "w5"), ("expr", "w6"), ("expr", "w7"), ("expr", "w8"),
+        ("expr", "w9"), ("expr", "m1"), ("expr", "m2"), ("expr", "m4"), ("expr", "m5"), ("expr", "m6"),
+        ("handles", "k1"), ("handles", "p1"), ("handles", "w1"), ("handles", "x1"),
+        .. DiagCases.Select(d => ("diag", d)),
+    ];
+
+    private static string DiagSource(string name) =>
+        File.ReadAllText(Path.Combine(Golden.CasesRoot, "diag", name + ".byn")).Replace("\r\n", "\n");
+
+    private static readonly System.Type BinderType =
+        typeof(Compilation).Assembly.GetType("Bayan.Semantics.Binding.Binder") ?? throw new InvalidOperationException("Binder");
+
+    private static object? Call(object? binder, string name, params object?[] args)
+    {
+        var methods = BinderType.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .Where(m => m.Name == name && m.GetParameters().Length == args.Length)
+            .ToArray();
+        if (methods.Length == 1) return methods[0].Invoke(methods[0].IsStatic ? null : binder, args);
+        foreach (var m in methods)
+        {
+            var ps = m.GetParameters();
+            var match = true;
+            for (var i = 0; i < ps.Length; i++)
+                if (args[i] is not null && !ps[i].ParameterType.IsInstanceOfType(args[i])) { match = false; break; }
+            if (match) return m.Invoke(m.IsStatic ? null : binder, args);
+        }
+        throw new MissingMethodException(BinderType.FullName, name);
+    }
+
+    private static string Diag(Diagnostic d)
+    {
+        var (line, col) = d.Source!.GetLinePosition(d.Span.Start);
+        return $"{d.Code} {line}:{col} {d.Message} |{d.Label}|{d.Help}|{(d.Fix is null ? "" : $"fix {d.Fix.Span.Start}..{d.Fix.Span.End} {d.Fix.Replacement}")}";
+    }
+
+    private static string NodeKindName(BoundNode node) => node switch
+    {
+        BoundLiteral => "literal", BoundLocal => "local", BoundThis => "thisRef", BoundField => "field",
+        BoundTupleElement => "tupleElement", BoundCall => "call", BoundBuiltinCall => "builtinCall", BoundIndex => "index",
+        BoundEnumMember => "enumMember", BoundErrorExpr => "errorExpr", BoundMove => "moveExpr",
+        _ => char.ToLowerInvariant(node.GetType().Name[5]) + node.GetType().Name[6..],
+    };
+
+    private static string Recv(BoundExpr? r) => r switch
+    {
+        null => "-1", BoundThis => "this", BoundLocal l => "local:" + l.Local.Name, _ => NodeKindName(r),
+    };
+
+    private static string Camel(string s) => char.ToLowerInvariant(s[0]) + s[1..];
+
+    /// <summary>A child expression: kind:type, a literal's value, a conversion's kind and operand.</summary>
+    private static string Sub(BoundExpr? e) => e switch
+    {
+        null => "-",
+        BoundLiteral l => $"literal:{l.Type.DisplayName}={l.Value}",
+        BoundConversion v => $"conversion:{v.Type.DisplayName}({Camel(v.Kind.ToString())} {Sub(v.Operand)})",
+        BoundEnumMember m => $"enumMember:{m.Type.DisplayName}={m.Member.Name}",
+        BoundLocal l => $"local:{l.Type.DisplayName}={l.Local.Name}",
+        _ => $"{NodeKindName(e)}:{e.Type.DisplayName}",
+    };
+
+    /// <summary>kind|type|receiver|callee|span|sub: every field a port bug could change.</summary>
+    private static string DumpNode(BoundNode? node)
+    {
+        if (node is null) return "null";
+        var type = node is BoundExpr e ? e.Type.DisplayName : "-";
+        var span = $"{node.Syntax.Span.Start}:{node.Syntax.Span.Length}";
+        var recv = "-"; var callee = "-"; var sub = "-";
+        switch (node)
+        {
+            case BoundCall c: callee = c.Function.Name; recv = Recv(c.Receiver); sub = string.Join(",", c.Arguments.Select(Sub)); break;
+            case BoundBuiltinCall b: callee = Camel(b.Member.ToString()); recv = Sub(b.Receiver); sub = string.Join(",", b.Arguments.Select(Sub)); break;
+            case BoundLocal l: callee = l.Local.Name; break;
+            case BoundCollection col: sub = string.Join(",", col.Elements.Select(Sub)); break;
+            case BoundStructLiteral sl: sub = string.Join(",", sl.Fields.Select(Sub)); break;
+            case BoundConversion v: sub = Sub(v); break;
+            case BoundMove m: sub = Sub(m.Operand); break;
+            case BoundLiteral l: sub = l.Value.ToString()!; break;
+        }
+        return $"{NodeKindName(node)}|{type}|{recv}|{callee}|{span}|{sub}";
+    }
+
+    private static Compilation Compile(string path) =>
+        Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
+
+    /// <summary>The C# lines for one case: what the operation gives, then the diagnostics it reported.</summary>
+    private static List<string> Expected(string op, string name)
+    {
+        Directory.CreateDirectory(Dir);
+        var path = Path.Combine(Dir, "main.byn");
+        if (op == "diag")
+        {
+            var whole = Compilation.Create([SourceText.FromString(path, DiagSource(name))], packageRoot: Dir);
+            return [.. whole.Diagnostics.Items.Where(d => T21Codes.Contains(d.Code)).SelectMany(d => Diag(d).Split('\n'))];
+        }
+        var c = Compile(path);
+        var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
+        var mark = c.Diagnostics.Items.Count;
+        var fd = file.Tree.Root.Members.OfType<FunctionDecl>().First(f => f.Name.Text == "probes");
+        var b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+            [c, file, null, null, null, null], null)!;
+        // `mv` is declared a `let`, so `move mv` takes the path a movable local takes; the receivers of mutating methods are
+        // `var`s, so T39's stubbed `checkWritable` has nothing to report; `bw` and `bn` borrow from a subject, as a loop or
+        // pattern binding does (Q624).
+        foreach (var p in fd.Params)
+        {
+            var local = (LocalSymbol)Call(b, "DeclareLocal", p.Name, Call(b, "ResolveType", p.Type), p.Name.Text switch
+            {
+                "mv" => LocalKind.Let, "buf" or "ns" or "mp" or "mplain" => LocalKind.Var, _ => LocalKind.Parameter,
+            })!;
+            if (p.Name.Text is "bw" or "bn") local.BorrowsSubject = true;
+        }
+        var init = fd.Body!.Statements.OfType<LocalDecl>().First(l => l.Name.Text == name).Init!;
+        var lines = new List<string>();
+        switch (op)
+        {
+            case "call":
+                lines.Add(DumpNode((BoundNode?)Call(b, "BindCall", init, null)));
+                break;
+            case "expr":
+                lines.Add(DumpNode((BoundNode?)Call(b, "BindExpr", init, null)));
+                break;
+            case "cov":
+            case "hand":
+                // `cov` binds inside a `try` operand (the C# `_covered` set), `hand` as the value a `try` handles (`_handled`).
+                var covered = new List<(Expr Call, string Name)>();
+                BinderType.GetField("_covered", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(b, covered);
+                if (op == "hand") BinderType.GetField("_handled", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(b, init);
+                lines.Add(DumpNode((BoundNode?)Call(b, "BindExpr", init, null)));
+                foreach (var e in covered) lines.Add($"covered {e.Call.Span.Start}:{e.Call.Span.Length} {e.Name} {(e.Call is StructLiteralExpr ? "true" : "false")}");
+                break;
+            case "subj":
+                var subject = BinderType.GetMethod("BindSwitchSubject", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                object?[] args = [init, false];
+                lines.Add(DumpNode((BoundNode?)subject.Invoke(b, args)));
+                lines.Add($"owns {((bool)args[1]! ? "true" : "false")}");
+                break;
+            case "handles":
+                lines.Add((bool)Call(null, "Handles", init)! ? "true" : "false");
+                break;
+        }
+        var items = c.Diagnostics.Items;
+        for (var i = mark; i < items.Count; i++) lines.AddRange(Diag(items[i]).Split('\n'));
+        return lines;
+    }
+
+    private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() =>
+        SelfhostSemanticsHarness.RunSections(MainSource(), [.. Cases.SelectMany(k => new[] { k.Op, k.Name })]));
+
+    public static TheoryData<string> CaseNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var k in Cases) data.Add($"{k.Op}.{k.Name}");
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(CaseNames))]
+    public void CaseMatches(string section)
+    {
+        var parts = section.Split('.');
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, section, Expected(parts[0], parts[1]));
+    }
+
+    private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
+
+    /// <summary>A rule condition of the C# checks as the Bayan expression that builds it.</summary>
+    private static string Cond(BoundExpr e) => e switch
+    {
+        BoundBinary x => $"addBinary(ref c, from: BBinary {{ span: sp, op: .{Camel(x.Op.ToString())}, left: {Cond(x.Left)}, right: {Cond(x.Right)}, type: prim(.{x.Type.DisplayName}) }})",
+        BoundField { Receiver: BoundThis } f => $"addField(ref c, from: BField {{ span: sp, receiver: addThis(ref c, from: BThis {{ span: sp, type: structTypeOf(s) }}), field: tcField(in c, for: s, by: \"{f.Field.Name}\"), type: prim(.{f.Type.DisplayName}) }})",
+        BoundLiteral l => $"tcInt(ref c, by: {l.Value.Value}, as: prim(.{l.Type.DisplayName}))",
+        _ => throw new InvalidOperationException(e.GetType().Name),
+    };
+
+    /// <summary>
+    /// What T38's stubbed <c>declareCheck</c> (and T15's blocked <c>bindChecks</c>) would set: each struct's check, with
+    /// its rules generated from the C# <c>Compilation.Checks</c>.
+    /// </summary>
+    private static string Checks(string text, bool library)
+    {
+        Directory.CreateDirectory(Dir);
+        var c = Compilation.Create([SourceText.FromString(Path.Combine(Dir, "main.byn"), text)], packageRoot: Dir, options: new CompilationOptions(Library: library));
+        var all = (System.Collections.IDictionary)typeof(Compilation).GetProperty("Checks", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(c)!;
+        var sb = new System.Text.StringBuilder();
+        foreach (System.Collections.DictionaryEntry entry in all)
+        {
+            var s = (StructSymbol)entry.Key;
+            var checks = (StructChecks)entry.Value!;
+            sb.AppendLine("    {");
+            sb.AppendLine($"    let s = typeIndex(c.modules[c.entryModule].types[\"{s.Name}\"])");
+            sb.AppendLine("    let fn = newFunction(ref c, by: FunctionSymbol { name: \"requires\", module: c.entryModule, owner: s, file: c.structs[s].file })");
+            sb.AppendLine("    var rules = List<StructRule>()");
+            foreach (var r in checks.Rules)
+            {
+                var span = r.Syntax.Condition.Span;
+                sb.AppendLine($"    let sp = TextSpan {{ start: {span.Start}, length: {span.Length} }}");
+                sb.AppendLine("    var reads = List<FieldId>()");
+                foreach (var f in r.Reads) sb.AppendLine($"    reads.append(tcField(in c, for: s, by: \"{f.Name}\"))");
+                var field = r.Field is { } own ? $"tcField(in c, for: s, by: \"{own.Name}\")" : "-1";
+                sb.AppendLine($"    rules.append(StructRule {{ span: sp, field: {field}, condition: {Cond(r.Condition)}, reads: move reads }})");
+            }
+            sb.AppendLine("    c.checksOf[s] = c.checks.length");
+            sb.AppendLine("    c.checks.append(StructChecks { check: fn, rules: move rules })");
+            sb.AppendLine("    }");
+        }
+        return sb.ToString();
+    }
+
+    // ── The generated main ──────────────────────────────────────────────────────
+    private static string MainSource() => """
+        import lexer
+        import parser
+
+        const world: string = "WORLD\n"
+
+        string tcRecv(ref Ctx c, for BExpr r) {
+            if r == -1 { return "-1" }
+            let k = boundKind(r)
+            if k == .thisRef { return "this" }
+            if k == .local { return $"local:{c.locals[c.bLocals[boundIndex(r)].local].name}" }
+            return $"{k}"
+        }
+
+        string tcSub(ref Ctx c, for BExpr e) {
+            if e == -1 { return "-" }
+            let k = boundKind(e)
+            let typeName = typeDisplay(ref c, by: exprType(in c, for: e))
+            if k == .literal { return $"literal:{typeName}={constantText(in c.bLiterals[boundIndex(e)].value)}" }
+            if k == .conversion { return $"conversion:{typeName}({c.bConversions[boundIndex(e)].kind} {tcSub(ref c, for: c.bConversions[boundIndex(e)].operand)})" }
+            if k == .enumMember { return $"enumMember:{typeName}={c.enumMembers[c.bEnumMembers[boundIndex(e)].member].name}" }
+            if k == .local { return $"local:{typeName}={c.locals[c.bLocals[boundIndex(e)].local].name}" }
+            return $"{k}:{typeName}"
+        }
+
+        string tcSubs(ref Ctx c, for in List<BExpr> es) {
+            var joined = ""
+            var first = true
+            for a in copyIds(in es) {
+                joined = first ? tcSub(ref c, for: a) : $"{joined},{tcSub(ref c, for: a)}"
+                first = false
+            }
+            return joined
+        }
+
+        void tcDump(ref Ctx c, for BExpr e) {
+            if e == -1 {
+                print("null")
+                return
+            }
+            let k = boundKind(e)
+            let t = exprType(in c, for: e)
+            let typeName = typeDisplay(ref c, by: t)
+            let i = boundIndex(e)
+            var recv = "-"
+            var callee = "-"
+            var sub = "-"
+            switch k {
+                case .call:
+                    callee = c.functions[c.bCalls[i].function].name
+                    recv = tcRecv(ref c, for: c.bCalls[i].receiver)
+                    let args = copyIds(in c.bCalls[i].arguments)
+                    sub = tcSubs(ref c, for: in args)
+                case .builtinCall:
+                    callee = $"{c.bBuiltinCalls[i].member}"
+                    recv = tcSub(ref c, for: c.bBuiltinCalls[i].receiver)
+                    let args = copyIds(in c.bBuiltinCalls[i].arguments)
+                    sub = tcSubs(ref c, for: in args)
+                case .local:
+                    callee = c.locals[c.bLocals[i].local].name
+                case .collection:
+                    let args = copyIds(in c.bCollections[i].elements)
+                    sub = tcSubs(ref c, for: in args)
+                case .structLiteral:
+                    let args = copyIds(in c.bStructLiterals[i].fields)
+                    sub = tcSubs(ref c, for: in args)
+                case .conversion:
+                    sub = tcSub(ref c, for: e)
+                case .moveExpr:
+                    sub = tcSub(ref c, for: c.bMoves[i].operand)
+                case .literal:
+                    sub = constantText(in c.bLiterals[i].value)
+                default: {}
+            }
+            let sp = nodeSpan(in c, for: e)
+            print($"{k}|{typeName}|{recv}|{callee}|{sp.start}:{sp.length}|{sub}")
+        }
+
+        void tcDiags(ref Ctx c, from i64 start) {
+            for i in start..c.diagnostics.length {
+                let pos = linePosition(c.files[c.diagnostics[i].file].text.span, at: c.diagnostics[i].span.start)
+                let fixText = c.diagnostics[i].hasFix ? $"fix {c.diagnostics[i].fixSpan.start}..{c.diagnostics[i].fixSpan.end} {c.diagnostics[i].fixReplacement}" : ""
+                print($"{c.diagnostics[i].code} {pos.line}:{pos.column} {c.diagnostics[i].message} |{c.diagnostics[i].label}|{c.diagnostics[i].help}|{fixText}")
+            }
+        }
+
+        FieldId tcField(in Ctx c, for StructId s, by string name) {
+            for f in c.structs[s].fields {
+                if c.fields[f].name == name { return f }
+            }
+            return -1
+        }
+
+        BExpr tcInt(ref Ctx c, by i64 v, as Type t) {
+            let k = Constant { kind: .integer, integer: bigFromI64(v) }
+            let e = addLiteral(ref c, from: BLiteral { span: TextSpan { start: 0, length: 0 }, type: t, value: k })
+            setConstant(ref c, for: e, to: k)
+            return e
+        }
+
+        void tcChecks(ref Ctx c) {
+        CHECKS
+        }
+
+        /// Every field default bound, as the C# `BindAll` does (generics.byn:151-160).
+        void tcDefaults(ref Ctx c) {
+            for m in 0..c.modules.length {
+                let structs = copyIds(in c.modules[m].structs)
+                for s in structs {
+                    let fields = copyIds(in c.structs[s].fields)
+                    for f in fields {
+                        if c.fields[f].hasDefault {
+                            var b = t13NewBinder(c.structs[s].file, owner: s)
+                            c.fields[f].defaultValue = bindFieldDefault(ref b, through: ref c, for: f)
+                        }
+                    }
+                }
+            }
+        }
+
+        void tcParam(ref Ctx c,for FuncId f, by string name, at TextSpan span, as Type type, to parser.ParamModifier modifier) {
+            let ordinal = c.functions[f].parameters.length
+            let p = newLocal(ref c, by: LocalSymbol { name: name, nameSpan: span, span: span, type: type, kind: .parameter, isParameter: true, modifier: modifier, ordinal: ordinal })
+            c.functions[f].parameters.append(p)
+        }
+
+        /// The entry module's error set `name`.
+        ErrorSetId tcSet(in Ctx c, by string name) {
+            for e in 0..c.errorSets.length {
+                if c.errorSets[e].name == name && c.errorSets[e].module == c.entryModule { return e }
+            }
+            return -1
+        }
+
+        /// The `k`th function named `name` of the entry module, in declaration order.
+        FuncId tcNth(in Ctx c, by string name, at i64 k) {
+            var seen: i64 = 0
+            for f in 0..c.functions.length {
+                if c.functions[f].name == name && c.functions[f].module == c.entryModule {
+                    if seen == k { return f }
+                    seen += 1
+                }
+            }
+            return -1
+        }
+
+        /// `tcDiags` from 0, only the codes T21 reports.
+        void tcT21Diags(ref Ctx c) {
+            var keep = Map<string, bool>()
+        KEEP
+            for i in 0..c.diagnostics.length {
+                if !keep.contains(c.diagnostics[i].code) { continue }
+                let pos = linePosition(c.files[c.diagnostics[i].file].text.span, at: c.diagnostics[i].span.start)
+                let fixText = c.diagnostics[i].hasFix ? $"fix {c.diagnostics[i].fixSpan.start}..{c.diagnostics[i].fixSpan.end} {c.diagnostics[i].fixReplacement}" : ""
+                print($"{c.diagnostics[i].code} {pos.line}:{pos.column} {c.diagnostics[i].message} |{c.diagnostics[i].label}|{c.diagnostics[i].help}|{fixText}")
+            }
+        }
+
+        DIAGS
+
+        void runInit(ref Binder b, through ref Ctx c, for in parser.Expr init, by string op) {
+            if op == "call" {
+                switch init {
+                    case .callExpr(let call): tcDump(ref c, for: bindCall(ref b, through: ref c, for: in call.value, from: init, to: -1))
+                    default: print("unexpected initializer")
+                }
+            }
+            if op == "expr" { tcDump(ref c, for: bindExpr(ref b, through: ref c, for: in init)) }
+            if op == "cov" || op == "hand" {
+                b.covered = List<CoveredCall>()
+                if op == "hand" { b.handled = parser.exprSpan(in init) }
+                tcDump(ref c, for: bindExpr(ref b, through: ref c, for: in init))
+                let cv = b.covered.take() ?? List<CoveredCall>()
+                for e in cv { print($"covered {e.span.start}:{e.span.length} {e.name} {e.structLiteral}") }
+            }
+            if op == "subj" {
+                let r = bindSwitchSubject(ref b, through: ref c, for: in init)
+                tcDump(ref c, for: r.value)
+                print($"owns {r.owns}")
+            }
+            if op == "handles" { print($"{handles(in init)}") }
+        }
+
+        void runCase(ref Ctx c, for string op, by string name) {
+            let file = c.modules[c.entryModule].files[0]
+            var b = Binder {
+                file: file,
+                fn: -1,
+                owner: -1,
+                scopes: [],
+                targets: [],
+                lambdas: [],
+                lambdaCount: [],
+                seeds: [],
+                pending: [],
+                constraints: [],
+                peers: [],
+                nonNull: [],
+                stateFacts: [],
+                errorNarrowed: [],
+            }
+            pushScope(ref b)
+            let start = c.diagnostics.length
+            for i in 0..c.files[file].unit.members.length {
+                switch c.files[file].unit.members[i] {
+                    case .functionDecl(let fd):
+                        if t15Text(in c, from: file, at: fd.value.name) == "probes" {
+                            for p in fd.value.params {
+                                let t = resolveType(ref b, through: ref c, for: in p.type)
+                                let pn = t15Text(in c, from: file, at: p.name)
+                                let kind: LocalKind = pn == "mv" ? .letKeyword : pn == "buf" || pn == "ns" || pn == "mp" || pn == "mplain" ? .varKeyword : .parameter
+                                let l = declareLocal(ref b, through: ref c, at: p.name, as: t, for: kind)
+                                if pn == "bw" || pn == "bn" { c.locals[l].borrowsSubject = true }
+                            }
+                            switch fd.value.body {
+                                case .blockStmt(let blk):
+                                    for s in blk.value.statements {
+                                        switch s {
+                                            case .localDecl(let ld):
+                                                if t15Text(in c, from: file, at: ld.value.name) == name { runInit(ref b, through: ref c, for: in ld.value.init, by: op) }
+                                            default: {}
+                                        }
+                                    }
+                                default: {}
+                            }
+                        }
+                    default: {}
+                }
+            }
+            tcDiags(ref c, from: start)
+        }
+
+        i32 main(ReadOnlySpan<string> args) {
+            var i: i64 = 0
+            while i + 1 < args.length {
+                let isDiag = args[i] == "diag"
+                let text = isDiag ? tcDiagSource(args[i + 1]) : world
+                var bytes = List<u8>()
+                for x in text.bytes { bytes.append(x) }
+                var sources = List<lexer.SourceText>()
+                sources.append(lexer.SourceText.create("tmp/t21-cases/main.byn", from: move bytes))
+                var c = Ctx {
+                    files: List<SourceFile>(),
+                    modules: List<Mod>(),
+                    diagnostics: List<Diag>(),
+                    bags: List<DiagBag>(),
+                    library: !isDiag,
+                    packageRoot: "tmp/t21-cases",
+                    displayRoot: "tmp/t21-cases",
+                }
+                c.entryModule = loadModule(ref c, for: "main", at: "tmp/t21-cases", from: move sources, by: -1)
+                buildLexicon(ref c)
+                declare(ref c)
+                print($"== {args[i]}.{args[i + 1]}")
+                if isDiag {
+                    tcDiagSetup(ref c, by: args[i + 1])
+                    bindAll(ref c)
+                    tcT21Diags(ref c)
+                } else {
+                    tcChecks(ref c)
+                    tcDefaults(ref c)
+                    runCase(ref c, for: args[i], by: args[i + 1])
+                }
+                i += 2
+            }
+            return 0
+        }
+        """.Replace("WORLD", Escape(Source)).Replace("CHECKS", Checks(Source + "\n", library: true))
+            .Replace("KEEP", string.Concat(T21Codes.Select(k => $"    keep[\"{k}\"] = true\n"))).Replace("DIAGS", Diags());
+
+    /// <summary>The Bayan functions that load and declare each of <see cref="DiagCases"/>: its text, signatures and checks.</summary>
+    private static string Diags()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("string tcDiagSource(string name) {");
+        foreach (var d in DiagCases) sb.AppendLine($"    if name == \"{d}\" {{ return \"{Escape(DiagSource(d))}\" }}");
+        sb.AppendLine("    return \"\"");
+        sb.AppendLine("}");
+        sb.AppendLine("void tcDiagSetup(ref Ctx c, by string name) {");
+        for (var i = 0; i < DiagCases.Length; i++) sb.AppendLine($"    if name == \"{DiagCases[i]}\" {{ tcSetup{i}(ref c) }}");
+        sb.AppendLine("}");
+        for (var i = 0; i < DiagCases.Length; i++)
+        {
+            sb.AppendLine($"void tcSetup{i}(ref Ctx c) {{");
+            sb.Append(Signatures(DiagSource(DiagCases[i])));
+            sb.Append(Checks(DiagSource(DiagCases[i]), library: false));
+            sb.AppendLine("}");
+        }
+        return sb.ToString();
+    }
+
+
+    private static string Lower(bool b) => b ? "true" : "false";
+
+    /// <summary>The Bayan expression for type <paramref name="t"/>; statements it needs first go to <paramref name="sb"/>.</summary>
+    private static string BayanType(System.Text.StringBuilder sb, TypeSymbol t, Dictionary<string, string> tps, ref int n)
+    {
+        switch (t)
+        {
+            case TypeParameterType p: return $"typeParamTypeOf({tps[p.Name]})";
+            case PrimitiveType p: return $"prim(.{p.DisplayName})";
+            case ListType l: return $"internList(ref c, by: {BayanType(sb, l.Element, tps, ref n)})";
+            case SpanType sp: return $"internSpan(ref c, by: {BayanType(sb, sp.Element, tps, ref n)}, readOnly: {Lower(sp.ReadOnly)})";
+            case Bayan.Semantics.Symbols.OptionalType o: return $"internOptional(ref c, by: {BayanType(sb, o.Inner, tps, ref n)})";
+            case MapType m: return $"internMap(ref c, by: {BayanType(sb, m.KeyType, tps, ref n)}, to: {BayanType(sb, m.ValueType, tps, ref n)})";
+            case FunctionType f when f.Fails.Count == 0:
+            {
+                var i = n++;
+                var ps = new List<string>();
+                foreach (var p in f.Parameters) ps.Add(BayanType(sb, p, tps, ref n));
+                var ret = BayanType(sb, f.Return, tps, ref n);
+                sb.AppendLine($"    var fp{i} = List<Type>()");
+                foreach (var p in ps) sb.AppendLine($"    fp{i}.append({p})");
+                sb.AppendLine($"    let fe{i} = List<ErrorSetId>()");
+                sb.AppendLine($"    let fu{i} = List<string>()");
+                return $"internFunction(ref c, for: in fp{i}, to: {ret}, by: in fe{i}, as: in fu{i})";
+            }
+            case Bayan.Semantics.Symbols.TupleType tt:
+            {
+                var i = n++;
+                var fs = new List<string>();
+                foreach (var f in tt.Fields) fs.Add(BayanType(sb, f.Type, tps, ref n));
+                sb.AppendLine($"    var tf{i} = List<TupleField>()");
+                for (var k = 0; k < fs.Count; k++)
+                    sb.AppendLine(tt.Fields[k].Name is { } fn ? $"    tf{i}.append(TupleField {{ name: \"{fn}\", type: {fs[k]} }})" : $"    tf{i}.append(TupleField {{ type: {fs[k]} }})");
+                return $"internTuple(ref c, for: in tf{i})";
+            }
+            case UnionSymbol { Template: { } u } us: return Instance(sb, u.Name, us.TypeArguments, tps, ref n);
+            case StructSymbol { Template: { } s } ss: return Instance(sb, s.Name, ss.TypeArguments, tps, ref n);
+            case StructSymbol s: return $"c.modules[c.entryModule].types[\"{s.Name}\"]";
+            case UnionSymbol u: return $"c.modules[c.entryModule].types[\"{u.Name}\"]";
+            case BuiltinType bt: return $"builtinType(.{Camel(bt.Kind.ToString())})";
+            default: throw new InvalidOperationException(t.DisplayName);
+        }
+    }
+
+    /// <summary>The entry module's generic struct or union <paramref name="name"/> at <paramref name="args"/>.</summary>
+    private static string Instance(System.Text.StringBuilder sb, string name, IReadOnlyList<TypeSymbol> args, Dictionary<string, string> tps, ref int n)
+    {
+        var i = n++;
+        var ts = new List<string>();
+        foreach (var a in args) ts.Add(BayanType(sb, a, tps, ref n));
+        sb.AppendLine($"    var ta{i} = List<Type>()");
+        foreach (var a in ts) sb.AppendLine($"    ta{i}.append({a})");
+        return $"instantiateType(ref c, for: c.modules[c.entryModule].types[\"{name}\"], by: in ta{i}, from: c.modules[c.entryModule].files[0], at: TextSpan {{ start: 0, length: 0 }})";
+    }
+
+    /// <summary>
+    /// What T38's stubbed <c>declareSignature</c>/<c>declareParameters</c> (declare2.byn:15, :18) would set on each free
+    /// function, generated from the C# symbols as SelfhostSemanticsT20Tests.Signatures does.
+    /// </summary>
+    private static string Signatures(string text)
+    {
+        Directory.CreateDirectory(Dir);
+        var path = Path.Combine(Dir, "main.byn");
+        var c = Compilation.Create([SourceText.FromString(path, text)], packageRoot: Dir, options: new CompilationOptions(Library: false));
+        var sb = new System.Text.StringBuilder();
+        var n = 0;
+        foreach (var (name, fns) in c.EntryModule.Functions)
+        {
+            // `main` of top-level statements has no declaration for the stubs to miss.
+            if (fns.All(f => f.Decl is null)) continue;
+            for (var i = 0; i < fns.Count; i++)
+            {
+                var fn = fns[i];
+                var v = $"f{n++}";
+                sb.AppendLine($"    let {v} = tcNth(in c, by: \"{name}\", at: {i})");
+                var tps = new Dictionary<string, string>();
+                for (var k = 0; k < fn.TypeParameters.Count; k++)
+                {
+                    // declare already gives a generic its type parameters; only their uses in the signature are filled.
+                    var tv = $"tp{n++}";
+                    tps[fn.TypeParameters[k].Name] = tv;
+                    sb.AppendLine($"    let {tv} = c.functions[{v}].typeParams[{k}]");
+                }
+                var ret = BayanType(sb, fn.ReturnType, tps, ref n);
+                sb.AppendLine($"    c.functions[{v}].returnType = {ret}");
+                sb.AppendLine($"    c.functions[{v}].hasFails = {Lower(fn.Fails)}");
+                foreach (var es in fn.ErrorSets.Where(e => e.Module == c.EntryModule))
+                    sb.AppendLine($"    c.functions[{v}].errorSets.append(tcSet(in c, by: \"{es.Name}\"))");
+                foreach (var p in fn.Parameters)
+                {
+                    var span = p.Location!.Value.Span;
+                    var modifier = p.Modifier switch
+                    {
+                        ParamModifier.None => "none", ParamModifier.Ref => "refKeyword", ParamModifier.Move => "moveKeyword",
+                        ParamModifier.Out => "outKeyword", _ => "inKeyword",
+                    };
+                    var type = BayanType(sb, p.Type, tps, ref n);
+                    sb.AppendLine($"    tcParam(ref c, for: {v}, by: \"{p.Name}\", at: TextSpan {{ start: {span.Start}, length: {span.Length} }}, as: {type}, to: .{modifier})");
+                }
+            }
+            if (fns.Count < 2) continue;
+            // T12's checkOverloads ran on the empty signatures and dropped the later overloads as duplicates; with the
+            // signatures above it keeps them, as the C# does.
+            sb.AppendLine($"    var ov{n} = List<FuncId>()");
+            for (var i = 0; i < fns.Count; i++) sb.AppendLine($"    ov{n}.append(tcNth(in c, by: \"{name}\", at: {i}))");
+            sb.AppendLine($"    c.modules[c.entryModule].functions[\"{name}\"] = move ov{n++}");
+        }
+        return sb.ToString();
+    }
+}
