@@ -85,7 +85,120 @@ BStmt bindBody(ref Binder b, through ref Ctx c, for in parser.Stmt body) {
     }
 }
 
+/// The C# `Compilation.MutationOperators`: the operator names `@unobservable(<op>)` accepts (revision 0014 §3).
+const t28MutationOperators: string[11] = ["boundary", "relational", "logical", "condition", "bool", "arithmetic", "literal", "negation", "statement", "emptyReturn", "variant"]
+
+/// Records an `@unobservable` mark (R7). A statement is bound more than once (first pass, generic instances); the
+/// compilation keeps one mark per statement and operator. `stmt` is the C# `stmt.Span`.
+void bindUnobservable(ref Binder b, through ref Ctx c, at TextSpan stmt, for in parser.AttributeSyntax attribute) {
+    if t15Text(in c, from: b.file, at: attribute.name) != "unobservable" { return }
+    var op: string? = null
+    if attribute.args.length > 0 {
+        let span = parser.exprSpan(in attribute.args[0].value)
+        switch attribute.args[0].value {
+            case .nameExpr(let n):
+                op = t15Text(in c, from: b.file, at: n.value.name)
+            default:
+                op = t15Text(in c, from: b.file, at: span)
+        }
+        let text = op ?? ""
+        var known = false
+        for o in t28MutationOperators {
+            if o == text { known = true }
+        }
+        if !known {
+            var help = StrBuf()
+            help.append("use one of ")
+            for i in 0..t28MutationOperators.length {
+                if i > 0 { help.append(", ") }
+                help.append($"`{t28MutationOperators[i]}`")
+            }
+            help.append(", or no argument for all")
+            report(ref b, through: ref c, for: .unknownMutationOperator, at: span, by: (text, "", "", "", ""), label: "not an operator",
+                help: $"{help.finish()}")
+            return
+        }
+    }
+    var reason = ""
+    if (attribute.becauseKeyword is { } r) { reason = r.reason }
+    t28AddUnobservable(ref c, by: UnobservableMark { file: c.files[b.file].path, span: stmt, op: op, reason: reason })
+}
+
+/// C# `UnobservableMark`: one `@unobservable` mark; `op` null means every operator.
+struct UnobservableMark {
+    string file
+    TextSpan span
+    string? op
+    string reason
+}
+
+/// The C# `Compilation.AddUnobservable`: keeps the first mark per file, span and operator (`*` keys a null operator,
+/// which no operator name spells).
+void t28AddUnobservable(ref Ctx c, by UnobservableMark mark) {
+    let key = $"{mark.file}|{mark.span.start}|{mark.span.length}|{mark.op ?? "*"}"
+    if c.unobservableSeen.contains(key) { return }
+    c.unobservableSeen[key] = 1
+    c.unobservable.append(mark)
+}
+
+/// The C# `foreach (var attribute in stmt.Attributes) BindUnobservable(stmt, attribute)`, one arm per variant.
+void t28BindUnobservables(ref Binder b, through ref Ctx c, for in parser.Stmt stmt) {
+    switch stmt {
+        case .blockStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .localDecl(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .exprStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .assignStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .incDecStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .returnStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .failStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .breakStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .continueStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .becomeStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .ifStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .unlessStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .guardedStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .whileStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .doWhileStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .whileLetStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .forStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .labeledStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .switchStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .deferStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .assertStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .contextStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .emptyStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .errorStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .none:
+            return
+    }
+}
+
 BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, JumpTarget? labelTarget = null) {
+    t28BindUnobservables(ref b, through: ref c, for: in stmt)
     switch stmt {
         case .blockStmt(let blk):
             return bindBlock(ref b, through: ref c, for: in blk.value)
