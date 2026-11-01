@@ -169,6 +169,21 @@ public sealed class SelfhostSemanticsT39Tests
         string e24(Suit? s) => s switch {
             not null => "v",
         }
+
+        string e25(bool b) => b switch {
+            true and _ => "t",
+            false and true => "f",
+        }
+
+        string e26(Suit s) => s switch {
+            .hearts => "h",
+            _ and _ => "o",
+        }
+
+        string e27(Suit s) => s switch {
+            .hearts => "h",
+            _ and .clubs => "c",
+        }
         """;
 
     /// <summary>Cases of <see cref="ExhSource"/>; a non-null union names the error sets passed as the type instead of the subject's.</summary>
@@ -177,6 +192,7 @@ public sealed class SelfhostSemanticsT39Tests
         ("e1", null), ("e2", null), ("e3", null), ("e4", null), ("e5", null), ("e6", null), ("e7", null), ("e8", null),
         ("e9", null), ("e10", null), ("e11", null), ("e12", null), ("e13", null), ("e14", null), ("e15", null), ("e16", null),
         ("e17", null), ("e18", null), ("e19", null), ("e20", null), ("e21", null), ("e22", null), ("e23", null), ("e24", null),
+        ("e25", null), ("e26", null), ("e27", null),
         ("e19u", ["EmailError", "DbError"]), ("e20u", ["EmailError", "DbError"]), ("e23u", ["EmailError", "DbError"]),
         ("e19r", ["DbError", "EmailError"]),
     ];
@@ -233,12 +249,13 @@ public sealed class SelfhostSemanticsT39Tests
     private static readonly string[] DiagCases =
     [
         "readonly-field", "bad-unary-operand", "coalesce-not-optional", "checked-field-assignment", "field-write-outside",
-        "field-write-states", "bad-binary-operands",
+        "field-write-states", "field-write-sealed", "bad-binary-operands",
     ];
 
     /// <summary>
     /// Library sources standing in for goldens whose T39 lines also need an unported or divergent sibling (Q697):
-    /// MutationChecks for a call of a `ref this` member, a struct literal's state type, `@sealed` attributes, a for body.
+    /// MutationChecks for a call of a `ref this` member, a struct literal's state type, a for body, top-level statement order.
+    /// <c>borrow</c> and <c>access</c> reach <c>checkWritable</c>'s borrow, tuple-element and Owned-value branches.
     /// </summary>
     private static readonly Dictionary<string, string> Lib = new()
     {
@@ -282,6 +299,32 @@ public sealed class SelfhostSemanticsT39Tests
                 }
 
                 i64 peek() => n
+            }
+            """,
+        ["borrow"] = """
+            union Slot {
+                empty
+                full(List<i64> items)
+            }
+
+            void f(Slot slot) {
+                if slot is .full(var items) { items.append(2) }
+            }
+            """,
+        ["access"] = """
+            struct S {
+                i64 n
+            }
+
+            (i64 line, i64 col) pos() => (line: 1, col: 2)
+
+            void f() {
+                var t = pos()
+                t.line = 5
+                let u = pos()
+                u.line = 6
+                var o = Owned(S { n: 1 })
+                o.n = 2
             }
             """,
         ["state"] = """

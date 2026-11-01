@@ -439,7 +439,9 @@ string? t39Invariant(ref Ctx c, for StructId s) {
             }
             if hasRequires { return "has `requires`" }
             if n.value.states.length > 0 { return "has states" }
-            if listContainsString(in c.structs[s].attributes, by: "sealed") { return "is `@sealed`" }
+            for a in n.value.attributes {
+                if t11Text(in c, from: file, at: a.name) == "sealed" { return "is `@sealed`" }
+            }
             return null
         default:
             panic("internal error: a struct without a struct declaration")
