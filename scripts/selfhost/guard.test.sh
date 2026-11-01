@@ -4,7 +4,7 @@
 # `bayan mutate --binary` with replay.py per build of the manifest and prints its summary. A survivor fails with its site,
 # all killed passes (marked sites included), each build of a two-build manifest replays with its own --binary, a mutant-0 mismatch fails, a bayan error
 # with only an earlier run's report beside the binary fails, a score below tests/quality-baseline.json fails, a
-# null baseline passes, a missing CLI or manifest fails with a message, and no --mutate records nothing and leaves no report.
+# null baseline passes, a failed recording, a missing CLI or manifest fails with a message, and no --mutate records nothing and leaves no report.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/guard-test"; aux="$root/tmp/guard-test-aux"  # stubs and logs live outside the fixture repo
@@ -24,6 +24,7 @@ cat > $aux/dotnet <<'STUB'
 echo "Total tests: 1  Passed: 1"
 if [ -n "${BAYAN_SNAPSHOT:-}" ]; then
   echo "$BAYAN_SNAPSHOT_FILES ${@: -3:1}" > $AUX/record.txt
+  [ -f $AUX/recordfail ] && { printf '  Failed T99\n  Error Message:\n   recording broke\n'; exit 1; }
   b=$(printf '{"binary": "%s", "sites": "%s"}' $AUX/bin/prog $AUX/bin/prog.sites.json)
   [ -f $AUX/two ] && b="$b, $(printf '{"binary": "%s", "sites": "%s"}' $AUX/bin2/prog2 $AUX/bin2/prog2.sites.json)"
   [ -f $AUX/nomanifest ] || { mkdir -p "$BAYAN_SNAPSHOT"; echo "{\"version\": 1, \"builds\": [$b]}" > "$BAYAN_SNAPSHOT/manifest.json"; }
@@ -63,6 +64,7 @@ touch $aux/usage; usage=$(g --mutate selfhost/semantics/a.byn); rm $aux/usage
 printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": null, "coverage": null } } }\n' > tests/quality-baseline.json
 nullbase=$(ALLOWX=,tests/quality-baseline.json g --mutate selfhost/semantics/a.byn); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
 touch $aux/nomanifest; nomanifest=$(g --mutate selfhost/semantics/a.byn); rm $aux/nomanifest
+touch $aux/recordfail; recordfail=$(g --mutate selfhost/semantics/a.byn); rm $aux/recordfail
 rm $aux/record.txt; plain=$(g); [ -f $aux/record.txt ] && plainrec=1 || plainrec=0; ls tmp/guard-run/quality-*.json > /dev/null 2>&1 && plainrep=1 || plainrep=0
 mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(g --mutate selfhost/semantics/a.byn)
 cd "$root"; rm -rf "$r" "$aux"
@@ -83,6 +85,7 @@ echo "$usage" | grep -q "^- mutation: bayan mutate exited 2 on $aux/bin/prog wit
 echo "$nullbase" | grep -q 'fell from' && fail "a null baseline failed" "$nullbase"
 echo "$nullbase" | grep -q '^- mutation survived' || fail "the null-baseline run did not run mutation" "$nullbase"
 echo "$nomanifest" | grep -q '^- mutation: the recording wrote no tmp/guard-run/snap/manifest.json' || fail "a missing manifest did not fail with a message" "$nomanifest"
+echo "$recordfail" | grep -q '^- mutation: recording the tests under BAYAN_SNAPSHOT failed (tmp/guard-run/record.txt) — .*recording broke' || fail "a failed recording did not fail with its message" "$recordfail"
 echo "$nocli" | grep -q '^- mutation: src/Bayan.Cli/bin/Debug/net10.0/bayan is missing' || fail "a missing CLI did not fail with a message" "$nocli"
 echo "$plain" | grep -q '^GUARD PASS$' && [ $plainrec = 0 ] && [ $plainrep = 0 ] || fail "a guard without --mutate recorded or left a report" "$plain"
 echo PASS
