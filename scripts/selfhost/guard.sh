@@ -82,39 +82,11 @@ if [ -n "$TASK" ]; then
 else note "checks: no --task and --filter names no SelfhostSemanticsT<n>Tests class, so the content checks cannot run"; fi
 
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
-# the filtered tests are recorded once (BAYAN_SNAPSHOT) against schemata builds whose sites lie only in the --mutate files,
-# then `bayan mutate --binary` runs every site of each build, replaying the recording per mutant (replay.py); sites under
-# `@unobservable because "…"` come back marked, not survived. The reports are copied to tmp/guard-run/ as quality-<n>-<binary>.json.
+# the recording and the per-build runs are mutation-step.sh (shared with mutate-batch.sh); the reports are copied to
+# tmp/guard-run/ as quality-<n>-<binary>.json
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
-  BAYAN=src/Bayan.Cli/bin/Debug/net10.0/bayan; SNAP=$LOG/snap; REPLAY=$(dirname "$0")/replay.py
-  if [ ! -x "$BAYAN" ]; then note "mutation: $BAYAN is missing; build src/Bayan.Cli (dotnet build) and run the guard again"
-  else
-    rm -f "$SNAP/manifest.json" "$SNAP/runs.jsonl"
-    BAYAN_SNAPSHOT=$SNAP BAYAN_SNAPSHOT_FILES=$MUTATE dotnet test --no-build --filter "($FILTER)&Snapshot!=skip" --logger "console;verbosity=normal" > $LOG/record.txt 2>&1 \
-      || note "mutation: recording the tests under BAYAN_SNAPSHOT failed (tmp/guard-run/record.txt) — $(grep -m1 -A8 'Error Message' $LOG/record.txt | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
-    if [ ${#FAIL[@]} = 0 ] && [ ! -f "$SNAP/manifest.json" ]; then
-      note "mutation: the recording wrote no tmp/guard-run/snap/manifest.json: no test under --filter '$FILTER' builds a selfhost program"; fi
-  fi
-  if [ ${#FAIL[@]} = 0 ]; then
-    BUILDS=$(python3 -I -c 'import json, sys; [print(b["binary"] + "\t" + b["sites"]) for b in json.load(open(sys.argv[1]))["builds"]]' "$SNAP/manifest.json" 2> $LOG/manifest.txt) \
-      || note "mutation: tmp/guard-run/snap/manifest.json is unreadable — $(tail -1 $LOG/manifest.txt)"
-  fi
-  if [ ${#FAIL[@]} = 0 ]; then
-    n=0
-    while IFS=$'\t' read -r bin sites; do
-      [ -n "$bin" ] || continue; n=$((n+1)); name=$n-$(basename "$bin"); rm -f "$(dirname "$bin")/bayan-quality.json"
-      # site ids are per build: the replay runs only this build's recorded runs
-      "$BAYAN" mutate --binary "$bin" --sites "$sites" -- python3 -I "$REPLAY" --binary "$bin" "$SNAP" > $LOG/mutate-$name.txt 2>&1; MX=$?
-      # bayan mutate exits 1 only when mutant 0 fails (usage errors exit 2, a gate below its minimum 3)
-      if [ $MX = 1 ]; then
-        note "mutation: the recording does not replay on the unmutated build $bin (mutant 0) — $(BAYAN_MUTANT=0 python3 -I "$REPLAY" --binary "$bin" "$SNAP" 2>&1 | tail -3 | tr '\n' ' ' | cut -c1-400)"; continue; fi
-      [ -f "$(dirname "$bin")/bayan-quality.json" ] || { note "mutation: bayan mutate exited $MX on $bin without a report — $(tail -3 $LOG/mutate-$name.txt | tr '\n' ' ')"; continue; }
-      cp "$(dirname "$bin")/bayan-quality.json" $LOG/quality-$name.json
-      echo "mutation build $name (per site: tmp/guard-run/mutate-$name.txt, report: tmp/guard-run/quality-$name.json):"
-      sed -n '/^mutation: [0-9]/,$p' $LOG/mutate-$name.txt
-      while read -r l; do l=${l%: survived}; [ -n "$l" ] && note "mutation survived: ${l#$PWD/} — no test fails under this change; add one that does, or mark the statement @unobservable because \"…\""
-      done < <(grep -E ': survived$' $LOG/mutate-$name.txt)
-    done <<< "$BUILDS"
+  . "$(dirname "$0")/mutation-step.sh"
+  if mutation_step "$LOG" "$FILTER" "$MUTATE" 1; then
     # a score below tests/quality-baseline.json fails (land.sh raises the baseline)
     if ls $LOG/quality-*.json > /dev/null 2>&1; then
       # exit 1 with lines: the drops; a non-zero exit without them: quality-baseline.py failed on its inputs
