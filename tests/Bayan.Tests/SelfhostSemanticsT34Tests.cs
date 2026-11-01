@@ -273,12 +273,6 @@ public sealed class SelfhostSemanticsT34Tests
 
     private static readonly HashSet<string> Lets = ["mb", "ml"];
 
-    /// <summary>
-    /// Codes only T39's stubs report: BYN2712 and BYN2410 from <c>CheckExhaustive</c> (BinderCalls.cs:1601, :1626; the
-    /// calls4.byn stub returns true), BYN2104 from <c>BindAssign</c>'s <c>CheckWritable</c> (BinderCalls.cs:1962).
-    /// </summary>
-    private static readonly HashSet<string> StubCodes = ["BYN2712", "BYN2410", "BYN2104"];
-
     /// <summary>The C# lines for one case: the bound tree, then the diagnostics its binding reported.</summary>
     private static List<string> Expected(string name)
     {
@@ -303,7 +297,7 @@ public sealed class SelfhostSemanticsT34Tests
         if (fn is not null) lines.Add($"fnlocals {string.Join(" ", fn.Locals.Skip(had).Select(l => Local(l)))}");
         var items = c.Diagnostics.Items;
         for (var i = mark; i < items.Count; i++)
-            if (!StubCodes.Contains(items[i].Code)) lines.AddRange(Diag(items[i]).Split('\n'));
+            lines.AddRange(Diag(items[i]).Split('\n'));
         return lines;
     }
 

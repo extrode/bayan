@@ -14,7 +14,7 @@ namespace Bayan.Tests;
 /// <c>diag.*</c> compiles a golden of <c>tests/cases/diag/</c> whole on both sides and compares the codes T39 reports;
 /// <c>wr</c> compiles <see cref="WrSource"/> and compares each <c>w*</c> local's <c>Written</c> flag too.
 /// <c>exh.*</c> takes the bound arms of one switch of <see cref="ExhSource"/> from the C# and calls <c>CheckExhaustive</c>
-/// on them; the Bayan side rebuilds the same patterns (T34's <c>bindPattern</c> and T36's switch binding are stubs, Q697).
+/// on them; the Bayan side rebuilds the same patterns, so switch statements (<c>bindSwitchStatement</c> is a stub) are covered too (Q697).
 /// Every expected line is computed from the C#.
 /// </summary>
 public sealed class SelfhostSemanticsT39Tests
