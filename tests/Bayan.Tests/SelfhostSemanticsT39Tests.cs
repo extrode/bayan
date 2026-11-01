@@ -629,13 +629,6 @@ public sealed class SelfhostSemanticsT39Tests
             }
         }
 
-        /// The BYN2115 half of C# `CheckMutation` (Compilation.cs:1854), whose port is T13's stub (Q694).
-        void tcMutation(ref Ctx c) {
-            for f in 0..c.functions.length {
-                if c.thisWrites.contains(f) { reportMutatesWithoutRefThis(ref c, for: f, at: c.thisWrites[f].span) }
-            }
-        }
-
         BExpr tcInt(ref Ctx c, by i64 v, as Type t) {
             let k = Constant { kind: .integer, integer: bigFromI64(v) }
             let e = addLiteral(ref c, from: BLiteral { span: TextSpan { start: 0, length: 0 }, type: t, value: k })
@@ -721,11 +714,9 @@ public sealed class SelfhostSemanticsT39Tests
                 print($"== {op}.{args[i + 1]}")
                 if op == "diag" || op == "lib" {
                     bindAll(ref c)
-                    tcMutation(ref c)
                     tcT39Diags(ref c)
                 } else if op == "wr" {
                     bindAll(ref c)
-                    tcMutation(ref c)
                     tcWritten(ref c)
                     tcT39Diags(ref c)
                 } else {

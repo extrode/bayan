@@ -105,15 +105,8 @@ struct T28Becomes {
     bool refThis = false
 }
 
-/// A function with a declaration reads it (`t22DeclFacts`, Q626), because the declaring code never fills
-/// `FunctionSymbol.becomes`/`refThis` (Q656); one without a declaration index keeps the symbol's fields, which only
-/// the T23 harness fills.
-T28Becomes t28Becomes(ref Ctx c, for FuncId fn) {
-    if c.functions[fn].declIndex < 0 { return T28Becomes { becomes: c.functions[fn].becomes, refThis: c.functions[fn].refThis is not null } }
-    let decl = t22DeclFacts(ref c, for: fn)
-    let at = decl.becomes ?? return T28Becomes { refThis: decl.refThis is not null }
-    return T28Becomes { becomes: t15Text(in c, from: c.functions[fn].file, at: at), refThis: decl.refThis is not null }
-}
+/// The declaring code copies both from the declaration into the symbol, as C# sets `Decl` (Q656 (e)).
+T28Becomes t28Becomes(ref Ctx c, for FuncId fn) => T28Becomes { becomes: c.functions[fn].becomes, refThis: c.functions[fn].refThis is not null }
 
 /// BYN7009: a normal return from a function that `becomes .s` must follow a `become`; not after BYN7010.
 void t23CheckBecame(ref Flow f, through ref Ctx c, for in FlowState state, at TextSpan span) {
