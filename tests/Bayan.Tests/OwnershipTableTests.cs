@@ -85,7 +85,7 @@ public sealed class OwnershipTableTests
             WorkingDirectory = dir,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         await p.WaitForExitAsync(new CancellationTokenSource(60_000).Token);

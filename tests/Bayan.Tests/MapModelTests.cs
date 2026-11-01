@@ -289,7 +289,7 @@ public sealed class MapModelTests
             UseShellExecute = false,
             WorkingDirectory = work,
         };
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         if (!p.WaitForExit(120_000))

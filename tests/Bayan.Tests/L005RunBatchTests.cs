@@ -259,7 +259,7 @@ public sealed class L005RunBatchTests
         {
             RedirectStandardInput = true, RedirectStandardOutput = true, UseShellExecute = false,
         };
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         p.StandardInput.Write(input);
         p.StandardInput.Close();

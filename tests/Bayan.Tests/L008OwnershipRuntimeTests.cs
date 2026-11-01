@@ -115,7 +115,7 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output) : IDispo
         };
         // Memory lives in allocators that are released at exit, not freed one by one.
         psi.Environment["ASAN_OPTIONS"] = "detect_leaks=0";
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         if (!p.WaitForExit(120_000))

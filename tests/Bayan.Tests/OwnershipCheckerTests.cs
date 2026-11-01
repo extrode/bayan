@@ -90,7 +90,7 @@ public sealed class OwnershipCheckerTests
         var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Debug), BuildMode.Debug);
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stderrTask = p.StandardError.ReadToEndAsync();
         var actual = p.StandardOutput.ReadToEnd();
         await stderrTask;
@@ -396,7 +396,7 @@ public sealed class OwnershipCheckerTests
 
     private static (int Code, string Stdout, string Stderr) Exec(ProcessStartInfo psi)
     {
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stderrTask = p.StandardError.ReadToEndAsync();
         var stdout = p.StandardOutput.ReadToEnd();
         var stderr = stderrTask.Result;
@@ -409,7 +409,7 @@ public sealed class OwnershipCheckerTests
         var build = Toolchain.Build(cSource, mode);
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stderrTask = p.StandardError.ReadToEndAsync();
         var stdout = await p.StandardOutput.ReadToEndAsync();
         await stderrTask;
@@ -433,7 +433,7 @@ public sealed class OwnershipCheckerTests
         var build = Toolchain.Build(CliApp.EmitC(Compile(program, skip: true), BuildMode.Debug), BuildMode.Debug);
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdoutTask = p.StandardOutput.ReadToEndAsync();
         var actual = p.StandardError.ReadToEnd();
         stdoutTask.Wait();

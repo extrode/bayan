@@ -189,7 +189,7 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
     {
         var psi = new ProcessStartInfo(Built) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         psi.ArgumentList.Add(path);
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.BaseStream.CopyToAsync(Stream.Null);
         var stderr = p.StandardError.ReadToEndAsync();
         await p.WaitForExitAsync().ConfigureAwait(false);

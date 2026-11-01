@@ -31,7 +31,7 @@ public sealed class SelfhostParserT12Tests(ITestOutputHelper output)
     private static (int Exit, string Out, string Err) Run(string program)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         p.WaitForExit();

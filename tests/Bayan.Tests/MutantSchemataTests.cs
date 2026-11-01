@@ -61,7 +61,7 @@ public sealed class MutantSchemataTests
         foreach (var arg in args ?? []) psi.ArgumentList.Add(arg);
         if (input is not null && File.Exists(Path.ChangeExtension(input, ".args")))
             foreach (var arg in File.ReadAllLines(Path.ChangeExtension(input, ".args"))) psi.ArgumentList.Add(arg);
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         if (input is not null && File.Exists(Path.ChangeExtension(input, ".stdin")))
             p.StandardInput.BaseStream.Write(File.ReadAllBytes(Path.ChangeExtension(input, ".stdin")));
         p.StandardInput.Close();

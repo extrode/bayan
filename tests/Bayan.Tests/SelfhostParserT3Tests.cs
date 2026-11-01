@@ -29,7 +29,7 @@ public sealed class SelfhostParserT3Tests(ITestOutputHelper output)
         var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
         if (!build.Succeeded) Assert.Fail($"did not build:\n{build.Errors}");
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         p.WaitForExit();

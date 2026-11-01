@@ -67,7 +67,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         p.WaitForExit();
@@ -82,7 +82,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = new MemoryStream();
         var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
         var stderr = p.StandardError.ReadToEndAsync();

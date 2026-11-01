@@ -99,7 +99,7 @@ public sealed class RunTests
         var argsFile = Path.ChangeExtension(input, ".args");
         if (File.Exists(argsFile))
             foreach (var arg in File.ReadAllLines(argsFile)) psi.ArgumentList.Add(arg);
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdinFile = Path.ChangeExtension(input, ".stdin");
         if (File.Exists(stdinFile))
         {

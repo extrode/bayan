@@ -272,7 +272,7 @@ public sealed class SymbolLawTests(ITestOutputHelper output)
 
     private static (int Code, string Stdout, string Stderr) Exec(ProcessStartInfo psi)
     {
-        using var p = Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stderrTask = p.StandardError.ReadToEndAsync();
         var stdout = p.StandardOutput.ReadToEnd();
         var stderr = stderrTask.Result;

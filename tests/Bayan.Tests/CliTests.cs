@@ -650,7 +650,7 @@ public sealed class CliTests
         var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, UseShellExecute = false, WorkingDirectory = dir };
         psi.ArgumentList.Add("-c");
         psi.ArgumentList.Add("printf '%s' " + quoted);
-        using var sh = System.Diagnostics.Process.Start(psi)!;
+        using var sh = Utf8Child.Start(psi)!;
         var echoed = sh.StandardOutput.ReadToEnd();
         sh.WaitForExit();
         Assert.Equal(name, echoed);
@@ -736,7 +736,7 @@ public sealed class CliTests
         var (exit, _, stderr) = Run("build", "-o", output, Example(example));
         Assert.True(exit == CliApp.ExitOk, stderr);
         var psi = new System.Diagnostics.ProcessStartInfo(output) { RedirectStandardOutput = true, UseShellExecute = false };
-        using var p = System.Diagnostics.Process.Start(psi)!;
+        using var p = Utf8Child.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEnd();
         p.WaitForExit();
         Assert.Equal(0, p.ExitCode);
