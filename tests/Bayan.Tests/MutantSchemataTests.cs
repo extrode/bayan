@@ -37,7 +37,7 @@ public sealed class MutantSchemataTests
     }
 
     /// <summary>The C of a <c>--mutate</c> build.</summary>
-    private static string EmitSchemata(Compilation c, BuildMode mode, out Schema schema)
+    internal static string EmitSchemata(Compilation c, BuildMode mode, out Schema schema)
     {
         schema = Schemata.Build(c);
         return CEmitter.Emit(Lowerer.Lower(c, schema.Switches), mode == BuildMode.Debug);
