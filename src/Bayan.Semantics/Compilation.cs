@@ -14,15 +14,36 @@ namespace Bayan.Semantics;
 public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false,
     IReadOnlyList<string>? Capabilities = null, string? PackageName = null);
 
+/// <summary>An <c>@unobservable</c> mark: the attributed statement's span, the operator it narrows to (null for all) and the reason.</summary>
+public sealed record UnobservableMark(string File, TextSpan Span, string? Operator, string Reason);
+
 /// <summary>
 /// A whole program: the entry module plus every module it imports, transitively. Construction
 /// parses, declares and binds everything; read <see cref="Diagnostics"/> afterwards.
 /// </summary>
 public sealed partial class Compilation
 {
+    /// <summary>The operator names <c>@unobservable(&lt;op&gt;)</c> accepts (revision 0014 §3).</summary>
+    public static readonly IReadOnlyList<string> MutationOperators =
+        ["boundary", "relational", "logical", "condition", "bool", "arithmetic", "literal", "negation", "statement", "emptyReturn", "variant"];
+
+    private readonly List<UnobservableMark> _unobservable = new();
+    private readonly HashSet<(string, TextSpan, string?)> _unobservableSeen = new();
+
+    /// <summary>Every <c>@unobservable</c> mark, in binding order.</summary>
+    public IReadOnlyList<UnobservableMark> Unobservable => _unobservable;
+
+    internal void AddUnobservable(UnobservableMark mark)
+    {
+        if (_unobservableSeen.Add((mark.File, mark.Span, mark.Operator))) _unobservable.Add(mark);
+    }
+
     private readonly Dictionary<string, ModuleSymbol> _modulesByDir = new(StringComparer.Ordinal);
     private readonly List<ModuleSymbol> _loading = new();
     private uint _nextErrorCode = 1;
+    private IReadOnlyList<SourceText> _entryFiles = [];
+    /// <summary>Files read from this text instead of from disk (<see cref="WithFile"/>).</summary>
+    private Dictionary<string, SourceText>? _replaced;
 
     private Compilation(string packageRoot, CompilationOptions options, string? displayRoot)
     {
@@ -97,9 +118,25 @@ public sealed partial class Compilation
     }
 
     /// <summary>Compiles <paramref name="entryFiles"/> as the entry module; imports resolve under <paramref name="packageRoot"/>.</summary>
-    public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null, string? displayRoot = null)
+    public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null, string? displayRoot = null) =>
+        Create(entryFiles, packageRoot, options, displayRoot, null);
+
+    /// <summary>
+    /// The same program compiled again with <paramref name="text"/> in place of the file of the same path, entry or
+    /// imported: spec 013 re-binds and ownership-checks each mutant this way.
+    /// </summary>
+    public Compilation WithFile(SourceText text)
     {
-        var c = new Compilation(packageRoot, options ?? new CompilationOptions(), displayRoot);
+        var replaced = _replaced is null ? new Dictionary<string, SourceText>(StringComparer.Ordinal) : new Dictionary<string, SourceText>(_replaced, StringComparer.Ordinal);
+        replaced[text.Path] = text;
+        var entry = _entryFiles.Select(f => f.Path == text.Path ? text : f).ToList();
+        return Create(entry, PackageRoot, Options, DisplayRoot, replaced);
+    }
+
+    private static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options, string? displayRoot,
+        Dictionary<string, SourceText>? replaced)
+    {
+        var c = new Compilation(packageRoot, options ?? new CompilationOptions(), displayRoot) { _entryFiles = entryFiles, _replaced = replaced };
         var clock = System.Diagnostics.Stopwatch.StartNew();
         c.EntryModule = c.LoadModule("main", packageRoot, entryFiles, null);
         c.ParseTime = clock.Elapsed;
@@ -169,7 +206,8 @@ public sealed partial class Compilation
                     help: $"put the module's `.byn` files in `{Path.GetRelativePath(PackageRoot, dir)}/` next to the entry file; a module is a directory");
                 return;
             }
-            var sources = files.Select(f => new SourceText(Path.GetRelativePath(DisplayRoot, f).Replace('\\', '/'), File.ReadAllBytes(f)));
+            var sources = files.Select(f => (Path: Path.GetRelativePath(DisplayRoot, f).Replace('\\', '/'), File: f))
+                .Select(f => _replaced?.GetValueOrDefault(f.Path) ?? new SourceText(f.Path, File.ReadAllBytes(f.File)));
             module = LoadModule(name, dir, sources.ToList(), file.Module);
         }
         if (!file.Imports.TryAdd(alias, module))

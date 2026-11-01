@@ -37,8 +37,8 @@ internal sealed partial class Binder
             && PrimitiveType.ByName.TryGetValue(into.Name.Text, out var target) && target.IsNumeric)
             return BindTryFrom(c, target);
         if (c.Callee is MemberExpr { Member.Text: "tryParse", NullConditional: false, Target: NameExpr parsed }
-            && PrimitiveType.ByName.TryGetValue(parsed.Name.Text, out var parseTo) && parseTo.IsInteger)
-            return BindTryParse(c, parseTo);
+            && PrimitiveType.ByName.TryGetValue(parsed.Name.Text, out var parseTo) && (parseTo.IsInteger || parseTo.IsFloat))
+            return parseTo.IsFloat ? BindFloatTryParse(c, parseTo) : BindTryParse(c, parseTo);
         if (c.Callee is MemberExpr { Member.Text: "parse", NullConditional: false, Target: NameExpr parsedBy }
             && PrimitiveType.ByName.TryGetValue(parsedBy.Name.Text, out var parseAs) && parseAs.IsInteger)
             return BindParse(c, parseAs);
@@ -154,6 +154,14 @@ internal sealed partial class Binder
         if (args.Length == 0 || args.Any(a => a.Type.IsError)) return new BoundErrorExpr(c);
         var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
         return new BoundBuiltinCall(c, BuiltinMember.IntTryParse, args[0], [radix], new OptionalType(target));
+    }
+
+    /// <summary><c>f64.tryParse(text)</c>: a float read from text in the literal form without <c>_</c>, or <c>null</c> (revision 0015).</summary>
+    private BoundExpr BindFloatTryParse(CallExpr c, PrimitiveType target)
+    {
+        var args = BindArguments(c, [new ParameterSymbol("text", null, PrimitiveType.String, ParamModifier.None, 0)], null, enforceNames: false, displayName: $"{target.Name}.tryParse");
+        if (args.Length == 0 || args.Any(a => a.Type.IsError)) return new BoundErrorExpr(c);
+        return new BoundBuiltinCall(c, BuiltinMember.FloatTryParse, args[0], [], new OptionalType(target));
     }
 
     /// <summary><c>i64.parse(text, as: radix)</c>: as <c>tryParse</c>, but fails <c>ParseError</c> with the offset of the bad digit, or <c>overflow</c>.</summary>

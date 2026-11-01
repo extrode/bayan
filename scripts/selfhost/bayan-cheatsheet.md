@@ -285,7 +285,7 @@ enum ParamModifier { none, refKeyword, moveKeyword }   // written one per line
 
 - Q430: no package root for `selfhost/parser`, so `import lexer` works only via the test loader / API, not `bayan build selfhost/parser`.
 - Q431: only public lexer members are reachable; the parser made `TokenKind`, `Keywords.build`, `TextSpan`, `SourceText` and token fields public.
-- Q433: 69 parser codes (not 65), and an empty file dumps `CompilationUnit\n` without the extra blank line.
+- Q433: 70 parser codes (69 before BYN1069, spec 013 T2), and an empty file dumps `CompilationUnit\n` without the extra blank line.
 - Q435: union children are `Owned<…>` variants plus `none`; `List<Stmt>`/`List<Decl>` of the unions; defaults `List<T>()`, `.none`, `null`, `false` are all writable in a struct.
 - Q436: a union with a `List` payload is `unique`, so a child cannot be passed by value (BYN2780); build into locals and `move`; `Owned.value` is read-only (BYN2106), so set fields before wrapping; readers take `in`.
 - Q437: union variants need `Keyword` suffixes (`importDecl`) and keyword-named fields become `defaultKeyword` etc.; `import`/`struct`/`if` cannot be variant names.

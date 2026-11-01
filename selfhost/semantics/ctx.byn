@@ -455,6 +455,10 @@ struct Ctx {
     /// C# `Options.IncludeTests` and `Options.SkipOwnershipCheck` (T11 sets them when it creates the compilation).
     bool includeTests = false
     bool skipOwnershipCheck = false
+    /// C# `_associatedBindings` (T12 fills it in `declareMembers`, T14 reads it): `"{s} {name}"` to the resolved `type name = …;`.
+    Map<string, Type> associatedBindings = []
+    /// C# `_baseSpans` (T12 fills it in `declareMembers`, T14 reads it): `"{s} {i}"` to where the base is listed.
+    Map<string, TextSpan> baseSpans = []
 
     // ── Per-task state (Q710). A task adds the C# fields it needs, with defaults, only under its own marker.
     // ── T10 state
@@ -507,6 +511,8 @@ struct Ctx {
     bool interfaceMembersDeclared = false
     List<Work> pendingInterfaces = List<Work>()
     // ── T14 state
+    /// C# `_conformancesChecked` (Q709).
+    bool checkedConformances = false
     // ── T15 state
     // ── T16 state
     // ── T17 state
@@ -516,6 +522,8 @@ struct Ctx {
     // ── T21 state
     // ── T22 state
     // ── T23 state
+    /// C# `((CatchExpr)c.Syntax).Variant.Span` (FlowAnalysis.cs:314), by the `catchExpr` handle; the catch binder fills it (Q632).
+    Map<BExpr, TextSpan> catchVariantSpans = []
     // ── T24 state
     // ── T25 state
     // ── T26 state
@@ -530,11 +538,56 @@ struct Ctx {
     // ── T35 state
     // ── T36 state
     // ── T37 state
+    /// C# `Compilation.ChangedFields`: the fields each `ref this` method changes structurally, as a set in insertion order.
+    Map<FuncId, List<FieldId>> changedFields = []
     // ── T38 state
+    /// C# `_inReportedCycle`: structs and unions already reported as part of a cycle.
+    List<Type> inReportedCycle = List<Type>()
     // ── T39 state
+    /// C# `Compilation.ThisWrites`: the first write to `this` in each method not declared `ref this` (Q694).
+    Map<FuncId, T39ThisWrite> thisWrites = []
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
+
+/// C# `_calleeOf` (BinderExpressions.cs:920), as what T18's renamed-call readers use (Q731): a parser node is
+/// unique, so the binder keeps the call's spans and argument shape instead. Spans are zero-length where absent.
+struct CalleeOf {
+    TextSpan span
+    /// The callee is a `.memberExpr`; `member` and `target` are its member and target spans.
+    bool isMember = false
+    TextSpan member = TextSpan { start: 0, length: 0 }
+    TextSpan target = TextSpan { start: 0, length: 0 }
+    i64 argCount = 0
+    /// The first two arguments are both unnamed with modifier `.none`.
+    bool firstTwoPlain = false
+    TextSpan arg0 = TextSpan { start: 0, length: 0 }
+    TextSpan arg1 = TextSpan { start: 0, length: 0 }
+}
+
+CalleeOf calleeOfCall(parser.CallExpr call) {
+    var r = CalleeOf { span: call.span, argCount: call.args.length }
+    switch call.callee {
+        case .memberExpr(let me):
+            r.isMember = true
+            r.member = me.value.member
+            r.target = parser.exprSpan(in me.value.target)
+        default: {}
+    }
+    if call.args.length > 0 { r.arg0 = parser.exprSpan(in call.args[0].value) }
+    if call.args.length > 1 {
+        r.arg1 = parser.exprSpan(in call.args[1].value)
+        r.firstTwoPlain = call.args[0].name is null && call.args[0].modifier == .none && call.args[1].name is null && call.args[1].modifier == .none
+    }
+    return r
+}
+
+/// C# `_covered` entry (BinderCalls.cs:14), as what ReportUnhandled (BinderCalls.cs:944) reads (Q731).
+struct CoveredCall {
+    TextSpan span
+    string name
+    bool structLiteral
+}
 
 /// The C# `Binder`'s per-body state: the file and function being bound, the scopes, the jump targets
 /// and the narrowing facts. Every field is a T1 handle or a parser type.
@@ -590,11 +643,27 @@ struct Binder {
     FileId firstStatementFile = -1
     TextSpan firstStatementSpan = TextSpan { start: 0, length: 0 }
     // ── T16 state
+    /// The C# `_handled` (BinderCalls.cs:11): the span (in `file`) of the call a `try`, `catch` or `assert … fails` handles; null for none.
+    TextSpan? handled = null
     // ── T17 state
+    /// The C# `_caught` (BinderCalls.cs:17): the local `caught` reads in a `catch` handler, or -1.
+    LocalId caught = -1
+    /// The C# `_printArgument` (BinderCalls.cs:193): an argument of `print` is being converted.
+    bool printArgument = false
+    /// The C# `_sinkArgument` (BinderCalls.cs:196): the sink parameter an argument is converted to, or null.
+    string? sinkArgument = null
     // ── T18 state
+    CalleeOf? calleeOf = null
+    Map<LocalId, VariantId> narrowed = []
     // ── T19 state
     // ── T20 state
+    /// The C# `_prebound` (BinderCalls.cs:248), keyed by the argument's span start in `file` for its identity (Q617).
+    Map<i64, BExpr> prebound = []
+    /// The C# `_covered` (BinderCalls.cs:14): while a `try` operand is bound, the failing calls it does not handle; null outside one.
+    List<CoveredCall>? covered = null
     // ── T21 state
+    /// The C# `_patternOwns` (BinderCalls.cs:906): the patterns being bound are on a `switch move x` subject, so their bindings own their parts.
+    bool patternOwns = false
     // ── T22 state
     // ── T23 state
     // ── T24 state

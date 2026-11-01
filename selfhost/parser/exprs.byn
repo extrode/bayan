@@ -545,7 +545,7 @@ List<Argument> parseArgumentList(ref Parser p) {
 }
 
 /// The C# `Expr.Span`.
-TextSpan exprSpan(in Expr e) => e switch {
+public TextSpan exprSpan(in Expr e) => e switch {
     .literalExpr(let n) => n.value.span,
     .interpolatedExpr(let n) => n.value.span,
     .nameExpr(let n) => n.value.span,
@@ -584,7 +584,7 @@ TextSpan exprSpan(in Expr e) => e switch {
 }
 
 /// The span of the `BlockStmt` that `parseBlock` returns.
-TextSpan blockSpan(in Stmt block) {
+public TextSpan blockSpan(in Stmt block) {
     switch block {
         case .blockStmt(let n):
             return n.value.span

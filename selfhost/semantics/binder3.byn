@@ -2,53 +2,662 @@
 
 import parser
 
-// stub: T36 ports Binder.cs:1123 BindReturn
-BStmt bindReturn(ref Binder b, through ref Ctx c, for in parser.ReturnStmt r) => -1
+// ── Binder.cs:987 UserElement ───────────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1215 BindFail
-BStmt bindFail(ref Binder b, through ref Ctx c, for in parser.FailStmt f) => -1
+/// The `Item` of a struct conforming to `IIndexable` (preferred) or `IEnumerator`, with how the loop walks it in
+/// `user`; -1 (C# null) when it conforms to neither. A named enumerator must be writable, since the loop calls
+/// `moveNext(ref this)` on it; a temporary one is spilled to a hidden `var`.
+Type userElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BExpr iterable, to ref UserIteration? user) {
+    let itType = exprType(in c, for: iterable)
+    let iIndexable = findInterface(ref c, for: "IIndexable")
+    let iEnumerator = findInterface(ref c, for: "IEnumerator")
+    // Inside a generic body the loop is checked against the constraint; each instance rebinds it to the conformer's members.
+    if kindOf(itType) == .typeParam {
+        let tp = typeIndex(itType)
+        var constraint: InterfaceId = -1
+        for i in c.typeParams[tp].constraints {
+            if i == iIndexable && constraint == -1 { constraint = i }
+        }
+        if constraint == -1 {
+            for i in c.typeParams[tp].constraints {
+                if i == iEnumerator && constraint == -1 { constraint = i }
+            }
+        }
+        if constraint == -1 { return -1 }
+        // C# `_c.MutationChecks.Add(new MutationCheck(this, constraint.FindMethods("moveNext").First(), iterable))` when the
+        // constraint is `IEnumerator` and the iterable is a place: blocked until T28 designs a binder-free `MutationCheck` (Q582, Q730, Q679).
+        return typeParamTypeOf(associatedType(ref c, for: tp, by: "Item"))
+    }
+    if kindOf(itType) != .structType { return -1 }
+    let s = typeIndex(itType)
+    var conf: ConformanceId = -1
+    for k in c.structs[s].conformances {
+        if c.conformances[k].iface == iIndexable && conf == -1 { conf = k }
+    }
+    if conf == -1 {
+        for k in c.structs[s].conformances {
+            if c.conformances[k].iface == iEnumerator && conf == -1 { conf = k }
+        }
+    }
+    if conf == -1 { return -1 }
+    let iface = c.conformances[conf].iface
+    let indexable = iface == iIndexable
+    let advance = indexable ? findInterfaceProperty(ref c, by: iface, for: "count") : findInterfaceMethods(ref c, by: iface, for: "moveNext")[0]
+    let item = indexable ? findInterfaceMethods(ref c, by: iface, for: "get")[0] : findInterfaceProperty(ref c, by: iface, for: "current")
+    // A missing member or `Item` is reported by the conformance check.
+    let element = c.conformances[conf].associatedTypes.tryGet(at: "Item") ?? errorType()
+    if isError(element) { return errorType() }
+    let advanceWitness = witness(ref c, for: conf, by: advance)
+    if advanceWitness.fn == -1 && advanceWitness.field == -1 { return errorType() }
+    let itemWitness = witness(ref c, for: conf, by: item)
+    if itemWitness.fn == -1 && itemWitness.field == -1 { return errorType() }
+    if isUnique(ref c, for: element) {
+        let name = c.structs[s].name
+        report(ref b, through: ref c, for: .unsupported, at: parser.exprSpan(in f.iterable),
+            by: ($"a `for` over the unique `Item` `{typeDisplay(ref c, by: element)}` of `{name}`", "", "", "", ""),
+            help: $"make `{name}.Item` a value that is not unique, such as an index, and look the item up in the loop")
+        return errorType()
+    }
+    var spill: LocalId = -1
+    if !indexable {
+        let k = boundKind(iterable)
+        if k == .local || k == .thisRef || k == .field || k == .tupleElement || k == .index {
+            // C# `_c.MutationChecks.Add(new MutationCheck(this, advance, iterable))`: blocked until T28 designs a
+            // binder-free `MutationCheck` (Q582, Q730, Q679).
+        } else {
+            let span = parser.exprSpan(in f.iterable)
+            spill = newLocal(ref c, by: LocalSymbol { name: $"enumerator_{b.nextLocalId}", nameSpan: span, span: span, type: itType, kind: .varKeyword, id: b.nextLocalId })
+            b.nextLocalId += 1
+            if b.fn >= 0 { c.functions[b.fn].locals.append(spill) }
+        }
+    }
+    user = UserIteration {
+        kind: indexable ? .indexable : .enumerator,
+        advance: advanceWitness.fn,
+        item: itemWitness.fn,
+        spill: spill,
+        advanceField: advanceWitness.field,
+        itemField: itemWitness.field,
+    }
+    return element
+}
 
-// stub: T36 ports Binder.cs:1322 BindBreak
-BStmt bindBreak(ref Binder b, through ref Ctx c, for in parser.BreakStmt s) => -1
+/// Binder.cs:1030 Witness: the struct's member standing for `member`, a function or (for a getter) a field; both -1 for none.
+(FuncId fn, FieldId field) witness(ref Ctx c, for ConformanceId conf, by FuncId member) {
+    if (c.conformances[conf].witnesses.tryGet(at: member) is { } fn) { return (fn: fn, field: -1) }
+    return (fn: -1, field: c.conformances[conf].fieldWitnesses.tryGet(at: member) ?? -1)
+}
 
-// stub: T36 ports Binder.cs:1325 BindContinue
-BStmt bindContinue(ref Binder b, through ref Ctx c, for in parser.ContinueStmt s) => -1
+// ── Binder.cs:1034 DeclaredElement ──────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1328 BindErrdefer
-BStmt bindErrdefer(ref Binder b, through ref Ctx c, for in parser.DeferStmt d) => -1
+/// The element type, or the type written in `for T x in e` when the element converts to it.
+Type declaredElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, as Type element) {
+    if f.type is .none { return element }
+    var result = element
+    let declared = resolveType(ref b, through: ref c, for: in f.type)
+    if !isError(declared) && !isError(element) && declared != element && implicit(ref c, from: element, to: declared) is null {
+        report(ref b, through: ref c, for: .typeMismatch, at: parser.typeSpan(in f.type),
+            by: (typeDisplay(ref c, by: element), typeDisplay(ref c, by: declared), "", "", ""))
+    } else if !isError(declared) {
+        result = declared
+    }
+    return result
+}
 
-// stub: T36 ports Binder.cs:1348 BindPanicDefer
-BStmt bindPanicDefer(ref Binder b, through ref Ctx c, for in parser.DeferStmt d) => -1
+// ── Binder.cs:1045 BindForBody ──────────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1364 BindOnPanic
-BStmt bindOnPanic(ref Binder b, through ref Ctx c, for in parser.AssignStmt a) => -1
+/// The loop body; for `for (k, v) in e`, preceded by one binding per element of the tuple `variable`.
+BStmt bindForBody(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by LocalId variable, to JumpTarget target) {
+    var prelude = List<BStmt>()
+    if f.names.length > 0 {
+        let vt = c.locals[variable].type
+        if kindOf(vt) == .tuple && c.tupleTypes[typeIndex(vt)].length == f.names.length {
+            for i in 0..f.names.length {
+                let name = f.names[i]
+                let element = declareLocal(ref b, through: ref c, at: name, as: c.tupleTypes[typeIndex(vt)][i].type, for: .forVariable)
+                c.locals[element].borrowsSubject = true
+                let receiver = addLocal(ref c, from: BLocal { span: name, local: variable, type: c.locals[variable].type })
+                let value = addTupleElement(ref c, from: BTupleElement { span: name, receiver: receiver, index: i, type: c.locals[element].type })
+                prelude.append(addLocalDecl(ref c, from: BLocalDecl { span: name, local: element, initializer: value }))
+            }
+        } else {
+            if !isError(vt) {
+                report(ref b, through: ref c, for: .patternMismatch, at: f.variable, by: ($"{f.names.length} names", typeDisplay(ref c, by: vt), "", "", ""),
+                    help: "name one loop variable, or iterate over pairs such as a map's entries")
+            }
+            for name in f.names { let _ = declareLocal(ref b, through: ref c, at: name, as: errorType(), for: .forVariable) }
+        }
+    }
+    b.targets.append(target)
+    let body = bindBody(ref b, through: ref c, for: in f.body)
+    b.targets.remove(at: b.targets.length - 1)
+    if prelude.length == 0 { return body }
+    prelude.append(body)
+    return addBlock(ref c, from: BBlock { span: parser.stmtSpan(in f.body), statements: move prelude })
+}
 
-// stub: T36 ports Binder.cs:1405 BindContext
-BStmt bindContext(ref Binder b, through ref Ctx c, for in parser.ContextStmt s) => -1
+// ── Binder.cs:1078 BindForTry ───────────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1432 BindSwitchStatement
-BStmt bindSwitchStatement(ref Binder b, through ref Ctx c, for in parser.SwitchStmt s, to JumpTarget target) => -1
+// stub: T36 ports Binder.cs:1078 BindForTry (blocked: Q679; the not-iterable branch is ported, the stepping branch is not)
+/// `for try x in e { … }` over a value whose `next()` returns `T?` and fails: the loop owns the value (or borrows a
+/// `var` in place) and runs `while (try seq.next() is { } x) { … }`, so a failing step propagates like any `try`.
+BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BExpr iterable, to JumpTarget target) {
+    let itType = exprType(in c, for: iterable)
+    if fallibleNext(ref c, for: itType) == -1 {
+        if !isError(itType) {
+            report(ref b, through: ref c, for: .notIterable, at: parser.exprSpan(in f.iterable), by: (typeDisplay(ref c, by: itType), "", "", "", ""),
+                help: "give `for try` a value with a failing `next()` that returns `T?`; write `for x in …` for a sequence that cannot fail")
+        }
+        if f.names.length > 0 {
+            for name in f.names { let _ = declareLocal(ref b, through: ref c, at: name, as: errorType(), for: .forVariable) }
+        } else {
+            let _ = declareLocal(ref b, through: ref c, at: f.variable, as: errorType(), for: .forVariable)
+        }
+        let _ = bindBody(ref b, through: ref c, for: in f.body)
+        popScope(ref b)
+        return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+    }
+    // Blocked (Q679): Binder.cs:1090-1100 binds `try <sequence N>.next()` built from synthetic `Name`s (`<sequence N>`, `next`);
+    // a Bayan name is a `TextSpan` read back as source text, so the step, the loop variable and the body are not bound.
+    // The scope `bindFor` pushed closes where the C# `PopScope` runs (Binder.cs:1101), and the loop is a `BErrorStmt`.
+    popScope(ref b)
+    return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+}
 
-// stub: T36 ports Binder.cs:987 UserElement
-Type userElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BExpr iterable, to ref UserIteration? user) => -1
+/// Binder.cs:1107 FallibleNext: the `T? next() fails …` method that `for try` steps with, if `type` has one; -1 for none.
+FuncId fallibleNext(ref Ctx c, for Type type) {
+    if kindOf(type) != .structType { return -1 }
+    for m in c.structs[typeIndex(type)].methods {
+        if c.functions[m].name == "next" && !c.functions[m].isStatic && c.functions[m].hasFails && c.functions[m].parameters.length == 0
+            && kindOf(c.functions[m].returnType) == .optional { return m }
+    }
+    return -1
+}
 
-// stub: T36 ports Binder.cs:1034 DeclaredElement
-Type declaredElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, as Type element) => -1
+// ── Binder.cs:1112 NotIterable ──────────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1112 NotIterable
-Type notIterable(ref Binder b, through ref Ctx c, for in parser.ForStmt f, as Type type) => -1
+Type notIterable(ref Binder b, through ref Ctx c, for in parser.ForStmt f, as Type type) {
+    if fallibleNext(ref c, for: type) == -1 {
+        report(ref b, through: ref c, for: .notIterable, at: parser.exprSpan(in f.iterable), by: (typeDisplay(ref c, by: type), "", "", "", ""),
+            help: "use `for` over ranges (`0..n`), spans, lists, arrays, strings, or a type conforming to `IIndexable` or `IEnumerator`")
+    } else {
+        report(ref b, through: ref c, for: .notIterable, at: parser.exprSpan(in f.iterable), by: (typeDisplay(ref c, by: type), "", "", "", ""),
+            label: "each step can fail", help: "write `for try`", hasFix: true,
+            fixSpan: TextSpan { start: f.span.start + "for".length, length: 0 }, fixReplacement: " try")
+    }
+    return errorType()
+}
 
-// stub: T36 ports Binder.cs:1045 BindForBody
-BStmt bindForBody(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by LocalId variable, to JumpTarget target) => -1
+// ── Binder.cs:1123 BindReturn ───────────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1078 BindForTry
-BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BExpr iterable, to JumpTarget target) => -1
+BStmt bindReturn(ref Binder b, through ref Ctx c, for in parser.ReturnStmt r) {
+    if inPanicHandler(ref b, through: ref c, at: r.span, for: "return") { return addErrorStmt(ref c, from: BErrorStmt { span: r.span }) }
+    if b.deferDepth > 0 {
+        report(ref b, through: ref c, for: .jumpOutOfDefer, at: r.span, by: ("return", "", "", "", ""))
+        return addErrorStmt(ref c, from: BErrorStmt { span: r.span })
+    }
+    let fn = b.fn
+    if fn == -1 { return addErrorStmt(ref c, from: BErrorStmt { span: r.span }) }
+    let returnType = c.functions[fn].returnType
+    if r.value is .none {
+        if !isVoid(returnType) && !isError(returnType) {
+            report(ref b, through: ref c, for: .missingReturnValue, at: r.span, by: (typeDisplay(ref c, by: returnType), "", "", "", ""))
+        }
+        return addReturn(ref c, from: BReturn { span: r.span })
+    }
+    if c.functions[fn].hasFails {
+        let failure = tryBindFailure(ref b, through: ref c, for: in r.value)
+        if failure != -1 {
+            // `return` always returns a value; an error leaves with `fail` (BYN1056).
+            if boundKind(failure) == .errorVariant {
+                let name = c.errorVariants[c.bErrorVariants[boundIndex(failure)].variant].name
+                let keyword = TextSpan { start: r.span.start, length: "return".length }
+                report(ref b, through: ref c, for: .returnErrorInput, at: keyword, by: (name, "", "", "", ""), label: "this leaves with an error",
+                    help: $"leave with the error: `fail .{name}`", hasFix: true, fixSpan: keyword, fixReplacement: "fail")
+            }
+            return addFail(ref c, from: BFail { span: r.span, error: failure })
+        }
+    }
+    if isVoid(returnType) {
+        let v = bindExpr(ref b, through: ref c, for: in r.value)
+        if isNever(exprType(in c, for: v)) { return addExprStmt(ref c, from: BExprStmt { span: r.span, expr: v }) }
+        if !isError(exprType(in c, for: v)) {
+            let isMain = c.functions[fn].kind == .main
+            report(ref b, through: ref c, for: .returnValueInVoid, at: parser.exprSpan(in r.value), by: (isMain ? "main" : c.functions[fn].name, "", "", "", ""),
+                help: isMain ? "" : "declare a return type instead of `void`, or remove the value")
+        }
+        return addReturn(ref c, from: BReturn { span: r.span })
+    }
+    return addReturn(ref c, from: BReturn { span: r.span, value: bindConverted(ref b, through: ref c, for: in r.value, to: returnType) })
+}
 
-// stub: T36 ports Binder.cs:1398 InPanicHandler
-bool inPanicHandler(ref Binder b, through ref Ctx c, at TextSpan span, for string keyword) => false
+// ── Binder.cs:1164 TryBindFailure ───────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1292 FindTarget
-JumpTarget? findTarget(ref Binder b, through ref Ctx c, for TextSpan? label, bool loopOnly, at TextSpan span, by string keyword) => null
+/// In a failing function, `return .variant` or `return Set.variant` fails with that error; -1 (C# null) otherwise.
+BExpr tryBindFailure(ref Binder b, through ref Ctx c, for in parser.Expr value) {
+    let fn = b.fn
+    let returnType = c.functions[fn].returnType
+    switch value {
+        case .targetMemberExpr(let t):
+            let name = t15Text(in c, from: b.file, at: t.value.member)
+            if kindOf(returnType) == .errorSet || hasCase(ref c, for: returnType, by: name) { return -1 }
+            let sets = copyIds(in c.functions[fn].errorSets)
+            let matches = errorMatches(ref c, for: in sets, by: name)
+            if matches.length == 1 {
+                checkNotExcluded(ref b, through: ref c, for: matches[0], at: t.value.span)
+                return addErrorVariant(ref c, from: BErrorVariant { span: t.value.span, variant: matches[0] })
+            }
+            if matches.length > 1 {
+                report(ref b, through: ref c, for: .ambiguousVariant, at: t.value.span, by: (name, matchedSets(ref c, for: in matches), "", "", ""))
+                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
+            }
+            if c.functions[fn].infersErrors && c.functions[fn].errorSets.length == 0 && isVoid(returnType) {
+                report(ref b, through: ref c, for: .unknownVariant, at: t.value.span, by: (name, "the inferred error set", "", "", ""),
+                    help: "name the set: `fail MyError.x`")
+                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
+            }
+            return -1
+        case .memberExpr(let m):
+            if kindOf(returnType) == .errorSet { return -1 }
+            let bound = bindExprOrType(ref b, through: ref c, for: in value)
+            if boundKind(bound) == .errorVariant {
+                let variant = c.bErrorVariants[boundIndex(bound)].variant
+                checkCanFailWith(ref b, through: ref c, for: c.errorVariants[variant].set, at: m.value.span)
+                checkNotExcluded(ref b, through: ref c, for: variant, at: m.value.span)
+                return bound
+            }
+            return -1
+        default:
+            return -1
+    }
+}
 
-// stub: T36 ports Binder.cs:1164 TryBindFailure
-BExpr tryBindFailure(ref Binder b, through ref Ctx c, for in parser.Expr value) => -1
+/// Binder.cs:1207 HasCase: whether `.name` is a value of `type`, so `return .name` returns it.
+bool hasCase(ref Ctx c, for Type type, by string name) {
+    let t = kindOf(type) == .optional ? c.optionalTypes[typeIndex(type)] : type
+    if kindOf(t) == .enumType { return findEnumMember(ref c, by: typeIndex(t), for: name) != -1 }
+    if kindOf(t) == .unionType { return findUnionVariant(ref c, by: typeIndex(t), for: name) != -1 }
+    return false
+}
+
+/// The C# `fn.ErrorSets.Select(s => s.Find(name)).Where(v => v is not null)`.
+List<VariantId> errorMatches(ref Ctx c, for in List<ErrorSetId> sets, by string name) {
+    var matches = List<VariantId>()
+    for s in sets {
+        let v = findErrorVariant(ref c, by: s, for: name)
+        if v != -1 { matches.append(v) }
+    }
+    return matches
+}
+
+/// The C# `string.Join("`, `", matches.Select(m => m!.Set.DisplayName))`.
+string matchedSets(ref Ctx c, for in List<VariantId> matches) {
+    var sb = StrBuf()
+    for i in 0..matches.length {
+        if i > 0 { sb.append("`, `") }
+        sb.append(errorSetDisplayName(ref c, by: c.errorVariants[matches[i]].set))
+    }
+    return $"{sb.finish()}"
+}
+
+// ── Binder.cs:1215 BindFail ─────────────────────────────────────────────────────
+
+/// `fail .x`, `fail Set.x` or `fail e`: leaves the function with the error.
+BStmt bindFail(ref Binder b, through ref Ctx c, for in parser.FailStmt f) {
+    if inPanicHandler(ref b, through: ref c, at: f.span, for: "fail") { return addErrorStmt(ref c, from: BErrorStmt { span: f.span }) }
+    if b.deferDepth > 0 {
+        report(ref b, through: ref c, for: .jumpOutOfDefer, at: f.span, by: ("fail", "", "", "", ""))
+        return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+    }
+    let fn = b.fn
+    if fn == -1 { return addErrorStmt(ref c, from: BErrorStmt { span: f.span }) }
+    let entry = c.functions[fn].kind == .main || c.functions[fn].kind == .testKeyword
+    // `(call?.Callee ?? f.Error) is TargetMemberExpr t`: its span and member, or null.
+    var isCall = false
+    var targetSpan: TextSpan? = null
+    var member = TextSpan { start: 0, length: 0 }
+    switch f.error {
+        case .callExpr(let call):
+            isCall = true
+            switch call.value.callee {
+                case .targetMemberExpr(let t):
+                    targetSpan = t.value.span
+                    member = t.value.member
+                default:
+            }
+        case .targetMemberExpr(let t):
+            targetSpan = t.value.span
+            member = t.value.member
+        default:
+    }
+    let errorSpan = parser.exprSpan(in f.error)
+    if !c.functions[fn].hasFails && !entry {
+        let named = targetSpan is not null ? $".{t15Text(in c, from: b.file, at: member)}"
+            : typeDisplay(ref c, by: exprType(in c, for: bindExprOrType(ref b, through: ref c, for: in f.error)))
+        report(ref b, through: ref c, for: .propagateFromInfallible, at: errorSpan, by: (c.functions[fn].name, named, "", "", ""),
+            help: "declare the error in a `fails` clause, or handle it here")
+        return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+    }
+    if (targetSpan is { } tSpan) {
+        let name = t15Text(in c, from: b.file, at: member)
+        let sets = copyIds(in c.functions[fn].errorSets)
+        let matches = errorMatches(ref c, for: in sets, by: name)
+        if matches.length == 1 {
+            if !entry { checkNotExcluded(ref b, through: ref c, for: matches[0], at: tSpan) }
+            let variant = addErrorVariant(ref c, from: BErrorVariant { span: tSpan, variant: matches[0] })
+            switch f.error {
+                case .callExpr(let call):
+                    let built = bindPayload(ref b, through: ref c, for: in call.value, by: variant)
+                    if boundKind(built) == .errorVariant { return addFail(ref c, from: BFail { span: f.span, error: built }) }
+                    return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+                default:
+            }
+            if checkPayloadGiven(ref b, through: ref c, for: variant, from: in f.error) { return addFail(ref c, from: BFail { span: f.span, error: variant }) }
+            return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+        }
+        switch f.error {
+            case .callExpr(let call): bindArgumentsForRecovery(ref b, through: ref c, for: in call.value)
+            default:
+        }
+        if matches.length > 1 {
+            report(ref b, through: ref c, for: .ambiguousVariant, at: tSpan, by: (name, matchedSets(ref c, for: in matches), "", "", ""))
+        } else if c.functions[fn].errorSets.length == 0 {
+            report(ref b, through: ref c, for: .unknownVariant, at: tSpan, by: (name, "the inferred error set", "", "", ""), help: "name the set: `fail MyError.x`")
+        } else {
+            let none = List<VariantId>()
+            let declared = errorUnionOf(ref c, for: in sets, as: in none)
+            report(ref b, through: ref c, for: .undeclaredError, at: tSpan, by: ($".{name}", c.functions[fn].name, "", "", ""),
+                help: $"name a case of `{typeDisplay(ref c, by: declared)}`")
+        }
+        return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+    }
+    let error = bindExprOrType(ref b, through: ref c, for: in f.error)
+    let errorType = exprType(in c, for: error)
+    var sets = List<ErrorSetId>()
+    if kindOf(errorType) == .errorSet {
+        sets.append(typeIndex(errorType))
+    } else if kindOf(errorType) == .errorUnion {
+        sets = copyIds(in c.errorUnionTypes[typeIndex(errorType)].sets)
+    } else {
+        if !isError(errorType) {
+            report(ref b, through: ref c, for: .typeMismatch, at: errorSpan, by: (typeDisplay(ref c, by: errorType), "an error", "", "", ""))
+        }
+        return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+    }
+    if !entry {
+        for set in sets { checkCanFailWith(ref b, through: ref c, for: set, at: errorSpan) }
+    }
+    if !entry && boundKind(error) == .errorVariant { checkNotExcluded(ref b, through: ref c, for: c.bErrorVariants[boundIndex(error)].variant, at: errorSpan) }
+    if !isCall && !checkPayloadGiven(ref b, through: ref c, for: error, from: in f.error) { return addErrorStmt(ref c, from: BErrorStmt { span: f.span }) }
+    return addFail(ref c, from: BFail { span: f.span, error: error })
+}
+
+/// Binder.cs:1274 CheckCanFailWith: BYN2603 for a set the `fails` clause does not name (unless it is inferred).
+void checkCanFailWith(ref Binder b, through ref Ctx c, for ErrorSetId set, at TextSpan span) {
+    let fn = b.fn
+    for s in c.functions[fn].errorSets {
+        if s == set { return }
+    }
+    if c.functions[fn].infersErrors { return }
+    var named = copyIds(in c.functions[fn].errorSets)
+    named.append(set)
+    var sb = StrBuf()
+    for i in 0..named.length {
+        if i > 0 { sb.append(", ") }
+        sb.append(displayNameAmong(ref c, by: named[i], for: in named))
+    }
+    report(ref b, through: ref c, for: .undeclaredError, at: span, by: (displayNameAmong(ref c, by: set, for: in named), c.functions[fn].name, "", "", ""),
+        help: $"add it to the signature: `fails {sb.finish()}`")
+}
+
+/// Binder.cs:1285 CheckNotExcluded: BYN2603 for a case the `fails` clause takes out with `except`.
+void checkNotExcluded(ref Binder b, through ref Ctx c, for VariantId variant, at TextSpan span) {
+    var excluded = false
+    for v in c.functions[b.fn].excludedErrors {
+        if v == variant { excluded = true }
+    }
+    if !excluded { return }
+    let name = c.errorVariants[variant].name
+    report(ref b, through: ref c, for: .undeclaredError, at: span,
+        by: ($"{errorSetDisplayName(ref c, by: c.errorVariants[variant].set)}.{name}", c.functions[b.fn].name, "", "", ""),
+        help: $"pick another case, or remove `.{name}` from the `except` list")
+}
+
+// ── Binder.cs:1292 FindTarget ───────────────────────────────────────────────────
+
+JumpTarget? findTarget(ref Binder b, through ref Ctx c, for TextSpan? label, bool loopOnly, at TextSpan span, by string keyword) {
+    if inPanicHandler(ref b, through: ref c, at: span, for: keyword) { return null }
+    if b.deferDepth > 0 {
+        report(ref b, through: ref c, for: .jumpOutOfDefer, at: span, by: (keyword, "", "", "", ""))
+        return null
+    }
+    var i = b.targets.length - 1
+    while i >= 0 {
+        let t = b.targets[i]
+        i -= 1
+        if (label is { } l) {
+            let text = t15Text(in c, from: b.file, at: l)
+            if t.label != text { continue }
+            if loopOnly && !t.isLoop {
+                report(ref b, through: ref c, for: .continueSwitch, at: l, by: (text, "", "", "", ""))
+                return null
+            }
+            return t
+        }
+        if !loopOnly || t.isLoop { return t }
+    }
+    if (label is { } l) {
+        report(ref b, through: ref c, for: .unknownLabel, at: l, by: (t15Text(in c, from: b.file, at: l), "", "", "", ""))
+    } else {
+        report(ref b, through: ref c, for: .jumpOutsideLoop, at: span, by: (keyword, "", "", "", ""))
+    }
+    return null
+}
+
+BStmt bindBreak(ref Binder b, through ref Ctx c, for in parser.BreakStmt s) {
+    if (findTarget(ref b, through: ref c, for: s.label, loopOnly: false, at: s.span, by: "break") is { } t) {
+        return addBreak(ref c, from: BBreak { span: s.span, target: t.id })
+    }
+    return addErrorStmt(ref c, from: BErrorStmt { span: s.span })
+}
+
+BStmt bindContinue(ref Binder b, through ref Ctx c, for in parser.ContinueStmt s) {
+    if (findTarget(ref b, through: ref c, for: s.label, loopOnly: true, at: s.span, by: "continue") is { } t) {
+        return addContinue(ref c, from: BContinue { span: s.span, target: t.id })
+    }
+    return addErrorStmt(ref c, from: BErrorStmt { span: s.span })
+}
+
+// ── Binder.cs:1328 BindErrdefer ─────────────────────────────────────────────────
+
+BStmt bindErrdefer(ref Binder b, through ref Ctx c, for in parser.DeferStmt d) {
+    let fn = b.fn
+    if !(fn != -1 && c.functions[fn].hasFails) && !(fn != -1 && (c.functions[fn].kind == .main || c.functions[fn].kind == .testKeyword)) {
+        report(ref b, through: ref c, for: .errdeferWithoutFails, at: d.span, by: ("", "", "", "", ""),
+            help: "remove `failing` to run it on every exit, or add a `fails` clause to the function")
+    }
+    pushScope(ref b)
+    var err: LocalId = -1
+    if (d.binding is { } name) {
+        let none = List<VariantId>()
+        let sets = fn == -1 ? List<ErrorSetId>() : copyIds(in c.functions[fn].errorSets)
+        let type = fn == -1 ? errorType() : errorUnionOf(ref c, for: in sets, as: in none)
+        err = declareLocal(ref b, through: ref c, at: name, as: type, for: .letKeyword)
+        c.locals[err].isCatch = true
+    }
+    b.deferDepth += 1
+    let body = bindBody(ref b, through: ref c, for: in d.body)
+    b.deferDepth -= 1
+    popScope(ref b)
+    return addErrdefer(ref c, from: BErrdefer { span: d.span, error: err, body: body })
+}
+
+// ── Binder.cs:1348 BindPanicDefer ───────────────────────────────────────────────
+
+/// `defer panicking [(p)] body`: `return`, `break`, `continue` and `try` in the body are BYN2612; T27's panic-handler check checks the rest.
+BStmt bindPanicDefer(ref Binder b, through ref Ctx c, for in parser.DeferStmt d) {
+    pushScope(ref b)
+    var panic: LocalId = -1
+    if (d.binding is { } name) { panic = declareLocal(ref b, through: ref c, at: name, as: builtinType(.panic), for: .letKeyword) }
+    let deferDepth = b.deferDepth
+    let inHandler = b.inPanicHandler
+    b.deferDepth = 0
+    b.inPanicHandler = true
+    let body = bindBody(ref b, through: ref c, for: in d.body)
+    b.deferDepth = deferDepth
+    b.inPanicHandler = inHandler
+    popScope(ref b)
+    return addPanicDefer(ref c, from: BPanicDefer { span: d.span, panic: panic, body: body })
+}
+
+// ── Binder.cs:1364 BindOnPanic ──────────────────────────────────────────────────
+
+/// `Panic.handler = f;` with `f` a named `void f(Panic p)`: only as the first statement of the program's entry
+/// function, once (BYN2614). Round 2's `Panic.onPanic` is BYN2230 and binds the same way.
+BStmt bindOnPanic(ref Binder b, through ref Ctx c, for in parser.AssignStmt a) {
+    switch a.target {
+        case .memberExpr(let m):
+            if t15Text(in c, from: b.file, at: m.value.member) == "onPanic" {
+                report(ref b, through: ref c, for: .renamedMember, at: m.value.member, by: ("onPanic", "handler", "", "", ""), label: "the old name",
+                    help: "rename it `handler`", hasFix: true, fixSpan: m.value.member, fixReplacement: "handler")
+            }
+        default:
+    }
+    let bound = bindExprOrType(ref b, through: ref c, for: in a.value)
+    let value = boundKind(bound) == .methodGroup ? bound : asValue(ref b, through: ref c, for: bound, from: in a.value)
+    var handler: FuncId = -1
+    let isGroup = boundKind(value) == .methodGroup
+    let g = isGroup ? c.bMethodGroups[boundIndex(value)].function : -1
+    if isGroup && c.bMethodGroups[boundIndex(value)].receiver == -1 && g != -1 && c.functions[g].kind == .function && !functionIsGeneric(ref c, by: g)
+        && !c.functions[g].hasFails && isVoid(c.functions[g].returnType) && c.functions[g].parameters.length == 1
+        && c.locals[c.functions[g].parameters[0]].modifier == .none && c.locals[c.functions[g].parameters[0]].type == builtinType(.panic) {
+        handler = g
+    } else if !isError(exprType(in c, for: value)) || isGroup {
+        var shown = ""
+        if isGroup {
+            var sb = StrBuf()
+            let ps = copyIds(in c.functions[g].parameters)
+            for i in 0..ps.length {
+                if i > 0 { sb.append(", ") }
+                sb.append(typeDisplay(ref c, by: c.locals[ps[i]].type))
+            }
+            shown = $"{typeDisplay(ref c, by: c.functions[g].returnType)} {c.functions[g].name}({sb.finish()})"
+        } else {
+            shown = typeDisplay(ref c, by: exprType(in c, for: value))
+        }
+        report(ref b, through: ref c, for: .typeMismatch, at: parser.exprSpan(in a.value), by: (shown, "void f(Panic p)", "", "", ""),
+            help: "name a function declared `void f(Panic p)`")
+    }
+    let entry = !c.library && b.fn != -1 && b.fn == c.modules[c.entryModule].main
+    // C# `a != _firstStatement`, by file and full span (Q719).
+    let first = b.firstStatementFile == b.file && b.firstStatementSpan.start == a.span.start && b.firstStatementSpan.length == a.span.length
+    var misplaced = ""
+    if !entry {
+        misplaced = c.library ? "libraries cannot set it" : $"`{b.fn == -1 ? "" : c.functions[b.fn].name}` is not the program's entry function"
+    } else if b.onPanicSet {
+        misplaced = "set again here"
+    } else if !first {
+        misplaced = "not the first statement of `main`"
+    }
+    if misplaced != "" {
+        report(ref b, through: ref c, for: .onPanicPlacement, at: a.span, by: ("", "", "", "", ""), label: misplaced,
+            help: c.library ? "set `Panic.handler` in the program that uses this library" : "set it once, as the first statement of `main`")
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    b.onPanicSet = true
+    if handler == -1 { return addErrorStmt(ref c, from: BErrorStmt { span: a.span }) }
+    c.onPanic = handler
+    return addSetOnPanic(ref c, from: BSetOnPanic { span: a.span, handler: handler })
+}
+
+// ── Binder.cs:1398 InPanicHandler ───────────────────────────────────────────────
+
+/// BYN2612 for `keyword` inside a `defer panicking` body; true when reported.
+bool inPanicHandler(ref Binder b, through ref Ctx c, at TextSpan span, for string keyword) {
+    if !b.inPanicHandler { return false }
+    report(ref b, through: ref c, for: .panicHandlerRestricted, at: span, by: ($"`{keyword}`", "", "", "", ""), help: "remove it; panic handlers can't recover")
+    return true
+}
+
+// ── Binder.cs:1405 BindContext ──────────────────────────────────────────────────
+
+BStmt bindContext(ref Binder b, through ref Ctx c, for in parser.ContextStmt s) {
+    var allocator: BExpr = -1
+    for v in s.values {
+        let name = t15Text(in c, from: b.file, at: v.name)
+        // `alloc` is the handler's name; `allocator` is still accepted for it.
+        if !(name == "alloc" || name == "allocator") {
+            if name == "net" || name == "fs" || name == "clock" || name == "random" || name == "env" || name == "process" || name == "console" || name == "log" {
+                report(ref b, through: ref c, for: .unsupported, at: v.name, by: ($"the `{name}` handler", "", "", "", ""))
+            } else {
+                report(ref b, through: ref c, for: .unknownHandler, at: v.name, by: (name, "", "", "", ""), label: name == "suspend" ? "`suspend` has no handler" : "not a handler",
+                    help: "choose one of the handler names; `suspend` has no handler")
+            }
+            continue
+        }
+        allocator = bindConverted(ref b, through: ref c, for: in v.value, to: builtinType(.arena))
+    }
+    // Every handler was reported: the body still runs, with the handlers it already has.
+    if allocator == -1 && s.values.length > 0 { return contextBody(ref b, through: ref c, for: in s) }
+    if allocator == -1 {
+        report(ref b, through: ref c, for: .missingArgument, at: s.span, by: ("allocator", "context", "", "", ""))
+        allocator = addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+    }
+    let body = contextBody(ref b, through: ref c, for: in s)
+    return addContext(ref c, from: BContext { span: s.span, allocator: allocator, body: body })
+}
+
+/// The C# `BindBlock(c.Body)`: the parser always gives `context` a block body (C# `BlockStmt Body`), so the default is unreachable.
+BStmt contextBody(ref Binder b, through ref Ctx c, for in parser.ContextStmt s) {
+    switch s.body {
+        case .blockStmt(let block): return bindBlock(ref b, through: ref c, for: in block.value)
+        default: return -1
+    }
+}
+
+// ── Binder.cs:1432 BindSwitchStatement ──────────────────────────────────────────
+
+BStmt bindSwitchStatement(ref Binder b, through ref Ctx c, for in parser.SwitchStmt s, to JumpTarget target) {
+    let subjectResult = bindSwitchSubject(ref b, through: ref c, for: in s.value)
+    let value = subjectResult.value
+    let owns = subjectResult.owns
+    var sections = List<BSwitchSection>()
+    b.targets.append(target)
+    var sawDefault = false
+    for section in s.sections {
+        pushScope(ref b)
+        var pattern: BPattern = -1
+        if section.label.pattern is not .none {
+            b.patternOwns = owns
+            pattern = bindPattern(ref b, through: ref c, for: in section.label.pattern, as: exprType(in c, for: value))
+            b.patternOwns = false
+            if owns { checkOwningOverlap(ref b, through: ref c, for: pattern) }
+            if owns && section.label.guard is not .none { guardBindings(ref c, for: pattern, at: parser.exprSpan(in section.label.guard)) }
+            if section.label.guard is .none { learnArmState(ref b, through: ref c, for: value, by: pattern) }
+        } else {
+            if sawDefault { report(ref b, through: ref c, for: .duplicateDefault, at: section.label.span, by: ("", "", "", "", "")) }
+            sawDefault = true
+        }
+        let guard = section.label.guard is .none ? -1 : bindCondition(ref b, through: ref c, for: in section.label.guard)
+        var body = List<BStmt>()
+        for st in section.statements { body.append(bindStatement(ref b, through: ref c, for: in st)) }
+        popScope(ref b)
+        sections.append(BSwitchSection { span: section.span, pattern: pattern, guard: guard, body: move body })
+    }
+    b.targets.remove(at: b.targets.length - 1)
+    var arms = List<(BPattern, BExpr)>()
+    for x in sections { arms.append((x.pattern, x.guard)) }
+    let valueType = exprType(in c, for: value)
+    var exhaustive = sawDefault
+    if !sawDefault {
+        let states = kindOf(valueType) == .optional ? -1 : statesUnion(ref c, for: valueType)
+        if states != -1 {
+            var subjectType = valueType
+            if (subject(ref b, through: ref c, for: value) is { } found) { subjectType = found.type }
+            exhaustive = checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in arms)
+        } else {
+            exhaustive = checkExhaustive(ref b, through: ref c, at: parser.exprSpan(in s.value), as: valueType, by: in arms, statement: true)
+        }
+    }
+    return addSwitch(ref c, from: BSwitch { span: s.span, value: value, sections: move sections, target: target.id, exhaustive: exhaustive })
+}

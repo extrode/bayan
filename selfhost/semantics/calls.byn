@@ -1,30 +1,937 @@
-// T20: BinderCalls.cs 1-~587 (calls, overloads, arguments).
+// T20: BinderCalls.cs 1-595 (calls, overloads, arguments).
 
 import parser
 
-// stub: T20 ports BinderCalls.cs:27 BindCall
-BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to Type expected) => -1
+/// BinderCalls.cs:19 StripParens: the span of `e` inside any parentheses.
+TextSpan stripParens(in parser.Expr e) {
+    switch e {
+        case .parenExpr(let p): return stripParens(in p.value.inner)
+        default: return parser.exprSpan(in e)
+    }
+}
 
-// stub: T20 ports BinderCalls.cs:358 BindArguments
-List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") => []
+// ── Calls ────────────────────────────────────────────────────────────────────
 
-// stub: T20 ports BinderCalls.cs:174 BindArgumentsForRecovery
-void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {}
+BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from parser.Expr syntax, to Type expected) {
+    // A call to a member ending in `Unchecked` bypasses a safety rule and says why (J6); an empty reason is the parser's.
+    var calleeName: string? = null
+    switch call.callee {
+        case .memberExpr(let me): calleeName = t15Text(in c, from: b.file, at: me.value.member)
+        case .nameExpr(let ne): calleeName = t15Text(in c, from: b.file, at: ne.value.name)
+        default: break
+    }
+    if call.becauseKeyword is null && (calleeName is { } m) && m.endsWith("Unchecked") {
+        report(ref b, through: ref c, for: .missingBecause, at: call.span, by: ($"{m}()", "", "", "", ""), label: "bypasses a safety rule",
+            help: "explain the bypass in a `because` clause")
+    }
+    switch call.callee {
+        case .memberExpr(let me):
+            if !me.value.nullConditional {
+                let member = t15Text(in c, from: b.file, at: me.value.member)
+                if member == "trustUnchecked" && call.args.length == 0 {
+                    return bindTrustUnchecked(ref b, through: ref c, for: in call, by: in me.value) because "the C# `BindTrustUnchecked` is the binder of the call itself"
+                }
+                switch me.value.target {
+                    case .nameExpr(let into):
+                        let target = t15Text(in c, from: b.file, at: into.value.name)
+                        if member == "tryFrom" && (primitiveByName(target) is { } tf) && isNumeric(tf) {
+                            return bindTryFrom(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(tf)))
+                        }
+                        if member == "tryParse" && (primitiveByName(target) is { } tt) && (isInteger(tt) || isFloat(tt)) {
+                            if isFloat(tt) { return bindFloatTryParse(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(tt))) }
+                            return bindTryParse(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(tt)))
+                        }
+                        if member == "parse" && (primitiveByName(target) is { } tp) && isInteger(tp) {
+                            return bindParse(ref b, through: ref c, for: in call, from: syntax, to: primKindOf(typeIndex(tp)))
+                        }
+                        let mod = c.files[b.file].module
+                        // `StrBuf.over(span)`: the span first, then `context.allocator` (spec §16.4).
+                        if member == "over" && target == "StrBuf" && into.value.typeArgs.length == 0
+                            && t15Lookup(ref b, for: "StrBuf") == -1 && !c.modules[mod].types.contains("StrBuf") {
+                            let over = t9Function(ref c, for: "StrBuf.over")
+                            let ps = copyIds(in c.functions[over].parameters)
+                            let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: over, enforceNames: false, displayName: "StrBuf.over")
+                            return addCall(ref c, from: BCall { span: call.span, function: over, receiver: -1, arguments: move args, type: builtinType(.strBuf) })
+                        }
+                        // `Log.debug(…)` on an undeclared `Log` names the level where the act should be (BYN5007, Question 271).
+                        let logLevel = typeIndex(t9Type(ref c, for: "LogLevel"))
+                        if target == "Log" && into.value.typeArgs.length == 0
+                            && findEnumMember(ref c, by: logLevel, for: member) != -1 && t15Lookup(ref b, for: "Log") == -1 && !c.modules[mod].types.contains("Log")
+                            && !c.modules[mod].functions.contains("Log") && !c.modules[mod].constants.contains("Log") && !c.files[b.file].imports.contains("Log") {
+                            let plain = call.args.length == 1 && call.args[0].name is null && call.args[0].modifier == .none
+                            let text = plain ? t15Text(in c, from: b.file, at: parser.exprSpan(in call.args[0].value)) : ""
+                            report(ref b, through: ref c, for: .logLevelAsVerb, at: me.value.span, by: (member, "", "", "", ""),
+                                help: $"call `log` and pass the level `as: .{member}`",
+                                hasFix: plain, fixSpan: plain ? call.span : null, fixReplacement: plain ? $"log({text}, as: .{member})" : "")
+                            bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+                            return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+                        }
+                    default:
+                        break
+                }
+            }
+        default:
+            break
+    }
+    let outer = b.calleeOf
+    b.calleeOf = calleeOfCall(call)
+    var callee: BExpr = -1
+    switch call.callee {
+        case .targetMemberExpr(let tm): callee = bindTargetMember(ref b, through: ref c, for: in tm.value, to: expected)
+        default: callee = bindExprOrType(ref b, through: ref c, for: in call.callee)
+    }
+    b.calleeOf = outer
+    let kind = boundKind(callee)
+    let i = boundIndex(callee)
+    if kind == .methodGroup {
+        let fn = c.bMethodGroups[i].function
+        let receiver = c.bMethodGroups[i].receiver
+        let explicit = c.bMethodGroups[i].typeArgs.length > 0
+        switch c.functions[fn].builtin {
+            // mutation-exempt: Q616 through 95
+            case .ownedNew:
+                return bindOwned(ref b, through: ref c, for: in call, as: expected != -1 && kindOf(expected) == .owned ? c.ownedTypes[typeIndex(expected)] : -1)
+            case .untrustedNew:
+                return bindUntrusted(ref b, through: ref c, for: in call, as: expected != -1 && kindOf(expected) == .untrusted ? c.untrustedTypes[typeIndex(expected)] : -1)
+            case .trust:
+                return bindTrust(ref b, through: ref c, for: in call)
+            default:
+                break
+        }
+        // `Utf8.decode(bytes, invalid: .replace)` is the lossy form, which never fails.
+        if fn == t9Function(ref c, for: "Utf8.decode") && t20HasArgument(c, from: b.file, for: call, by: "invalid") {
+            return t20BindGroupCall(ref b, through: ref c, for: call, from: call.callee, at: syntax, by: t9Function(ref c, for: "Utf8.decode(invalid)"), as: -1, explicit: explicit)
+        }
+        return t20BindGroupCall(ref b, through: ref c, for: call, from: call.callee, at: syntax, by: t20Overload(ref c, for: fn, from: b.file, by: call), as: receiver, explicit: explicit)
+    }
+    if kind == .builtinGroup {
+        let name = c.bBuiltinGroups[i].name
+        return bindBuiltinMethodCall(ref b, through: ref c, for: in call, from: c.bBuiltinGroups[i].receiver, by: name)
+    }
+    if kind == .typeRef {
+        return bindConstruction(ref b, through: ref c, for: in call, as: c.bTypeRefs[i].referenced)
+    }
+    if kind == .variantGroup {
+        let v = c.bVariantGroups[i].variant
+        let fields = copyIds(in c.unionVariants[v].fields)
+        let variantName = c.unionVariants[v].name
+        let payload = bindArguments(ref b, through: ref c, for: in call, by: in fields, as: -1, enforceNames: false, displayName: variantName)
+        return addUnionNew(ref c, from: BUnionNew { span: call.span, variant: v, payload: move payload })
+    }
+    if kind == .unionNew && c.bUnionNews[i].payload.length == 0 {
+        let v = c.bUnionNews[i].variant
+        report(ref b, through: ref c, for: .variantHasNoPayload, at: call.span, by: (c.unionVariants[v].name, "", "", "", ""),
+            help: $"write `{c.unions[c.unionVariants[v].owner].name}.{c.unionVariants[v].name}` without parentheses")
+        bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    if kind == .errorExpr {
+        bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    // A call through a function value: the value is the receiver of its type's invoke symbol (R9).
+    let type = exprType(in c, for: callee)
+    if kindOf(type) == .function {
+        return bindFunctionCall(ref b, through: ref c, for: in call, by: invokeSymbol(ref c, for: type), from: callee, at: syntax)
+    }
+    report(ref b, through: ref c, for: .notCallable, at: parser.exprSpan(in call.callee), by: (typeDisplay(ref c, by: type), "", "", "", ""))
+    bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+    return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+}
 
-// stub: T20 ports BinderCalls.cs:190 BindFunctionCall
-BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, in List<parser.TypeSyntax>? typeArgs = null) => -1
+/// `c.Args.Any(a => a.Name?.Text == name)`.
+bool t20HasArgument(Ctx c, from FileId f, for parser.CallExpr call, by string name) {
+    for a in call.args {
+        if (a.name is { } n) && t15Text(in c, from: f, at: n) == name { return true }
+    }
+    return false
+}
 
-// stub: T20 ports BinderCalls.cs:127 BindTryFrom
-BExpr bindTryFrom(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+/// `BindFunctionCall(c, fn, receiver, g.TypeArgs)`: a method group's explicit type arguments are those of the `NameExpr`
+/// it was bound from (BinderExpressions.cs:511), found again through any parentheses (Q618).
+BExpr t20BindGroupCall(ref Binder b, through ref Ctx c, for parser.CallExpr call, from parser.Expr e, at parser.Expr syntax, by FuncId fn, as BExpr receiver, bool explicit) {
+    switch e {
+        case .parenExpr(let p):
+            return t20BindGroupCall(ref b, through: ref c, for: call, from: p.value.inner, at: syntax, by: fn, as: receiver, explicit: explicit)
+        case .nameExpr(let n):
+            if explicit { return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver, at: syntax, typeArgs: in n.value.typeArgs) }
+            return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver, at: syntax)
+        default:
+            return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver, at: syntax)
+    }
+}
 
-// stub: T20 ports BinderCalls.cs:146 BindTryParse
-BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+/// BinderCalls.cs:106 Overload: the overload of `fn` the call's labels select (J65): the first whose labels fit the named
+/// arguments and whose unlabeled parameters fit the positional ones. Overloads cannot overlap, so at most one fits; with
+/// none, `fn` reports why.
+FuncId t20Overload(ref Ctx c, for FuncId fn, from FileId f, by parser.CallExpr call) {
+    var overloads = List<FuncId>()
+    let name = c.functions[fn].name
+    if c.functions[fn].owner != -1 {
+        overloads = findMethods(ref c, by: c.functions[fn].owner, for: name)
+    } else if (c.modules[c.functions[fn].module].functions.tryGet(at: name) is { } fs) && t15ContainsLocal(in fs, for: fn) {
+        overloads = copyIds(in fs)
+    }
+    if overloads.length < 2 { return fn }
+    var named = Map<string, bool>()
+    var positional: i64 = 0
+    for a in call.args {
+        if (a.name is { } n) { named[t15Text(in c, from: f, at: n)] = true } else { positional += 1 }
+    }
+    for o in overloads {
+        if t20Accepts(c, for: o, by: named, as: positional) { return o }
+    }
+    return fn
+}
 
-// stub: T20 ports BinderCalls.cs:160 BindParse
-BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+/// BinderCalls.cs:116 Accepts.
+bool t20Accepts(Ctx c, for FuncId f, by Map<string, bool> named, as i64 positional) {
+    let ps = t12Params(in c, for: f)
+    for (n, _) in named {
+        var any = false
+        for p in ps {
+            if p.label == n { any = true }
+        }
+        if !any { return false }
+    }
+    for p in ps {
+        if (p.syntax is { } x) && x.hasParticle && !x.hasDefault && !named.contains(p.label) { return false }
+    }
+    var open: i64 = 0
+    var needed: i64 = 0
+    var rest = false
+    for i in 0..ps.length {
+        if (ps[i].syntax is { } x) && !x.hasParticle && !named.contains(c.locals[c.functions[f].parameters[i]].name) {
+            open += 1
+            if !x.hasDefault && !x.isRest { needed += 1 }
+            if x.isRest { rest = true }
+        }
+    }
+    return positional >= needed && (positional <= open || rest)
+}
 
-// stub: T20 ports BinderCalls.cs:473 Label
-string label(ref Ctx c, for LocalId p) => ""
+/// BinderCalls.cs:127 BindTryFrom: `u8.tryFrom(x)`, a numeric conversion that gives `null` instead of trapping when the
+/// value does not fit.
+BExpr bindTryFrom(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) {
+    if call.args.length != 1 || call.args[0].name is not null {
+        report(ref b, through: ref c, for: .tooManyArguments, at: parser.exprSpan(in call.callee), by: ($"{typeDisplay(ref c, by: prim(target))}.tryFrom", "1", "", "", ""))
+        bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    let operand = bindExpr(ref b, through: ref c, for: in call.args[0].value)
+    let type = exprType(in c, for: operand)
+    if isError(type) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    if !isNumeric(type) {
+        report(ref b, through: ref c, for: .invalidCast, at: parser.exprSpan(in call.args[0].value), by: (typeDisplay(ref c, by: type), typeDisplay(ref c, by: prim(target)), "", "", ""))
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    let optional = internOptional(ref c, by: prim(target))
+    return addTryFrom(ref c, from: BTryFrom { span: call.span, operand: operand, target: prim(target), type: optional })
+}
 
-// stub: T20 ports BinderCalls.cs:19 StripParens
-TextSpan stripParens(in parser.Expr e) => TextSpan { start: 0, length: 0 }
+/// BinderCalls.cs:146 BindTryParse: `i64.tryParse(text, as: radix)`, an integer read from text in a `Radix`, `.decimal` by
+/// default, or `null` (spec §6.2). The C# parameters have no symbol of their own, so they are new locals (Q619).
+BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) {
+    let radixType = t9Type(ref c, for: "Radix")
+    var ps = List<LocalId>()
+    ps.append(newLocal(ref c, by: LocalSymbol { name: "text", type: prim(.string), kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
+    let asParam = newLocal(ref c, by: LocalSymbol { name: "as", type: radixType, kind: .parameter, isParameter: true, modifier: .none, ordinal: 1 })
+    if call.args.length >= 2 { ps.append(asParam) }
+    // mutation-exempt: Q619
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
+    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    for a in args {
+        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    }
+    var radix = args.length > 1 ? args[1] : -1
+    if args.length <= 1 {
+        let decimal = findEnumMember(ref c, by: typeIndex(radixType), for: "decimal")
+        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
+    }
+    let optional = internOptional(ref c, by: prim(target))
+    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intTryParse, receiver: args[0], arguments: [radix], type: optional })
+}
+
+/// BinderCalls.cs:160 BindFloatTryParse: `f64.tryParse(text)`, a float read from text in the literal form without `_`, or
+/// `null` (revision 0015). The parameter is a new local, as in `bindTryParse` (Q619).
+BExpr bindFloatTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) {
+    var ps = List<LocalId>()
+    ps.append(newLocal(ref c, by: LocalSymbol { name: "text", type: prim(.string), kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
+    // mutation-exempt: Q619
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
+    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    for a in args {
+        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    }
+    let optional = internOptional(ref c, by: prim(target))
+    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .floatTryParse, receiver: args[0], arguments: [], type: optional })
+}
+
+/// BinderCalls.cs:168 BindParse: `i64.parse(text, as: radix)`, as `tryParse`, but fails `ParseError` with the offset of the
+/// bad digit, or `overflow`.
+BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from parser.Expr syntax, to PrimitiveKind target) {
+    let fn = intParse(ref c, for: target)
+    let all = copyIds(in c.functions[fn].parameters)
+    let take = call.args.length < 1 ? 1 : call.args.length > 2 ? 2 : call.args.length
+    var ps = List<LocalId>()
+    for i in 0..take { ps.append(all[i]) }
+    let name = $"{typeDisplay(ref c, by: prim(target))}.parse"
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: name)
+    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    for a in args {
+        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    }
+    var radix = args.length > 1 ? args[1] : -1
+    if args.length <= 1 {
+        let decimal = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Radix")), for: "decimal")
+        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
+    }
+    if !((b.handled is { } h) && h == call.span) { t20Unhandled(ref b, through: ref c, at: call.span, by: name) }
+    return addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: [args[0], radix], type: c.functions[fn].returnType })
+}
+
+/// BinderCalls.cs:174-178, :239-243: inside a `try` operand an unhandled failing call is collected in `covered` (Q731),
+/// elsewhere reported. The C# passes the `CallExpr`, so `structLiteral` (`c is StructLiteralExpr`) is false.
+void t20Unhandled(ref Binder b, through ref Ctx c, at TextSpan span, by string name) {
+    if b.covered is not null {
+        var covered = b.covered.take() ?? List<CoveredCall>()
+        covered.append(CoveredCall { span: span, name: name, structLiteral: false })
+        b.covered = move covered
+    } else {
+        reportUnhandled(ref b, through: ref c, at: span, by: name, structLiteral: false)
+    }
+}
+
+/// BinderCalls.cs:182 BindArgumentsForRecovery.
+void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
+    for a in call.args {
+        // A lambda or `it` argument has no type to bind with once the call failed.
+        if t20IsLambda(a.value) || t20IsInterpolated(a.value) || t20MentionedIt(c, from: b.file, for: a.value) is not null { continue }
+        if b.prebound.remove(a.span.start) { continue }
+        let _ = bindExprOrType(ref b, through: ref c, for: in a.value)
+    }
+}
+// mutation-exempt: Q732 through 320
+bool t20IsLambda(parser.Expr e) {
+    switch e {
+        case .lambdaExpr(_): return true
+        default: return false
+    }
+}
+
+bool t20IsInterpolated(parser.Expr e) {
+    switch e {
+        case .interpolatedExpr(_): return true
+        default: return false
+    }
+}
+
+/// BinderCalls.cs:198 BindFunctionCall.
+BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, at parser.Expr syntax, in List<parser.TypeSyntax>? typeArgs = null) {
+    var target = fn // mutation-exempt: Q619
+    let explicit = (typeArgs is { } ta) && ta.length > 0
+    if c.functions[fn].typeParams.length > 0 || explicit {
+        var instance: FuncId = -1
+        if (typeArgs is { } given) {
+            instance = t20Instantiate(ref b, through: ref c, for: call, by: fn, from: given)
+        } else {
+            let none = List<parser.TypeSyntax>()
+            instance = t20Instantiate(ref b, through: ref c, for: call, by: fn, from: none)
+        }
+        if instance == -1 {
+            bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+            return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        }
+        target = instance
+    }
+    let outer = b.printArgument
+    let outerSink = b.sinkArgument
+    let builtin = c.functions[target].builtin
+    b.printArgument = builtin == .print || builtin == .log
+    b.sinkArgument = builtin == .ioRun ? "Io.run" : builtin == .ioRunBatch ? "Io.runBatch" : null
+    // An invoke symbol's parameters have no names or particles, so a call through a value is positional (R9).
+    let kind = c.functions[target].kind
+    let name = kind == .invoke ? t15Text(in c, from: b.file, at: parser.exprSpan(in call.callee)) : c.functions[target].name
+    let ps = copyIds(in c.functions[target].parameters)
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: target, enforceNames: kind != .builtin && kind != .invoke, displayName: name)
+    b.printArgument = outer
+    b.sinkArgument = outerSink
+    var recv = receiver
+    if recv != -1 {
+        let wanted = receiverStates(ref b, through: ref c, for: target)
+        if wanted != -1 {
+            let fnName = c.functions[target].name
+            let _ = reportWrongState(ref b, through: ref c, for: fnName, by: recv, as: wanted, at: nodeSpan(in c, for: recv))
+        }
+    }
+    // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
+    // without `becomes` leaves it as it was (revision 0010).
+    let facts = t20DeclFacts(c, for: target)
+    // mutation-exempt: Q616 through 380
+    if recv != -1 && (facts.becomes is { } to) {
+        if (subject(ref b, through: ref c, for: recv) is { } changed) { forgetState(ref b, for: changed.key) }
+        if boundKind(recv) == .thisRef && b.fn != -1 {
+            checkBecomesCall(ref b, through: ref c, for: in call, from: b.fn, by: target, to: to)
+        } else if boundKind(recv) == .local && c.locals[c.bLocals[boundIndex(recv)].local].isParameter && c.locals[c.bLocals[boundIndex(recv)].local].modifier == .refKeyword {
+            let param = c.locals[c.bLocals[boundIndex(recv)].local].name
+            report(ref b, through: ref c, for: .becomesOnRefParameter, at: call.span, by: (c.functions[target].name, param, "", "", ""),
+                help: $"take `{param}` by `move` and return the new state as a value")
+        }
+    }
+    // A `ref this` call on `map[key]` changes the stored value in place.
+    // mutation-exempt: Q616
+    if recv != -1 && c.functions[target].isMutating { recv = mapWriteTarget(ref c, for: recv) }
+    // C# `_c.MutationChecks.Add(new MutationCheck(this, fn, receiver))` when `fn.HasThis` and the receiver is not a `dyn ref`:
+    // blocked until T28 designs a binder-free `MutationCheck` (Q582, Q730).
+    var anyConstant = false
+    for a in args {
+        if exprConstant(in c, for: a) is not null { anyConstant = true }
+    }
+    if facts.expects && anyConstant {
+        var written = List<Location>()
+        for a in call.args { written.append(Location { file: b.file, span: parser.exprSpan(in a.value) }) }
+        // A default is bound in the callee's file (`parameterDefault`), a written argument in the caller's (Q582).
+        var files = List<FileId>()
+        for i in 0..args.length {
+            // mutation-exempt: Q619
+            let isDefault =args[i] != -1 && args[i] == c.locals[ps[i]].defaultValue
+            files.append(isDefault ? c.functions[target].file : b.file)
+        }
+        c.requiresChecks.append(RequiresCheck { source: b.file, callSpan: call.span, callArgs: move written, callee: target, arguments: copyIds(in args), argumentFiles: move files })
+    }
+    if c.functions[target].hasFails && !((b.handled is { } h) && h == call.span) { t20Unhandled(ref b, through: ref c, at: call.span, by: name) }
+    // mutation-exempt: Q616
+    let type = recv == -1 ? c.functions[target].returnType : returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: recv), by: target)
+    return addCall(ref c, from: BCall { span: call.span, function: target, receiver: recv, arguments: move args, type: type })
+}
+
+/// C# `fn.Decl`'s `Requires.Length > 0` (`expects`) and `Becomes`, read from the function's declaration where `t12Params` finds it.
+struct T20DeclFacts { // mutation-exempt: Q619
+    bool expects = false
+    TextSpan? becomes = null
+}
+
+T20DeclFacts t20DeclFacts(Ctx c, for FuncId fn) {
+    let f = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    if d < 0 { return T20DeclFacts {} }
+    switch c.files[f].unit.members[d] {
+        case .functionDecl(let n): return T20DeclFacts { expects: n.value.requiresKeyword.length > 0, becomes: n.value.becomes }
+        case .structDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return T20DeclFacts { expects: x.value.requiresKeyword.length > 0, becomes: x.value.becomes }
+                default: break
+            }
+        case .interfaceDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return T20DeclFacts { expects: x.value.requiresKeyword.length > 0, becomes: x.value.becomes }
+                default: break
+            }
+        case .extensionDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return T20DeclFacts { expects: x.value.requiresKeyword.length > 0, becomes: x.value.becomes }
+                default: break
+            }
+        default:
+            break
+    }
+    return T20DeclFacts {}
+}
+
+/// BinderCalls.cs:254 Instantiate: the instantiation a call of a generic function means: its type arguments are explicit
+/// (`pick<i64>(…)`) or inferred by unifying parameter types with argument types; -1 for none.
+FuncId t20Instantiate(ref Binder b, through ref Ctx c, for parser.CallExpr call, by FuncId fn, from List<parser.TypeSyntax> typeArgs) {
+    let parameters = copyIds(in c.functions[fn].typeParams)
+    let name = c.functions[fn].name
+    if typeArgs.length > 0 {
+        if typeArgs.length != parameters.length {
+            report(ref b, through: ref c, for: .genericArgumentCount, at: parser.exprSpan(in call.callee), by: (name, $"{parameters.length}", $"{typeArgs.length}", "", ""),
+                help: parameters.length == 0 ? $"remove the type arguments; `{name}` is not generic" : "")
+            return -1
+        }
+        var explicitArgs = List<Type>()
+        for t in typeArgs { explicitArgs.append(resolveType(ref b, through: ref c, for: in t)) }
+        for a in explicitArgs {
+            if isError(a) { return -1 }
+        }
+        return instantiateFunction(ref c, for: fn, by: in explicitArgs, from: b.file, at: call.span)
+    }
+    let fps = copyIds(in c.functions[fn].parameters)
+    var found = Map<Type, Type>()
+    var conflict = false
+    var positional: i64 = 0
+    var sawNamed = false
+    for arg in call.args {
+        var p: LocalId = -1
+        if (arg.name is { } n) {
+            sawNamed = true
+            let text = t15Text(in c, from: b.file, at: n)
+            for x in fps {
+                if p == -1 && label(ref c, for: x) == text { p = x }
+            }
+        } else if !sawNamed && positional < fps.length {
+            p = fps[positional]
+            positional += 1
+        }
+        if p == -1 || !occurs(ref c, by: c.locals[p].type) || b.prebound.contains(arg.span.start) { continue }
+        let pt = c.locals[p].type
+        // A lambda or `it` argument never contributes to inference (R12).
+        if t20IsLambda(arg.value) { continue }
+        if kindOf(pt) == .function && c.functionTypes[typeIndex(pt)].parameters.length == 1 && t20MentionedIt(c, from: b.file, for: arg.value) is not null { continue }
+        let value = kindOf(pt) == .function ? bindExprFor(ref b, through: ref c, for: in arg.value, to: pt) : bindExpr(ref b, through: ref c, for: in arg.value)
+        b.prebound[arg.span.start] = value
+        // A known-state local passed `ref` or `out` is inferred from its declared type, as `BindArgument` passes it (Q295).
+        // A module function named for a function-typed parameter is inferred from its signature (R12).
+        var type = exprType(in c, for: value)
+        let modifier = c.locals[p].modifier
+        if (modifier == .refKeyword || modifier == .outKeyword) && boundKind(value) == .local && knownState(ref b, for: c.bLocals[boundIndex(value)].local) != -1 {
+            type = c.locals[c.bLocals[boundIndex(value)].local].type
+        } else if boundKind(value) == .methodGroup && c.bMethodGroups[boundIndex(value)].receiver == -1 {
+            let named = c.bMethodGroups[boundIndex(value)].function
+            if c.functions[named].kind == .function && c.functions[named].owner == -1 && !functionIsGeneric(ref c, by: named) {
+                var types = List<Type>()
+                for x in c.functions[named].parameters { types.append(c.locals[x].type) }
+                let sets = copyIds(in c.functions[named].errorSets)
+                type = internFunction(ref c, for: in types, to: c.functions[named].returnType, by: in sets, as: in List<string>())
+            }
+        }
+        if !t20Unify(ref b, through: ref c, for: pt, as: type, by: ref found, from: fn, at: parser.exprSpan(in arg.value)) { conflict = true }
+    }
+    if conflict { return -1 }
+    var args = List<Type>()
+    for tp in parameters {
+        if (found.tryGet(at: typeParamTypeOf(tp)) is { } t) {
+            args.append(t)
+        } else {
+            var names = List<string>()
+            for x in parameters { names.append(c.typeParams[x].name) }
+            report(ref b, through: ref c, for: .cannotInferTypeArgument, at: parser.exprSpan(in call.callee), by: (c.typeParams[tp].name, name, "", "", ""),
+                help: $"pass an argument it can be read from, or write it out: `{name}<{names.joined(by: ", ")}>(…)`")
+            return -1
+        }
+    }
+    return instantiateFunction(ref c, for: fn, by: in args, from: b.file, at: call.span)
+}
+
+/// BinderCalls.cs:312 Unify: matches a parameter type against an argument type, binding the type parameters of `fn`;
+/// false on a conflict (reported).
+bool t20Unify(ref Binder b, through ref Ctx c, for Type p, as Type a, by ref Map<Type, Type> found, from FuncId fn, at TextSpan span) {
+    if isError(a) || isNever(a) || kindOf(a) == .nullType { return true }
+    let i = typeIndex(p)
+    let ak = kindOf(a)
+    let ai = typeIndex(a)
+    switch kindOf(p) {
+        case .typeParam:
+            if !t15ContainsLocal(in c.functions[fn].typeParams, for: i) { return true }
+            if (found.tryGet(at: p) is { } previous) {
+                let shared = common(ref c, for: previous, as: a)
+                if shared != -1 {
+                    found[p] = shared
+                    return true
+                }
+                let name = c.functions[fn].name
+                report(ref b, through: ref c, for: .conflictingTypeArgument, at: span, by: (c.typeParams[i].name, name, typeDisplay(ref c, by: previous), typeDisplay(ref c, by: a), ""),
+                    help: $"make the arguments agree, or write it out: `{name}<…>(…)`")
+                return false
+            }
+            found[p] = a
+            return true
+        case .optional:
+            return t20Unify(ref b, through: ref c, for: c.optionalTypes[i], as: ak == .optional ? c.optionalTypes[ai] : a, by: ref found, from: fn, at: span)
+        case .span:
+            let element = c.spanTypes[i].element
+            switch ak {
+                case .span: return t20Unify(ref b, through: ref c, for: element, as: c.spanTypes[ai].element, by: ref found, from: fn, at: span)
+                case .list: return t20Unify(ref b, through: ref c, for: element, as: c.listTypes[ai], by: ref found, from: fn, at: span)
+                case .array: return t20Unify(ref b, through: ref c, for: element, as: c.arrayTypes[ai].element, by: ref found, from: fn, at: span)
+                default: return true
+            }
+        case .list:
+            return ak != .list || t20Unify(ref b, through: ref c, for: c.listTypes[i], as: c.listTypes[ai], by: ref found, from: fn, at: span)
+        case .map:
+            return ak != .map || t20Unify(ref b, through: ref c, for: c.mapTypes[i].key, as: c.mapTypes[ai].key, by: ref found, from: fn, at: span)
+                && t20Unify(ref b, through: ref c, for: c.mapTypes[i].value, as: c.mapTypes[ai].value, by: ref found, from: fn, at: span)
+        case .array:
+            return ak != .array || t20Unify(ref b, through: ref c, for: c.arrayTypes[i].element, as: c.arrayTypes[ai].element, by: ref found, from: fn, at: span)
+        case .tuple:
+            if ak != .tuple || c.tupleTypes[ai].length != c.tupleTypes[i].length { return true }
+            for k in 0..c.tupleTypes[i].length {
+                if !t20Unify(ref b, through: ref c, for: c.tupleTypes[i][k].type, as: c.tupleTypes[ai][k].type, by: ref found, from: fn, at: span) { return false }
+            }
+            return true
+        case .result:
+            return ak != .result || t20Unify(ref b, through: ref c, for: c.resultTypes[i].value, as: c.resultTypes[ai].value, by: ref found, from: fn, at: span)
+        case .function:
+            if ak != .function || c.functionTypes[ai].parameters.length != c.functionTypes[i].parameters.length { return true }
+            for k in 0..c.functionTypes[i].parameters.length {
+                if !t20Unify(ref b, through: ref c, for: c.functionTypes[i].parameters[k], as: c.functionTypes[ai].parameters[k], by: ref found, from: fn, at: span) { return false }
+            }
+            return t20Unify(ref b, through: ref c, for: c.functionTypes[i].ret, as: c.functionTypes[ai].ret, by: ref found, from: fn, at: span)
+        case .structType:
+            let template = c.structs[i].template
+            if template == -1 { return true }
+            if ak != .structType || c.structs[ai].template != template { return true }
+            let n = c.structs[i].typeArgs.length < c.structs[ai].typeArgs.length ? c.structs[i].typeArgs.length : c.structs[ai].typeArgs.length
+            for k in 0..n {
+                if !t20Unify(ref b, through: ref c, for: c.structs[i].typeArgs[k], as: c.structs[ai].typeArgs[k], by: ref found, from: fn, at: span) { return false }
+            }
+            return true
+        case .unionType:
+            let template = c.unions[i].template
+            if template == -1 { return true }
+            if ak != .unionType || c.unions[ai].template != template { return true }
+            let n = c.unions[i].typeArgs.length < c.unions[ai].typeArgs.length ? c.unions[i].typeArgs.length : c.unions[ai].typeArgs.length
+            for k in 0..n {
+                if !t20Unify(ref b, through: ref c, for: c.unions[i].typeArgs[k], as: c.unions[ai].typeArgs[k], by: ref found, from: fn, at: span) { return false }
+            }
+            return true
+        default:
+            return true
+    }
+}
+
+/// BinderCalls.cs:366 BindArguments.
+List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") {
+    let name = displayName != "" ? displayName : fn != -1 ? c.functions[fn].name : "?"
+    // An instantiation follows its template's rule, so a `T` parameter is not a `bool` one at `T = bool`.
+    let template = fn != -1 ? c.functions[fn].template : -1
+    let rule = template != -1 ? copyIds(in c.functions[template].parameters) : copyIds(in ps)
+    var result = List<BExpr>()
+    var given = List<bool>()
+    for _ in ps {
+        result.append(-1)
+        given.append(false)
+    }
+    var sawNamed = false
+    var positional: i64 = 0
+    var mismatched = false
+    // A `rest` tail takes every positional argument from its place on; parameters after it are named only (J64).
+    var rest: LocalId = -1
+    for x in ps {
+        if rest == -1 && (t20Param(c, for: x).syntax is { } s) && s.isRest && kindOf(c.locals[x].type) == .span { rest = x }
+    }
+    var tail = List<i64>()
+    for ai in 0..call.args.length {
+        let argSpan = call.args[ai].span
+        var p: LocalId = -1
+        if call.args[ai].name is null && rest != -1 && positional >= c.locals[rest].ordinal {
+            tail.append(ai)
+            continue
+        }
+        if (call.args[ai].name is { } n) {
+            sawNamed = true
+            let text = t15Text(in c, from: b.file, at: n)
+            for x in ps {
+                if p == -1 && label(ref c, for: x) == text { p = x }
+            }
+            if p == -1 {
+                var labels = List<string>()
+                for x in ps { labels.append(label(ref c, for: x)) }
+                let s = suggest(text, by: in labels)
+                report(ref b, through: ref c, for: .unknownParameter, at: n, by: (name, text, "", "", ""),
+                    help: (s is { } h) ? $"did you mean `{h}`?" : "", hasFix: s is not null, fixSpan: s is not null ? n : null, fixReplacement: s ?? "")
+                let _ = t20BindArgumentValue(ref b, through: ref c, for: call.args[ai], as: -1)
+                mismatched = true
+                continue
+            }
+        } else {
+            if sawNamed {
+                report(ref b, through: ref c, for: .positionalAfterNamed, at: argSpan, by: ("", "", "", "", ""))
+                let _ = t20BindArgumentValue(ref b, through: ref c, for: call.args[ai], as: -1)
+                mismatched = true
+                continue
+            }
+            if positional >= ps.length {
+                report(ref b, through: ref c, for: .tooManyArguments, at: argSpan, by: (name, $"{ps.length}", "", "", ""))
+                let _ = t20BindArgumentValue(ref b, through: ref c, for: call.args[ai], as: -1)
+                positional += 1
+                continue
+            }
+            p = ps[positional]
+            positional += 1
+            // A particle is part of the function's name, so the call writes it (BYN5005).
+            let pname = c.locals[p].name
+            let param = t20Param(c, for: p)
+            if enforceNames && (param.syntax is { } x) && x.hasParticle {
+                let particle = param.label
+                report(ref b, through: ref c, for: .argumentNeedsParticle, at: argSpan, by: (pname, particle, "", "", ""), label: $"needs `{particle}:`",
+                    help: $"add `{particle}:` before the argument", hasFix: true, fixSpan: TextSpan { start: argSpan.start, length: 0 }, fixReplacement: $"{particle}: ")
+            } else if enforceNames && isBool(c.locals[rule[c.locals[p].ordinal]].type) && t20ImpliedName(c, from: b.file, for: call.args[ai].value) != pname {
+                report(ref b, through: ref c, for: .argumentMustBeNamed, at: parser.exprSpan(in call.args[ai].value), by: (pname, "", "", "", ""),
+                    help: $"write `{pname}: …`; a `bool` argument says nothing at the call site",
+                    hasFix: true, fixSpan: TextSpan { start: argSpan.start, length: 0 }, fixReplacement: $"{pname}: ")
+            }
+        }
+        let o = c.locals[p].ordinal
+        if given[o] {
+            report(ref b, through: ref c, for: .duplicateArgument, at: argSpan, by: (label(ref c, for: p), "", "", "", ""))
+            let _ = b.prebound.remove(argSpan.start)
+            continue
+        }
+        result[o] = t20BindArgument(ref b, through: ref c, for: call.args[ai], by: p, as: name)
+        given[o] = true
+    }
+    if rest != -1 && !given[c.locals[rest].ordinal] {
+        result[c.locals[rest].ordinal] = t20BindRestTail(ref b, through: ref c, for: call, by: rest, from: tail)
+        given[c.locals[rest].ordinal] = true
+    }
+    var missing = List<string>()
+    for i in 0..ps.length {
+        if given[i] { continue }
+        let p = ps[i]
+        if (t20Param(c, for: p).syntax is { } x) && x.hasDefault && fn != -1 {
+            result[i] = parameterDefault(ref c, for: fn, by: p) ?? addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+            continue
+        }
+        if fn != -1 && c.functions[fn].builtin == .log && c.locals[p].ordinal == 1 {
+            let info = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "LogLevel")), for: "info")
+            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: info })
+            continue
+        }
+        if fn != -1 && c.functions[fn].builtin == .print && c.locals[p].ordinal == 1 {
+            let stdout = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Stream")), for: "stdout")
+            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: stdout })
+            continue
+        }
+        missing.append(label(ref c, for: p))
+        result[i] = addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    if missing.length > 0 && !mismatched {
+        report(ref b, through: ref c, for: .missingArgument, at: call.span, by: (missing.joined(by: "`, `"), name, "", "", ""))
+    }
+    return result
+}
+
+/// BinderCalls.cs:467 BindRestTail: the arguments of a `rest` tail (indexes into `call.args`) as a span literal, which
+/// lowers to stack slots in the caller (J62). A lone `..x` passes the span of collection `x`; on anything else it stays a
+/// range (J63).
+BExpr t20BindRestTail(ref Binder b, through ref Ctx c, for parser.CallExpr call, by LocalId p, from List<i64> tail) {
+    let type = c.locals[p].type
+    if tail.length == 1 && call.args[tail[0]].name is null && call.args[tail[0]].modifier == .none {
+        switch call.args[tail[0]].value {
+            case .rangeExpr(let range):
+                if range.value.start is .none && range.value.end is not .none && !range.value.inclusive {
+                    let collection = bindExpr(ref b, through: ref c, for: in range.value.end)
+                    let ct = exprType(in c, for: collection)
+                    if isError(ct) { return collection }
+                    let k = kindOf(ct)
+                    if k == .list || k == .span || k == .array {
+                        return convert(ref b, through: ref c, for: collection, to: type, at: parser.exprSpan(in range.value.end), argument: true)
+                    }
+                    return bindRange(ref b, through: ref c, for: in range.value, to: -1)
+                }
+            default:
+                break
+        }
+    }
+    let element = c.spanTypes[typeIndex(type)].element
+    var elements = List<BExpr>()
+    for i in tail { elements.append(t20BindArgumentValue(ref b, through: ref c, for: call.args[i], as: element)) }
+    return addCollection(ref c, from: BCollection { span: call.span, type: type, elements: move elements })
+}
+
+/// C# `p.Syntax` with `Label(p)`: read from the declaration of the function whose parameter `p` is (Q713); a parameter
+/// with no declaration (a builtin's, a variant field, `tryParse`'s) has no syntax and its name for a label.
+T12Param t20Param(Ctx c, for LocalId p) {
+    let f = t15ParameterOwner(in c, for: p)
+    if f != -1 {
+        let ps = t12Params(in c, for: f)
+        for i in 0..c.functions[f].parameters.length {
+            if c.functions[f].parameters[i] == p { return ps[i] }
+        }
+    }
+    return T12Param { label: c.locals[p].name }
+}
+
+/// BinderCalls.cs:481 Label: the label a call writes for `p`: its particle (`to:`), else its name.
+string label(ref Ctx c, for LocalId p) => t20Param(c, for: p).label
+
+/// BinderCalls.cs:484 ImpliedName: `verbose` and `opts.verbose` name the argument for a `bool` parameter `verbose`.
+string? t20ImpliedName(Ctx c, from FileId f, for parser.Expr e) {
+    switch e {
+        case .nameExpr(let n):
+            if n.value.typeArgs.length == 0 { return t15Text(in c, from: f, at: n.value.name) }
+            return null
+        case .memberExpr(let m):
+            if !m.value.nullConditional { return t15Text(in c, from: f, at: m.value.member) }
+            return null
+        default:
+            return null
+    }
+}
+
+/// BinderCalls.cs:491 BindArgument.
+BExpr t20BindArgument(ref Binder b, through ref Ctx c, for parser.Argument arg, by LocalId p, as string callee) {
+    let pm = c.locals[p].modifier
+    let pname = c.locals[p].name
+    let ptype = c.locals[p].type
+    let wanted: parser.ArgModifier = pm == .refKeyword ? .refKeyword : pm == .outKeyword ? .outKeyword : .none
+    // `move x` hands a value to a plain or `move` parameter.
+    let given: parser.ArgModifier = arg.modifier == .inKeyword || (arg.modifier == .moveKeyword && wanted == .none) ? .none : arg.modifier
+    let valueSpan = parser.exprSpan(in arg.value)
+    if given != wanted {
+        let keyword = wanted == .refKeyword ? "ref" : wanted == .outKeyword ? "out" : ""
+        report(ref b, through: ref c, for: .argumentModifierMismatch, at: arg.span, by: (pname, keyword == "" ? "a plain value" : $"`{keyword}`", "", "", ""),
+            hasFix: keyword != "", fixSpan: keyword == "" ? null : TextSpan { start: valueSpan.start, length: 0 }, fixReplacement: keyword == "" ? "" : $"{keyword} ")
+    }
+    if wanted == .refKeyword || wanted == .outKeyword {
+        let early = b.prebound.tryGet(at: arg.span.start)
+        var place: BExpr = -1
+        if (early is { } e) {
+            let _ = b.prebound.remove(arg.span.start)
+            place = e
+        } else {
+            place = bindExpr(ref b, through: ref c, for: in arg.value, to: ptype)
+        }
+        if isError(exprType(in c, for: place)) { return place } // mutation-exempt: Q616 through 796
+        // A local whose state is known is passed as its declared type. A `ref` callee keeps the state (revision 0010); an `out`
+        // callee supplies a new value, so its state is no longer known.
+        if boundKind(place) == .local && knownState(ref b, for: c.bLocals[boundIndex(place)].local) != -1 {
+            let local = c.bLocals[boundIndex(place)].local
+            place = addLocal(ref c, from: BLocal { span: c.bLocals[boundIndex(place)].span, local: local })
+            if wanted == .outKeyword { forgetState(ref b, for: local) }
+        } else if boundKind(place) == .thisRef && wanted == .outKeyword {
+            forgetState(ref b, for: t15ThisFacts(ref b, through: ref c))
+        }
+        if early is null { constrain(ref b, through: ref c, for: place, to: ptype) }
+        let placeType = exprType(in c, for: place)
+        if placeType != ptype {
+            report(ref b, through: ref c, for: .typeMismatch, at: valueSpan, by: (typeDisplay(ref c, by: placeType), typeDisplay(ref c, by: ptype), "", "", ""),
+                help: "give a `ref` or `out` argument exactly the parameter's type")
+            return addErrorExpr(ref c, from: BErrorExpr { span: valueSpan })
+        }
+        // An `out` argument writes a whole value: a `ref` parameter or `this` keeps its state only when its type names one (BYN7012).
+        // mutation-exempt: Q616 through 814
+        let isLocal = boundKind(place) == .local
+        let refParam = isLocal && c.locals[c.bLocals[boundIndex(place)].local].isParameter && c.locals[c.bLocals[boundIndex(place)].local].modifier == .refKeyword
+        let mutatingThis = boundKind(place) == .thisRef && b.fn != -1 && c.functions[b.fn].isMutating
+        let named = (kindOf(placeType) == .state && c.stateTypes[typeIndex(placeType)].states.length > 1)
+            || (kindOf(placeType) == .structType && statesOf(ref c, for: typeIndex(placeType)) != -1)
+        if wanted == .outKeyword && (refParam || mutatingThis) && named {
+            report(ref b, through: ref c, for: .assignmentChangesState, at: arg.span, by: (isLocal ? c.locals[c.bLocals[boundIndex(place)].local].name : "this", "", "", "", ""),
+                help: "assign a value in the same state, or move the transition into a `becomes` method")
+        }
+        let _ = checkWritable(ref b, through: ref c, for: place, at: valueSpan, by: $"it is passed as `{wanted == .refKeyword ? "ref" : "out"}`")
+        return place
+    }
+    return t20BindArgumentValue(ref b, through: ref c, for: arg, as: ptype, by: callee)
+}
+
+/// BinderCalls.cs:532 BindArgumentValue; `type` -1 and `callee` null where the C# ones are.
+BExpr t20BindArgumentValue(ref Binder b, through ref Ctx c, for parser.Argument arg, as Type type, by string? callee = null) {
+    let valueSpan = parser.exprSpan(in arg.value)
+    let early = b.prebound.tryGet(at: arg.span.start)
+    var value: BExpr = -1
+    if (early is { } e) {
+        let _ = b.prebound.remove(arg.span.start)
+        value = e // mutation-exempt: Q732 through 831
+    } else if type != -1 && kindOf(type) == .function && c.functionTypes[typeIndex(type)].parameters.length == 1 && !t20IsLambda(arg.value)
+        && (t20MentionedIt(c, from: b.file, for: arg.value) is { } it) {
+        value = t20BindIt(ref b, through: ref c, for: arg.value, by: it, as: type)
+    } else {
+        let bound = bindExprFor(ref b, through: ref c, for: in arg.value, to: type)
+        value = built(ref b, through: ref c, for: bound, from: in arg.value)
+    }
+    if arg.modifier == .moveKeyword { value = bindMove(ref b, through: ref c, at: arg.span, for: value) }
+    if (callee is { } who) && type != -1 && kindOf(type) == .state && reportWrongState(ref b, through: ref c, for: who, by: value, as: type, at: valueSpan) {
+        return addErrorExpr(ref c, from: BErrorExpr { span: valueSpan })
+    }
+    // A type argument inferred from the value is not a typed use of it.
+    if type == -1 { return value }
+    return convert(ref b, through: ref c, for: value, to: type, at: valueSpan, argument: true, constrains: early is null)
+}
+
+/// BinderCalls.cs:547 BindIt: an argument that mentions `it` where a one-parameter function type is expected: a lambda
+/// whose parameter is `it`. Inside another, or inside a `requires` rule where `it` is the checked value, it is BYN2029 (R7, Q361).
+BExpr t20BindIt(ref Binder b, through ref Ctx c, for parser.Expr e, by TextSpan it, as Type type) {
+    // mutation-exempt: Q732 through 861
+    if b.itDepth > 0 {
+        // Outside any lambda, the `it` in scope is a `requires` rule's checked value.
+        report(ref b, through: ref c, for: .nestedIt, at: it, by: ("", "", "", "", ""),
+            help: b.lambdas.length == 0 ? "name the lambda's parameter: `x => …`" : "name the inner lambda's parameter: `x => …`")
+        return addErrorExpr(ref c, from: BErrorExpr { span: parser.exprSpan(in e) })
+    }
+    b.itDepth += 1
+    var ps = List<TextSpan>()
+    ps.append(it)
+    let noBlock: parser.BlockStmt? = null
+    let lambda = bindLambda(ref b, through: ref c, at: parser.exprSpan(in e), for: in ps, from: in e, by: in noBlock, to: type)
+    b.itDepth -= 1
+    return lambda
+}
+
+/// BinderCalls.cs:562 MentionedIt: the first `it` the syntax of `e` mentions outside a lambda nested in it.
+TextSpan? t20MentionedIt(Ctx c, from FileId f, for parser.Expr e) {
+    switch e {
+        case .nameExpr(let n):
+            if n.value.typeArgs.length == 0 && t15Text(in c, from: f, at: n.value.name) == "it" { return n.value.name }
+            return null
+        case .parenExpr(let p): return t20MentionedIt(c, from: f, for: p.value.inner)
+        case .memberExpr(let m): return t20MentionedIt(c, from: f, for: m.value.target)
+        case .callExpr(let x):
+            if (t20MentionedIt(c, from: f, for: x.value.callee) is { } s1) { return s1 }
+            for a in x.value.args {
+                if (t20MentionedIt(c, from: f, for: a.value) is { } s2) { return s2 }
+            }
+            return null
+        case .indexExpr(let i): return t20MentionedIt(c, from: f, for: i.value.target) ?? t20MentionedIt(c, from: f, for: i.value.index)
+        case .unaryExpr(let u): return t20MentionedIt(c, from: f, for: u.value.operand)
+        case .binaryExpr(let x): return t20MentionedIt(c, from: f, for: x.value.left) ?? t20MentionedIt(c, from: f, for: x.value.right)
+        case .rangeExpr(let r): return t20MentionedIt(c, from: f, for: r.value.start) ?? t20MentionedIt(c, from: f, for: r.value.end)
+        case .conditionalExpr(let x):
+            return t20MentionedIt(c, from: f, for: x.value.condition) ?? t20MentionedIt(c, from: f, for: x.value.whenTrue)
+                ?? t20MentionedIt(c, from: f, for: x.value.whenFalse)
+        case .castExpr(let x): return t20MentionedIt(c, from: f, for: x.value.operand)
+        case .isExpr(let i): return t20MentionedIt(c, from: f, for: i.value.value)
+        case .exceptExpr(let x): return t20MentionedIt(c, from: f, for: x.value.value)
+        case .inExpr(let i): return t20MentionedIt(c, from: f, for: i.value.value) ?? t20MentionedIt(c, from: f, for: i.value.range)
+        case .switchExpr(let s):
+            if (t20MentionedIt(c, from: f, for: s.value.value) is { } v3) { return v3 }
+            for a in s.value.arms {
+                if (t20MentionedIt(c, from: f, for: a.guard) is { } g4) { return g4 }
+                if (t20MentionedIt(c, from: f, for: a.value) is { } v5) { return v5 }
+            }
+            return null
+        case .tryExpr(let t): return t20MentionedIt(c, from: f, for: t.value.operand)
+        case .moveExpr(let m): return t20MentionedIt(c, from: f, for: m.value.operand)
+        case .catchExpr(let x):
+            return t20MentionedIt(c, from: f, for: x.value.operand) ?? t20MentionedIt(c, from: f, for: x.value.variant)
+                ?? t20MentionedIt(c, from: f, for: x.value.handler)
+        case .structLiteralExpr(let s):
+            for x in s.value.fields {
+                if (t20MentionedIt(c, from: f, for: x.value) is { } v6) { return v6 }
+            }
+            return null
+        case .withExpr(let w):
+            if (t20MentionedIt(c, from: f, for: w.value.target) is { } v7) { return v7 }
+            for x in w.value.fields {
+                if (t20MentionedIt(c, from: f, for: x.value) is { } v8) { return v8 }
+            }
+            return null
+        case .spreadExpr(let s): return t20MentionedIt(c, from: f, for: s.value.operand)
+        case .mapEntryExpr(let m): return t20MentionedIt(c, from: f, for: m.value.key) ?? t20MentionedIt(c, from: f, for: m.value.value)
+        case .collectionExpr(let x):
+            for v in x.value.elements {
+                if (t20MentionedIt(c, from: f, for: v) is { } s9) { return s9 }
+            }
+            return null
+        case .tupleExpr(let t):
+            for x in t.value.elements {
+                if (t20MentionedIt(c, from: f, for: x.value) is { } s10) { return s10 }
+            }
+            return null
+        case .interpolatedExpr(let x):
+            for part in x.value.parts {
+                switch part {
+                    case .interpolationHole(let h):
+                        if (t20MentionedIt(c, from: f, for: h.value.expr) is { } s11) { return s11 }
+                    default:
+                        break
+                }
+            }
+            return null
+        default:
+            return null
+    }
+}

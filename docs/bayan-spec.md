@@ -1,4 +1,4 @@
-# Bayan — Language Specification (draft 0.1)
+# Bayān — Language Specification (draft 0.1)
 
 > **Status:** design complete enough to build v0.1. This document is normative unless a section says otherwise.
 > **Source files:** `.byn` · **CLI:** `bayan` · **Manifest:** `package.byn` · **Build script:** `build.byn`
@@ -702,7 +702,7 @@ extension static Duration {
 Resolved statically. Instance members win over extensions. Extensions cannot add fields.
 
 ### 4.4 Attributes and purpose clauses
-Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`, `@sealed` (a struct whose fields only its own methods and `with` may write, §3.10; no arguments, no `because`), `@positional` (a struct that gets a constructor taking every field in declaration order, `Point(3, 4)` ≡ `Point { x: 3, y: 4 }`, fallible like the literal when the struct has `requires`; not on a struct with `states`; no arguments, no `because`; revision 0008). Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { string path }`. Arguments must be compile-time constants. Attributes are readable only at compile time.
+Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`, `@sealed` (a struct whose fields only its own methods and `with` may write, §3.10; no arguments, no `because`), `@positional` (a struct that gets a constructor taking every field in declaration order, `Point(3, 4)` ≡ `Point { x: 3, y: 4 }`, fallible like the literal when the struct has `requires`; not on a struct with `states`; no arguments, no `because`; revision 0008). Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { string path }`. Arguments must be compile-time constants. Attributes are readable only at compile time. A statement may be preceded by attributes from an allow-list, which applies to the next statement only; the list is `@unobservable` (§20). Any other attribute before a statement is BYN1069 (revision 0014).
 
 **Purpose clauses** (mafʿūl li-ajlihi): `because "…"` is required wherever code bypasses a safety rule. A missing `because` is a compile error (BYN8001); ordinary attributes (`@derive`) take none.
 
@@ -713,7 +713,7 @@ Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`, `@se
 
 `bayan audit` lists every bypass in a project with its reason (§19.3).
 
-> Round 3 §4: `[…]` at line start collides with collection literals once `;` is gone; a written reason makes every bypass reviewable. Codes: BYN1045, BYN8001.
+> Round 3 §4: `[…]` at line start collides with collection literals once `;` is gone; a written reason makes every bypass reviewable. Codes: BYN1045, BYN8001, BYN1069.
 
 ---
 
@@ -959,6 +959,8 @@ union error Retryable = CarrierError except .rejected
 ---
 
 ## 7. Statements
+
+A statement may be preceded by attributes from an allow-list (§4.4), one per line, which apply to the next statement only. The list is `@unobservable` (§20). Any other attribute before a statement is BYN1069.
 
 ### 7.1 Bindings
 `let` (immutable), `var` (mutable), `const` (comptime; any type). A lint suggests `let` for never-reassigned `var`s. Parameters are immutable (copy to a `var` to modify).
@@ -2082,7 +2084,7 @@ Package {
     codes: "TLY",
     capabilities: [.fs],
     deps: [],
-    test: Tests { diffCoverage: 80, errorPaths: 100, mutation: 75, nightly: [.fuzz] },
+    test: Tests { lines: 100, branches: 100, errorPaths: 100, mutation: 75, nightly: [.fuzz] },
     style: Style {
         indent: 4,
         braces: .sameLine,        // or .nextLine
@@ -2099,7 +2101,7 @@ Package {
 }
 ```
 
-`capabilities` is an upper bound on the effects of every function in the package (§14). `style` holds the project's formatting choices (defaults in `docs/bayan-style.md`); `bayan format` reads it. Style is never compiler-enforced, and grammar rules (§5) cannot be configured here. `grammar` is the project dictionary (§5.2): domain words the checker does not know, as `verbs` and `nouns`, with irregular derived spellings in `forms`; it is merged with the built-in word list and adds words, never exemptions. The `bayan new` templates use the same `:` syntax. Formatter behaviour is not in v0.1.
+`capabilities` is an upper bound on the effects of every function in the package (§14). `Tests` holds the CI gates (§20): `lines` and `branches` (minimum percentages), `errorPaths`, `mutation`, `nightly`, and `summary` (bool, default `true`; `false` turns off the default coverage summary). `diffCoverage` is accepted and not enforced yet. A run below a minimum fails and names what is missing. `style` holds the project's formatting choices (defaults in `docs/bayan-style.md`); `bayan format` reads it. Style is never compiler-enforced, and grammar rules (§5) cannot be configured here. `grammar` is the project dictionary (§5.2): domain words the checker does not know, as `verbs` and `nouns`, with irregular derived spellings in `forms`; it is merged with the built-in word list and adds words, never exemptions. The `bayan new` templates use the same `:` syntax. Formatter behaviour is not in v0.1.
 
 > Round 2 §10, §18: `package.byn` is a Bayan struct literal, so it uses `:` like every literal; style is per-project data. Codes: BYN3104.
 
@@ -2178,8 +2180,35 @@ model test "cart behaves like a list" {
 - **Derived law tests** run automatically (round trips, `tryX` consistency, equality/hash, ordering, idempotent `ensureX`, `Xed()` non-mutation, codec round trips, `Builder`, `Op`) plus **boundary tests from `requires`** and **differential tests of specializations against the general version**.
 - A function without `uses alloc` is proven allocation-free at compile time (§14); `assertNoAlloc` checks at runtime.
 - `bayan new test X` scaffolds one case per success and error variant; `todo(…)` reports **pending**, never passing.
-- Coverage: lines, branches and **error paths** (every `fails` variant triggered). `bayan build` reports public functions no test reaches.
-- Mutation testing compiles every mutant into one build (mutant schemata) and picks one per run: `bayan test --mutate`, one build per run. Its output names the surviving mutant and suggests the missing case; `@unobservable because "…"` marks a mutant no test can observe (not in v0.1).
+- Coverage: lines, branches and **error paths**. An error path is a `fails` variant of a function that a test makes the function return, whether the function raises it with `fail` or passes it on through `try`; the detailed report names where it came from. `bayan test` prints a one-line coverage summary in Debug builds (package opt-out `summary: false`); `bayan test --coverage` prints the full report, a per-line listing and `bayan-quality.json`. A test killed on timeout leaves its coverage unknown, never uncovered. `--sanitize` runs show coverage only with `--coverage`. `bayan build` reports public functions no test reaches.
+- Mutation testing compiles every mutant into one build (mutant schemata) and picks one per run: `bayan test --mutate`. Each mutant is killed, survived, timed out (counted as killed), not reached, or marked. The report names each surviving mutant's file, line, column, original and mutated text, suggests the missing case, and gives build time, mean and maximum time per mutant, and per-mutant time as a share of the build. `bayan mutate --binary <exe> --sites <map> -- <cmd>` runs an outside command per mutant against a prebuilt mutant binary. A mutation that would not type-check is never emitted; the report counts these as not emitted. The operators:
+
+  | Operator | Changes |
+  |---|---|
+  | `boundary` | `<` ↔ `<=`, `>` ↔ `>=` |
+  | `relational` | `==` ↔ `!=`, `<` ↔ `>=`, `>` ↔ `<=` |
+  | `logical` | `&&` ↔ `\|\|` |
+  | `condition` | the condition of `if`, `unless`, `while`, do-while, a switch guard, `stmt if c` → its negation |
+  | `bool` | `true` ↔ `false` |
+  | `arithmetic` | `+` ↔ `-`, `*` ↔ `/`, `%` → `*` |
+  | `literal` | an integer literal `n` → `n + 1`, `n - 1` |
+  | `negation` | unary `-x` → `x` |
+  | `statement` | a call with no result, an assignment or a compound assignment is removed |
+  | `emptyReturn` | `return x` → the type's empty value, where the type has one |
+  | `variant` | `fail E.a` → another variant of `E` with the same payload |
+
+  Each change is one mutant; an operator that does not apply to the operand types is not emitted.
+- `@unobservable because "…"` on a statement marks that statement's mutants as ones no test can observe; an operator argument narrows it to one operator. Marked mutants still run: a marked mutant a test kills, or a mark with no mutant in its statement, is a warning in the report. The reason is required (BYN8001).
+
+  ```csharp
+  i32 clamp(i32 x, i32 lo, i32 hi)
+      expects lo <= hi {
+      @unobservable(boundary) because "x == hi returns hi either way"
+      return hi if x >= hi
+      return lo if x <= lo
+      return x
+  }
+  ```
 - Fuzz findings are minimized into `testdata/fuzz/<test>/` and require a name and a reason to be committed.
 - `bayan test --explore` enumerates interleavings for small concurrent tests; `--sanitize` builds with ASan/UBSan.
 - `snapshot(x)` with `bayan test --update`. `Io.Recording` / `Io.Replay` capture and replay traffic (untrusted fields redacted).
@@ -2234,7 +2263,7 @@ Exit codes, documented in `bayan --help`:
 | `0` | Success |
 | `1` | Compile errors |
 | `2` | Usage errors (unknown command or option, missing input path) |
-| `3` | Test failures |
+| `3` | Test failures, or a coverage or mutation score below its manifest minimum (`bayan test --coverage`, `--mutate`) |
 | `4` | Toolchain problems (no C compiler, unwritable cache, C compiler failure) |
 
 `bayan run` uses the CLI's codes until the program starts (1 for compile errors, 4 for toolchain problems), then passes the program's own exit code through unchanged, as `cargo run` and `go run` do. It therefore cannot tell a build failure from a program that exits 1; anything that needs the distinction runs `bayan build` first or reads `--diagnostics json`.

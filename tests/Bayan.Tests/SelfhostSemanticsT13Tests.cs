@@ -604,7 +604,7 @@ public sealed class SelfhostSemanticsT13Tests
         One("nested", "Box", "Both", "    c.instantiating = 1", "    c.instantiating = 0",
             () => Set(c, "_instantiating", 1), () => Set(c, "_instantiating", 0));
         // Once conformances are checked: constraints run at once and a struct instance conforms.
-        One("checked", "Box", "Circle", "    c.conformancesChecked[0] = 1", before: () => Set(c, "_conformancesChecked", true));
+        One("checked", "Box", "Circle", "    c.checkedConformances = true", before: () => Set(c, "_conformancesChecked", true));
         One("checkedBad", "Maybe", "Both");
         // The deferred checks, as CheckConformances runs them: each at its use, with the instantiation label.
         var startRun = c.Diagnostics.Count;

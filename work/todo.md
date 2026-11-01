@@ -140,7 +140,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - diag/renamed-member also shows a BYN2311 warning (round 2 §11).
 - 007 Q346 makes a stored function type such as `(Line -> Money uses net) pricer` BYN2822; Sūq and SPEC §3.16 use one (round 3, Sūq brief).
 - HANDOFF round 3 §11 (~`:204-210`) still says `on .field` and §13 (~`:259`) has `Order => void`; superseded by their resolved paragraphs, not rewritten.
-- No `docs/diagnostics/BYN1056.md`, `BYN1057.md`, `BYN7005.md` pages yet; GRAMMAR §3 links the first two (round 3, Sūq brief).
 - SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
 - SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
 - J54: Sūq checker `type-first binding` rule only catches capitalised types (`i32 n = 3` unflagged); parameter lists spanning lines are only partly handled.
@@ -227,7 +226,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53h: `RegionAnalysis.cs:236` and `OwnershipAnalysis` treat `BoundErrorVariant` as a leaf, so moves and borrows in an error payload are not checked.
 - r3-53h: `return .case(…)` is not BYN1056; the `return .x` check (5.3f) sees only a bare `.x`.
 - r3-53h: error-case payload fields are not dropped or moved: a `List` or other owned payload leaks, and a unique one is not tracked (Question 311).
-- End of round 3: run `/code-review --fix 8fedd073f425..dev` (545965c49391..ef66c140da9f, which holds the partial round-3 merge ef66c14, was reviewed and fixed 2026-10-24 at 8fedd07; not `dev...feat`).
 - r3-54a: the parser's particle list is private (`Parser.cs`), so `Lexicon.Particles` repeats it; expose one list.
 - r3-54a: the BYN5001, BYN5101 and BYN5102 page examples still end field lines with `;`.
 - r3-54a: the manifest's invalid-value help does not mention the `[key: value]` map form that `grammar.forms` now uses.
@@ -317,3 +315,13 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails intermittently in full-suite runs (passes alone); 010 T2 gate saw 1–2/2629 failures, likely allocation noise from parallel tests (2026-10-26).
 - 010 T3 gate: `typeEquals` (types.byn:195) is never called by tests; equality pairs lack same-name nominal types in different modules and text-view/builtin types (2026-10-26).
 - spec 010 T28: compile.byn:1176-1177/:1180-1181 cite "generics.byn:180" for T13's drain switch (now ~generics.byn:186); ctx.byn:276 calls `quiet` "the C# `_quiet`", which does not exist (Q580). Fix at integration.
+- 010 T28: delete the dead `Map<i64, i64> conformancesChecked` at ctx.byn:356 (Q585/Q723; guard check C blocks it before then).
+- 010 T14 LOW (review 3): `t14InsertMember`'s `.trimmed().isEmpty` (conformance.byn:469) strips ASCII whitespace only; C# `IsNullOrWhiteSpace` also counts Unicode whitespace (Conformance.cs:225). Reachable only from a source with a lex error.
+- 010 T14 LOW (review 3): Q586 says `popBag` "drops" the quiet bag; it only restores the sink, and the bag stays in `c.bags` (diag.byn:53-57). Fix the wording.
+- 010 T14 owed cases now that T12's `declareMembers` is ported (Q723 (2), (5)): BYN2780 on an instance (`Box<T> : IList` with a `T items` field, instantiated with `List<i64>`) and `t14Drop`'s left-in-arena path (an interface getter typed `Box<Item>`) in SelfhostSemanticsT14Tests.cs.
+- 010 T12 review 2 LOW (open): Q579 not-compared arms (associated type declare.byn:149-154, method/ctor params in `overlap` :134/:174, BYN3202 `ValidationError<T>` :321-322) get oracle cases when T38 lands.
+- 010 T12 review 2 LOW (open): T12 test dump prints `fn` lines from `allFunctions`, not `c.modules[m].functions` (SelfhostSemanticsT12Tests.cs:589-597); dump the map keys so a key without an entry is caught.
+- 010 T12 review 2 LOW (open): C# `_constructorBodies[fn]` (Compilation.cs:1020) maps to `declIndex`/`memberIndex` (declare.byn:159, :169-170); record the mapping in Q575-Q579.
+- 010 T18 review 7 LOW → T28: express2.byn:370 `let states = statesOf(...)` is unobservable (stubs `statesOf`, `bindPayloadField`) but outside the exempt span; Q607 (j) should list it.
+- 010 T18 review 7 LOW → T28: express2.byn:495 `var callType: Type = -1` sits on the marker line, outside span 496-501; every mutation is unobservable (overwritten at :497/:499; reached only past `propertyType`/`bindCollection` stubs). Exempt it.
+- 010 T18 review 7 LOW → T28: Q609 survivor express2.byn:504 `untrustedTypes[typeIndex(targetType)]`→`[0]` is killable today: add a case declaring an `Untrusted<List<i32>>` parameter before `ui` in v42.

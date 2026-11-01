@@ -472,6 +472,7 @@ void decl(in Decl node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
 // ── Statements ───────────────────────────────────────────────────────────────────
 
 void stmt(in Stmt node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
+    stmtAttributes(in node, at: depth, from: ref p, to: ref sb)
     switch node {
         case .blockStmt(let s):
             line("Block", at: depth, to: ref sb)
@@ -601,6 +602,62 @@ void stmt(in Stmt node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
             line("Empty", at: depth, to: ref sb)
         case .errorStmt(_):
             line("<error>", at: depth, to: ref sb)
+        case .none:
+            return
+    }
+}
+
+/// The `Attribute` lines of a statement's attributes, which `AstDump.Stmt` writes before its head.
+void stmtAttributes(in Stmt node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
+    switch node {
+        case .blockStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .localDecl(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .exprStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .assignStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .incDecStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .returnStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .failStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .breakStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .continueStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .becomeStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .ifStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .unlessStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .guardedStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .whileStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .doWhileStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .whileLetStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .forStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .labeledStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .switchStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .deferStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .assertStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .contextStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .emptyStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
+        case .errorStmt(let s):
+            attributes(in s.value.attributes, at: depth, from: ref p, to: ref sb)
         case .none:
             return
     }

@@ -1,468 +1,679 @@
+using System.Reflection;
+using System.Text;
 using Bayan.Semantics;
+using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Text;
 
 namespace Bayan.Tests;
 
 /// <summary>
-/// T12: <c>selfhost/semantics/declare.byn</c> against the C# <c>Compilation</c>.
+/// T12: <c>selfhost/semantics/declare.byn</c> against the C# <c>Compilation</c>. Each case is a module directory
+/// under <c>tmp/t12-cases/</c>, loaded and declared file by file (T11), then run through the T12 phases its flags
+/// name, in <c>Declare</c>'s order: <c>v</c> DeclareVariants, <c>c</c> CheckComposition, <c>e</c>
+/// DeclareEnumMembers, <c>u</c> DeclareUnionVariants, <c>p</c> DeclarePayloads, <c>m</c> DeclareMembers,
+/// <c>s</c> DeclareSignature of each free function, <c>o</c> CheckOverloads. The oracle calls the same private methods by reflection and prints the same lines.
+/// Diagnostics print as <c>code line:col message | label | help</c>.
 /// </summary>
 public sealed class SelfhostSemanticsT12Tests
 {
-    private static string MainSource() => """
+    private static string CasesDir => Path.Combine(Golden.RepoRoot, "tmp", "t12-cases");
+
+    private const BindingFlags Any = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+    private static readonly (string Path, string Text)[] Files =
+    [
+        // CheckUnique and LocationOf: a second declaration of a name already taken by each kind of type, a
+        // function and a constant, in this file and in another one.
+        ("unique/a.byn", """
+            struct T1 { }
+            union error T2 {
+                a
+            }
+            enum T3 {
+                a
+            }
+            union T4 {
+                a
+            }
+            interface T5 { }
+            type T6 = i64
+            type distinct T7 = i64
+            const k = 1
+            void fn1() { }
+            struct T1 { }
+            void T2() { }
+            const T3 = 2
+            struct fn1 { }
+            struct k { }
+            void T4() { }
+            void T5() { }
+            void T6() { }
+            void T7() { }
+            """),
+        ("unique/b.byn", "struct T1 { }\nconst fn1 = 3\n"),
+        // DeclareVariants, DeclarePayloads, CheckComposition.
+        ("errors/main.byn", """
+            union error E1 {
+                a
+                a(i64 q)
+                @cases(1) b
+                @foo c
+                @exitCode(3) @exitCode(4) d
+                @exitCode(5) @cases(2) @bar e
+                Bad
+                p(i64 x, string x, Missing y, i64 Z, bool w)
+            }
+            union error E2 { }
+            union error A1 {
+                x
+                shared
+            }
+            union error B1 {
+                y
+                shared
+            }
+            union error C1 = A1, B1
+            union error C2 = A1
+            union error C3 = A1, A1
+            union error C4 = Missing
+            union error C5 = C1, B1
+            """),
+        // CheckComposition of an alias that names no set, in a module with no sets: it composes nothing.
+        ("compose/main.byn", "union error C1 = Missing\n"),
+        // DeclareEnumMembers, DeclareEnumFields, `T.Field`.
+        ("enums/main.byn", """
+            enum Color {
+                red
+                green
+                red
+                Blue
+            }
+            enum Empty { }
+            enum Planet(ref i64 a, i64 b = 1, List<i64> c, i64 d, i64 d, i64 name, i64 ordinal, Color col, Planet2 p2, bool ok, rune r, string s, f64 f, Missing m, u8 n) {
+                earth
+            }
+            enum Planet2(i64 mass) {
+                x
+            }
+            struct R {
+                i64 x requires it > 0
+                i64 x
+                i64 Y
+            }
+            enum Modes(move i64 a, out i64 b, R.Field rf) {
+                z
+            }
+            """),
+        // DeclareUnionVariants and UnionValue.
+        ("unions/main.byn", """
+            union U {
+                a
+                b = 10
+                c = -5
+                d = 0x20
+                e = 10
+                f(i64 x) = 1
+                g = "text"
+                h(i64 p, string p, Missing q)
+                a
+                i = 2147483648
+                j = -2147483649
+                k = 2147483647
+                l = -2147483648
+                m = 7u
+                n = -x
+                o = !1
+                p2 = 40
+                q = 39
+                r
+                Bad
+            }
+            union Empty { }
+            union G<T> {
+                one(T v)
+                two(List<T> vs)
+            }
+            union W {
+                a = 2147483647
+                b
+                c = -2147483648
+                d
+            }
+            """),
+        // DeclareUnionVariants of a struct's `states` block (flag `t`): a valid list, a duplicate name, a payload with
+        // a duplicate field and an unknown type, a non-lower-case name. The syntax has no `= value`, so no state carries one.
+        ("states/main.byn", """
+            struct Cart {
+                i64 n
+                states {
+                    empty
+                    full(List<i64> items)
+                }
+            }
+            struct Order {
+                i64 id
+                states {
+                    draft
+                    paid(i64 payment, string payment, Missing q)
+                    draft
+                    Shipped
+                }
+            }
+            struct Plain { }
+            """),
+        // DeclareMembers.
+        ("structs/main.byn", """
+            interface IShape { }
+            interface IOther { }
+            struct NotI { }
+            struct S : IShape, IShape, IOther, Missing, NotI {
+                required i64 r = 5
+                required i64 r2
+                i64 x
+                i64 x
+                public i64 pub
+                private i64 priv
+                i64 area => 42
+                i64 area => 43
+                public string label => "s"
+                void m() { }
+                void m() { }
+                public static void sm() { }
+                void g<T>() { }
+                type Item = i64
+                S() { }
+                S() { }
+                i64 m
+                void Bad() { }
+                i64 Bad2
+            }
+            struct G<T> {
+                T v
+                void h() { }
+                void k<U>() { }
+                void t<T>() { }
+                List<T> all => [v]
+                G() { }
+            }
+            struct E { }
+            interface IG<T> { }
+            struct H : IG<i64>, IG<i64> {
+                public H() { }
+            }
+            """),
+        // DeclareMembers of a `type distinct` struct: its one field `value`. One with `requires` reaches T38's
+        // `declareCheck` stub (Q579).
+        ("distinct/main.byn", """
+            type distinct X = i64
+            public type distinct P = List<string>
+            type distinct M = Missing
+            """),
+        // CheckOverloads: the same name three times, across files, and a lone function.
+        ("overloads/a.byn", "void f() { }\nvoid f() { }\nvoid f() { }\nvoid h() { }\nvoid g() { }\n"),
+        ("overloads/b.byn", "void g() { }\nvoid h() { }\n"),
+        // Overlap, with the free signatures declared: positional counts, required particles, defaults, `rest`. A `bool`
+        // is positional to `Overlap` but exempt from the particle rule, so no signature reports anything.
+        ("params/main.byn", """
+            void p(i64 a) { }
+            void p(i64 b) { }
+            void p(i64 a, bool b) { }
+            void q(by i64 x) { }
+            void q(for i64 y) { }
+            void q(by i64 z) { }
+            void r(i64 a, by i64 b = 1) { }
+            void r(i64 c) { }
+            void s(rest ReadOnlySpan<i64> xs) { }
+            void s(i64 a, bool b, bool c) { }
+            void t(i64 a = 1) { }
+            void t() { }
+            void u(i64 a, for i64 b) { }
+            void u(i64 a, bool b) { }
+            void v(i64 a, for i64 b) { }
+            void v(i64 c) { }
+            void w(i64 c) { }
+            void w(i64 a, for i64 b) { }
+            void x(by i64 k = 1) { }
+            void x(i64 a) { }
+            """),
+    ];
+
+    private static readonly (string Name, string Flags)[] Runs =
+    [
+        ("unique", ""),
+        ("errors", "vcp"),
+        ("compose", "c"),
+        ("enums", "e"),
+        ("unions", "u"),
+        ("states", "t"),
+        ("structs", "m"),
+        ("distinct", "m"),
+        ("overloads", "o"),
+        // `DeclareMembers` adds methods to `AllFunctions` before `CheckOverloads`, which skips them.
+        ("structs-o", "mo"),
+        ("params", "so"),
+    ];
+
+    private static string DirOf(string run) => Path.Combine(CasesDir, run.Split('-')[0]);
+
+    private static readonly Lazy<Dictionary<string, List<string>>> Run = new(() =>
+    {
+        WriteFixtures();
+        var args = new List<string>();
+        foreach (var (name, flags) in Runs) args.AddRange([name, DirOf(name), flags == "" ? "-" : flags]);
+        return SelfhostSemanticsHarness.RunSections(MainSource, [.. args]);
+    });
+
+    private static void WriteFixtures()
+    {
+        if (Directory.Exists(CasesDir)) Directory.Delete(CasesDir, recursive: true);
+        foreach (var (path, text) in Files)
+        {
+            var full = Path.Combine(CasesDir, path);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, text.EndsWith('\n') ? text : text + "\n", new UTF8Encoding(false));
+        }
+    }
+
+    public static TheoryData<string> CaseNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var r in Runs) data.Add(r.Name);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(CaseNames))]
+    public void CaseMatchesCSharp(string section)
+    {
+        var sections = Run.Value;
+        var run = Runs.Single(r => r.Name == section);
+        SelfhostSemanticsHarness.AssertSection(sections, section, Expected(DirOf(run.Name), run.Flags));
+    }
+
+    // ── The C# oracle ───────────────────────────────────────────────────────────
+
+    private static List<string> Expected(string dir, string flags)
+    {
+        if (!Directory.Exists(CasesDir)) WriteFixtures();
+        var c = (Compilation)typeof(Compilation).GetConstructor(Any, [typeof(string), typeof(CompilationOptions), typeof(string)])!
+            .Invoke([dir, new CompilationOptions(IncludeTests: false, Library: false), null]);
+        var sources = Directory.EnumerateFiles(dir, "*.byn").Order(StringComparer.Ordinal).Select(SourceText.FromFile).ToList();
+        var m = (ModuleSymbol)Call(c, "LoadModule", "main", dir, sources, null)!;
+        typeof(Compilation).GetProperty("EntryModule")!.SetValue(c, m);
+        foreach (var f in m.Files) Call(c, "DeclareFile", f);
+        if (flags.Contains('v')) foreach (var set in m.ErrorSets) Call(c, "DeclareVariants", set);
+        if (flags.Contains('c'))
+        {
+            var aliases = (System.Collections.IEnumerable)typeof(Compilation).GetField("_aliases", Any)!.GetValue(c)!;
+            foreach (var alias in aliases.Cast<object>().ToList())
+                if (alias.GetType().GetProperty("Decl")!.GetValue(alias) is ErrorSetDecl composed) Call(c, "CheckComposition", alias, composed);
+        }
+        if (flags.Contains('e')) foreach (var e in m.Enums) Call(c, "DeclareEnumMembers", e);
+        if (flags.Contains('u')) foreach (var u in m.Unions) Call(c, "DeclareUnionVariants", u);
+        // `StatesOf` declares the states union on first use (T38's `statesOf` is a stub, so the port is driven directly).
+        if (flags.Contains('t')) foreach (var s in m.Structs) Call(c, "StatesOf", s);
+        if (flags.Contains('p')) foreach (var set in m.ErrorSets) Call(c, "DeclarePayloads", set);
+        if (flags.Contains('m')) foreach (var s in m.Structs) Call(c, "DeclareMembers", s);
+        if (flags.Contains('s'))
+            foreach (var f in m.AllFunctions.Where(f => f.Kind == FunctionKind.Function).ToList()) Call(c, "DeclareSignature", f, f.Decl, f.File, null);
+        if (flags.Contains('o')) Call(c, "CheckOverloads", m);
+        return Dump(c, m);
+    }
+
+    private static object? Call(Compilation c, string method, params object?[] args) =>
+        typeof(Compilation).GetMethod(method, Any)!.Invoke(c, args);
+
+    private static string At(Location? l)
+    {
+        if (l is not { } loc) return "none";
+        var (line, col) = loc.Source.GetLinePosition(loc.Span.Start);
+        return $"{line}:{col}";
+    }
+
+    private static string Lower(object o) => o.ToString()!.ToLowerInvariant();
+
+    /// <summary>Each local; a <c>ParameterSymbol</c> adds <c>#</c> and its ordinal.</summary>
+    private static string Params(IEnumerable<LocalSymbol> ps) =>
+        string.Join(",", ps.Select(p => $"{p.Name}:{p.Type.DisplayName}@{At(p.Location)}{(p is ParameterSymbol q ? $"#{q.Ordinal}" : "")}"));
+
+    /// <summary>
+    /// A function's T12 facts. A method's or free function's return type and parameters come from
+    /// <c>DeclareSignature</c> (T38), and a builtin's <c>File</c> is null where the port sets it (Q578), so neither is printed.
+    /// </summary>
+    private static string Fn(FunctionSymbol f)
+    {
+        var keys = f.TypeMap is null ? "" : string.Join(",", f.TypeMap.Keys);
+        var signature = f.Kind is FunctionKind.Method or FunctionKind.Function ? "" : $" ret={f.ReturnType.DisplayName} ({Params(f.Parameters)})";
+        var file = f.Kind == FunctionKind.Builtin ? "" : $" file={f.File?.Source.Path ?? "none"}";
+        return $"{f.Name} {Lower(f.Kind)} {Lower(f.Access)} static={f.IsStatic} at={At(f.Location)}{file} map=[{keys}]{signature}";
+    }
+
+    private static List<string> Dump(Compilation c, ModuleSymbol m)
+    {
+        var lines = new List<string>();
+        foreach (var d in c.Diagnostics.Items)
+        {
+            var (line, col) = d.Source!.GetLinePosition(d.Span.Start);
+            lines.Add($"diag {d.Code} {line}:{col} {d.Message} | {d.Label} | {d.Help}");
+        }
+        foreach (var set in m.ErrorSets)
+        {
+            lines.Add($"set {set.Name}");
+            foreach (var v in set.Variants) lines.Add($"  variant {v.Name} code={v.Code} at={At(v.Location)} ({Params(v.Fields)})");
+        }
+        var exitCodes = (System.Collections.IEnumerable)typeof(Compilation).GetField("_exitCodes", Any)!.GetValue(c)!;
+        foreach (var x in exitCodes)
+        {
+            var v = (ErrorVariantSymbol)x.GetType().GetField("Item1")!.GetValue(x)!;
+            var a = (AttributeSyntax)x.GetType().GetField("Item2")!.GetValue(x)!;
+            var (line, col) = v.Location!.Value.Source.GetLinePosition(a.Span.Start);
+            lines.Add($"exit {v.Set.Name}.{v.Name} {line}:{col}");
+        }
+        foreach (var e in m.Enums)
+        {
+            lines.Add($"enum {e.Name}");
+            foreach (var x in e.Members) lines.Add($"  member {x.Name} ordinal={x.Ordinal} at={At(x.Location)} doc={x.Doc ?? "none"}");
+            foreach (var x in e.Fields) lines.Add($"  field {x.Name} {x.Type.DisplayName} index={x.Index} at={At(x.Location)}");
+            if (e.FromOrdinal is { } fo) lines.Add($"  fromOrdinal {Fn(fo)} {Lower(fo.Builtin)}");
+            if (e.Parse is { } pa) lines.Add($"  parse {Fn(pa)} {Lower(pa.Builtin)}");
+        }
+        foreach (var u in m.Unions)
+        {
+            lines.Add($"union {u.Name}");
+            foreach (var v in u.Variants) lines.Add($"  variant {v.Name} tag={v.Tag} at={At(v.Location)} ({Params(v.Fields)})");
+        }
+        foreach (var (s, u) in c.States)
+        {
+            lines.Add($"states {s.Name}");
+            foreach (var v in u.Variants) lines.Add($"  variant {v.Name} tag={v.Tag} at={At(v.Location)} ({Params(v.Fields)})");
+        }
+        var baseSpans = (System.Collections.IDictionary)typeof(Compilation).GetField("_baseSpans", Any)!.GetValue(c)!;
+        foreach (var s in m.Structs)
+        {
+            lines.Add($"struct {s.Name}");
+            foreach (var i in s.Bases)
+            {
+                var span = (TextSpan)baseSpans[(s, i)]!;
+                var (line, col) = s.Location.Source.GetLinePosition(span.Start);
+                lines.Add($"  base {i.Name} {line}:{col}+{span.Length}");
+            }
+            foreach (var f in s.Fields) lines.Add($"  field {f.Name} {f.Type.DisplayName} {Lower(f.Access)} required={f.IsRequired} default={f.HasDefault} at={At(f.Location)}");
+            foreach (var p in s.Properties) lines.Add($"  property {p.Name} {p.Type.DisplayName} {Lower(p.Access)} at={At(p.Location)} getter={Fn(p.Getter)}");
+            foreach (var f in s.Methods) lines.Add($"  method {Fn(f)}");
+            foreach (var f in s.Constructors) lines.Add($"  constructor {Fn(f)}");
+        }
+        foreach (var (n, fs) in m.Functions) lines.Add($"fn {n} {fs.Count}");
+        foreach (var f in m.AllFunctions) lines.Add($"all {Fn(f)}");
+        return lines;
+    }
+
+    // ── The generated main ──────────────────────────────────────────────────────
+
+    private const string MainSource = """
         import lexer
         import parser
 
-        i32 main() {
+        i32 main(ReadOnlySpan<string> args) {
+            var i: i64 = 0
+            while i + 2 < args.length {
+                let name = args[i]
+                let dir = args[i + 1]
+                let flags = args[i + 2]
+                print($"== {name}")
+                var stateUnions = List<UnionId>()
+                var c = loadOnly(dir)
+                let m = c.entryModule
+                for f in copyIds(in c.modules[m].files) { declareFile(ref c, for: f) }
+                if flags.contains("v") {
+                    for set in copyIds(in c.modules[m].errorSets) { declareVariants(ref c, for: set) }
+                }
+                if flags.contains("c") {
+                    for alias in copyIds(in c.aliasOrder) {
+                        let file = c.aliases[alias].file
+                        switch c.files[file].unit.members[c.aliases[alias].declIndex] {
+                            case .errorSetDecl(let composed):
+                                checkComposition(ref c, for: alias, from: in composed.value)
+                            default:
+                                continue
+                        }
+                    }
+                }
+                if flags.contains("e") {
+                    for e in copyIds(in c.modules[m].enums) { declareEnumMembers(ref c, for: e) }
+                }
+                if flags.contains("u") {
+                    for u in copyIds(in c.modules[m].unions) { declareUnionVariants(ref c, for: u) }
+                }
+                if flags.contains("t") {
+                    for s in copyIds(in c.modules[m].structs) {
+                        switch c.files[c.structs[s].file].unit.members[c.structs[s].declIndex] {
+                            case .structDecl(let d):
+                                if d.value.states.length == 0 { continue }
+                            default:
+                                continue
+                        }
+                        let u = newUnion(ref c, by: UnionSymbol { name: c.structs[s].name, module: c.structs[s].module, file: c.structs[s].file, declIndex: c.structs[s].declIndex })
+                        declareUnionVariants(ref c, for: u)
+                        stateUnions.append(u)
+                    }
+                }
+                if flags.contains("p") {
+                    for set in copyIds(in c.modules[m].errorSets) { declarePayloads(ref c, for: set) }
+                }
+                if flags.contains("m") {
+                    for s in copyIds(in c.modules[m].structs) { declareMembers(ref c, for: s) }
+                }
+                if flags.contains("s") { t12Signatures(ref c, for: m) }
+                if flags.contains("o") { checkOverloads(ref c, for: m) }
+                dump(ref c, for: m, by: stateUnions)
+                i += 3
+            }
+            return 0
+        }
+
+        Ctx loadOnly(string dir) {
+            var sources = List<lexer.SourceText>()
+            for f in t11ModuleFiles(dir, includeTests: false) { sources.append(lexer.SourceText.create(f, from: t11ReadAllBytes(f))) }
             var c = Ctx {
                 files: List<SourceFile>(),
                 modules: List<Mod>(),
                 diagnostics: List<Diag>(),
                 bags: List<DiagBag>(),
+                packageRoot: dir,
+                displayRoot: dir,
             }
+            c.entryModule = loadModule(ref c, for: "main", at: dir, from: move sources, by: -1)
+            return c
+        }
 
-            // ── 1. loc & accessOf ──────────────────────────────────────────
-            let l = loc(0, at: TextSpan { start: 10, length: 5 })
-            let pub = accessOf(1)
-            let priv = accessOf(2)
-            let none = accessOf(0)
-            print("== smoke")
-            print($"file: {l.file} span: {l.span.start} pub: {pub == .publicKeyword} priv: {priv == .privateKeyword} module: {none == .module}")
+        string spot(in Ctx c, from FileId f, by TextSpan span) {
+            let pos = linePosition(c.files[f].text.span, at: span.start)
+            return $"{pos.line}:{pos.column}"
+        }
 
-            // ── Setup AST Files 0 and 1 ──────────────────────────────────
-            let src0 = "struct UniqueType { }\nvoid uniqueFn() { }\nconst uniqueConst = 100\nvoid fPos(i32 a) { }\nvoid fPos(i32 a, i32 b) { }\nvoid fPart(from i32 a) { }\nvoid fPart(to i32 a) { }\nvoid fRest(rest ReadOnlySpan<i32> args) { }\nvoid ovFn(i32 a) { }\nvoid ovFn(i32 b) { }\nunion error MyError {\n    okCase\n    payCase(string msg, i32 code)\n    okCase\n    @cases badAttr\n    @exitCode(1) goodExit\n    @exitCode(2) @exitCode(3) dupExit\n    @unknownAttr unknownCase\n    badFnPay(() -> void cb)\n    dupPay(i32 a, string a)\n}\nunion error EmptyError { }\nunion error BaseA {\n    caseA\n    sharedCase\n}\nunion error BaseB {\n    caseB\n    sharedCase\n}\nunion error CompSet = BaseA, BaseB\nenum SampleEnum(ref i32 badRef, i32 defVal = 1, UniqueType badType, i32 name, i32 val1, i32 val1) {\n    first\n    second\n    first\n}\nenum EmptyEnum { }\nunion SampleUnion {\n    uCaseA\n    uValDec = 10\n    uValNeg = -5\n    uValHex = 0x20\n    uDupVal = 10\n    uPayVal(i32 x) = 1\n    uBadVal = \"text\"\n    uPay(i32 p1, string p1, () -> void cb)\n    uCaseA\n}\nunion EmptyUnion { }\ninterface IBase {\n    type Item\n}\nstruct SampleStruct : IBase, IBase {\n    static i32 badStatic\n    required i32 reqDef = 5\n    i32 fld1\n    i32 fld1\n    i32 propVal => 42\n    i32 propVal => 43\n    (() -> void) fnProp => () => { }\n    void m1(i32 x) { }\n    void m1(i32 y) { }\n    void mGeneric<T>() { }\n    type Item = i32\n    type BadAssoc = bool\n    SampleStruct() { }\n    SampleStruct(i32 x) { }\n}\n"
-
-            var bytes0 = List<u8>()
-            for b in src0.bytes { bytes0.append(b) }
-            var copy0 = List<u8>()
-            for b in src0.bytes { copy0.append(b) }
-            let source0 = lexer.SourceText.create("test.byn", from: move bytes0)
-            var p0 = parser.Parser.create(lexer.lex(move source0, by: lexer.Keywords.build()))
-            let unit0 = parser.parseCompilationUnit(ref p0)
-            let sf0 = SourceFile {
-                path: "test.byn",
-                displayPath: "test.byn",
-                text: move copy0,
-                unit: move unit0,
-                module: 0,
-                isEntry: true,
-                isTestFile: false,
-                imports: Map<string, ModId>(),
+        string lowerKind(FunctionKind k) {
+            switch k {
+                case .function: return "function"
+                case .method: return "method"
+                case .constructor: return "constructor"
+                case .getter: return "getter"
+                case .main: return "main"
+                case .testKeyword: return "test"
+                case .builtin: return "builtin"
+                case .lambda: return "lambda"
+                case .invoke: return "invoke"
             }
-            c.files.append(move sf0)
+        }
 
-            let src1 = "struct OtherStruct { }\n"
-            var bytes1 = List<u8>()
-            for b in src1.bytes { bytes1.append(b) }
-            var copy1 = List<u8>()
-            for b in src1.bytes { copy1.append(b) }
-            let source1 = lexer.SourceText.create("other.byn", from: move bytes1)
-            var p1 = parser.Parser.create(lexer.lex(move source1, by: lexer.Keywords.build()))
-            let unit1 = parser.parseCompilationUnit(ref p1)
-            let sf1 = SourceFile {
-                path: "other.byn",
-                displayPath: "other.byn",
-                text: move copy1,
-                unit: move unit1,
-                module: 0,
-                isEntry: false,
-                isTestFile: false,
-                imports: Map<string, ModId>(),
+        string lowerAccess(Accessibility a) {
+            switch a {
+                case .publicKeyword: return "public"
+                case .privateKeyword: return "private"
+                case .module: return "module"
             }
-            c.files.append(move sf1)
+        }
 
-            var modFiles = List<FileId>()
-            modFiles.append(0)
-            modFiles.append(1)
-            c.modules.append(Mod {
-                name: "test",
-                files: move modFiles,
-                directory: ".",
-                cName: "test",
-            })
+        string truth(bool on) => on ? "True" : "False"
 
-            // ── 2. checkUnique ─────────────────────────────────────────────
-            var spanUniqueType = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[0] {
-                case .structDecl(let n): spanUniqueType = n.value.name
-                default: break
+        /// Each parameter's location is in file `f`; a builtin's (C# `null`) has an empty span. `at=` prints `span`, the C# `Location`.
+        string paramList(ref Ctx c, for in List<LocalId> ps, from FileId f) {
+            var sb = StrBuf()
+            for k in 0..ps.length {
+                if k > 0 { sb.append(",") }
+                let p = ps[k]
+                let place = c.locals[p].span.length == 0 ? "none" : spot(in c, from: f, by: c.locals[p].span)
+                let type = typeDisplay(ref c, by: c.locals[p].type)
+                let ordinal = c.locals[p].isParameter ? $"#{c.locals[p].ordinal}" : ""
+                sb.append($"{c.locals[p].name}:{type}@{place}{ordinal}")
             }
-            var spanUniqueFn = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[1] {
-                case .functionDecl(let n): spanUniqueFn = n.value.name
-                default: break
+            return $"{sb.finish()}"
+        }
+
+        string fnLine(ref Ctx c, for FuncId f) {
+            let file = c.functions[f].file
+            var keys = StrBuf()
+            var first = true
+            for (k, _) in c.functions[f].typeMap {
+                if !first { keys.append(",") }
+                keys.append(k)
+                first = false
             }
-            var spanUniqueConst = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[2] {
-                case .globalStatement(let n):
-                    switch n.value.statement {
-                        case .localDecl(let ld): spanUniqueConst = ld.value.name
-                        default: break
-                    }
-                default: break
+            let kind = c.functions[f].kind
+            var signature = ""
+            if kind != .method && kind != .function {
+                let ret = typeDisplay(ref c, by: c.functions[f].returnType)
+                let ps = paramList(ref c, for: in copyIds(in c.functions[f].parameters), from: file)
+                signature = $" ret={ret} ({ps})"
             }
+            let fileName = kind == .builtin ? "" : $" file={c.files[file].displayPath}"
+            let keyList = keys.finish()
+            return $"{c.functions[f].name} {lowerKind(kind)} {lowerAccess(c.functions[f].access)} static={truth(on: c.functions[f].isStatic)} at={spot(in c, from: file, by: c.functions[f].span)}{fileName} map=[{keyList}]{signature}"
+        }
 
-            let u0 = checkUnique(ref c, from: 0, at: spanUniqueType)
-            let s0 = newStruct(ref c, by: StructSymbol { name: "UniqueType", nameSpan: spanUniqueType, span: spanUniqueType, module: 0, file: 0, declIndex: 0, memberIndex: -1 })
-            c.modules[0].types["UniqueType"] = structTypeOf(s0)
-            let u1 = checkUnique(ref c, from: 0, at: spanUniqueType)
-
-            let fn0 = newFunction(ref c, by: FunctionSymbol { name: "uniqueFn", nameSpan: spanUniqueFn, span: spanUniqueFn, module: 0, file: 0, declIndex: 1, memberIndex: -1 })
-            var fnList = List<FuncId>()
-            fnList.append(fn0)
-            c.modules[0].functions["uniqueFn"] = move fnList
-            let u2 = checkUnique(ref c, from: 0, at: spanUniqueFn)
-
-            let cn0 = newConst(ref c, by: ConstSymbol { name: "uniqueConst", nameSpan: spanUniqueConst, span: spanUniqueConst, module: 0, file: 0, declIndex: 2 })
-            c.modules[0].constants["uniqueConst"] = cn0
-            let u3 = checkUnique(ref c, from: 0, at: spanUniqueConst)
-
-            print("== checkUnique")
-            print($"unique: {u0} dupType: {u1} dupFn: {u2} dupConst: {u3}")
-
-            // ── 3. reportDuplicate ─────────────────────────────────────────
-            let preDiags = c.diagnostics.length
-            reportDuplicate(ref c, from: 0, at: spanUniqueType, as: loc(0, at: spanUniqueType))
-            let diagSame = c.diagnostics[c.diagnostics.length - 1].label
-            reportDuplicate(ref c, from: 0, at: spanUniqueType, as: loc(1, at: TextSpan { start: 7, length: 11 }))
-            let diagDiff = c.diagnostics[c.diagnostics.length - 1].label
-            print("== reportDuplicate")
-            print($"sameFile: {diagSame} diffFile: {diagDiff}")
-
-            // ── 4. overlap ─────────────────────────────────────────────────
-            // 3: fPos(i32 a)
-            let fnPos1 = newFunction(ref c, by: FunctionSymbol { name: "fPos", nameSpan: TextSpan { start: 0, length: 4 }, span: TextSpan { start: 0, length: 19 }, module: 0, file: 0, declIndex: 3, memberIndex: -1 })
-            // 4: fPos(i32 a, i32 b)
-            let fnPos2 = newFunction(ref c, by: FunctionSymbol { name: "fPos", nameSpan: TextSpan { start: 0, length: 4 }, span: TextSpan { start: 0, length: 26 }, module: 0, file: 0, declIndex: 4, memberIndex: -1 })
-            // 5: fPart(from i32 a)
-            let fnPart1 = newFunction(ref c, by: FunctionSymbol { name: "fPart", nameSpan: TextSpan { start: 0, length: 5 }, span: TextSpan { start: 0, length: 26 }, module: 0, file: 0, declIndex: 5, memberIndex: -1 })
-            // 6: fPart(to i32 a)
-            let fnPart2 = newFunction(ref c, by: FunctionSymbol { name: "fPart", nameSpan: TextSpan { start: 0, length: 5 }, span: TextSpan { start: 0, length: 24 }, module: 0, file: 0, declIndex: 6, memberIndex: -1 })
-            // 7: fRest(rest ReadOnlySpan<i32> args)
-            let fnRest = newFunction(ref c, by: FunctionSymbol { name: "fRest", nameSpan: TextSpan { start: 0, length: 5 }, span: TextSpan { start: 0, length: 40 }, module: 0, file: 0, declIndex: 7, memberIndex: -1 })
-
-            let ovSamePos = overlap(ref c, for: fnPos1, as: fnPos1)
-            let ovDiffCount = overlap(ref c, for: fnPos1, as: fnPos2)
-            let ovDiffPart = overlap(ref c, for: fnPart1, as: fnPart2)
-            let ovSamePart = overlap(ref c, for: fnPart1, as: fnPart1)
-            let ovRest = overlap(ref c, for: fnRest, as: fnPos2)
-
-            // Synthesized functions without AST
-            var fnSynth1 = FunctionSymbol { name: "synth1", nameSpan: TextSpan { start: 0, length: 0 }, span: TextSpan { start: 0, length: 0 }, module: 0, file: -1, declIndex: -1, memberIndex: -1 }
-            let pSynth1 = newLocal(ref c, by: LocalSymbol { name: "p1", isParameter: true, ordinal: 0 })
-            fnSynth1.parameters.append(pSynth1)
-            let idSynth1 = newFunction(ref c, by: move fnSynth1)
-
-            var fnSynth2 = FunctionSymbol { name: "synth2", nameSpan: TextSpan { start: 0, length: 0 }, span: TextSpan { start: 0, length: 0 }, module: 0, file: -1, declIndex: -1, memberIndex: -1 }
-            let pSynth2 = newLocal(ref c, by: LocalSymbol { name: "p2", isParameter: true, ordinal: 0 })
-            fnSynth2.parameters.append(pSynth2)
-            let idSynth2 = newFunction(ref c, by: move fnSynth2)
-
-            var fnSynth3 = FunctionSymbol { name: "synth3", nameSpan: TextSpan { start: 0, length: 0 }, span: TextSpan { start: 0, length: 0 }, module: 0, file: -1, declIndex: -1, memberIndex: -1 }
-            let pSynth3a = newLocal(ref c, by: LocalSymbol { name: "p3a", isParameter: true, ordinal: 0 })
-            let pSynth3b = newLocal(ref c, by: LocalSymbol { name: "p3b", isParameter: true, ordinal: 1 })
-            fnSynth3.parameters.append(pSynth3a)
-            fnSynth3.parameters.append(pSynth3b)
-            let idSynth3 = newFunction(ref c, by: move fnSynth3)
-
-            let ovSynthSame = overlap(ref c, for: idSynth1, as: idSynth2)
-            let ovSynthDiff = overlap(ref c, for: idSynth1, as: idSynth3)
-
-            print("== overlap")
-            print($"samePos: {ovSamePos} diffPosCount: {ovDiffCount} diffPart: {ovDiffPart} samePart: {ovSamePart} rest: {ovRest} synthSame: {ovSynthSame} synthDiff: {ovSynthDiff}")
-
-            // ── 5. checkOverloads ──────────────────────────────────────────
-            // 8: ovFn(i32 a), 9: ovFn(i32 b)
-            let idOv1 = newFunction(ref c, by: FunctionSymbol { name: "ovFn", nameSpan: TextSpan { start: 0, length: 4 }, span: TextSpan { start: 0, length: 18 }, module: 0, file: 0, declIndex: 8, memberIndex: -1 })
-            let idOv2 = newFunction(ref c, by: FunctionSymbol { name: "ovFn", nameSpan: TextSpan { start: 0, length: 4 }, span: TextSpan { start: 0, length: 18 }, module: 0, file: 0, declIndex: 9, memberIndex: -1 })
-            var ovList = List<FuncId>()
-            ovList.append(idOv1)
-            ovList.append(idOv2)
-            c.modules[0].functions["ovFn"] = move ovList
-            c.modules[0].allFunctions.append(idOv1)
-            c.modules[0].allFunctions.append(idOv2)
-
-            var partList = List<FuncId>()
-            partList.append(fnPart1)
-            partList.append(fnPart2)
-            c.modules[0].functions["fPart"] = move partList
-            c.modules[0].allFunctions.append(fnPart1)
-            c.modules[0].allFunctions.append(fnPart2)
-
-            checkOverloads(ref c, for: 0)
-            let ovFnCount = c.modules[0].functions["ovFn"].length
-            let fPartCount = c.modules[0].functions["fPart"].length
-            print("== checkOverloads")
-            print($"ovFnCount: {ovFnCount} fPartCount: {fPartCount}")
-
-            // ── 6. errorSets (declareVariants & declarePayloads) ───────────
-            // 10: union error MyError
-            var spanMyErr = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[10] {
-                case .errorEnumDecl(let n): spanMyErr = n.value.name
-                default: break
-            }
-            let myErrId = newErrorSet(ref c, by: ErrorSetSymbol { name: "MyError", nameSpan: spanMyErr, span: spanMyErr, module: 0, file: 0, declIndex: 10 })
-            c.modules[0].errorSets.append(myErrId)
-            declareVariants(ref c, for: myErrId)
-            declarePayloads(ref c, for: myErrId)
-
-            // 11: union error EmptyError
-            var spanEmptyErr = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[11] {
-                case .errorEnumDecl(let n): spanEmptyErr = n.value.name
-                default: break
-            }
-            let emptyErrId = newErrorSet(ref c, by: ErrorSetSymbol { name: "EmptyError", nameSpan: spanEmptyErr, span: spanEmptyErr, module: 0, file: 0, declIndex: 11 })
-            c.modules[0].errorSets.append(emptyErrId)
-            declareVariants(ref c, for: emptyErrId)
-
-            let payCaseId = c.errorSets[myErrId].variants[1]
-            print("== errorSets")
-            print($"variants: {c.errorSets[myErrId].variants.length} payFields: {c.errorVariants[payCaseId].fields.length} emptyVars: {c.errorSets[emptyErrId].variants.length}")
-
-            // ── 7. checkComposition ────────────────────────────────────────
-            // 12: BaseA, 13: BaseB
-            var spanBaseA = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[12] {
-                case .errorEnumDecl(let n): spanBaseA = n.value.name
-                default: break
-            }
-            let baseAId = newErrorSet(ref c, by: ErrorSetSymbol { name: "BaseA", nameSpan: spanBaseA, span: spanBaseA, module: 0, file: 0, declIndex: 12 })
-            declareVariants(ref c, for: baseAId)
-
-            var spanBaseB = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[13] {
-                case .errorEnumDecl(let n): spanBaseB = n.value.name
-                default: break
-            }
-            let baseBId = newErrorSet(ref c, by: ErrorSetSymbol { name: "BaseB", nameSpan: spanBaseB, span: spanBaseB, module: 0, file: 0, declIndex: 13 })
-            declareVariants(ref c, for: baseBId)
-
-            var compSets = List<ErrorSetId>()
-            compSets.append(baseAId)
-            compSets.append(baseBId)
-            let excluded = List<VariantId>()
-            let compType = errorUnionOf(ref c, for: in compSets, as: in excluded)
-
-            var spanComp = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[14] {
-                case .errorSetDecl(let n): spanComp = n.value.name
-                default: break
-            }
-            let aliasId = newAlias(ref c, by: AliasPlaceholder { name: "CompSet", nameSpan: spanComp, span: spanComp, file: 0, declIndex: 14, target: compType })
-            switch c.files[0].unit.members[14] {
-                case .errorSetDecl(let n):
-                    checkComposition(ref c, for: -1, from: in n.value)
-                    checkComposition(ref c, for: c.aliases.length, from: in n.value)
-                    checkComposition(ref c, for: aliasId, from: in n.value)
-                default: break
-            }
-
-            var foundDupErrorCase = false
+        void dump(ref Ctx c, for ModId m, by List<UnionId> stateUnions) {
             for d in c.diagnostics {
-                if d.code == "BYN3202" { foundDupErrorCase = true }
+                let pos = linePosition(c.files[d.file].text.span, at: d.span.start)
+                print($"diag {d.code} {pos.line}:{pos.column} {d.message} | {d.label} | {d.help}")
             }
-            print("== composition")
-            print($"hasDupCase: {foundDupErrorCase}")
-
-            // ── 8. enums (declareEnumFields & declareEnumMembers) ───────────
-            declareEnumMembers(ref c, for: -1)
-            declareEnumMembers(ref c, for: c.enums.length)
-            // 15: SampleEnum
-            var spanSampleEnum = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[15] {
-                case .enumDecl(let n): spanSampleEnum = n.value.name
-                default: break
-            }
-            let enumId = newEnum(ref c, by: EnumSymbol { name: "SampleEnum", nameSpan: spanSampleEnum, span: spanSampleEnum, module: 0, file: 0, declIndex: 15, fieldsOf: -1 })
-            declareEnumMembers(ref c, for: enumId)
-
-            // 16: EmptyEnum
-            var spanEmptyEnum = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[16] {
-                case .enumDecl(let n): spanEmptyEnum = n.value.name
-                default: break
-            }
-            let emptyEnumId = newEnum(ref c, by: EnumSymbol { name: "EmptyEnum", nameSpan: spanEmptyEnum, span: spanEmptyEnum, module: 0, file: 0, declIndex: 16, fieldsOf: -1 })
-            declareEnumMembers(ref c, for: emptyEnumId)
-
-            var validFields = 0
-            var validName = ""
-            for fId in c.enums[enumId].fields {
-                if !isError(c.enumFields[fId].type) {
-                    validFields += 1
-                    validName = c.enumFields[fId].name
+            for set in copyIds(in c.modules[m].errorSets) {
+                print($"set {c.errorSets[set].name}")
+                for v in copyIds(in c.errorSets[set].variants) {
+                    let f = c.errorVariants[v].file
+                    let ps = paramList(ref c, for: in copyIds(in c.errorVariants[v].fields), from: f)
+                    print($"  variant {c.errorVariants[v].name} code={c.errorVariants[v].code} at={spot(in c, from: f, by: c.errorVariants[v].span)} ({ps})")
                 }
             }
-            var hasRefErr = false
-            for d in c.diagnostics {
-                if d.label == "`ref` is not allowed here" { hasRefErr = true }
+            for x in c.exitCodes {
+                let v = x.variant
+                let r = x.attribute
+                switch c.files[r.file].unit.members[r.declIndex] {
+                    case .errorEnumDecl(let d):
+                        let span = d.value.variants[r.memberIndex].attributes[r.itemIndex].span
+                        print($"exit {c.errorSets[c.errorVariants[v].set].name}.{c.errorVariants[v].name} {spot(in c, from: r.file, by: span)}")
+                    default:
+                        panic("an exit code is on an error variant")
+                }
             }
-            print("== enums")
-            print($"members: {c.enums[enumId].members.length} fields: {c.enums[enumId].fields.length} validFields: {validFields} validName: {validName} hasRefErr: {hasRefErr} hasFromOrd: {c.enums[enumId].fromOrdinal >= 0} hasParse: {c.enums[enumId].parse >= 0} emptyMembers: {c.enums[emptyEnumId].members.length}")
-
-            // ── 9. unions (declareUnionVariants) ───────────────────────────
-            declareUnionVariants(ref c, for: -1)
-            declareUnionVariants(ref c, for: c.unions.length)
-            // 17: SampleUnion
-            var spanSampleUnion = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[17] {
-                case .unionDecl(let n): spanSampleUnion = n.value.name
-                default: break
+            for e in copyIds(in c.modules[m].enums) {
+                let f = c.enums[e].file
+                print($"enum {c.enums[e].name}")
+                for x in copyIds(in c.enums[e].members) {
+                    let doc = c.enumMembers[x].doc ?? "none"
+                    print($"  member {c.enumMembers[x].name} ordinal={c.enumMembers[x].ordinal} at={spot(in c, from: f, by: c.enumMembers[x].span)} doc={doc}")
+                }
+                for x in copyIds(in c.enums[e].fields) {
+                    let type = typeDisplay(ref c, by: c.enumFields[x].type)
+                    print($"  field {c.enumFields[x].name} {type} index={c.enumFields[x].index} at={spot(in c, from: f, by: c.enumFields[x].span)}")
+                }
+                if c.enums[e].fromOrdinal >= 0 {
+                    let line = fnLine(ref c, for: c.enums[e].fromOrdinal)
+                    print($"  fromOrdinal {line} {t12BuiltinWord(c.functions[c.enums[e].fromOrdinal].builtin)}")
+                }
+                if c.enums[e].parse >= 0 {
+                    let line = fnLine(ref c, for: c.enums[e].parse)
+                    print($"  parse {line} {t12BuiltinWord(c.functions[c.enums[e].parse].builtin)}")
+                }
             }
-            let unionId = newUnion(ref c, by: UnionSymbol { name: "SampleUnion", nameSpan: spanSampleUnion, span: spanSampleUnion, module: 0, file: 0, declIndex: 17 })
-            declareUnionVariants(ref c, for: unionId)
-
-            // 18: EmptyUnion
-            var spanEmptyUnion = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[18] {
-                case .unionDecl(let n): spanEmptyUnion = n.value.name
-                default: break
+            for u in copyIds(in c.modules[m].unions) {
+                let f = c.unions[u].file
+                print($"union {c.unions[u].name}")
+                for v in copyIds(in c.unions[u].variants) {
+                    let ps = paramList(ref c, for: in copyIds(in c.unionVariants[v].fields), from: f)
+                    print($"  variant {c.unionVariants[v].name} tag={c.unionVariants[v].tag} at={spot(in c, from: f, by: c.unionVariants[v].span)} ({ps})")
+                }
             }
-            let emptyUnionId = newUnion(ref c, by: UnionSymbol { name: "EmptyUnion", nameSpan: spanEmptyUnion, span: spanEmptyUnion, module: 0, file: 0, declIndex: 18 })
-            declareUnionVariants(ref c, for: emptyUnionId)
-
-            let tagDec = c.unionVariants[c.unions[unionId].variants[1]].tag
-            let tagNeg = c.unionVariants[c.unions[unionId].variants[2]].tag
-            let tagHex = c.unionVariants[c.unions[unionId].variants[3]].tag
-            let badBin = t12ParseInt("0b2")
-            print("== unions")
-            print($"variants: {c.unions[unionId].variants.length} decTag: {tagDec} negTag: {tagNeg} hexTag: {tagHex} badBinNull: {badBin is null} emptyVars: {c.unions[emptyUnionId].variants.length}")
-
-            // ── 10. members (declareMembers) ───────────────────────────────
-            declareMembers(ref c, for: -1)
-            declareMembers(ref c, for: c.structs.length)
-            // 19: IBase
-            var spanIBase = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[19] {
-                case .interfaceDecl(let n): spanIBase = n.value.name
-                default: break
+            for u in stateUnions {
+                let f = c.unions[u].file
+                print($"states {c.unions[u].name}")
+                for v in copyIds(in c.unions[u].variants) {
+                    let ps = paramList(ref c, for: in copyIds(in c.unionVariants[v].fields), from: f)
+                    print($"  variant {c.unionVariants[v].name} tag={c.unionVariants[v].tag} at={spot(in c, from: f, by: c.unionVariants[v].span)} ({ps})")
+                }
             }
-            let iBaseId = newInterface(ref c, by: InterfaceSymbol { name: "IBase", nameSpan: spanIBase, span: spanIBase, module: 0, file: 0, declIndex: 19 })
-            c.modules[0].interfaces.append(iBaseId)
-            c.modules[0].types["IBase"] = interfaceTypeOf(iBaseId)
-            let assocTp = newTypeParam(ref c, by: TypeParam { name: "Item", constraints: List<InterfaceId>() })
-            c.interfaces[iBaseId].associatedTypes.append(assocTp)
-
-            // 20: SampleStruct
-            var spanSampleStruct = TextSpan { start: 0, length: 0 }
-            switch c.files[0].unit.members[20] {
-                case .structDecl(let n): spanSampleStruct = n.value.name
-                default: break
+            for s in copyIds(in c.modules[m].structs) {
+                let f = c.structs[s].file
+                print($"struct {c.structs[s].name}")
+                for i in copyIds(in c.structs[s].bases) {
+                    let span = c.baseSpans[$"{s} {i}"]
+                    print($"  base {c.interfaces[i].name} {spot(in c, from: f, by: span)}+{span.length}")
+                }
+                for x in copyIds(in c.structs[s].fields) {
+                    let type = typeDisplay(ref c, by: c.fields[x].type)
+                    print($"  field {c.fields[x].name} {type} {lowerAccess(c.fields[x].access)} required={truth(on: (c.fields[x].modifiers & 16) != 0)} default={truth(on: c.fields[x].hasDefault)} at={spot(in c, from: f, by: c.fields[x].span)}")
+                }
+                for x in copyIds(in c.structs[s].properties) {
+                    let type = typeDisplay(ref c, by: c.properties[x].type)
+                    let getter = fnLine(ref c, for: c.properties[x].getter)
+                    print($"  property {c.properties[x].name} {type} {lowerAccess(c.properties[x].access)} at={spot(in c, from: f, by: c.properties[x].span)} getter={getter}")
+                }
+                for x in copyIds(in c.structs[s].methods) {
+                    let line = fnLine(ref c, for: x)
+                    print($"  method {line}")
+                }
+                for x in copyIds(in c.structs[s].constructors) {
+                    let line = fnLine(ref c, for: x)
+                    print($"  constructor {line}")
+                }
             }
-            let structId = newStruct(ref c, by: StructSymbol { name: "SampleStruct", nameSpan: spanSampleStruct, span: spanSampleStruct, module: 0, file: 0, declIndex: 20 })
-            c.modules[0].structs.append(structId)
-            declareMembers(ref c, for: structId)
-
-            var unsuppCount = 0
-            for d in c.diagnostics {
-                if d.code == "BYN2022" { unsuppCount += 1 }
+            // `functions` in insertion order: every key enters `allFunctions` with it (a `for` over the map copies its lists).
+            var seen = List<string>()
+            for f in copyIds(in c.modules[m].allFunctions) {
+                let n = c.functions[f].name
+                if c.functions[f].kind == .function && !listContainsString(in seen, by: n) {
+                    seen.append(n)
+                    print($"fn {n} {c.modules[m].functions[n].length}")
+                }
             }
-            print("== members")
-            print($"bases: {c.structs[structId].bases.length} fields: {c.structs[structId].fields.length} props: {c.structs[structId].properties.length} methods: {c.structs[structId].methods.length} ctors: {c.structs[structId].constructors.length} unsupp: {unsuppCount}")
-
-            // ── 11. diagnostics ───────────────────────────────────────────
-            print("== diagnostics")
-            for d in c.diagnostics {
-                print($"{d.code}")
+            for f in copyIds(in c.modules[m].allFunctions) {
+                let line = fnLine(ref c, for: f)
+                print($"all {line}")
             }
+        }
 
-            return 0
+        /// What `overlap` reads of T38's `declareSignature` (a stub): each free function's parameters, named and in order.
+        void t12Signatures(ref Ctx c, for ModId m) {
+            for f in copyIds(in c.modules[m].allFunctions) {
+                if c.functions[f].kind != .function { continue }
+                let file = c.functions[f].file
+                switch c.files[file].unit.members[c.functions[f].declIndex] {
+                    case .functionDecl(let n):
+                        for k in 0..n.value.params.length {
+                            let name = n.value.params[k].name
+                            let p = newLocal(ref c, by: LocalSymbol { name: $"{getText(c.files[file].text.span, at: name)}", nameSpan: name, span: name, kind: .parameter, isParameter: true, modifier: .none, ordinal: k })
+                            c.functions[f].parameters.append(p)
+                        }
+                    default:
+                        panic("a free function is declared by a `FunctionDecl`")
+                }
+            }
+        }
+
+        string t12BuiltinWord(BuiltinFunction b) {
+            if b == .enumFromOrdinal { return "enumfromordinal" }
+            if b == .enumParse { return "enumparse" }
+            return "other"
         }
         """;
-
-    private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() => SelfhostSemanticsHarness.RunSections(MainSource()));
-
-    [Fact]
-    public void SmokeMatches()
-    {
-        var expected = new List<string> { "file: 0 span: 10 pub: true priv: true module: true" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "smoke", expected);
-    }
-
-    [Fact]
-    public void CheckUniqueMatches()
-    {
-        var expected = new List<string> { "unique: true dupType: false dupFn: false dupConst: false" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "checkUnique", expected);
-    }
-
-    [Fact]
-    public void ReportDuplicateMatches()
-    {
-        var expected = new List<string> { "sameFile: already declared on line 1 diffFile: already declared on other.byn:1" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "reportDuplicate", expected);
-    }
-
-    [Fact]
-    public void OverlapMatches()
-    {
-        var expected = new List<string> { "samePos: true diffPosCount: false diffPart: false samePart: true rest: true synthSame: true synthDiff: false" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "overlap", expected);
-    }
-
-    [Fact]
-    public void CheckOverloadsMatches()
-    {
-        var expected = new List<string> { "ovFnCount: 1 fPartCount: 2" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "checkOverloads", expected);
-    }
-
-    [Fact]
-    public void ErrorSetsMatches()
-    {
-        var expected = new List<string> { "variants: 8 payFields: 2 emptyVars: 0" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "errorSets", expected);
-    }
-
-    [Fact]
-    public void CompositionMatches()
-    {
-        var expected = new List<string> { "hasDupCase: true" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "composition", expected);
-    }
-
-    [Fact]
-    public void EnumsMatches()
-    {
-        var expected = new List<string> { "members: 2 fields: 6 validFields: 1 validName: val1 hasRefErr: true hasFromOrd: true hasParse: true emptyMembers: 0" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "enums", expected);
-    }
-
-    [Fact]
-    public void UnionsMatches()
-    {
-        var expected = new List<string> { "variants: 8 decTag: 10 negTag: -5 hexTag: 32 badBinNull: true emptyVars: 0" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "unions", expected);
-    }
-
-    [Fact]
-    public void MembersMatches()
-    {
-        var expected = new List<string> { "bases: 1 fields: 3 props: 2 methods: 2 ctors: 1 unsupp: 3" };
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, "members", expected);
-    }
-
-    [Fact]
-    public void DiagnosticsMatches()
-    {
-        var diags = Sections.Value["diagnostics"];
-        Assert.Contains("BYN2006", diags); // duplicateDeclaration
-        Assert.Contains("BYN2609", diags); // emptyErrorSet
-        Assert.Contains("BYN2722", diags); // emptyEnum
-        Assert.Contains("BYN2702", diags); // emptyUnion
-        Assert.Contains("BYN2108", diags); // requiredWithDefault
-        Assert.Contains("BYN2805", diags); // duplicateConformance
-        Assert.Contains("BYN2724", diags); // invalidEnumParameter
-        Assert.Contains("BYN2710", diags); // unionValueOnPayload
-        Assert.Contains("BYN2709", diags); // unionValueNotInteger
-        Assert.Contains("BYN2711", diags); // duplicateUnionValue
-        Assert.Contains("BYN2721", diags); // duplicateEnumMember
-        Assert.Contains("BYN2701", diags); // duplicateUnionVariant
-        Assert.Contains("BYN2770", diags); // unknownAttribute
-        Assert.Contains("BYN1016", diags); // modifierNotAllowed
-        Assert.Contains("BYN2022", diags); // unsupported
-        Assert.Contains("BYN3202", diags); // duplicateErrorCase
-    }
 }

@@ -6,6 +6,9 @@
 #ifndef BAYAN_RT_H
 #define BAYAN_RT_H
 
+/* Bumped on every change to the runtime source. */
+#define BYN_RUNTIME_VERSION 1
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -75,6 +78,8 @@ typedef struct byn_panic_handler {
 extern _Thread_local byn_panic_handler* byn_panic_handlers;
 /* Set by `Panic.onPanic = f;`, the first statement of `main`; runs after the handlers and before the trace. */
 extern void (*byn_on_panic)(byn_panic_info);
+/* Null unless an instrumented build sets it; runs once, just before a panic aborts. */
+extern void (*byn_cov_flush)(void);
 
 static inline void byn_panic_push(byn_panic_handler* h) {
     h->prev = byn_panic_handlers;
@@ -186,7 +191,7 @@ int64_t byn_str_count(byn_str s, byn_str x);
 byn_str byn_str_trimmed(byn_str s, int32_t edge);
 /* `s.trimmed(by: runes)` without the given code points at both ends. A view of s. */
 byn_str byn_str_trimmed_by(byn_str s, const uint32_t* runes, int64_t n);
-/* `s.lowercased()` / `s.uppercased()`: ASCII letters mapped, other bytes copied. */
+/* `s.lowercased()` / `s.uppercased()`: each code point's Unicode simple case mapping (revision 0015), into a new string. */
 byn_str byn_str_case(byn_str s, bool upper, byn_alloc* to);
 /* `s.equals(t, as: .caseless)`: equal after ASCII case folding. */
 bool byn_str_eq_caseless(byn_str a, byn_str b);
@@ -302,6 +307,9 @@ bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix ra
 /* `T.parse(text, as: radix)`: as `byn_int_parse`; -1 when it parses, -2 on overflow, otherwise the offset of the first bad
  * digit (the length when a digit is missing). */
 int64_t byn_int_parse_at(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out);
+/* `f64.tryParse(text)` / `f32.tryParse(text)` (single): the float literal form without `_`, a leading `-`, digits, then an
+   optional `.` and digits and an optional `e`/`E`, sign and digits; no spaces. Correctly rounded; ±∞ on overflow. False when invalid. */
+bool byn_float_parse(byn_str s, bool single, double* out);
 /* Two lowercase hex digits per byte (`Hex.encode`). */
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to);
 /* `Hex.decode`: -1 and the bytes in `*out`, or the offset of the first non-hex digit (the length for an odd count). */

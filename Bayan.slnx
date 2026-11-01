@@ -5,6 +5,7 @@
     <Project Path="src/Bayan.Lowering/Bayan.Lowering.csproj" />
     <Project Path="src/Bayan.Semantics/Bayan.Semantics.csproj" />
     <Project Path="src/Bayan.Syntax/Bayan.Syntax.csproj" />
+    <Project Path="src/Bayan.Testing/Bayan.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Bayan.Tests/Bayan.Tests.csproj" />
