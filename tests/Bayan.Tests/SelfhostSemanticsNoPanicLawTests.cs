@@ -26,8 +26,8 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
     private static string BayanCheck =>
         SelfhostSemanticsHarness.Build(File.ReadAllText(Path.Combine(SelfhostSemanticsHarness.SemanticsDir, "main.byn")));
 
-    /// <summary>The golden kinds whose inputs the checker reads.</summary>
-    private static readonly string[] GoldenKinds = ["diag", "typed", "run"];
+    /// <summary>Every golden kind with <c>*.byn</c> inputs.</summary>
+    private static readonly string[] GoldenKinds = ["diag", "typed", "run", "parse", "lex"];
 
     /// <summary>
     /// Law L023: on every corpus input <c>bayan-check --many</c> exits 0 or 1 without <c>panic:</c>, and prints a
@@ -39,6 +39,7 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
     {
         var clock = Stopwatch.StartNew();
         var flat = FlatGoldens();
+        output.WriteLine("golden inputs: " + string.Join(", ", GoldenKinds.Select(k => $"{k} {flat.Count(p => p.Name.StartsWith(k + "-", StringComparison.Ordinal))}")));
         var seeds = SelfhostSemanticsGeneratorTests.Corpus(SelfhostSemanticsGenerator.Seeds)
             .Select(p => (Name: p.Name, Bytes: Encoding.UTF8.GetBytes(p.Source))).ToArray();
         var totals = new Totals();
@@ -57,26 +58,97 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
 
         output.WriteLine($"total: {totals.Inputs} inputs, {totals.Compared} compared, {totals.Checked} without a lexer or parser diagnostic, "
                          + $"{totals.Panicked.Count} panicked, "
-                         + $"{totals.Replaced} replaced (C# throws), {totals.CSharpOutside} with a C# span outside its file, "
-                         + $"{totals.SameRendering} rendered as C# does, {clock.ElapsedMilliseconds} ms");
-        Assert.Equal(totals.Inputs - totals.Panicked.Count, totals.Compared);
-        Assert.Equal(KnownPanics, totals.Panicked);
+                         + $"{totals.Replaced.Count} replaced (C# throws), {totals.SameRendering} rendered as C# does, "
+                         + $"{clock.ElapsedMilliseconds} ms");
+        Assert.True(totals.Panicked.Count == 0, $"bayan-check panicked:\n{string.Join("\n", totals.Panicked)}");
+        Assert.Equal(totals.Inputs, totals.Compared);
+        Assert.Equal(KnownCSharpThrows, totals.Replaced);
+
+        clock.Restart();
+        var checkedPaths = CheckCli(flat);
+        output.WriteLine($"cli: {checkedPaths} golden inputs through `bayan-check --spans <path>` in {clock.ElapsedMilliseconds} ms");
     }
 
     /// <summary>
-    /// Port gaps: the inputs on which <c>bayan-check</c> panics and the C# checker does not, as
-    /// <c>&lt;corpus&gt;/&lt;input&gt; &lt;panic&gt; &lt;location&gt;</c>, each with its Question. The test asserts the list
-    /// exactly, so a fix that removes a panic must also remove its line.
+    /// C# counterexamples (Q662): the corpus inputs on which the C# checker itself throws, as
+    /// <c>&lt;corpus&gt;/&lt;input&gt;</c>. Each is replaced by an empty input; the test asserts the list exactly, so a
+    /// new C# throw fails it.
     /// </summary>
-    private static readonly string[] KnownPanics =
+    private static readonly string[] KnownCSharpThrows =
     [
-        "golden/run-suq-money.test.byn panic: index out of range at semantics/symbols.byn:605", // Q661
+        "random/01145.byn", // Q662: ArgumentOutOfRangeException, SourceText.GetText < Parser.ReportBraceless
+        "random/01358.byn", // Q662: same
+        "random/02510.byn", // Q662: same
+        "random/03889.byn", // Q662: same
+        "random/07234.byn", // Q662: same
     ];
 
     private sealed class Totals
     {
-        public int Inputs, Compared, Replaced, CSharpOutside, SameRendering, Checked;
+        public int Inputs, Compared, SameRendering, Checked;
         public readonly List<string> Panicked = [];
+        public readonly List<string> Replaced = [];
+    }
+
+    /// <summary>
+    /// The default CLI path over the goldens: each flat golden alone in its own directory under
+    /// <c>tmp/semantics-nopanic/cli/</c> (<c>bayan check</c> on a file reads its whole directory, CliApp.cs:274),
+    /// and each directory case's <c>main.byn</c> in a copy of the case, run as <c>bayan-check --spans &lt;path&gt;</c>:
+    /// the exit is 0 or 1, no <c>panic:</c>, no <c>span out of range</c> line. Returns the number of paths run.
+    /// </summary>
+    private int CheckCli((string Name, byte[] Bytes)[] flat)
+    {
+        var root = Path.Combine(Root, "cli");
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        var paths = new List<string>();
+        foreach (var (name, bytes) in flat)
+        {
+            var dir = Path.Combine(root, name);
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, name[(name.IndexOf('-') + 1)..]);
+            File.WriteAllBytes(path, bytes);
+            paths.Add(path);
+        }
+        foreach (var caseDir in GoldenKinds.SelectMany(k => Directory.GetDirectories(Path.Combine(Golden.CasesRoot, k))).Order(StringComparer.Ordinal))
+        {
+            var dir = Path.Combine(root, Path.GetRelativePath(Golden.CasesRoot, caseDir).Replace('/', '-'));
+            foreach (var file in Directory.EnumerateFiles(caseDir, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(dir, Path.GetRelativePath(caseDir, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
+            paths.Add(Path.Combine(dir, "main.byn"));
+        }
+        foreach (var path in paths)
+        {
+            var (exit, stdout, stderr) = SelfhostParserTests.Run(BayanCheck, "--spans", path);
+            Assert.True(exit is 0 or 1 && !stderr.Contains("panic:", StringComparison.Ordinal), $"{path}: bayan-check exit {exit}\n{stderr}");
+            var spanLines = stdout.Split('\n').Where(l => l.StartsWith("span out of range:", StringComparison.Ordinal)).ToArray();
+            Assert.True(spanLines.Length == 0, $"{path}: a diagnostic span lies outside its file\n{string.Join("\n", spanLines)}");
+        }
+        return paths.Count;
+    }
+
+    /// <summary>
+    /// Q661's reproducer: a bare <c>return</c> in a test's <c>catch</c> block. The test function's return type is
+    /// <c>void</c> (Symbols.cs:207); before the fix the port's was -1 and <c>bayan-check</c> panicked. Compiled with
+    /// tests, as <c>bayan test</c> does (CliApp.cs:598), and compared with the C# rendering.
+    /// </summary>
+    [Fact]
+    [Trait("Law", "L023")]
+    public void BareReturnInTestCatchMatchesCSharp()
+    {
+        const string source = "public union error E {\n    bad\n}\n\ni64 f() fails E => 1\n\ntest \"t\" {\n    let _ = f() catch { return }\n}\n";
+        var dir = Path.Combine(Root, "q661");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "a.test.byn");
+        File.WriteAllText(path, source);
+        var c = Compile(dir, "a.test.byn", File.ReadAllBytes(path), null);
+        var (exit, stdout, stderr) = SelfhostParserTests.Run(BayanCheck, "--golden", "--tests", "--spans", "--package", dir, path);
+        Assert.True(exit == 0 && stderr.Length == 0, $"{path}: exit {exit}\n{stderr}");
+        SelfhostSemanticsTests.AssertSameLines(path, "golden", DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: false), stdout);
     }
 
     /// <summary>
@@ -116,7 +188,7 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
                 var written = bytes;
                 if (CSharpThrows(work, name, bytes) is { } thrown)
                 {
-                    replaced.Add($"{name} {thrown} {Convert.ToHexString(bytes)}");
+                    replaced.Add($"{kind}/{name} {thrown} {Convert.ToHexString(bytes)}");
                     written = [];
                 }
                 File.WriteAllBytes(Path.Combine(work, name), written);
@@ -153,7 +225,6 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
         }
         var ms = clock.ElapsedMilliseconds;
 
-        var csharpOutside = new List<string>();
         var same = 0;
         var reached = 0;
         foreach (var name in names.Where(sections.ContainsKey))
@@ -162,24 +233,21 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
             if (!c.Diagnostics.Items.Any(d => d.Code.StartsWith("BYN0", StringComparison.Ordinal) || d.Code.StartsWith("BYN1", StringComparison.Ordinal))) reached++;
             var lines = sections[name].Split('\n');
             var spanLines = lines.Where(l => l.StartsWith("span out of range:", StringComparison.Ordinal)).ToArray();
-            var outside = CSharpSpansOutside(c.Diagnostics.Items);
-            if (outside) csharpOutside.Add(name);
-            Assert.True(spanLines.Length > 0 == outside,
-                outside
-                    ? $"{Path.Combine(work, name)}: C# has a diagnostic span outside the file that --spans does not report"
-                    : $"{Path.Combine(work, name)}: --spans reports a span C# keeps inside the file\n{string.Join("\n", spanLines)}");
-            var rendered = string.Join("\n", lines.Where(l => !l.StartsWith("span out of range:", StringComparison.Ordinal)));
+            Assert.False(CSharpSpansOutside(c.Diagnostics.Items), $"{Path.Combine(work, name)}: a C# diagnostic span lies outside the file");
+            Assert.True(spanLines.Length == 0, $"{Path.Combine(work, name)}: a diagnostic span lies outside the file\n{string.Join("\n", spanLines)}");
+            // `--many` prints `exit <n>` after an input whose own exit is not 0 (main.byn `many`).
+            var exits = lines.Where(l => l.StartsWith("exit ", StringComparison.Ordinal)).ToArray();
+            Assert.True(exits.All(l => l == "exit 1"), $"{Path.Combine(work, name)}: {string.Join(", ", exits)}");
+            var rendered = string.Join("\n", lines.Where(l => !l.StartsWith("span out of range:", StringComparison.Ordinal) && !l.StartsWith("exit ", StringComparison.Ordinal)));
             if (rendered == DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: false)) same++;
         }
         totals.Inputs += names.Length;
         totals.Compared += sections.Count;
-        totals.Replaced += replaced.Count;
+        totals.Replaced.AddRange(replaced.Select(r => r.Split(' ')[0]));
         totals.Panicked.AddRange(panicked);
-        totals.CSharpOutside += csharpOutside.Count;
         totals.SameRendering += same;
         totals.Checked += reached;
         output.WriteLine($"{kind}: {names.Length} inputs in {ms} ms, {reached} without a lexer or parser diagnostic, {same} rendered as C# does, "
-                         + $"{csharpOutside.Count} with a C# span outside the file: {string.Join(", ", csharpOutside)}; "
                          + $"{panicked.Count} panicked: {string.Join("; ", panicked)}; "
                          + $"{replaced.Count} replaced (C# throws): {string.Join(", ", replaced)}");
     }

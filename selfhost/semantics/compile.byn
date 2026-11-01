@@ -686,7 +686,8 @@ bool t11IsCaseLiteral(in parser.Expr e) {
 /// A test function titled `title`; `attribute`/`arg` name its case's values (-1 for none).
 void t11DeclareTest(ref Ctx c, from FileId file, at i64 declIndex, by TextSpan span, for string title, as i64 attribute, to i64 arg) {
     let module = c.files[file].module
-    let fn = newFunction(ref c, by: FunctionSymbol { name: "test", span: span, module: module, kind: .testKeyword, file: file, declIndex: declIndex })
+    // Symbols.cs:207: `ReturnType` defaults to `PrimitiveType.Void`, which DeclareTest never changes.
+    let fn = newFunction(ref c, by: FunctionSymbol { name: "test", span: span, module: module, kind: .testKeyword, file: file, declIndex: declIndex, returnType: prim(.void) })
     let testId = newTest(ref c, by: TestSymbol { title: title, span: span, function: fn, file: file, declIndex: declIndex })
     c.modules[module].tests.append(testId)
     c.modules[module].allFunctions.append(fn)

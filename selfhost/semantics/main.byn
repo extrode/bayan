@@ -13,7 +13,8 @@
 //                                    `<file>` compiled alone with `<dir>` as package root, as `DiagTests`
 //                                    does, and its diagnostics rendered uncapped to stdout; exit 0
 //     bayan-check --many <dir>       `== <name>` and, for every `*.byn` in `<dir>` in name order, its
-//                                    `--golden --package <dir>` output and `--spans` lines (corpora, L023)
+//                                    `--golden --package <dir>` output and `--spans` lines (corpora, L023),
+//                                    then `exit <n>` when that input's exit is not 0
 //     bayan-check --time <path>      the nanoseconds `check` spends parsing and checking `<path>`, and
 //                                    `parse … check …` on stderr (R7)
 //     bayan-check --codes            `code\tmessage` for every `SemaCode`, in `DiagnosticCodes.cs` order
@@ -336,10 +337,12 @@ i32 golden(in List<string> args) {
 }
 
 /// `--many`: every `*.byn` in `dir`, in name order, as `--golden --package <dir>` prints it, then its
-/// `--spans` lines; the shape of `bayan-parse --many` (selfhost/parser/main.byn:58).
+/// `--spans` lines; the shape of `bayan-parse --many` (selfhost/parser/main.byn:58). Exits 0, or the
+/// last per-input exit that is neither 0 nor 1.
 i32 many(string dir) {
     var names = Io.listDir(dir) catch return usage()
     names.sort()
+    var worst = exitOk
     for name in names {
         unless name.endsWith(".byn") { continue }
         let path = t11Combine(dir, by: name)
@@ -350,9 +353,15 @@ i32 many(string dir) {
         args.append("--spans")
         args.append(path)
         print($"== {name}")
-        let _ = golden(in args)
+        // One `exit <n>` line after an input whose `golden` exit is not 0; none for 0, so a clean
+        // `--many` prints what `--golden` prints (SelfhostSemanticsTests.ManyMatchesCompilation).
+        let exit = golden(in args)
+        if exit != exitOk {
+            print($"exit {exit}")
+            if exit != exitFailure { worst = exit }
+        }
     }
-    return exitOk
+    return worst
 }
 
 /// `--time` (R7): `check`'s compile of `path`, timed by `Compilation.ParseTime`/`CheckTime`
