@@ -61,6 +61,9 @@ for t in sys.argv[2:]:
     q = qrange(block)
     # T28 integrates: its gate is every SelfhostSemantics* class, parity and corpus parity included
     test_class = 'SelfhostSemantics' if t == 'T28' else tests[0][:-3] if tests else f'SelfhostSemantics{t}Tests'
+    # a law-enact task owns only its law page: its gate is that law's proof
+    law = [m.group(1) for f in rooted if (m := re.match(r'docs/laws/(\d{3})-', f))]
+    filt = f'Law=L{law[0]}' if law and not tests else f'FullyQualifiedName~{test_class}'
     proto = '\n'.join(protocol[2:]).replace('SelfhostSemanticsT3Tests', test_class).replace('restore with `git checkout -- <file>`', 'restore by copying back a copy you took first (`cp f tmp/f.orig` … `cp tmp/f.orig f`; never `git checkout`, which reverts to the stub and loses your work)').replace('Skeleton by turn 12', 'Skeleton by turn 15')
     s = f"""You are doing task {t} of spec 010 (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). Other writers port the sibling files in parallel; every cross-file function already exists as a compiling stub with its final signature, so you call real names and never write stand-ins. A separate reviewer compares your port with the C# line by line before it lands; invented logic, sibling fallbacks and hand-typed test expectations fail that review.
 
@@ -68,7 +71,7 @@ for t in sys.argv[2:]:
 
 Guard (run before you finish):
 ```
-bash scripts/selfhost/guard.sh --base {BASE} --allow '{allow}' --filter 'FullyQualifiedName~{test_class}' --task {t}
+bash scripts/selfhost/guard.sh --base {BASE} --allow '{allow}' --filter '{filt}' --task {t}
 ```
 Do not commit, merge, checkout, reset or stash; the dispatcher commits for you.
 
