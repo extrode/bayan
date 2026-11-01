@@ -73,6 +73,7 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   # the file holds a mutant during the loop: put the original back however the guard ends
   restore() { cp $LOG/mutate-orig.txt "$f" && rm -f $LOG/mutate-orig.txt; }
   for f in "${MF[@]}"; do
+    trap - EXIT INT TERM  # the previous file is restored; a signal during this cp must not restore a half copy
     cp "$f" $LOG/mutate-orig.txt
     trap restore EXIT; trap 'exit 130' INT TERM
     # candidates are (line, operator) pairs: comparison, boolean, +/- 1, &&/||, outside comment lines and strings

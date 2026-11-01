@@ -136,6 +136,8 @@ public sealed class ExternalModeTests
             ("external-shape-sites", "{ \"version\": 1, \"sites\": 3 }"),
             ("external-shape-field", "{ \"version\": 1, \"sites\": [ { \"id\": \"one\" } ] }"),
             ("external-shape-missing", "{ \"version\": 1, \"sites\": [ { \"id\": 1 } ] }"),
+            ("external-shape-null-file", "{ \"version\": 1, \"sites\": [ { \"id\": 1, \"file\": null, \"line\": 1, \"column\": 1, \"operator\": \"bool\", \"original\": \"a\", \"mutated\": \"b\" } ] }"),
+            ("external-shape-null-operator", "{ \"version\": 1, \"sites\": [ { \"id\": 1, \"file\": \"a.byn\", \"line\": 1, \"column\": 1, \"operator\": null, \"original\": \"a\", \"mutated\": \"b\" } ] }"),
             ("external-shape-version", "{ \"version\": 1.5, \"sites\": [] }"),
         })
         {
