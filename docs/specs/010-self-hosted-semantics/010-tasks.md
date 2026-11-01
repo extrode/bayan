@@ -92,7 +92,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T30 enact L022 "Binder equivalence" — files: `docs/laws/022-binder-equivalence.md` — covers: L022 — after: T29 — done when:
   - `status: enacted` lands with T29's passing proof (standing authorization, 2026-10-21).
   - Size: one status line and recorded measurements.
-- [ ] T31 prove L023 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L023], `docs/laws/023-no-checker-panic.md` — covers: L023 — after: T28; parallel with: T29 — done when:
+- [ ] T31 prove L023 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L023], `docs/laws/023-no-checker-panic.md`, `compile.byn` (Q661 fix, dispatcher 2026-11-01: `t11DeclareTest` gives the test function C#'s default `void` return type, Symbols.cs:207), `main.byn` (`--many` reports each input's exit) — covers: L023 — after: T28; parallel with: T29 — done when:
   - over every golden, seed corpus and random byte/token mutation (nesting bounded as in L018), exits are 0 or 1 and `--spans` prints nothing; a span mutation fails it; Q661–Q662.
   - Size: about 200 lines of C# and the law page.
 - [ ] T32 enact L023 "No checker panic" — files: `docs/laws/023-no-checker-panic.md` — covers: L023 — after: T31 — done when:
