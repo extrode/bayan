@@ -57,10 +57,11 @@ else note "checks: no --task and --filter names no SelfhostSemanticsT<n>Tests cl
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
 # a mutate-orig.txt left by a killed run that matches no --mutate file means a file may still hold a mutant: refuse
 IFS=',' read -ra MF <<< "$MUTATE"
+rm -f $LOG/mutate-orig.txt.part  # a backup copy cut short by a signal; the file it copied was not yet mutated
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ] && [ -f $LOG/mutate-orig.txt ]; then
   same=0; for f in "${MF[@]}"; do cmp -s $LOG/mutate-orig.txt "$f" && same=1; done
   if [ $same = 1 ]; then rm -f $LOG/mutate-orig.txt
-  else note "mutation: tmp/guard-run/mutate-orig.txt is left from an interrupted run and differs from $MUTATE; copy it back over the mutated file, then delete it"; fi
+  else note "mutation: tmp/guard-run/mutate-orig.txt is left from an interrupted run and differs from $MUTATE; it is a complete copy of the file before that run mutated it: copy it back over the mutated file, then delete it"; fi
 fi
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   . "$(dirname "$0")/mutant-outcome.sh"
@@ -74,7 +75,8 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   restore() { cp $LOG/mutate-orig.txt "$f" && rm -f $LOG/mutate-orig.txt; }
   for f in "${MF[@]}"; do
     trap - EXIT INT TERM  # the previous file is restored; a signal during this cp must not restore a half copy
-    cp "$f" $LOG/mutate-orig.txt
+    # copy beside it, then rename: mutate-orig.txt is never a half copy, so a later run can trust it (a stray .part is not)
+    cp "$f" $LOG/mutate-orig.txt.part && mv -f $LOG/mutate-orig.txt.part $LOG/mutate-orig.txt
     trap restore EXIT; trap 'exit 130' INT TERM
     # candidates are (line, operator) pairs: comparison, boolean, +/- 1, &&/||, outside comment lines and strings
     SITES=(); while read -r s; do SITES+=("$s"); done < <(OPS="$OPS" perl -ne 'BEGIN { @o = eval $ENV{OPS} } next if m{^\s*//}; for $i (0..$#o) { print "$.:$i\n" if /$o[$i][0]/ }' "$f")

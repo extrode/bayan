@@ -1,13 +1,13 @@
 #!/bin/bash
 # land.sh on a fixture repo with a stub wave-brief.py and guard.sh, run by /bin/bash (3.2 on macOS): it refuses a last
 # commit that is not a lone `docs(010): T99 review (PASS` commit, a branch that changes scripts/selfhost/, and a branch that
-# moves while it is checked, and one with no merge base; the fixture path holds & and ' (the guard must still run); it runs the base checkout's guard by absolute path and lands a two-round reviewed branch.
+# moves while it is checked, one with no merge base, and a prompt with no guard line; the fixture path holds & and ' (the guard must still run); it runs the base checkout's guard by absolute path and lands a two-round reviewed branch.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/land&test'q"; aux="$root/tmp/land-test-aux"
 rm -rf "$r" "$aux" && mkdir -p "$r/scripts/selfhost" "$r/docs/specs/010-self-hosted-semantics/reviews" "$aux" && cd "$r"
 git init -q -b base && git config user.email t@t && git config user.name t
-printf 'import os, sys\nd = "tmp/010-" + sys.argv[2].lower()\nos.makedirs(d, exist_ok=True)\nopen(d + "/prompt.md", "w").write("bash scripts/selfhost/guard.sh --base x --filter F\\n")\n' > scripts/selfhost/wave-brief.py
+printf 'import os, sys\nd = "tmp/010-" + sys.argv[2].lower()\nos.makedirs(d, exist_ok=True)\nopen(d + "/prompt.md", "w").write("" if os.environ.get("NOGUARD") else "bash scripts/selfhost/guard.sh --base x --filter F\\n")\n' > scripts/selfhost/wave-brief.py
 # the stub guard logs the path it runs as; with $AUX/move it adds a commit to feat-move, as a writer still pushing would
 cat > scripts/selfhost/guard.sh <<'STUB'
 echo "$0" >> "$AUX/guard-ran.txt"
@@ -32,6 +32,7 @@ code feat-move; review; git switch -q base
 git switch -q --orphan feat-orphan; echo o > o.txt; git add -A; git commit -qm "test: orphan"; review; git switch -q -f base
 code feat-ok; review FAIL; echo fix >> feat-ok.txt; git commit -qam "test: fix"; review PASS "docs(010): T99 review (PASS, round 2)"; git switch -q base
 chore=$(land feat-chore); extra=$(land feat-extra); guard=$(land feat-guard); orphan=$(land feat-orphan)
+noguard=$(NOGUARD=1 land feat-ok)
 touch $aux/move; moved=$(land feat-move); rm $aux/move; moved_in=$(git log --format=%s base | grep -c unchecked || true)
 rm -f $aux/guard-ran.txt; ok=$(land feat-ok); ran=$(cat $aux/guard-ran.txt 2>/dev/null || true); ticked=$(grep -c '^- \[x\] T99 ' docs/specs/010-self-hosted-semantics/010-tasks.md || true)
 cd "$root"; rm -rf "$r" "$aux"
@@ -40,6 +41,7 @@ echo "$chore" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a
 echo "$extra" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a review commit touching another file was accepted" "$extra"
 echo "$guard" | grep -q 'LAND REFUSED: feat-guard changes scripts/selfhost/' || fail "a branch that changes scripts/selfhost/ was accepted" "$guard"
 echo "$orphan" | grep -q 'LAND REFUSED: cannot diff feat-orphan' || fail "a branch with no merge base was not refused" "$orphan"
+echo "$noguard" | grep -q "LAND REFUSED: tmp/010-t99/prompt.md has no line starting 'bash scripts/selfhost/guard.sh'" || fail "a prompt with no guard line did not refuse with a message" "$noguard"
 echo "$moved" | grep -q 'LAND REFUSED: feat-move moved' || fail "a branch that moved during the guard was not refused" "$moved"
 [ "$moved_in" = 0 ] || fail "the commit added during the guard was merged unchecked" "$moved"
 echo "$ok" | grep -q '^LANDED T99$' || fail "a well-reviewed branch did not land under /bin/bash" "$ok"

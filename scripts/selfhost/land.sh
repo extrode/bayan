@@ -13,7 +13,8 @@ SHA=$(git rev-parse "$BR")
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "LAND REFUSED: the base worktree has uncommitted changes"; exit 1; }
 PATH="/usr/bin:$PATH" python3 -I scripts/selfhost/wave-brief.py . "$T" > /dev/null
 # the base checkout's guard, by absolute path: a branch cannot run a guard it rewrote
-LINE=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-$t/prompt.md")
+LINE=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-$t/prompt.md") || {
+  echo "LAND REFUSED: tmp/010-$t/prompt.md has no line starting 'bash scripts/selfhost/guard.sh' (wave-brief.py writes it from $T's guard line in 010-tasks.md)"; exit 1; }
 # the prompt's words (single quotes stripped) become array elements; --mutate/--mutations and their values are dropped, --base is the base
 # branch; nothing is re-parsed by a shell, so a path with & | ' runs the right guard
 read -ra W <<< "${LINE#bash scripts/selfhost/guard.sh}"

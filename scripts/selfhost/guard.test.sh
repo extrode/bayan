@@ -44,6 +44,7 @@ cp selfhost/semantics/b.byn $aux/b.orig; touch $aux/cpkill; rm -f tmp/guard-run/
 PATH="$aux:$PATH" GUARD_MUTANT_TIMEOUT_MIN=2 bash "$root/scripts/selfhost/guard.sh" --base base --allow 'selfhost/semantics/*,tmp/*' \
   --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' --mutate selfhost/semantics/a.byn,selfhost/semantics/b.byn --mutations 1 --seed 7 > /dev/null 2>&1 || true
 cmp -s selfhost/semantics/b.byn $aux/b.orig && cpok=1 || cpok=0
+[ -f tmp/guard-run/mutate-orig.txt ] && cpbak=0 || cpbak=1
 rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$out"; exit 1; }
 echo "$out" | grep -q '^mutation seed: 5$' || fail "seed not printed"
@@ -52,6 +53,7 @@ echo "$out" | grep -q '^mutation timeout: selfhost/semantics/a.byn:2' || fail "t
 echo "$out" | grep -q 'mutation survived: selfhost/semantics/a.byn:3' || fail "survivor on line 3 not reported"
 [ "$one" = "$two" ] || { echo "FAIL: same seed, different mutants"; exit 1; }
 [ $termok = 1 ] || { echo "FAIL: a guard killed mid-mutant left the file mutated or mutate-orig.txt behind"; exit 1; }
+[ $cpbak = 1 ] || { echo "FAIL: a signal during the backup copy left a half-written mutate-orig.txt"; exit 1; }
 [ $cpok = 1 ] || { echo "FAIL: a signal during the second file's backup copy restored a truncated copy over it"; exit 1; }
 echo "$left" | grep -q 'left from an interrupted run' && ! echo "$left" | grep -q 'mutants ran' || { echo "FAIL: a leftover mutate-orig.txt did not stop the mutations"; echo "$left"; exit 1; }
 echo PASS
