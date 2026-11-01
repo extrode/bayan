@@ -527,6 +527,8 @@ struct Ctx {
     // ── T24 state
     // ── T25 state
     // ── T26 state
+    /// C# `CliApp.Compiled.Manifest`: the project's manifest, null outside a project (read by `programName`).
+    Manifest? manifest = null
     // ── T27 state
     // ── T28 state
     // ── T29 state
