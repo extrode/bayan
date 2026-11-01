@@ -126,13 +126,13 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
         return written;
     }
 
-    /// <summary><c>bayan check</c> in-process: exit code, stdout without the timed success summary (CliApp.cs:436), and stderr.</summary>
+    /// <summary><c>bayan check</c> in-process: exit code, stdout without the timed success summary (CliApp.cs:436), and stderr, both with LF line endings like <c>bayan-check</c>'s (Windows writers emit CRLF).</summary>
     internal static (int Exit, string Out, string Err) CliCheck(string path)
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var exit = CliApp.Run(["check", path], stdout, stderr);
-        return (exit, WithoutSummary(stdout.ToString()), stderr.ToString());
+        return (exit, WithoutSummary(stdout.ToString().ReplaceLineEndings("\n")), stderr.ToString().ReplaceLineEndings("\n"));
     }
 
     internal static string WithoutSummary(string text) =>
@@ -187,6 +187,11 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
 /// The R6/R7 comparisons of <c>bayan-check</c> with <c>bayan check</c> on the generated corpora. The class name
 /// keeps them out of the T27 guard's <c>SelfhostSemanticsGenerator</c> filter (Q650); T28 removes the skips.
 /// </summary>
+/// <remarks>
+/// In the serial <see cref="ToolchainEnvironment"/> collection so the R7 timing runs with no other test: <c>bayan-check</c> peaks
+/// near 1.8 GB on <see cref="OneMegabyte"/>, and beside the other classes on a 3-core, 7 GB CI runner it took 26 times <c>bayan check</c>, 3 times alone.
+/// </remarks>
+[Collection(nameof(ToolchainEnvironment))]
 public sealed class SelfhostSemanticsCorpusParityTests(ITestOutputHelper output)
 {
     /// <summary>This class's own directory, apart from <see cref="SelfhostSemanticsGeneratorTests"/>'s (they run in parallel).</summary>

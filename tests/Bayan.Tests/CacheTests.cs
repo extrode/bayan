@@ -57,7 +57,7 @@ public sealed class CacheTests
         return text;
     }
 
-    private static string Exe(string project, string mode = "safe") => Path.Combine(project, "out", mode, Targets.Host!, "tally");
+    private static string Exe(string project, string mode = "safe") => Path.Combine(project, "out", mode, Targets.Host!, Targets.ExecutableName("tally", CliApp.HostTarget));
 
     private static (int Code, string Out) Git(string dir, params string[] args) =>
         Scaffold.Git(Toolchain.FindOnPath("git")!, dir, ["-c", "core.hooksPath=" + Path.Combine(dir, ".no-hooks"), "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", .. args]);

@@ -208,7 +208,7 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
             var (exit, stdout, stderr) = SelfhostParserTests.Run(BayanCheck, "--many", work);
             var panic = stderr.Contains("panic:", StringComparison.Ordinal);
             var last = stdout.Split('\n').LastOrDefault(l => l.StartsWith("== ", StringComparison.Ordinal))?[3..];
-            Assert.True(exit is 0 or 1 || (exit == 134 && panic && last is not null), $"{kind}: exit {exit} after `{last}` in {work}\n{stderr}");
+            Assert.True(exit is 0 or 1 || (exit == PanicExit.Code && panic && last is not null), $"{kind}: exit {exit} after `{last}` in {work}\n{stderr}");
             if (!panic)
             {
                 foreach (var (name, text) in Sections(stdout, pending)) sections[name] = text;

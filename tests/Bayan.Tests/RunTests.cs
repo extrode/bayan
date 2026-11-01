@@ -118,7 +118,7 @@ public sealed class RunTests
             return new Outcome("", "", 0, "timed out after 120 s");
         }
         var code = p.ExitCode;
-        if (OperatingSystem.IsWindows() && code == 3) code = 134;
+        code = PanicExit.Portable(code);
         return new Outcome(stdout.Result, stderr.Result, code, null);
     }
 
@@ -132,7 +132,7 @@ public sealed class RunTests
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var code = CliApp.Run(["test", "-v", work], stdout, stderr);
-        var masked = System.Text.RegularExpressions.Regex.Replace(stdout.ToString(), @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline);
-        return new Outcome(masked.ReplaceLineEndings("\n"), stderr.ToString(), code, null);
+        var masked = System.Text.RegularExpressions.Regex.Replace(stdout.ToString().ReplaceLineEndings("\n"), @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline);
+        return new Outcome(masked, stderr.ToString(), code, null);
     }
 }

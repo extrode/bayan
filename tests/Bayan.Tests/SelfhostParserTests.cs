@@ -93,7 +93,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         }
         p.WaitForExit();
         copy.Wait();
-        return (p.ExitCode, stdout.ToArray(), stderr.Result);
+        return (p.ExitCode, ProcessText.Lf(stdout.ToArray()), stderr.Result);
     }
 
     /// <summary>The stubbed program builds through <c>import lexer</c> and prints the C# dump of an empty file.</summary>

@@ -52,7 +52,7 @@ public sealed class CoverageTests
             Assert.Fail($"{exe} timed out after 120 s");
         }
         var code = p.ExitCode;
-        if (OperatingSystem.IsWindows() && code == 3) code = 134;
+        code = PanicExit.Portable(code);
         return new Outcome(stdout.Result, stderr.Result, code, p.Id);
     }
 

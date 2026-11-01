@@ -41,7 +41,31 @@ internal static class ProcessText
 {
     internal static string Lf(string text) => OperatingSystem.IsWindows() ? text.Replace("\r\n", "\n") : text;
 
+    /// <summary>The same rule for bytes, for output that may not be valid UTF-8 and so is read raw.</summary>
+    internal static byte[] Lf(byte[] bytes)
+    {
+        if (!OperatingSystem.IsWindows()) return bytes;
+        var kept = new List<byte>(bytes.Length);
+        for (var i = 0; i < bytes.Length; i++)
+            if (!(bytes[i] == '\r' && i + 1 < bytes.Length && bytes[i + 1] == '\n')) kept.Add(bytes[i]);
+        return kept.ToArray();
+    }
+
     internal static string ReadToEndLf(this StreamReader reader) => Lf(reader.ReadToEnd());
 
     internal static async Task<string> ReadToEndLfAsync(this StreamReader reader) => Lf(await reader.ReadToEndAsync());
+}
+
+/// <summary>
+/// The exit code of a panic (spec §7.6/§9). The runtime ends a panic with <c>abort()</c>: the shell reports SIGABRT as 134 (128 + 6), but on
+/// Windows the C runtime's <c>abort()</c> is a fast-fail, so the process exit code is STATUS_FAIL_FAST_EXCEPTION (0xC0000409).
+/// </summary>
+internal static class PanicExit
+{
+    internal const int Windows = unchecked((int)0xC0000409);
+
+    internal static readonly int Code = OperatingSystem.IsWindows() ? Windows : 134;
+
+    /// <summary>The code in the 134 form the golden <c>.exitcode</c> files and <c>CliApp</c> use; every other code, and 134 on other systems, is kept.</summary>
+    internal static int Portable(int code) => OperatingSystem.IsWindows() && code == Windows ? 134 : code;
 }
