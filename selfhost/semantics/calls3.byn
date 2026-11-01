@@ -2,29 +2,951 @@
 
 import parser
 
-// stub: T34 ports BinderCalls.cs:999 BindTry
-BExpr bindTry(ref Binder b, through ref Ctx c, for in parser.TryExpr t, to Type expected) => -1
+/// BinderCalls.cs:1007 BindTry.
+BExpr bindTry(ref Binder b, through ref Ctx c, for in parser.TryExpr t, to Type expected) {
+    if !inPanicHandler(ref b, through: ref c, at: t.span, for: "try") && b.deferDepth > 0 {
+        report(ref b, through: ref c, for: .tryInDefer, at: t.span, by: ("", "", "", "", ""),
+            help: "handle the error here with `catch`; cleanup cannot fail")
+    }
+    return t34Try(ref b, through: ref c, for: in t, from: in t.operand, to: expected)
+}
 
-// stub: T34 ports BinderCalls.cs:1056 BindCatch
-BExpr bindCatch(ref Binder b, through ref Ctx c, for in parser.CatchExpr e, to Type expected) => -1
+/// `bindTry` after its defer check, with `inner`, the C# `StripParens(t.Operand)`.
+BExpr t34Try(ref Binder b, through ref Ctx c, for in parser.TryExpr t, from in parser.Expr inner, to Type expected) {
+    switch inner {
+        case .parenExpr(let p): return t34Try(ref b, through: ref c, for: in t, from: in p.value.inner, to: expected)
+        default: {}
+    }
+    let operandSpan = parser.exprSpan(in t.operand)
+    let savedCovered = b.covered.take()
+    b.covered = List<CoveredCall>()
+    var operand: BExpr = -1
+    if !handles(in inner) {
+        operand = bindExpr(ref b, through: ref c, for: in t.operand, to: expected)
+    } else {
+        let saved = b.handled
+        b.handled = parser.exprSpan(in inner)
+        operand = bindExpr(ref b, through: ref c, for: in inner, to: expected)
+        b.handled = saved
+    }
+    let covered = b.covered.take() ?? List<CoveredCall>()
+    b.covered = savedCovered
+    // `try string(bytes)` decoded before round 3; `string(x)` only formats now (J82).
+    if boundKind(operand) == .builtinCall && c.bBuiltinCalls[boundIndex(operand)].member == .bytesToString {
+        switch inner {
+            case .callExpr(let call):
+                switch call.value.callee {
+                    case .nameExpr(let conversion):
+                        report(ref b, through: ref c, for: .renamedMember, at: conversion.value.span, by: ("try string(bytes)", "try Utf8.decode(bytes)", "", "", ""),
+                            label: "the old name", help: "write `Utf8.decode`", hasFix: true, fixSpan: conversion.value.span, fixReplacement: "Utf8.decode")
+                        return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+                    default: {}
+                }
+            default: {}
+        }
+    }
+    if handles(in inner) && boundKind(operand) == .call && c.functions[c.bCalls[boundIndex(operand)].function].hasFails {
+        for k in covered { reportUnhandled(ref b, through: ref c, at: k.span, by: k.name, structLiteral: k.structLiteral) }
+        return addTry(ref c, from: BTry { span: t.span, operand: operand, type: exprType(in c, for: operand) })
+    }
+    if covered.length > 0 {
+        reportTryCoversMore(ref b, through: ref c, for: in t, at: covered[0].span)
+        for i in 1..covered.length { reportUnhandled(ref b, through: ref c, at: covered[i].span, by: covered[i].name, structLiteral: covered[i].structLiteral) }
+    } else if !isError(exprType(in c, for: operand)) {
+        var isCall = false
+        switch inner {
+            case .callExpr(_): isCall = true
+            default: {}
+        }
+        if isCall {
+            report(ref b, through: ref c, for: .nothingToHandle, at: operandSpan, by: ("try", "", "", "", ""),
+                hasFix: true, fixSpan: TextSpan.fromBounds(t.span.start, until: operandSpan.start), fixReplacement: "")
+        } else {
+            report(ref b, through: ref c, for: .nothingToHandle, at: operandSpan, by: ("try", "", "", "", ""))
+        }
+    }
+    return operand
+}
 
-// stub: T34 ports BinderCalls.cs:1133 BindSwitchExpr
-BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s, to Type expected) => -1
+/// BinderCalls.cs:1054 ReportTryCoversMore: BYN1054, `try` covers an expression that cannot fail; the fix moves it onto
+/// the failing call (at `failing`), in parentheses (§18).
+void reportTryCoversMore(ref Binder b, through ref Ctx c, for in parser.TryExpr t, at TextSpan failing) {
+    let operandSpan = parser.exprSpan(in t.operand)
+    let text = t15Text(in c, from: b.file, at: operandSpan)
+    let call = t15Text(in c, from: b.file, at: failing)
+    let at = failing.start - operandSpan.start
+    let fixedText = $"{text[0..at]}(try {call}){text[at + call.length..text.length]}"
+    report(ref b, through: ref c, for: .tryCoversMore, at: operandSpan, by: (text, call, "", "", ""), label: "cannot fail",
+        help: $"wrap the part that fails in parentheses: `(try {call})`", hasFix: true, fixSpan: t.span, fixReplacement: fixedText)
+}
 
-// stub: T34 ports BinderCalls.cs:1187 BindPattern
-BPattern bindPattern(ref Binder b, through ref Ctx c, for in parser.Pattern p, as Type input) => -1
+/// BinderCalls.cs:1064 BindCatch; a catch with a variant also records the variant's span in `c.catchVariantSpans` (Q632).
+BExpr bindCatch(ref Binder b, through ref Ctx c, for in parser.CatchExpr e, to Type expected) =>
+    t34Catch(ref b, through: ref c, for: in e, from: in e.operand, to: expected)
 
-// stub: T34 ports BinderCalls.cs:1365 CheckGuardWrite (neutral default false: C# returns false when nothing is reported, BinderCalls.cs:1367; Q733)
-bool checkGuardWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) => false
+/// `bindCatch` with `inner`, the C# `StripParens(c.Operand)`.
+BExpr t34Catch(ref Binder b, through ref Ctx c, for in parser.CatchExpr e, from in parser.Expr inner, to Type expected) {
+    switch inner {
+        case .parenExpr(let p): return t34Catch(ref b, through: ref c, for: in e, from: in p.value.inner, to: expected)
+        default: {}
+    }
+    var operand: BExpr = -1
+    if handles(in inner) {
+        let saved = b.handled
+        b.handled = parser.exprSpan(in inner)
+        operand = bindExpr(ref b, through: ref c, for: in inner, to: expected)
+        b.handled = saved
+    } else {
+        operand = bindExpr(ref b, through: ref c, for: in e.operand, to: expected)
+    }
+    if !(boundKind(operand) == .call && c.functions[c.bCalls[boundIndex(operand)].function].hasFails) {
+        if !isError(exprType(in c, for: operand)) {
+            report(ref b, through: ref c, for: .nothingToHandle, at: parser.exprSpan(in e.operand), by: ("catch", "", "", "", ""))
+        }
+        pushScope(ref b)
+        if (e.binding is { } b0) {
+            let l = declareLocal(ref b, through: ref c, at: b0, as: errorType(), for: .letKeyword)
+            c.locals[l].isCatch = true
+        }
+        bindExpr(ref b, through: ref c, for: in e.handler)
+        popScope(ref b)
+        return addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+    }
+    let fn = c.bCalls[boundIndex(operand)].function
+    let sets = errorSetsOf(ref c, for: fn)
+    let errType = sets.length == 0 ? errorUnionOf(ref c, for: in sets, as: in List<VariantId>()) : errorUnionOf(ref c, for: in sets, as: in c.functions[fn].excludedErrors)
+    pushScope(ref b)
+    var binding: LocalId = -1
+    var variant: VariantId = -1
+    var caughtSwitch = false
+    switch e.handler {
+        case .switchExpr(let sw):
+            switch sw.value.value {
+                case .caughtErrorExpr(_): caughtSwitch = true
+                default: {}
+            }
+        default: {}
+    }
+    if (e.binding is { } bn) {
+        binding = declareLocal(ref b, through: ref c, at: bn, as: errType, for: .letKeyword)
+        c.locals[binding].isCatch = true
+    } else if caughtSwitch {
+        binding = newLocal(ref c, by: LocalSymbol { name: "t", type: errType, kind: .temp, id: b.nextLocalId, isCatch: true })
+        b.nextLocalId += 1
+        if b.fn >= 0 { c.functions[b.fn].locals.append(binding) }
+    }
+    let savedCaught = b.caught
+    b.caught = binding
+    var hasVariant = true
+    switch e.variant {
+        case .none: hasVariant = false
+        default: {}
+    }
+    if hasVariant {
+        let vSpan = parser.exprSpan(in e.variant)
+        let bound = bindExpr(ref b, through: ref c, for: in e.variant, to: errType)
+        if boundKind(bound) == .errorVariant {
+            let ev = c.bErrorVariants[boundIndex(bound)].variant
+            if sets.length > 0 && !listContains(in sets, by: c.errorVariants[ev].set) {
+                var shown = StrBuf()
+                for i in 0..<sets.length {
+                    if i > 0 { shown.append(", ") }
+                    shown.append($"`{displayNameAmong(ref c, by: sets[i], for: in sets)}`")
+                }
+                report(ref b, through: ref c, for: .unknownVariant, at: vSpan, by: (c.errorVariants[ev].name, typeDisplay(ref c, by: errType), "", "", ""),
+                    help: $"use a variant of {shown.finish()}, the sets `{c.functions[fn].name}` fails with")
+            } else {
+                variant = ev
+            }
+        }
+    }
+    let resultType = exprType(in c, for: operand)
+    var handler: BExpr = -1
+    var isBlock = false
+    switch e.handler {
+        case .blockExpr(_): isBlock = true
+        default: {}
+    }
+    if isVoid(resultType) {
+        handler = bindExpr(ref b, through: ref c, for: in e.handler)
+        let ht = exprType(in c, for: handler)
+        if !isVoid(ht) && !isNever(ht) && !isError(ht) {
+            report(ref b, through: ref c, for: .typeMismatch, at: parser.exprSpan(in e.handler), by: (typeDisplay(ref c, by: ht), "void", "", "", ""),
+                help: $"drop the handler's value; `{c.functions[fn].name}` returns nothing, so the handler cannot produce one")
+        }
+    } else if isBlock {
+        switch e.handler {
+            case .blockExpr(let block):
+                switch block.value.block {
+                    case .blockStmt(let bs):
+                        let stmt = bindBlock(ref b, through: ref c, for: in bs.value)
+                        handler = addBlockExpr(ref c, from: BBlockExpr { span: block.value.span, block: stmt, type: prim(.neverKind) })
+                    default: {}
+                }
+            default: {}
+        }
+    } else {
+        handler = bindExpr(ref b, through: ref c, for: in e.handler, to: resultType)
+        if !isNever(exprType(in c, for: handler)) { handler = convert(ref b, through: ref c, for: handler, to: resultType, at: parser.exprSpan(in e.handler)) }
+    }
+    b.caught = savedCaught
+    popScope(ref b)
+    let result = addCatch(ref c, from: BCatch { span: e.span, operand: operand, binding: binding, variant: variant, handler: handler, type: resultType })
+    if hasVariant { c.catchVariantSpans[result] = parser.exprSpan(in e.variant) }
+    return result
+}
 
-// stub: T34 ports BinderCalls.cs:1278 CheckOwningOverlap
-void checkOwningOverlap(ref Binder b, through ref Ctx c, for BPattern p) {}
+// ── switch expressions ───────────────────────────────────────────────────────
 
-// stub: T34 ports BinderCalls.cs:1339 GuardBindings
-void guardBindings(ref Ctx c, for BPattern p, at TextSpan guard) {}
+/// BinderCalls.cs:1141 BindSwitchExpr.
+BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s, to Type expected) {
+    let subj = bindSwitchSubject(ref b, through: ref c, for: in s.value)
+    let value = subj.value
+    let owns = subj.owns
+    let valueType = exprType(in c, for: value)
+    var caughtValue = false
+    switch s.value {
+        case .caughtErrorExpr(_): caughtValue = true
+        default: {}
+    }
+    var arms = List<BSwitchArm>()
+    for arm in s.arms {
+        pushScope(ref b)
+        b.patternOwns = owns
+        let pattern = bindPattern(ref b, through: ref c, for: in arm.pattern, as: valueType)
+        b.patternOwns = false
+        if owns { checkOwningOverlap(ref b, through: ref c, for: pattern) }
+        var hasGuard = true
+        switch arm.guard {
+            case .none: hasGuard = false
+            default: {}
+        }
+        if owns && hasGuard { guardBindings(ref c, for: pattern, at: parser.exprSpan(in arm.guard)) }
+        if !hasGuard { learnArmState(ref b, through: ref c, for: value, by: pattern) }
+        var guard: BExpr = -1
+        if hasGuard { guard = bindCondition(ref b, through: ref c, for: in arm.guard) }
+        // A block arm of a value-giving `catch switch` has no value to give, so it must leave (J49, BYN2611).
+        var result: BExpr = -1
+        var blockArm = false
+        switch arm.value {
+            case .blockExpr(let block):
+                if caughtValue && expected != -1 && !isVoid(expected) {
+                    switch block.value.block {
+                        case .blockStmt(let bs):
+                            blockArm = true
+                            let stmt = bindBlock(ref b, through: ref c, for: in bs.value)
+                            result = addBlockExpr(ref c, from: BBlockExpr { span: block.value.span, block: stmt, type: prim(.neverKind) })
+                        default: {}
+                    }
+                }
+            default: {}
+        }
+        if !blockArm { result = bindExpr(ref b, through: ref c, for: in arm.value, to: expected) }
+        popScope(ref b)
+        arms.append(BSwitchArm { span: arm.span, pattern: pattern, guard: guard, value: result })
+    }
+    var type = expected
+    var mismatch = false
+    if type != -1 {
+        for a in arms {
+            let at = exprType(in c, for: a.value)
+            if !isError(at) && implicit(ref c, from: at, to: type) is null {
+                mismatch = true
+                break
+            }
+        }
+    }
+    if type == -1 || mismatch {
+        type = -1
+        for a in arms {
+            let at = exprType(in c, for: a.value)
+            if isNever(at) || isError(at) { continue }
+            type = type == -1 ? at : common(ref c, for: type, as: at)
+            if type == -1 {
+                report(ref b, through: ref c, for: .branchTypeMismatch, at: nodeSpan(in c, for: a.value),
+                    by: (typeDisplay(ref c, by: exprType(in c, for: arms[0].value)), typeDisplay(ref c, by: at), "", "", ""))
+                return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+            }
+        }
+        if type == -1 {
+            var allNever = true
+            for a in arms {
+                if !isNever(exprType(in c, for: a.value)) { allNever = false }
+            }
+            type = allNever && arms.length > 0 ? prim(.neverKind) : errorType()
+        }
+    }
+    if kindOf(type) == .nullType {
+        report(ref b, through: ref c, for: .cannotInferType, at: s.span, by: ("null", "", "", "", ""))
+        type = errorType()
+    }
+    for i in 0..arms.length {
+        arms[i].value = convert(ref b, through: ref c, for: arms[i].value, to: type, at: parser.exprSpan(in s.arms[i].value))
+    }
+    var cases = List<(BPattern, BExpr)>()
+    for a in arms { cases.append((a.pattern, a.guard)) }
+    var states: UnionId = -1
+    if kindOf(valueType) != .optional { states = statesUnion(ref c, for: valueType) }
+    if states != -1 {
+        // mutation-exempt: Q672 through 0
+        let found = subject(ref b, through: ref c, for: value)
+        var subjectType = valueType
+        if (found is { } f) { subjectType = f.type }
+        checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in cases)
+    } else {
+        checkExhaustive(ref b, through: ref c, at: parser.exprSpan(in s.value), as: valueType, by: in cases, statement: false)
+    }
+    return addSwitchExpr(ref c, from: BSwitchExpr { span: s.span, value: value, arms: move arms, type: type })
+}
 
-// stub: T34 ports BinderCalls.cs:1185 Unwrap
-Type unwrap(ref Ctx c, for Type t) => t
+// ── Patterns ─────────────────────────────────────────────────────────────────
 
-// stub: T34 ports BinderCalls.cs:1539 ResolveStep
-BMemberStep? resolveStep(ref Binder b, through ref Ctx c, for Type type, at TextSpan name) => null
+/// BinderCalls.cs:1193 Unwrap.
+Type unwrap(ref Ctx c, for Type t) => kindOf(t) == .optional ? c.optionalTypes[typeIndex(t)] : t
+
+/// BinderCalls.cs:1195 BindPattern. A `_` is marked `syntaxDiscard`, the C# `Syntax is DiscardPattern` that
+/// CheckExhaustive reads (BinderCalls.cs:1590).
+BPattern bindPattern(ref Binder b, through ref Ctx c, for in parser.Pattern p, as Type input) {
+    let span = parser.patternSpan(in p)
+    switch p {
+        case .discardPattern(_):
+            let n = addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+            setSyntaxFlags(ref c, for: n, to: syntaxDiscard)
+            return n
+        case .varPattern(let v):
+            let local = declareLocal(ref b, through: ref c, at: v.value.name, as: input, for: v.value.isLet ? .patternVariable : .varKeyword)
+            c.locals[local].borrowsSubject = !b.patternOwns
+            if !v.value.isLet { c.locals[local].keywordSpan = TextSpan { start: v.value.span.start, length: 3 } }
+            return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input, local: local })
+        case .constantPattern(let k):
+            return bindConstantPattern(ref b, through: ref c, for: in k.value, as: input)
+        case .declarationPattern(let d):
+            let declared = resolveType(ref b, through: ref c, for: in d.value.type)
+            if kindOf(declared) == .errorSet { return bindErrorSetPattern(ref b, through: ref c, at: span, as: input, from: typeIndex(declared), by: d.value.name) }
+            if !isError(declared) {
+                report(ref b, through: ref c, for: .patternMismatch, at: parser.typeSpan(in d.value.type),
+                    by: ($"`{typeDisplay(ref c, by: declared)}`", typeDisplay(ref c, by: unwrap(ref c, for: input)), "", "", ""),
+                    help: "match by type only on an error set, in a `catch switch`")
+            }
+            declareLocal(ref b, through: ref c, at: d.value.name, as: errorType(), for: .patternVariable)
+            return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+        case .relationalPattern(let r):
+            let target = unwrap(ref c, for: input)
+            let value = bindConverted(ref b, through: ref c, for: in r.value.value, to: target)
+            if !isError(target) && !(isNumeric(target) || target == prim(.char) || isString(target)) {
+                report(ref b, through: ref c, for: .badBinaryOperands, at: span,
+                    by: (binaryText(r.value.op), typeDisplay(ref c, by: target), typeDisplay(ref c, by: exprType(in c, for: value)), "", ""))
+            } else {
+                requireConstant(ref b, through: ref c, for: value, at: parser.exprSpan(in r.value.value))
+            }
+            return addRelationalPattern(ref c, from: BRelationalPattern { span: span, inputType: input, op: r.value.op, value: value })
+        case .notPattern(let n):
+            let operand = bindPattern(ref b, through: ref c, for: in n.value.operand, as: input)
+            return addNotPattern(ref c, from: BNotPattern { span: span, inputType: input, operand: operand })
+        case .binaryPattern(let bp):
+            let left = bindPattern(ref b, through: ref c, for: in bp.value.left, as: input)
+            let right = bindPattern(ref b, through: ref c, for: in bp.value.right, as: input)
+            if !bp.value.isAnd && (hasBindings(ref c, for: left) || hasBindings(ref c, for: right)) {
+                report(ref b, through: ref c, for: .unsupported, at: span, by: ("variables inside `or` patterns", "", "", "", ""))
+            }
+            return addBinaryPattern(ref c, from: BBinaryPattern { span: span, inputType: input, isAnd: bp.value.isAnd, left: left, right: right })
+        case .propertyPattern(let pp):
+            return bindPropertyPattern(ref b, through: ref c, for: in pp.value, as: input)
+        case .variantPattern(let vp):
+            let target = unwrap(ref c, for: input)
+            switch vp.value.variant {
+                case .targetMemberExpr(let tm):
+                    if kindOf(target) == .errorSet || kindOf(target) == .errorUnion {
+                        let bound = bindTargetMember(ref b, through: ref c, for: in tm.value, to: target)
+                        return bindErrorCasePattern(ref b, through: ref c, for: in p, as: input, by: bound, from: in vp.value.elements, at: vp.value.binding)
+                    }
+                    return bindUnionPattern(ref b, through: ref c, at: span, as: input, from: -1, by: tm.value.member, for: in vp.value.elements, to: vp.value.binding)
+                default: {}
+            }
+            report(ref b, through: ref c, for: .unsupported, at: span, by: ("list patterns", "", "", "", ""))
+            return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+        case .positionalPattern(let pos):
+            let target = unwrap(ref c, for: input)
+            var untyped = false
+            switch pos.value.type {
+                case .none:
+                    untyped = true
+                    if kindOf(target) == .tuple {
+                        let tt = typeIndex(target)
+                        let count = c.tupleTypes[tt].length
+                        if pos.value.elements.length != count {
+                            report(ref b, through: ref c, for: .patternMismatch, at: span, by: ($"{pos.value.elements.length} elements", typeDisplay(ref c, by: target), "", "", ""))
+                            return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+                        }
+                        var subs = List<BSubpattern>()
+                        for i in 0..count {
+                            let fieldType = c.tupleTypes[tt][i].type
+                            var path = List<BMemberStep>()
+                            path.append(BMemberStep { tupleIndex: i, type: fieldType })
+                            let sub = bindPattern(ref b, through: ref c, for: in pos.value.elements[i], as: fieldType)
+                            subs.append(BSubpattern { path: move path, pattern: sub })
+                        }
+                        return addPropertyPattern(ref c, from: BPropertyPattern { span: span, inputType: input, valueType: target, subpatterns: move subs })
+                    }
+                case .namedType(let nt):
+                    let path = nt.value.path
+                    let mod = c.files[b.file].module
+                    if path.length == 2 && nt.value.args.length == 0 && (kindOf(target) == .errorSet || kindOf(target) == .errorUnion) {
+                        if (c.modules[mod].types.tryGet(at: t15Text(in c, from: b.file, at: path[0])) is { } named) && kindOf(named) == .errorSet {
+                            let bound = errorCase(ref b, through: ref c, for: in p, from: typeIndex(named), at: path[1])
+                            return bindErrorCasePattern(ref b, through: ref c, for: in p, as: input, by: bound, from: in pos.value.elements, at: null)
+                        }
+                    }
+                    if path.length > 1 && nt.value.args.length == 0 {
+                        // `Option2.Some(let v)` on an `Option2<i64>` names the generic union without its type arguments.
+                        var owner: Type = -1
+                        if path.length == 2 && kindOf(target) == .unionType {
+                            if (c.modules[mod].types.tryGet(at: t15Text(in c, from: b.file, at: path[0])) is { } named) && kindOf(named) == .unionType && c.unions[typeIndex(named)].typeParams.length > 0 {
+                                let template = c.unions[typeIndex(target)].template
+                                if target == named || (template != -1 && unionTypeOf(template) == named) { owner = target }
+                            }
+                        }
+                        if owner == -1 {
+                            var prefix = List<TextSpan>()
+                            for i in 0..path.length - 1 { prefix.append(path[i]) }
+                            let at = TextSpan.fromBounds(path[0].start, until: path[path.length - 2].end)
+                            owner = resolveType(ref b, through: ref c, for: in parser.TypeSyntax.namedType(Owned(NamedType { span: at, path: move prefix, args: List<parser.TypeSyntax>() })))
+                        }
+                        if kindOf(owner) == .unionType || kindOf(owner) == .error {
+                            return bindUnionPattern(ref b, through: ref c, at: span, as: input, from: owner, by: path[path.length - 1], for: in pos.value.elements)
+                        }
+                        report(ref b, through: ref c, for: .unsupported, at: span, by: ("deconstruction patterns", "", "", "", ""))
+                        return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+                    }
+                default: {}
+            }
+            let what = untyped ? $"positional patterns on `{typeDisplay(ref c, by: input)}`" : "deconstruction patterns"
+            report(ref b, through: ref c, for: .unsupported, at: span, by: (what, "", "", "", ""))
+            return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+        default:
+            report(ref b, through: ref c, for: .unsupported, at: span, by: ("list patterns", "", "", "", ""))
+            return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+    }
+}
+
+/// BinderCalls.cs:1286 CheckOwningOverlap: in an owning switch, a pattern may not bind a value and a part of it, both
+/// sides of an `and`, or the same field twice: each would own the same storage (L006). Only bindings of a unique type own storage.
+void checkOwningOverlap(ref Binder b, through ref Ctx c, for BPattern p) {
+    let k = boundKind(p)
+    let i = boundIndex(p)
+    let span = nodeSpan(in c, for: p)
+    var overlap = false
+    if k == .binaryPattern && c.bBinaryPatterns[i].isAnd {
+        let left = c.bBinaryPatterns[i].left
+        let right = c.bBinaryPatterns[i].right
+        let l = owningPaths(ref c, for: left)
+        let r = owningPaths(ref c, for: right)
+        overlap = t34Overlap(in l, in r)
+    }
+    if !overlap && k == .propertyPattern {
+        let d = c.bPropertyPatterns[i].designation
+        if d != -1 && isUnique(ref c, for: c.locals[d].type) {
+            for n in 0..c.bPropertyPatterns[i].subpatterns.length {
+                let sub = c.bPropertyPatterns[i].subpatterns[n].pattern
+                if owningPaths(ref c, for: sub).length > 0 {
+                    overlap = true
+                    break
+                }
+            }
+        }
+    }
+    if overlap {
+        report(ref b, through: ref c, for: .owningPatternOverlap, at: span, by: (t15Text(in c, from: b.file, at: span), "", "", "", ""),
+            help: "bind the whole value or its parts, not both")
+        return
+    }
+    if k == .propertyPattern && repeatsField(ref c, for: p) {
+        report(ref b, through: ref c, for: .owningPatternOverlap, at: span, by: (t15Text(in c, from: b.file, at: span), "", "", "", ""),
+            help: "bind each field once")
+        return
+    }
+    switch k {
+        case .binaryPattern:
+            let left = c.bBinaryPatterns[i].left
+            let right = c.bBinaryPatterns[i].right
+            checkOwningOverlap(ref b, through: ref c, for: left)
+            checkOwningOverlap(ref b, through: ref c, for: right)
+        case .notPattern:
+            let operand = c.bNotPatterns[i].operand
+            checkOwningOverlap(ref b, through: ref c, for: operand)
+        case .propertyPattern:
+            for n in 0..c.bPropertyPatterns[i].subpatterns.length {
+                let sub = c.bPropertyPatterns[i].subpatterns[n].pattern
+                checkOwningOverlap(ref b, through: ref c, for: sub)
+            }
+        case .unionPattern:
+            for n in 0..c.bUnionPatterns[i].subpatterns.length {
+                let sub = c.bUnionPatterns[i].subpatterns[n]
+                checkOwningOverlap(ref b, through: ref c, for: sub)
+            }
+        default: {}
+    }
+}
+
+/// BinderCalls.cs:1316 RepeatsField: whether bindings of two subpatterns of the property pattern `p` reach the same
+/// storage (one binding's path is a prefix of the other's).
+bool repeatsField(ref Ctx c, for BPattern p) {
+    let i = boundIndex(p)
+    var paths = List<List<List<string>>>()
+    for n in 0..c.bPropertyPatterns[i].subpatterns.length {
+        let prefix = t34StepKeys(in c.bPropertyPatterns[i].subpatterns[n].path)
+        let sub = c.bPropertyPatterns[i].subpatterns[n].pattern
+        let qs = owningPaths(ref c, for: sub)
+        var these = List<List<string>>()
+        for q in qs { these.append(t34Concat(in prefix, in q)) }
+        paths.append(move these)
+    }
+    for x in 0..paths.length {
+        for y in x + 1..paths.length {
+            if t34Overlap(in paths[x], in paths[y]) { return true }
+        }
+    }
+    return false
+}
+
+/// BinderCalls.cs:1326 Overlap (renamed: declare.byn has an `overlap`): whether a path of `a` is a prefix of (or equal
+/// to) a path of `b`, or the other way round.
+bool t34Overlap(in List<List<string>> a, in List<List<string>> b) {
+    for x in a {
+        for y in b {
+            let n = x.length < y.length ? x.length : y.length
+            var same = true
+            for k in 0..n {
+                if x[k] != y[k] {
+                    same = false
+                    break
+                }
+            }
+            if same { return true }
+        }
+    }
+    return false
+}
+
+/// The C# `BoundMemberStep` record, as a key that is equal exactly when the records are (OwningPaths' path element).
+string t34StepKey(in BMemberStep s) {
+    var builtin = "-"
+    if (s.builtin is { } m) { builtin = $"{m}" }
+    return $"s{s.field},{s.propertyId},{s.tupleIndex},{builtin},{s.type}"
+}
+
+List<string> t34StepKeys(in List<BMemberStep> path) {
+    var keys = List<string>()
+    for s in path { keys.append(t34StepKey(in s)) }
+    return keys
+}
+
+/// C# `a.Concat(b).ToArray()` of two paths.
+List<string> t34Concat(in List<string> a, in List<string> b) {
+    var joined = List<string>()
+    for x in a { joined.append(x) }
+    for x in b { joined.append(x) }
+    return joined
+}
+
+/// BinderCalls.cs:1334 OwningPaths: the paths from `p`'s input to each binding of a unique type: member steps
+/// (`t34StepKey`), and `v{variant},{index}` for union elements.
+List<List<string>> owningPaths(ref Ctx c, for BPattern p) {
+    var paths = List<List<string>>()
+    let i = boundIndex(p)
+    switch boundKind(p) {
+        case .bindPattern:
+            let l = c.bBindPatterns[i].local
+            if l != -1 && isUnique(ref c, for: c.locals[l].type) { paths.append(List<string>()) }
+        case .notPattern:
+            let operand = c.bNotPatterns[i].operand
+            return owningPaths(ref c, for: operand)
+        case .binaryPattern:
+            let left = c.bBinaryPatterns[i].left
+            let right = c.bBinaryPatterns[i].right
+            let l = owningPaths(ref c, for: left)
+            let r = owningPaths(ref c, for: right)
+            for q in l { paths.append(t34Concat(in q, in List<string>())) }
+            for q in r { paths.append(t34Concat(in q, in List<string>())) }
+        case .propertyPattern:
+            let d = c.bPropertyPatterns[i].designation
+            if d != -1 && isUnique(ref c, for: c.locals[d].type) { paths.append(List<string>()) }
+            for n in 0..c.bPropertyPatterns[i].subpatterns.length {
+                let prefix = t34StepKeys(in c.bPropertyPatterns[i].subpatterns[n].path)
+                let sub = c.bPropertyPatterns[i].subpatterns[n].pattern
+                let qs = owningPaths(ref c, for: sub)
+                for q in qs { paths.append(t34Concat(in prefix, in q)) }
+            }
+        case .unionPattern:
+            let d = c.bUnionPatterns[i].designation
+            if d != -1 && isUnique(ref c, for: c.locals[d].type) { paths.append(List<string>()) }
+            let variant = c.bUnionPatterns[i].variant
+            for n in 0..c.bUnionPatterns[i].subpatterns.length {
+                let sub = c.bUnionPatterns[i].subpatterns[n]
+                let qs = owningPaths(ref c, for: sub)
+                var head = List<string>()
+                head.append($"v{variant},{n}")
+                for q in qs { paths.append(t34Concat(in head, in q)) }
+            }
+        default: {}
+    }
+    return paths
+}
+
+/// BinderCalls.cs:1347 GuardBindings: marks the bindings of an owning switch arm read-only inside its `when` guard (BYN2791).
+void guardBindings(ref Ctx c, for BPattern p, at TextSpan guard) {
+    let i = boundIndex(p)
+    switch boundKind(p) {
+        case .bindPattern:
+            let l = c.bBindPatterns[i].local
+            if l != -1 { c.locals[l].guardSpan = guard }
+        case .notPattern:
+            let operand = c.bNotPatterns[i].operand
+            guardBindings(ref c, for: operand, at: guard)
+        case .binaryPattern:
+            let left = c.bBinaryPatterns[i].left
+            let right = c.bBinaryPatterns[i].right
+            guardBindings(ref c, for: left, at: guard)
+            guardBindings(ref c, for: right, at: guard)
+        case .propertyPattern:
+            let d = c.bPropertyPatterns[i].designation
+            if d != -1 { c.locals[d].guardSpan = guard }
+            for n in 0..c.bPropertyPatterns[i].subpatterns.length {
+                let sub = c.bPropertyPatterns[i].subpatterns[n].pattern
+                guardBindings(ref c, for: sub, at: guard)
+            }
+        case .unionPattern:
+            let d = c.bUnionPatterns[i].designation
+            if d != -1 { c.locals[d].guardSpan = guard }
+            for n in 0..c.bUnionPatterns[i].subpatterns.length {
+                let sub = c.bUnionPatterns[i].subpatterns[n]
+                guardBindings(ref c, for: sub, at: guard)
+            }
+        default: {}
+    }
+}
+
+/// BinderCalls.cs:1373 CheckGuardWrite: reports a write at `span` to an owning switch binding, or a part of it, inside
+/// its arm's guard.
+bool checkGuardWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) {
+    let l = writtenLocal(ref c, for: target)
+    if l == -1 { return false }
+    // mutation-exempt: Q671 through 0
+    if (c.locals[l].guardSpan is { } g) {
+        if span.start < g.start || span.end > g.end { return false }
+        report(ref b, through: ref c, for: .owningBindingMutatedInGuard, at: span, by: (c.locals[l].name, "", "", "", ""), label: why,
+            help: "read it in the guard and change it in the arm's body")
+        return true
+    }
+    return false
+}
+
+/// BinderCalls.cs:1381 HasBindings.
+bool hasBindings(ref Ctx c, for BPattern p) {
+    let i = boundIndex(p)
+    switch boundKind(p) {
+        case .bindPattern: return c.bBindPatterns[i].local != -1
+        case .notPattern:
+            let operand = c.bNotPatterns[i].operand
+            return hasBindings(ref c, for: operand)
+        case .binaryPattern:
+            let left = c.bBinaryPatterns[i].left
+            let right = c.bBinaryPatterns[i].right
+            return hasBindings(ref c, for: left) || hasBindings(ref c, for: right)
+        case .propertyPattern:
+            if c.bPropertyPatterns[i].designation != -1 { return true }
+            for n in 0..c.bPropertyPatterns[i].subpatterns.length {
+                let sub = c.bPropertyPatterns[i].subpatterns[n].pattern
+                if hasBindings(ref c, for: sub) { return true }
+            }
+            return false
+        case .unionPattern:
+            if c.bUnionPatterns[i].designation != -1 { return true }
+            for n in 0..c.bUnionPatterns[i].subpatterns.length {
+                let sub = c.bUnionPatterns[i].subpatterns[n]
+                if hasBindings(ref c, for: sub) { return true }
+            }
+            return false
+        default: return false
+    }
+}
+
+/// BinderCalls.cs:1396 BindUnionPattern: `.Circle(let r)` or `Shape.Circle(let r)` at `span`; `owner` is the written
+/// union, or -1. `binding` is the `c` of `.Circle c`: the whole value, narrowed to the variant.
+BPattern bindUnionPattern(ref Binder b, through ref Ctx c, at TextSpan span, as Type input, from Type owner, by TextSpan name, for in List<parser.Pattern> elements, to TextSpan? binding = null) {
+    let text = t15Text(in c, from: b.file, at: name)
+    var target = unwrap(ref c, for: input)
+    var own = owner
+    var variant: VariantId = -1
+    let states = statesUnion(ref c, for: input)
+    if states != -1 {
+        // A struct with states matches like its states union; `Order.paid(…)` names the struct as the owner.
+        // mutation-exempt: Q672 through 0
+        let of = stateStruct(ref c, for: target)
+        if own != -1 && stateStruct(ref c, for: own) != -1 && stateStruct(ref c, for: own) == of { own = unionTypeOf(states) }
+        target = unionTypeOf(states)
+        if (own == -1 || own == unionTypeOf(states)) && findUnionVariant(ref c, by: states, for: text) == -1 {
+            report(ref b, through: ref c, for: .unknownState, at: name, by: (c.structs[of].name, text, "", "", ""), help: $"check the states declared in `{c.structs[of].name}`")
+            own = errorType()
+        }
+    }
+    let shown = own != -1 ? own : target
+    if own != -1 && !isError(own) && !isError(target) && own != target {
+        report(ref b, through: ref c, for: .patternMismatch, at: span, by: ($"`{typeDisplay(ref c, by: own)}.{text}`", typeDisplay(ref c, by: target), "", "", ""))
+    } else if kindOf(shown) == .unionType {
+        let u = typeIndex(shown)
+        variant = findUnionVariant(ref c, by: u, for: text)
+        if variant == -1 {
+            var names = List<string>()
+            for v in c.unions[u].variants { names.append(c.unionVariants[v].name) }
+            if (suggest(text, by: in names) is { } close) {
+                report(ref b, through: ref c, for: .unknownUnionVariant, at: name, by: (text, c.unions[u].name, "", "", ""), help: $"did you mean `{close}`?")
+            } else {
+                report(ref b, through: ref c, for: .unknownUnionVariant, at: name, by: (text, c.unions[u].name, "", "", ""))
+            }
+        } else if (binding is { } whole) {
+            return bindWholeVariant(ref b, through: ref c, at: span, as: input, from: target, by: variant, to: whole)
+        } else if c.unionVariants[variant].fields.length == 0 {
+            let vn = c.unionVariants[variant].name
+            report(ref b, through: ref c, for: .variantHasNoPayload, at: span, by: (vn, "", "", "", ""), help: $"match it with `.{vn}`")
+        } else if elements.length != c.unionVariants[variant].fields.length {
+            let vn = c.unionVariants[variant].name
+            var list = StrBuf()
+            var first = true
+            for f in c.unionVariants[variant].fields {
+                if !first { list.append(", ") }
+                list.append($"let {c.locals[f].name}")
+                first = false
+            }
+            report(ref b, through: ref c, for: .variantPatternArity, at: span, by: (vn, $"{c.unionVariants[variant].fields.length}", $"{elements.length}", "", ""),
+                help: $"list every field: `.{vn}({list.finish()})`, or `_` to skip one")
+        }
+    } else if !isError(target) && kindOf(shown) != .error {
+        report(ref b, through: ref c, for: .patternMismatch, at: span, by: ($"`.{text}(…)`", typeDisplay(ref c, by: target), "", "", ""))
+    }
+    if (binding is { } bn) { declareLocal(ref b, through: ref c, at: bn, as: errorType(), for: .patternVariable) }
+    let ok = variant != -1 && c.unionVariants[variant].fields.length == elements.length && elements.length > 0
+    var subs = List<BPattern>()
+    for i in 0..elements.length {
+        let type = ok ? c.locals[c.unionVariants[variant].fields[i]].type : errorType()
+        subs.append(bindPattern(ref b, through: ref c, for: in elements[i], as: type))
+    }
+    if ok { return addUnionPattern(ref c, from: BUnionPattern { span: span, inputType: input, variant: variant, subpatterns: move subs }) }
+    return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+}
+
+/// BinderCalls.cs:1439 BindWholeVariant: `.percentOff p`, a tag test that binds the whole value as `p`, whose payload
+/// fields read as `p.rate`.
+BPattern bindWholeVariant(ref Binder b, through ref Ctx c, at TextSpan span, as Type input, from Type union, by VariantId variant, to TextSpan binding) {
+    // A state binds as its state type, `Order.paid`, whose payload fields read without a further check.
+    let s = stateStruct(ref c, for: unwrap(ref c, for: input))
+    let states = kindOf(union) == .unionType && s != -1 && statesOf(ref c, for: s) == typeIndex(union)
+    var type = union
+    if states {
+        // mutation-exempt: Q672 through 0
+        var vs = List<VariantId>()
+        vs.append(variant)
+        type = internState(ref c, by: s, for: in vs)
+    }
+    let local = declareLocal(ref b, through: ref c, at: binding, as: type, for: .patternVariable)
+    c.locals[local].borrowsSubject = !b.patternOwns
+    if !states { b.narrowed[local] = variant }
+    return addUnionPattern(ref c, from: BUnionPattern { span: span, inputType: input, variant: variant, subpatterns: List<BPattern>(), designation: local })
+}
+
+/// BinderCalls.cs:1449 RequireConstant.
+void requireConstant(ref Binder b, through ref Ctx c, for BExpr value, at TextSpan span) {
+    let k = boundKind(value)
+    if exprConstant(in c, for: value) is null && !(k == .errorExpr || k == .errorVariant || k == .enumMember || k == .defaultValue) {
+        report(ref b, through: ref c, for: .notConstant, at: span, by: ("a pattern", "", "", "", ""), help: "bind it with `var x` and compare in a `when` guard")
+    }
+}
+
+/// BinderCalls.cs:1455 BindConstantPattern.
+BPattern bindConstantPattern(ref Binder b, through ref Ctx c, for in parser.ConstantPattern k, as Type input) {
+    let target = unwrap(ref c, for: input)
+    switch k.value {
+        case .rangeExpr(let r):
+            var bounded = true
+            switch r.value.start {
+                case .none: bounded = false
+                default: {}
+            }
+            switch r.value.end {
+                case .none: bounded = false
+                default: {}
+            }
+            if bounded {
+                let start = bindConverted(ref b, through: ref c, for: in r.value.start, to: target)
+                let end = bindConverted(ref b, through: ref c, for: in r.value.end, to: target)
+                if !isError(target) && !(isInteger(target) || target == prim(.char)) {
+                    report(ref b, through: ref c, for: .patternMismatch, at: k.span, by: ("a range", typeDisplay(ref c, by: target), "", "", ""))
+                }
+                requireConstant(ref b, through: ref c, for: start, at: parser.exprSpan(in r.value.start))
+                requireConstant(ref b, through: ref c, for: end, at: parser.exprSpan(in r.value.end))
+                return addRangePattern(ref c, from: BRangePattern { span: k.span, inputType: input, start: start, end: end, inclusive: r.value.inclusive })
+            }
+        case .literalExpr(let lit):
+            if lit.value.kind == .nullKeyword {
+                if kindOf(input) != .optional && !isError(input) {
+                    report(ref b, through: ref c, for: .patternMismatch, at: k.span, by: ("`null`", typeDisplay(ref c, by: input), "", "", ""))
+                }
+                let value = addDefault(ref c, from: BDefault { span: lit.value.span, type: input })
+                return addConstantPattern(ref c, from: BConstantPattern { span: k.span, inputType: input, value: value })
+            }
+        case .targetMemberExpr(let tm):
+            let states = statesUnion(ref c, for: input)
+            if states != -1 {
+                // `.paid` on a value with states: a tag test, whatever the state's payload.
+                // mutation-exempt: Q672 through 0
+                let text = t15Text(in c, from: b.file, at: tm.value.member)
+                let state = findUnionVariant(ref c, by: states, for: text)
+                if state != -1 { return addUnionPattern(ref c, from: BUnionPattern { span: k.span, inputType: input, variant: state, subpatterns: List<BPattern>() }) }
+                let of = stateStruct(ref c, for: target)
+                report(ref b, through: ref c, for: .unknownState, at: tm.value.member, by: (c.structs[of].name, text, "", "", ""), help: $"check the states declared in `{c.structs[of].name}`")
+                return addBindPattern(ref c, from: BBindPattern { span: k.span, inputType: input })
+            }
+        default: {}
+    }
+    var isName = false
+    switch k.value {
+        case .nameExpr(_): isName = true
+        default: {}
+    }
+    let tk = kindOf(target)
+    var value: BExpr = -1
+    if isName && (tk == .errorSet || tk == .errorUnion) {
+        value = bindExprOrType(ref b, through: ref c, for: in k.value)
+    } else {
+        value = bindExpr(ref b, through: ref c, for: in k.value, to: target)
+    }
+    if boundKind(value) == .typeRef && kindOf(c.bTypeRefs[boundIndex(value)].referenced) == .errorSet {
+        return bindErrorSetPattern(ref b, through: ref c, at: k.span, as: input, from: typeIndex(c.bTypeRefs[boundIndex(value)].referenced), by: null)
+    }
+    if boundKind(value) == .typeRef { value = bindExpr(ref b, through: ref c, for: in k.value, to: target) }
+    if boundKind(value) == .unionNew && c.bUnionNews[boundIndex(value)].payload.length == 0 && (isError(target) || exprType(in c, for: value) == target) {
+        return addUnionPattern(ref c, from: BUnionPattern { span: k.span, inputType: input, variant: c.bUnionNews[boundIndex(value)].variant, subpatterns: List<BPattern>() })
+    }
+    let isVariant = boundKind(value) == .errorVariant
+    var foreign = false
+    if isVariant && tk == .errorUnion {
+        let ev = c.bErrorVariants[boundIndex(value)].variant
+        let u = typeIndex(target)
+        foreign = c.errorUnionTypes[u].sets.length > 0
+            && (!listContains(in c.errorUnionTypes[u].sets, by: c.errorVariants[ev].set) || listContains(in c.errorUnionTypes[u].excluded, by: ev))
+    }
+    if foreign {
+        let ev = c.bErrorVariants[boundIndex(value)].variant
+        report(ref b, through: ref c, for: .patternMismatch, at: k.span,
+            by: ($"`{typeDisplay(ref c, by: errorSetTypeOf(c.errorVariants[ev].set))}.{c.errorVariants[ev].name}`", typeDisplay(ref c, by: target), "", "", ""))
+    } else if !(isVariant && tk == .errorUnion) {
+        value = convert(ref b, through: ref c, for: value, to: target, at: parser.exprSpan(in k.value))
+    }
+    requireConstant(ref b, through: ref c, for: value, at: parser.exprSpan(in k.value))
+    return addConstantPattern(ref c, from: BConstantPattern { span: k.span, inputType: input, value: value })
+}
+
+/// BinderCalls.cs:1499 BindErrorSetPattern: `DbError` or `DbError e` (at `span`) in a `catch switch`: matches every
+/// variant of `set` (an `or` of its variants), then binds the error as that set.
+BPattern bindErrorSetPattern(ref Binder b, through ref Ctx c, at TextSpan span, as Type input, from ErrorSetId set, by TextSpan? name) {
+    let target = unwrap(ref c, for: input)
+    let setType = errorSetTypeOf(set)
+    var inUnion = false
+    if kindOf(target) == .errorUnion {
+        let u = typeIndex(target)
+        inUnion = c.errorUnionTypes[u].sets.length == 0 || listContains(in c.errorUnionTypes[u].sets, by: set)
+    }
+    if !isError(target) && target != setType && !inUnion {
+        report(ref b, through: ref c, for: .patternMismatch, at: span, by: ($"`{typeDisplay(ref c, by: setType)}`", typeDisplay(ref c, by: target), "", "", ""))
+    }
+    var test: BPattern = -1
+    let variants = copyIds(in c.errorSets[set].variants)
+    if variants.length == 0 {
+        let none = addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+        test = addNotPattern(ref c, from: BNotPattern { span: span, inputType: input, operand: none })
+    } else {
+        for v in variants {
+            let ev = addErrorVariant(ref c, from: BErrorVariant { span: span, variant: v, type: setType })
+            let one = addConstantPattern(ref c, from: BConstantPattern { span: span, inputType: input, value: ev })
+            test = test == -1 ? one : addBinaryPattern(ref c, from: BBinaryPattern { span: span, inputType: input, isAnd: false, left: test, right: one })
+        }
+    }
+    if (name is { } n) {
+        let local = declareLocal(ref b, through: ref c, at: n, as: setType, for: .patternVariable)
+        let bind = addBindPattern(ref c, from: BBindPattern { span: span, inputType: input, local: local })
+        return addBinaryPattern(ref c, from: BBinaryPattern { span: span, inputType: input, isAnd: true, left: test, right: bind })
+    }
+    return test
+}
+
+/// BinderCalls.cs:1513 BindPropertyPattern.
+BPattern bindPropertyPattern(ref Binder b, through ref Ctx c, for in parser.PropertyPattern pp, as Type input) {
+    let valueType = unwrap(ref c, for: input)
+    switch pp.type {
+        case .none: {}
+        default:
+            let declared = resolveType(ref b, through: ref c, for: in pp.type)
+            if !isError(declared) && !isError(valueType) && declared != valueType {
+                report(ref b, through: ref c, for: .patternMismatch, at: parser.typeSpan(in pp.type), by: ($"`{typeDisplay(ref c, by: declared)}`", typeDisplay(ref c, by: valueType), "", "", ""),
+                    help: "remove the type; type patterns apply only to unions and `dyn` values, which arrive in a later version")
+            }
+    }
+    var subs = List<BSubpattern>()
+    for sub in pp.properties {
+        var steps = List<BMemberStep>()
+        var current = valueType
+        var ok = true
+        for name in sub.path {
+            if (resolveStep(ref b, through: ref c, for: current, at: name) is { } step) {
+                current = step.type
+                steps.append(step)
+            } else {
+                ok = false
+                break
+            }
+        }
+        let pattern = bindPattern(ref b, through: ref c, for: in sub.pattern, as: ok ? current : errorType())
+        if ok { subs.append(BSubpattern { path: move steps, pattern: pattern }) }
+    }
+    var designation: LocalId = -1
+    if (pp.designation is { } d) { designation = declareLocal(ref b, through: ref c, at: d, as: valueType, for: .patternVariable) }
+    if designation != -1 { c.locals[designation].borrowsSubject = !b.patternOwns }
+    return addPropertyPattern(ref c, from: BPropertyPattern { span: pp.span, inputType: input, valueType: valueType, subpatterns: move subs, designation: designation })
+}
+
+/// BinderCalls.cs:1547 ResolveStep.
+BMemberStep? resolveStep(ref Binder b, through ref Ctx c, for Type type, at TextSpan name) {
+    let text = t15Text(in c, from: b.file, at: name)
+    let t = kindOf(type) == .state ? structTypeOf(c.stateTypes[typeIndex(type)].s) : type
+    switch kindOf(t) {
+        case .error: return null
+        case .structType:
+            let s = typeIndex(t)
+            let f = findField(ref c, by: s, for: text)
+            if f != -1 {
+                checkAccess(ref b, through: ref c, for: c.fields[f].access, from: s, by: c.structs[s].module, at: name)
+                return BMemberStep { field: f, type: c.fields[f].type }
+            }
+            let p = findProperty(ref c, by: s, for: text)
+            if p != -1 {
+                checkAccess(ref b, through: ref c, for: c.properties[p].access, from: s, by: c.structs[s].module, at: name)
+                return BMemberStep { propertyId: p, type: c.properties[p].type }
+            }
+        case .tuple:
+            let i = tupleIndexOf(ref c, by: t, for: text)
+            if i >= 0 { return BMemberStep { tupleIndex: i, type: c.tupleTypes[typeIndex(t)][i].type } }
+        case .optional:
+            report(ref b, through: ref c, for: .memberOfOptional, at: name, by: (text, typeDisplay(ref c, by: t), "", "", ""),
+                help: "match the value first: `{ } v`")
+            return null
+        default: {}
+    }
+    if (builtinProperty(ref c, for: type, by: text) is { } bp) {
+        // mutation-exempt: Q673 through 0
+        return BMemberStep { builtin: bp.member, type: propertyType(ref b, through: ref c, for: bp.member, as: bp.type) }
+    }
+    if reportRenamed(ref b, through: ref c, for: type, at: name) { return null }
+    let hint = memberSuggestion(ref c, for: type, by: text)
+    report(ref b, through: ref c, for: .unknownMember, at: name, by: (text, typeDisplay(ref c, by: type), "", "", ""), help: hint ?? "")
+    return null
+}
