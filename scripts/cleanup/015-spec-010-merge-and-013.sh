@@ -36,22 +36,28 @@ for f in C.txt a.txt b.txt copy.bin empty.bin input.bin; do
   else printf 'would: rm %s (needs --execute --delete-scratch)\n' "$rel"; fi
 done
 
-# 2. Worktrees whose branch tip is in dev (git worktree remove refuses a dirty tree).
+# 2. Worktrees whose branch has commits of its own, all of them in dev. A branch whose tip is dev's tip has none yet
+#    (a writer just cut from dev), so it is kept. git worktree remove refuses a dirty or locked tree.
+devtip="$(git rev-parse refs/heads/dev)"
+listing="$(git worktree list --porcelain)"
 branches=""
-while read -r wt br; do
+while IFS=$'\t' read -r wt br; do
   rel="${wt#"$repo"/}"
   case "$rel" in .worktrees/*|tmp/wt/*) ;; *) continue ;; esac
   [ "$br" = "feat/013-test-tooling" ] && { printf 'keep:  %s (013 in flight)\n' "$rel"; continue; }
-  if [ -z "$br" ] || ! git merge-base --is-ancestor "refs/heads/$br" dev 2>/dev/null; then
+  if [ -z "$br" ] || ! git merge-base --is-ancestor "refs/heads/$br" refs/heads/dev 2>/dev/null; then
     printf 'keep:  %s (%s not in dev)\n' "$rel" "${br:-detached}"; continue
+  fi
+  if [ "$(git rev-parse "refs/heads/$br")" = "$devtip" ]; then
+    printf 'keep:  %s (%s is at dev, no commits of its own)\n' "$rel" "$br"; continue
   fi
   branches="$branches $br"
   if [ $execute -eq 1 ]; then
-    if git worktree remove "$rel"; then printf 'removed: %s\n' "$rel"; else printf '  refused: %s is dirty. Left alone.\n' "$rel"; failed=1; fi
+    if git worktree remove "$rel"; then printf 'removed: %s\n' "$rel"; else printf '  refused: %s (git said why above). Left alone.\n' "$rel"; failed=1; fi
   else
     printf 'would: git worktree remove %s\n' "$rel"
   fi
-done < <(git worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} /^branch /{print w, substr($2,12)} /^detached/{print w, ""}')
+done < <(printf '%s\n' "$listing" | awk '/^worktree /{w=substr($0,10)} /^branch /{print w "\t" substr($0,19)} /^detached/{print w "\t"}')
 if [ $execute -eq 1 ]; then git worktree prune; else printf 'would: git worktree prune\n'; fi
 
 # 3. Their branches (git branch -d refuses anything unmerged or still checked out).
