@@ -82,7 +82,7 @@ Fix? t22BecomesFixOf(ref Binder b, through ref Ctx c, for FuncId fn, by string s
     return fix
 }
 
-// stub: T22 ports BinderStates.cs:12 BindBecome (blocked: Q625)
+// stub: T28 ports BinderStates.cs:12 BindBecome (blocked: Q656)
 BStmt bindBecome(ref Binder b, through ref Ctx c, for in parser.BecomeStmt s) => -1
 
 void checkBecomesCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from FuncId caller, by FuncId fn, to TextSpan state) {
@@ -263,7 +263,7 @@ BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BE
     return addErrorExpr(ref c, from: BErrorExpr { span: span })
 }
 
-// stub: T22 ports BinderStates.cs:160 CheckStatesExhaustive (blocked: Q625)
+// stub: T28 ports BinderStates.cs:160 CheckStatesExhaustive (blocked: Q656)
 bool checkStatesExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type type, from UnionId states, by in List<(BPattern, BExpr)> arms) => true
 
 // ── What a local is known to be (spec §3.17) ─────────────────────────────────
