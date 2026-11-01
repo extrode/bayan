@@ -67,39 +67,70 @@ public static class SelfhostSemanticsHarness
     internal static NativeBuild BuildFast(Compilation c, IReadOnlySet<string> generated)
     {
         if (SnapshotDir is not { } dir) return Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
-        var skip = new HashSet<string>(generated, StringComparer.Ordinal);
-        if (Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT_FILES") is { Length: > 0 } files)
-        {
-            var keep = files.Split(',').Select(f => Path.GetFullPath(f, Golden.RepoRoot)).ToHashSet(StringComparer.Ordinal);
-            skip.UnionWith(c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>()
-                .Where(p => !keep.Contains(Path.GetFullPath(p))));
-        }
+        var compiled = c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>();
+        var skip = SnapshotSkip(compiled, generated, Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT_FILES"));
         var schema = Bayan.Testing.Schemata.Build(c, skip);
         var build = Toolchain.Build(CEmitter.Emit(Lowerer.Lower(c, schema.Switches), false), BuildMode.Fast);
         if (build.ExecutablePath is { } binary)
         {
             var sites = Bayan.Testing.Schemata.SitesPath(binary);
             File.WriteAllText(sites, schema.SitesJson());
-            lock (SnapshotLock)
-            {
-                Directory.CreateDirectory(dir);
-                var path = Path.Combine(dir, "manifest.json");
-                var manifest = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))!.AsObject() : new JsonObject { ["version"] = 1, ["builds"] = new JsonArray() };
-                var builds = manifest["builds"]!.AsArray();
-                if (!builds.Any(b => (string?)b!["binary"] == binary))
-                    builds.Add(new JsonObject { ["binary"] = binary, ["sites"] = sites });
-                File.WriteAllText(path, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
-            }
+            RecordBuild(dir, binary, sites);
         }
         return build;
     }
 
+    /// <summary>The files a snapshot build carries no sites in: <paramref name="generated"/>, and with
+    /// <paramref name="files"/> (<c>BAYAN_SNAPSHOT_FILES</c>) every <paramref name="compiled"/> file it does not list;
+    /// an entry matching no compiled file throws.</summary>
+    internal static HashSet<string> SnapshotSkip(IEnumerable<string> compiled, IReadOnlySet<string> generated, string? files)
+    {
+        var skip = new HashSet<string>(generated, StringComparer.Ordinal);
+        if (files is not { Length: > 0 }) return skip;
+        var paths = compiled.ToList();
+        var keep = files.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(f => Path.GetFullPath(f, Golden.RepoRoot)).ToHashSet(StringComparer.Ordinal);
+        var all = paths.Select(p => Path.GetFullPath(p)).ToHashSet(StringComparer.Ordinal);
+        if (keep.FirstOrDefault(k => !all.Contains(k)) is { } missing)
+            throw new InvalidOperationException($"BAYAN_SNAPSHOT_FILES: {missing} matches no compiled source");
+        skip.UnionWith(paths.Where(p => !keep.Contains(Path.GetFullPath(p))));
+        return skip;
+    }
+
+    /// <summary>Lists <paramref name="binary"/> and its site map in <paramref name="dir"/>'s <c>manifest.json</c>.</summary>
+    internal static void RecordBuild(string dir, string binary, string sites)
+    {
+        lock (SnapshotLock)
+        {
+            ResetOnce(dir);
+            var path = Path.Combine(dir, "manifest.json");
+            var manifest = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))!.AsObject() : new JsonObject { ["version"] = 1, ["builds"] = new JsonArray() };
+            var builds = manifest["builds"]!.AsArray();
+            if (!builds.Any(b => (string?)b!["binary"] == binary))
+                builds.Add(new JsonObject { ["binary"] = binary, ["sites"] = sites });
+            File.WriteAllText(path, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+        }
+    }
+
     private static readonly Lock SnapshotLock = new();
+
+    private static readonly HashSet<string> SnapshotReset = new(StringComparer.Ordinal);
+
+    /// <summary>Under <see cref="SnapshotLock"/>: creates <paramref name="dir"/> and, on this process's first write to it,
+    /// deletes a previous recording's <c>manifest.json</c> and <c>runs.jsonl</c>.</summary>
+    private static void ResetOnce(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        if (!SnapshotReset.Add(Path.GetFullPath(dir))) return;
+        File.Delete(Path.Combine(dir, "manifest.json"));
+        File.Delete(Path.Combine(dir, "runs.jsonl"));
+    }
 
     /// <summary>
     /// Under <c>BAYAN_SNAPSHOT</c>: runs <paramref name="program"/> twice and appends the run to <c>runs.jsonl</c>; the
-    /// replay compares its exit code, stdout and stderr. The C# oracle checks run once, here at record time, and a
-    /// recording only completes if every recorded test passed them (013-plan.md:21, "compute the C# oracle once").
+    /// replay compares its exit code, stdout and stderr. The C# oracle checks run once, at record time, in the caller
+    /// after this returns: the run is appended before they assert, so a recording is valid only if the recording
+    /// <c>dotnet test</c> exited 0 (013-plan.md:21, "compute the C# oracle once").
     /// Two runs that differ in any of the three throw: such a test is tagged <c>[Trait("Snapshot", "skip")]</c>.
     /// </summary>
     internal static (int Exit, byte[] Out, byte[] Err) RunRecorded(string dir, string program, byte[]? input, string[] args)
@@ -125,7 +156,7 @@ public static class SelfhostSemanticsHarness
         };
         lock (SnapshotLock)
         {
-            Directory.CreateDirectory(dir);
+            ResetOnce(dir);
             File.AppendAllText(Path.Combine(dir, "runs.jsonl"), record.ToJsonString() + "\n");
         }
         return first;

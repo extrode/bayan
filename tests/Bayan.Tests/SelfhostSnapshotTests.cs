@@ -8,6 +8,7 @@ namespace Bayan.Tests;
 /// Spec 013 R14: a <c>BAYAN_SNAPSHOT</c> recording of selfhost tests replays through <c>scripts/selfhost/replay.py</c>
 /// without <c>dotnet test</c>; mutant 0 matches every recorded run and a mutant the tests kill does not.
 /// </summary>
+[Collection(nameof(SelfhostSnapshot))]
 public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
 {
     /// <summary>The recorded tests: <c>bayan-parse</c>'s CLI modes but the timing, tagged <c>Snapshot=skip</c>.</summary>
@@ -27,7 +28,8 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.All(runs, r => Assert.Equal((string?)build!["binary"], (string?)r["program"]));
 
         clock.Restart();
-        var (exit, text) = Replay(dir, 0);
+        var binary = (string)build!["binary"]!;
+        var (exit, text) = Replay(dir, 0, binary);
         output.WriteLine($"replay of mutant 0: {clock.Elapsed.TotalSeconds:F2} s, {runs.Count} runs: {text}");
         Assert.True(exit == 0, text);
 
@@ -36,7 +38,7 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.All(sites, s => Assert.Equal(Path.GetFullPath(Scope, Golden.RepoRoot), Path.GetFullPath((string)s!["file"]!, Golden.RepoRoot)));
         foreach (var site in sites.Take(50))
         {
-            var (mutantExit, mutantText) = Replay(dir, (int)site!["id"]!);
+            var (mutantExit, mutantText) = Replay(dir, (int)site!["id"]!, binary);
             if (mutantExit is 0 or -1) continue;
             output.WriteLine($"mutant {site["id"]} ({site["file"]}:{site["line"]}): {mutantText}");
             Assert.Equal(1, mutantExit);
@@ -61,7 +63,7 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.NotEmpty(sites);
         Assert.All(sites, s => Assert.Equal(Path.GetFullPath(scope, Golden.RepoRoot), Path.GetFullPath((string)s!["file"]!, Golden.RepoRoot)));
         Assert.All(runs, r => Assert.Equal((string?)build["binary"], (string?)r["program"]));
-        var (exit, text) = Replay(dir, 0);
+        var (exit, text) = Replay(dir, 0, null);
         Assert.True(exit == 0, text);
     }
 
@@ -77,6 +79,73 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.Contains("differ in stdout", e.Message);
         Assert.Contains("tag the test [Trait(\"Snapshot\", \"skip\")] if its output is not deterministic", e.Message);
         Assert.False(File.Exists(Path.Combine(dir, "runs.jsonl")));
+    }
+
+    /// <summary>A recording with two builds replays only the runs of the <c>--binary</c> build (site ids are per build);
+    /// without <c>--binary</c> the replay refuses, naming both.</summary>
+    [Fact]
+    public void ReplayRunsOnlyTheNamedBuild()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-snapshot-two-builds");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "manifest.json"),
+            """{"version": 1, "builds": [{"binary": "/bin/echo", "sites": "a"}, {"binary": "/usr/bin/false", "sites": "b"}]}""");
+        static string Run(string program, string[] args, string stdout) => new JsonObject
+        {
+            ["program"] = program, ["args"] = new JsonArray(args.Select(a => (JsonNode?)a).ToArray()), ["cwd"] = Golden.RepoRoot,
+            ["stdin"] = null, ["stdout"] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(stdout)), ["stderr"] = "", ["exit"] = 0,
+        }.ToJsonString();
+        File.WriteAllLines(Path.Combine(dir, "runs.jsonl"), [Run("/bin/echo", ["hi"], "hi\n"), Run("/usr/bin/false", [], "")]);
+
+        var (exit, text) = Replay(dir, 0, "/bin/echo");
+        Assert.True(exit == 0, text);
+        Assert.Contains("replay: 1 runs match", text);
+
+        (exit, text) = Replay(dir, 0, null);
+        Assert.Equal(2, exit);
+        Assert.Contains("/bin/echo, /usr/bin/false", text);
+    }
+
+    /// <summary>A second recording into a directory replaces the first: this process's first write deletes the earlier
+    /// <c>manifest.json</c> and <c>runs.jsonl</c>, later writes add to them.</summary>
+    [Fact]
+    public void ASecondRecordingReplacesTheFirst()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-snapshot-twice");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "manifest.json"), """{"version": 1, "builds": [{"binary": "/old", "sites": "/old.sites.json"}]}""");
+        File.WriteAllText(Path.Combine(dir, "runs.jsonl"), """{"program": "/old", "args": [], "cwd": "/", "stdin": null, "stdout": "", "stderr": "", "exit": 0}""" + "\n");
+
+        SelfhostSemanticsHarness.RecordBuild(dir, "/bin/echo", "/echo.sites.json");
+        SelfhostSemanticsHarness.RunRecorded(dir, "/bin/echo", null, ["one"]);
+        SelfhostSemanticsHarness.RunRecorded(dir, "/bin/echo", null, ["two"]);
+
+        var build = Assert.Single(JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json")))!["builds"]!.AsArray());
+        Assert.Equal("/bin/echo", (string?)build!["binary"]);
+        var runs = File.ReadAllLines(Path.Combine(dir, "runs.jsonl")).Select(l => JsonNode.Parse(l)!).ToList();
+        Assert.Equal(["one", "two"], runs.Select(r => (string?)r["args"]![0]));
+    }
+
+    /// <summary><c>BAYAN_SNAPSHOT_FILES</c> entries are trimmed, and one matching no compiled source throws naming it.</summary>
+    [Fact]
+    public void SnapshotFilesAreTrimmedAndMustMatchACompiledSource()
+    {
+        string[] compiled = [Path.Combine(Golden.RepoRoot, "selfhost", "a.byn"), Path.Combine(Golden.RepoRoot, "selfhost", "b.byn")];
+        var none = new HashSet<string>(StringComparer.Ordinal);
+        Assert.Equal([compiled[1]], SelfhostSemanticsHarness.SnapshotSkip(compiled, none, " selfhost/a.byn , "));
+        var e = Assert.Throws<InvalidOperationException>(() => SelfhostSemanticsHarness.SnapshotSkip(compiled, none, "selfhost/a.byn,selfhost/nope.byn"));
+        Assert.Contains(Path.Combine(Golden.RepoRoot, "selfhost", "nope.byn") + " matches no compiled source", e.Message);
+    }
+
+    /// <summary>A recording whose <c>dotnet test</c> fails (here every build throws on an unknown
+    /// <c>BAYAN_SNAPSHOT_FILES</c> entry) is not a recording: <see cref="Record"/> fails on the exit code.</summary>
+    [Fact]
+    public void AFailedRecordingFailsTheRecordHelper()
+    {
+        var e = Assert.Throws<Xunit.Sdk.TrueException>(() => Record("selfhost-snapshot-failed", Filter, "selfhost/parser/nope.byn"));
+        Assert.Contains("recording exited 1", e.Message);
     }
 
     /// <summary>Runs the tests matching <paramref name="filter"/> under <c>BAYAN_SNAPSHOT=tmp/&lt;name&gt;</c> with sites only in
@@ -96,10 +165,15 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         return (dir, runs);
     }
 
-    private static (int Exit, string Text) Replay(string dir, int mutant)
+    /// <summary>Replays <paramref name="dir"/> under <c>BAYAN_MUTANT=</c><paramref name="mutant"/>, with
+    /// <c>--binary</c> <paramref name="binary"/> unless null.</summary>
+    private static (int Exit, string Text) Replay(string dir, int mutant, string? binary)
     {
         var psi = new ProcessStartInfo("python3") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (var a in new[] { "-I", Path.Combine(Golden.RepoRoot, "scripts", "selfhost", "replay.py"), dir }) psi.ArgumentList.Add(a);
+        psi.ArgumentList.Add("-I");
+        psi.ArgumentList.Add(Path.Combine(Golden.RepoRoot, "scripts", "selfhost", "replay.py"));
+        if (binary is not null) { psi.ArgumentList.Add("--binary"); psi.ArgumentList.Add(binary); }
+        psi.ArgumentList.Add(dir);
         psi.Environment["BAYAN_MUTANT"] = mutant.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return Exec(psi, TimeSpan.FromSeconds(10));
     }
@@ -119,3 +193,8 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         return (p.ExitCode, stdout.Result + stderr.Result);
     }
 }
+
+/// <summary>Runs nested <c>dotnet test</c> recordings of T13 and T5, which rewrite those classes' fixed input files,
+/// so it runs alone, after the parallel classes (spec 013 T14 review F4).</summary>
+[CollectionDefinition(nameof(SelfhostSnapshot), DisableParallelization = true)]
+public sealed class SelfhostSnapshot;
