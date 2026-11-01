@@ -74,7 +74,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T24 Ownership and lints — files: `ownership.byn` (`OwnershipAnalysis.cs`, `NeverReassignedVarLint.cs`, `SpanParameterLint.cs`, `PanicHandlerCheck.cs`), `SelfhostSemanticsT24Tests.cs` — covers: R4 — after: T4; parallel with: T6–T23, T25–T27, T34–T39 — done when:
   - move/use-after-move and the three lints are ported over bound handles; Q635–Q639 as needed.
   - Size: about 967 lines.
-- [ ] T25 Regions A — files: `region.byn` (`RegionAnalysis.cs` 1–~417: regions, borrows, loans, Stmt/Expr/Compute), `SelfhostSemanticsT25Tests.cs`, `SelfhostSemanticsT37Tests.cs` (one line, Q738) — covers: R4 — after: T4; parallel with: T6–T24, T26, T27, T34–T39 — done when:
+- [x] T25 Regions A — files: `region.byn` (`RegionAnalysis.cs` 1–~417: regions, borrows, loans, Stmt/Expr/Compute), `SelfhostSemanticsT25Tests.cs`, `SelfhostSemanticsT37Tests.cs` (one line, Q738) — covers: R4 — after: T4; parallel with: T6–T24, T26, T27, T34–T39 — done when:
   - rules 3–4 match the region diag cases; Q640–Q642 record the immutable-collection workaround.
   - Size: about 605 lines.
 - [ ] T26 CLI, typed dump and golden harness — files: `main.byn` (the modes; cap line from `Messages.DiagCapped`; footer from `Messages.BuildFailed` with `ErrorsOne`/`ErrorsMany` and `WarningsOne`/`WarningsMany`; `Messages.BuildExplain`; `Messages.CheckSummary` minus timing; `programName`), `typed.byn`, `json.byn`, `SelfhostSemanticsTests.cs` (golden and CLI theories) — covers: R1, R2, R5, L020 (check) — after: T4; parallel with: T6–T25, T27, T34–T39 — done when:
