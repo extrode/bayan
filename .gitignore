@@ -10,3 +10,4 @@ TestResults/
 *.o
 *.vsix
 .DS_Store
+__pycache__/
