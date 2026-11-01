@@ -861,6 +861,8 @@ public sealed class SelfhostSemanticsT37Tests
                 buildLexicon(ref c)
                 declare(ref c)
                 bindAll(ref c)
+                // bindAll ran the region analysis (T25); start the per-method cache afresh, as the C# side does (Q738).
+                c.changedFields.clear()
                 print($"== {args[i]}")
                 tcCase(ref c, by: args[i])
             }
