@@ -136,7 +136,7 @@ Type receiverStates(ref Binder b, through ref Ctx c, for FuncId fn) {
     let owner = c.functions[fn].owner
     if owner == -1 { return -1 }
     let states = statesOf(ref c, for: owner)
-    // mutation-exempt: Q627 through 158
+    // mutation-exempt: Q627 through 147
     if states == -1 { return -1 }
     var found = List<VariantId>()
     for n in decl.receiverStates {
@@ -192,7 +192,7 @@ List<VariantId> possibleStates(ref Ctx c, for Type t, by UnionId states) {
 }
 
 /// The index of the field named `name` in `fields`, or -1 (C# `FindIndex`).
-i64 t22FieldIndex(ref Ctx c, for in List<LocalId> fields, by string name) {
+i64 t22FieldIndex(Ctx c, for List<LocalId> fields, by string name) {
     for i in 0..fields.length {
         if c.locals[fields[i]].name == name { return i }
     }
@@ -202,8 +202,8 @@ i64 t22FieldIndex(ref Ctx c, for in List<LocalId> fields, by string name) {
 BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, from UnionId states, by TextSpan member) {
     let name = t15Text(in c, from: b.file, at: member)
     var holder: VariantId = -1
-    for v in c.unions[states].variants {
-        if t22FieldIndex(ref c, for: in c.unionVariants[v].fields, by: name) >= 0 {
+    for v in copyIds(in c.unions[states].variants) {
+        if t22FieldIndex(c, for: copyIds(in c.unionVariants[v].fields), by: name) >= 0 {
             holder = v
             break
         }
@@ -218,11 +218,11 @@ BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BE
         known = possibleStates(ref c, for: exprType(in c, for: target), by: states)
     }
     let first = copyIds(in c.unionVariants[known[0]].fields)
-    let index = t22FieldIndex(ref c, for: in first, by: name)
+    let index = t22FieldIndex(c, for: copyIds(in first), by: name)
     var same = index >= 0
     if same {
         for v in known {
-            if t22FieldIndex(ref c, for: in c.unionVariants[v].fields, by: name) != index {
+            if t22FieldIndex(c, for: copyIds(in c.unionVariants[v].fields), by: name) != index {
                 same = false
                 break
             }
@@ -366,25 +366,36 @@ void unlearnStates(ref Binder b, by in List<(i64, LocalId, Type)> learned) {
         }
     }
     var kept = List<(i64, LocalId, Type)>()
-    for f in b.stateFacts {
-        if isOpen(ref b, for: f.item1) { kept.append(f) }
+    for i in 0..b.stateFacts.length {
+        if isOpen(ref b, for: b.stateFacts[i].item1) { kept.append(b.stateFacts[i]) }
     }
     b.stateFacts = move kept
 }
 
 void learnArmState(ref Binder b, through ref Ctx c, for BExpr subject, by BPattern pattern) {
-    if (subject(ref b, through: ref c, for: subject) is { } s) {
-        let type = narrow(ref c, for: s.type, by: pattern, matched: true)
-        // mutation-exempt: Q627
-        if type != -1 { learnState(ref b, for: s.key, as: type) }
+    // C# `Subject(subject)`, inlined: the parameter hides the function (Q628).
+    var key: LocalId = -1
+    var type: Type = -1
+    switch boundKind(subject) {
+        case .local:
+            key = c.bLocals[boundIndex(subject)].local
+            type = exprType(in c, for: subject)
+        case .thisRef:
+            key = t15ThisFacts(ref b, through: ref c)
+            let own = t22ThisStates(ref b, through: ref c)
+            type = own != -1 ? own : exprType(in c, for: subject)
+        default: return
     }
+    let narrowed = narrow(ref c, for: type, by: pattern, matched: true)
+    // mutation-exempt: Q627
+    if narrowed != -1 { learnState(ref b, for: key, as: narrowed) }
 }
 
 /// C# `Narrow` (BinderStates.cs:276); -1 for null.
 Type narrow(ref Ctx c, for Type type, by BPattern pattern, bool matched) {
     if kindOf(type) == .optional { return -1 }
     let states = statesUnion(ref c, for: type)
-    // mutation-exempt: Q627 through 395
+    // mutation-exempt: Q627 through 447
     if states == -1 { return -1 }
     let possible = possibleStates(ref c, for: type, by: states)
     // A match proves the tag even when a payload subpattern also had to hold; a failed match proves it only for a bare tag test.
@@ -445,7 +456,7 @@ void learnBecomes(ref Binder b, through ref Ctx c, for BExpr e) {
     let owner = c.functions[fn].owner
     if !c.functions[fn].isMutating || owner == -1 { return }
     let decl = t22DeclFacts(ref c, for: fn)
-    // mutation-exempt: Q627 through 418
+    // mutation-exempt: Q627 through 474
     if (decl.becomes is { } to) {
         if c.functions[fn].hasFails && !isTry { return }
         let states = statesOf(ref c, for: owner)

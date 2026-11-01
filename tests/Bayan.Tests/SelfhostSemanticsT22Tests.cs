@@ -432,7 +432,23 @@ public sealed class SelfhostSemanticsT22Tests
             if t == -1 { print("null") } else { print(typeDisplay(ref c, by: t)) }
         }
 
-        void runInit(ref Binder b, through ref Ctx c, for in parser.LocalDecl ld, by string op, at string name, from string specA, to string specB, as FuncId pay, TextSpan payBecomes) {
+        /// One case's arguments: the generated main's helpers take them as one value, since particles are a closed set.
+        struct T22mCase {
+            string op
+            string name
+            string specA
+            string specB
+            FuncId pay
+            TextSpan payBecomes
+        }
+
+        void runInit(ref Binder b, through ref Ctx c, for in parser.LocalDecl ld, by in T22mCase k) {
+            let op = k.op
+            let name = k.name
+            let specA = k.specA
+            let specB = k.specB
+            let pay = k.pay
+            let payBecomes = k.payBecomes
             let states = typeIndex(c.modules[c.entryModule].types["OrderStates"])
             let order = c.modules[c.entryModule].types["Order"]
             let span = parser.exprSpan(in ld.init)
@@ -581,13 +597,13 @@ public sealed class SelfhostSemanticsT22Tests
             }
         }
 
-        void runBody(ref Binder b, through ref Ctx c, for in parser.Stmt body, by string op, at string name, from string specA, to string specB, as FuncId pay, TextSpan payBecomes) {
+        void runBody(ref Binder b, through ref Ctx c, for in parser.Stmt body, by in T22mCase k) {
             switch body {
                 case .blockStmt(let blk):
                     for s in blk.value.statements {
                         switch s {
                             case .localDecl(let ld):
-                                if t15Text(in c, from: b.file, at: ld.value.name) == name { runInit(ref b, through: ref c, for: in ld.value, by: op, at: name, from: specA, to: specB, as: pay, payBecomes: payBecomes) }
+                                if t15Text(in c, from: b.file, at: ld.value.name) == k.name { runInit(ref b, through: ref c, for: in ld.value, by: in k) }
                             default: {}
                         }
                     }
@@ -595,7 +611,7 @@ public sealed class SelfhostSemanticsT22Tests
             }
         }
 
-        void runCase(ref Ctx c, for string op, from string decl, at string member, by string name, as string specA, string specB) {
+        void runCase(ref Ctx c, for string op, from string decl, at string member, by string name, as in List<string> specs) {
             let file = c.modules[c.entryModule].files[0]
             var b = Binder {
                 file: file,
@@ -635,6 +651,7 @@ public sealed class SelfhostSemanticsT22Tests
                     default: {}
                 }
             }
+            let k = T22mCase { op: op, name: name, specA: specs[0], specB: specs[1], pay: pay, payBecomes: payBecomes }
             let start = c.diagnostics.length
             for i in 0..c.files[file].unit.members.length {
                 switch c.files[file].unit.members[i] {
@@ -644,7 +661,7 @@ public sealed class SelfhostSemanticsT22Tests
                                 let t = resolveType(ref b, through: ref c, for: in p.type)
                                 let _ = declareLocal(ref b, through: ref c, at: p.name, as: t, for: .parameter)
                             }
-                            runBody(ref b, through: ref c, for: in fd.value.body, by: op, at: name, from: specA, to: specB, as: pay, payBecomes: payBecomes)
+                            runBody(ref b, through: ref c, for: in fd.value.body, by: in k)
                         }
                     case .structDecl(let sd):
                         if member != "-" && t15Text(in c, from: file, at: sd.value.name) == decl {
@@ -657,7 +674,7 @@ public sealed class SelfhostSemanticsT22Tests
                                             }
                                             b.owner = owner
                                             b.thisType = c.modules[c.entryModule].types[decl]
-                                            runBody(ref b, through: ref c, for: in fd.value.body, by: op, at: name, from: specA, to: specB, as: pay, payBecomes: payBecomes)
+                                            runBody(ref b, through: ref c, for: in fd.value.body, by: in k)
                                         }
                                     default: {}
                                 }
@@ -689,7 +706,10 @@ public sealed class SelfhostSemanticsT22Tests
                 buildLexicon(ref c)
                 declare(ref c)
                 print($"== {args[i]}.{args[i + 1]}.{args[i + 2]}.{args[i + 3]}")
-                runCase(ref c, for: args[i], from: args[i + 1], at: args[i + 2], by: args[i + 3], as: args[i + 4], specB: args[i + 5])
+                var specs = List<string>()
+                specs.append(args[i + 4])
+                specs.append(args[i + 5])
+                runCase(ref c, for: args[i], from: args[i + 1], at: args[i + 2], by: args[i + 3], as: in specs)
                 i += 6
             }
             return 0
