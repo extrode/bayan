@@ -29,7 +29,9 @@ public sealed class CoverageTests
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
             RedirectStandardError = true,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
         };
         if (work is not null) psi.WorkingDirectory = work;
@@ -42,8 +44,8 @@ public sealed class CoverageTests
         if (input is not null && File.Exists(Path.ChangeExtension(input, ".stdin")))
             p.StandardInput.BaseStream.Write(File.ReadAllBytes(Path.ChangeExtension(input, ".stdin")));
         p.StandardInput.Close();
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         if (!p.WaitForExit(120_000))
         {
             p.Kill();

@@ -39,11 +39,11 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
 
     private static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         p.WaitForExit();
         return (p.ExitCode, stdout.Result, stderr.Result);
     }
@@ -54,12 +54,12 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     /// <summary><see cref="RunBytes(string, string[])"/> with <paramref name="input"/> fed to stdin.</summary>
     private static (int Exit, byte[] Out, string Err) RunBytes(string program, byte[]? input, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = new MemoryStream();
         var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         if (input is not null)
         {
             p.StandardInput.BaseStream.Write(input);
@@ -274,12 +274,12 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         // sequential: concurrent Process.Start calls leak stdin pipe ends into each other's children, which then never see EOF
         Parallel.For(0, inputs.Length, new ParallelOptions { MaxDegreeOfParallelism = 1 }, i =>
         {
-            var psi = new ProcessStartInfo(built) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            var psi = new ProcessStartInfo(built) { RedirectStandardInput = true, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
             psi.ArgumentList.Add("--json");
             using var p = Process.Start(psi)!;
             var stdout = new MemoryStream();
             var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
-            var stderr = p.StandardError.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndLfAsync();
             try
             {
                 p.StandardInput.BaseStream.Write(inputs[i]);
