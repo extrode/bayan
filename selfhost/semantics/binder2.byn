@@ -44,7 +44,7 @@ i32 bindExitCode(ref Binder b, through ref Ctx c, for in parser.AttributeSyntax 
     let vType = exprType(in c, for: value)
     if isError(vType) { return 1 }
     let vConst = exprConstant(in c, for: value)
-    let valSpan = t15ExprSpan(in a.args[0].value)
+    let valSpan = parser.exprSpan(in a.args[0].value)
     if !isInteger(vType) || vConst is null {
         report(ref b, through: ref c, for: .invalidExitCode, at: valSpan, by: ("", "", "", "", ""))
         return 1
@@ -85,7 +85,120 @@ BStmt bindBody(ref Binder b, through ref Ctx c, for in parser.Stmt body) {
     }
 }
 
+/// The C# `Compilation.MutationOperators`: the operator names `@unobservable(<op>)` accepts (revision 0014 §3).
+const t28MutationOperators: string[11] = ["boundary", "relational", "logical", "condition", "bool", "arithmetic", "literal", "negation", "statement", "emptyReturn", "variant"]
+
+/// Records an `@unobservable` mark (R7). A statement is bound more than once (first pass, generic instances); the
+/// compilation keeps one mark per statement and operator. `stmt` is the C# `stmt.Span`.
+void bindUnobservable(ref Binder b, through ref Ctx c, at TextSpan stmt, for in parser.AttributeSyntax attribute) {
+    if t15Text(in c, from: b.file, at: attribute.name) != "unobservable" { return }
+    var op: string? = null
+    if attribute.args.length > 0 {
+        let span = parser.exprSpan(in attribute.args[0].value)
+        switch attribute.args[0].value {
+            case .nameExpr(let n):
+                op = t15Text(in c, from: b.file, at: n.value.name)
+            default:
+                op = t15Text(in c, from: b.file, at: span)
+        }
+        let text = op ?? ""
+        var known = false
+        for o in t28MutationOperators {
+            if o == text { known = true }
+        }
+        if !known {
+            var help = StrBuf()
+            help.append("use one of ")
+            for i in 0..t28MutationOperators.length {
+                if i > 0 { help.append(", ") }
+                help.append($"`{t28MutationOperators[i]}`")
+            }
+            help.append(", or no argument for all")
+            report(ref b, through: ref c, for: .unknownMutationOperator, at: span, by: (text, "", "", "", ""), label: "not an operator",
+                help: $"{help.finish()}")
+            return
+        }
+    }
+    var reason = ""
+    if (attribute.becauseKeyword is { } r) { reason = r.reason }
+    t28AddUnobservable(ref c, by: UnobservableMark { file: c.files[b.file].path, span: stmt, op: op, reason: reason })
+}
+
+/// C# `UnobservableMark`: one `@unobservable` mark; `op` null means every operator.
+struct UnobservableMark {
+    string file
+    TextSpan span
+    string? op
+    string reason
+}
+
+/// The C# `Compilation.AddUnobservable`: keeps the first mark per file, span and operator (`*` keys a null operator,
+/// which no operator name spells).
+void t28AddUnobservable(ref Ctx c, by UnobservableMark mark) {
+    let key = $"{mark.file}|{mark.span.start}|{mark.span.length}|{mark.op ?? "*"}"
+    if c.unobservableSeen.contains(key) { return }
+    c.unobservableSeen[key] = 1
+    c.unobservable.append(mark)
+}
+
+/// The C# `foreach (var attribute in stmt.Attributes) BindUnobservable(stmt, attribute)`, one arm per variant.
+void t28BindUnobservables(ref Binder b, through ref Ctx c, for in parser.Stmt stmt) {
+    switch stmt {
+        case .blockStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .localDecl(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .exprStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .assignStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .incDecStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .returnStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .failStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .breakStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .continueStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .becomeStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .ifStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .unlessStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .guardedStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .whileStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .doWhileStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .whileLetStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .forStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .labeledStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .switchStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .deferStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .assertStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .contextStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .emptyStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .errorStmt(let n):
+            for a in n.value.attributes { bindUnobservable(ref b, through: ref c, at: n.value.span, for: in a) }
+        case .none:
+            return
+    }
+}
+
 BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, JumpTarget? labelTarget = null) {
+    t28BindUnobservables(ref b, through: ref c, for: in stmt)
     switch stmt {
         case .blockStmt(let blk):
             return bindBlock(ref b, through: ref c, for: in blk.value)
@@ -239,7 +352,7 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
 }
 
 BExpr negate(ref Ctx c, from in parser.Expr syntax, by BExpr cond) {
-    let span = t15ExprSpan(in syntax)
+    let span = parser.exprSpan(in syntax)
     if (exprConstant(in c, for: cond) is { } k) {
         if k.kind == .flag {
             let lit = addLiteral(ref c, from: BLiteral {
@@ -272,10 +385,10 @@ BStmt bindAssert(ref Binder b, through ref Ctx c, for in parser.AssertStmt a) {
     let condition = bindExpr(ref b, through: ref c, for: in a.condition, to: prim(.bool))
     let condType = exprType(in c, for: condition)
     if isError(condType) || implicit(ref c, from: condType, to: prim(.bool)) is not null {
-        let conv = convert(ref b, through: ref c, for: condition, to: prim(.bool), at: t15ExprSpan(in a.condition))
+        let conv = convert(ref b, through: ref c, for: condition, to: prim(.bool), at: parser.exprSpan(in a.condition))
         return addAssert(ref c, from: BAssert { span: a.span, condition: conv, failsWith: -1, failsCase: -1 })
     }
-    report(ref b, through: ref c, for: .assertNotBool, at: t15ExprSpan(in a.condition), by: (typeDisplay(ref c, by: condType), "", "", "", ""),
+    report(ref b, through: ref c, for: .assertNotBool, at: parser.exprSpan(in a.condition), by: (typeDisplay(ref c, by: condType), "", "", "", ""),
         label: "this is not a `bool`", help: "check the value against what you expect, e.g. `assert count == 3`")
     return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
 }
@@ -302,7 +415,7 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
     let operand = t16BindAssertOperand(ref b, through: ref c, for: in a.condition, from: in a.condition)
     if boundKind(operand) != .call || !c.functions[c.bCalls[boundIndex(operand)].function].hasFails {
         if !isError(exprType(in c, for: operand)) {
-            report(ref b, through: ref c, for: .nothingToHandle, at: t15ExprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
+            report(ref b, through: ref c, for: .nothingToHandle, at: parser.exprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
         }
         return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
     } // mutation-exempt: Q599 through 357 (reached only after T20's bindCall binds a call)
@@ -315,10 +428,10 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
         case .memberExpr(let m):
             boundSet = bindExprOrType(ref b, through: ref c, for: in m.value.target)
             caseName = m.value.member
-            setSpan = t15ExprSpan(in m.value.target)
+            setSpan = parser.exprSpan(in m.value.target)
         default:
             boundSet = bindExprOrType(ref b, through: ref c, for: in a.failsKeyword)
-            setSpan = t15ExprSpan(in a.failsKeyword)
+            setSpan = parser.exprSpan(in a.failsKeyword)
     }
     if boundKind(boundSet) != .typeRef || kindOf(c.bTypeRefs[boundIndex(boundSet)].referenced) != .errorSet {
         report(ref b, through: ref c, for: .patternMismatch, at: setSpan,
@@ -330,7 +443,7 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
     if (caseName is { } cn) {
         variant = findErrorVariant(ref c, by: set, for: t15Text(in c, from: b.file, at: cn))
         if variant == -1 {
-            let failsSpan = t15ExprSpan(in a.failsKeyword)
+            let failsSpan = parser.exprSpan(in a.failsKeyword)
             var names = List<string>()
             for v in c.errorSets[set].variants { names.append(c.errorVariants[v].name) }
             let close = suggest(t15Text(in c, from: b.file, at: cn), by: in names)
@@ -539,7 +652,7 @@ BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) 
         type = declared
     } else if init != -1 { // mutation-exempt: Q599 through 542 (init is -1 until T22 ports built)
         type = defaultType(ref b, through: ref c, for: init, from: in d.init)
-        init = convert(ref b, through: ref c, for: init, to: type, at: t15ExprSpan(in d.init))
+        init = convert(ref b, through: ref c, for: init, to: type, at: parser.exprSpan(in d.init))
     } else {
         type = errorType()
     }
@@ -553,7 +666,7 @@ BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) 
     let kind: LocalKind = d.kind == .letKeyword ? .letKeyword : (d.kind == .constKeyword ? .constKeyword : .varKeyword)
     let uniqueConst = d.kind == .constKeyword && checkUniqueConst(ref b, through: ref c, for: in d, as: type)
     if d.kind == .constKeyword && !uniqueConst && init != -1 && exprConstant(in c, for: init) is null && !isError(exprType(in c, for: init)) {
-        report(ref b, through: ref c, for: .notConstant, at: t15ExprSpan(in d.init), by: ("a `const`", "", "", "", ""))
+        report(ref b, through: ref c, for: .notConstant, at: parser.exprSpan(in d.init), by: ("a `const`", "", "", "", ""))
     }
     if d.usingKeyword {
         checkDisposable(ref b, through: ref c, for: in d, as: type)
@@ -597,12 +710,12 @@ void checkDisposable(ref Binder b, through ref Ctx c, for in parser.LocalDecl d,
 Type defaultType(ref Binder b, through ref Ctx c, for BExpr init, from in parser.Expr syntax) {
     let t = exprType(in c, for: init)
     if kindOf(t) == .nullType {
-        report(ref b, through: ref c, for: .cannotInferType, at: t15ExprSpan(in syntax), by: ("null", "", "", "", ""),
+        report(ref b, through: ref c, for: .cannotInferType, at: parser.exprSpan(in syntax), by: ("null", "", "", "", ""),
             help: "write the type: `i64? x = null`")
         return errorType()
     }
     if isVoid(t) {
-        report(ref b, through: ref c, for: .voidValue, at: t15ExprSpan(in syntax), by: ("", "", "", "", ""))
+        report(ref b, through: ref c, for: .voidValue, at: parser.exprSpan(in syntax), by: ("", "", "", "", ""))
         return errorType()
     }
     if isNever(t) {
@@ -617,7 +730,7 @@ BStmt bindWhileLet(ref Binder b, through ref Ctx c, for in parser.WhileLetStmt w
     let value = bindExpr(ref b, through: ref c, for: in w.value)
     let valType = exprType(in c, for: value)
     if kindOf(valType) != .optional && !isError(valType) {
-        report(ref b, through: ref c, for: .whileLetNotOptional, at: t15ExprSpan(in w.value), by: (typeDisplay(ref c, by: valType), "", "", "", ""),
+        report(ref b, through: ref c, for: .whileLetNotOptional, at: parser.exprSpan(in w.value), by: (typeDisplay(ref c, by: valType), "", "", "", ""),
             help: $"loop with `while` and a condition, or bind it once: `let {t15Text(in c, from: b.file, at: w.variable)} = …`")
     }
     let cond = addIs(ref c, from: BIs {
@@ -746,12 +859,12 @@ BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpT
     // A writable `dyn ref` element borrows the array or list slot, so the loop mutates the iterable; a temporary is the loop's own.
     let writableRef = kindOf(element) == .dynRef && !c.dynRefTypes[typeIndex(element)].readOnly
     if writableRef && (kindOf(itType) == .list || kindOf(itType) == .array) && isBorrowedPlace(ref c, for: iterable) {
-        let _ = checkWritable(ref b, through: ref c, for: iterable, at: t15ExprSpan(in f.iterable),
+        let _ = checkWritable(ref b, through: ref c, for: iterable, at: parser.exprSpan(in f.iterable),
             by: $"it is borrowed element by element as `{typeDisplay(ref c, by: element)}`")
     }
     // Through a `ReadOnlySpan` it would write elements the span may not change.
     if writableRef && kindOf(itType) == .span && c.spanTypes[typeIndex(itType)].readOnly {
-        report(ref b, through: ref c, for: .mutateTemporary, at: t15ExprSpan(in f.iterable), by: ("", "", "", "", ""),
+        report(ref b, through: ref c, for: .mutateTemporary, at: parser.exprSpan(in f.iterable), by: ("", "", "", "", ""),
             label: "a `ReadOnlySpan` cannot be written through")
     }
     let variable = declareLocal(ref b, through: ref c, at: f.variable, as: element, for: f.kind == .varKeyword ? .varKeyword : .forVariable)

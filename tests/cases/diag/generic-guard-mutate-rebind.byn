@@ -1,0 +1,35 @@
+struct Bag {
+    List<i64> items
+
+    public i64 grow(ref this) uses alloc {
+        this.items.append(1)
+        return this.items.length
+    }
+}
+
+union Slot {
+    full(Bag b)
+    empty
+}
+
+i64 pick<T>(move Slot s, T v) uses alloc, console {
+    switch move s {
+        case .full(var x) when x.grow() > 5:
+            print("call")
+        default:
+    }
+    return 0
+}
+
+void usePick() uses alloc, console {
+    let _ = pick(Slot.empty, 1)
+}
+
+void take(u8 x) {}
+
+void rebound() {
+    let k = Bag { items: List<i64>() }
+    var v = 5
+    let _ = k.grow()
+    take(v)
+}

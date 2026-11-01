@@ -6,14 +6,14 @@
 //
 //     bayan-check [--ascii] [--color <when>] [<check options>] [--spans] <path>
 //                                    as `bayan check <path>` (R1); `--spans` also prints a
-//                                    `span out of range:` line per diagnostic span outside its file (L020)
+//                                    `span out of range:` line per diagnostic span outside its file (L023)
 //     bayan-check [--ascii] [--color <when>] --types [<check options>] <path>
 //                                    as `bayan types <path>` (R2)
 //     bayan-check --golden [--tests] [--include-path] [--spans] --package <dir> <file>
 //                                    `<file>` compiled alone with `<dir>` as package root, as `DiagTests`
 //                                    does, and its diagnostics rendered uncapped to stdout; exit 0
 //     bayan-check --many <dir>       `== <name>` and, for every `*.byn` in `<dir>` in name order, its
-//                                    `--golden --package <dir>` output and `--spans` lines (corpora, L020)
+//                                    `--golden --package <dir>` output and `--spans` lines (corpora, L023)
 //     bayan-check --time <path>      the nanoseconds `check` spends parsing and checking `<path>`, and
 //                                    `parse … check …` on stderr (R7)
 //     bayan-check --codes            `code\tmessage` for every `SemaCode`, in `DiagnosticCodes.cs` order
@@ -269,7 +269,7 @@ i32 t26Failed(in T26Options o, from in List<T26Reported> reported, by in T26Symb
     return exitFailure
 }
 
-/// L020's check (Bayan only): a `span out of range:` line for each diagnostic, related or fix span that
+/// L023's check (Bayan only): a `span out of range:` line for each diagnostic, related or fix span that
 /// does not lie within its file.
 void t26CheckSpans(ref Ctx c) {
     for d in c.diagnostics {

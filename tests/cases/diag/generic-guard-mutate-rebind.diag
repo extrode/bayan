@@ -1,0 +1,47 @@
+error BYN5004: `pick` has 2 unlabeled parameters; give each but one a particle
+
+  15 │ i64 pick<T>(move Slot s, T v) uses alloc, console {
+     │     ^^^^ 2 unlabeled parameters
+     │
+  help: keep one unlabeled parameter, the object
+
+error BYN5006: `v` is a required parameter besides the object and needs a particle
+
+  15 │ i64 pick<T>(move Slot s, T v) uses alloc, console {
+     │                            ^ needs a particle
+     │
+  help: label it with `from`, `to`, `until`, `through`, `at`, `by`, `for` or `as`
+
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
+back
+
+  17 │         case .full(var x) when x.grow() > 5:
+     │                                ^ `grow` modifies it
+     │
+  help: read it in the guard and change it in the arm's body
+
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
+back
+
+  17 │         case .full(var x) when x.grow() > 5:
+     │                                ^ `grow` modifies it
+     │
+  help: read it in the guard and change it in the arm's body
+
+warning BYN2311: `v` is never reassigned; declare it with `let`
+
+  32 │     var v = 5
+     │         ^
+     │
+  help: declare it with `let` to tell the reader the value never changes
+     │ 32 │     let v = 5
+     │    │     +++
+
+error BYN2104: `k` is immutable
+
+  33 │     let _ = k.grow()
+     │             ^ `grow` modifies it; declared with `let` on line 31
+     │
+  help: declare it with `var` if it should change
+     │ 31 │     var k = Bag { items: List<i64>() }
+     │    │     +++

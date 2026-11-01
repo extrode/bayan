@@ -303,8 +303,12 @@ void t20Unhandled(ref Binder b, through ref Ctx c, at TextSpan span, by string n
 }
 
 /// BinderCalls.cs:182 BindArgumentsForRecovery.
-void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
-    for a in call.args {
+void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.CallExpr call) =>
+    bindArgumentListForRecovery(ref b, through: ref c, for: in call.args)
+
+/// C# `BindArgumentsForRecovery` on the arguments `args` alone (Q656).
+void bindArgumentListForRecovery(ref Binder b, through ref Ctx c, for in List<parser.Argument> args) {
+    for a in args {
         // A lambda or `it` argument has no type to bind with once the call failed.
         if t20IsLambda(a.value) || t20IsInterpolated(a.value) || t20MentionedIt(c, from: b.file, for: a.value) is not null { continue }
         if b.prebound.remove(a.span.start) { continue }
@@ -381,8 +385,10 @@ BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr c
     // A `ref this` call on `map[key]` changes the stored value in place.
     // mutation-exempt: Q616
     if recv != -1 && c.functions[target].isMutating { recv = mapWriteTarget(ref c, for: recv) }
-    // C# `_c.MutationChecks.Add(new MutationCheck(this, fn, receiver))` when `fn.HasThis` and the receiver is not a `dyn ref`:
-    // blocked until T28 designs a binder-free `MutationCheck` (Q582, Q730).
+    // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
+    if recv != -1 && functionHasThis(ref c, by: target) && kindOf(exprType(in c, for: recv)) != .dynRef {
+        c.mutationChecks.append(MutationCheck { source: b.file, function: host(b, through: c), callee: target, receiver: recv })
+    }
     var anyConstant = false
     for a in args {
         if exprConstant(in c, for: a) is not null { anyConstant = true }
@@ -592,7 +598,12 @@ bool t20Unify(ref Binder b, through ref Ctx c, for Type p, as Type a, by ref Map
 }
 
 /// BinderCalls.cs:366 BindArguments.
-List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") {
+List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") =>
+    bindArgumentList(ref b, through: ref c, for: in call.args, at: call.span, by: in ps, as: fn, enforceNames: enforceNames, displayName: displayName)
+
+/// C# `BindArguments` on the arguments `args` of a call spanning `span`: `bindArguments` reads nothing else of its `CallExpr`, and
+/// `bindBecome` has no `CallExpr` to pass (C# builds one around `b.Args`, BinderStates.cs:14; Q656).
+List<BExpr> bindArgumentList(ref Binder b, through ref Ctx c, for in List<parser.Argument> args, at TextSpan span, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") {
     let name = displayName != "" ? displayName : fn != -1 ? c.functions[fn].name : "?"
     // An instantiation follows its template's rule, so a `T` parameter is not a `bool` one at `T = bool`.
     let template = fn != -1 ? c.functions[fn].template : -1
@@ -612,14 +623,14 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
         if rest == -1 && (t20Param(c, for: x).syntax is { } s) && s.isRest && kindOf(c.locals[x].type) == .span { rest = x }
     }
     var tail = List<i64>()
-    for ai in 0..call.args.length {
-        let argSpan = call.args[ai].span
+    for ai in 0..args.length {
+        let argSpan = args[ai].span
         var p: LocalId = -1
-        if call.args[ai].name is null && rest != -1 && positional >= c.locals[rest].ordinal {
+        if args[ai].name is null && rest != -1 && positional >= c.locals[rest].ordinal {
             tail.append(ai)
             continue
         }
-        if (call.args[ai].name is { } n) {
+        if (args[ai].name is { } n) {
             sawNamed = true
             let text = t15Text(in c, from: b.file, at: n)
             for x in ps {
@@ -631,20 +642,20 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
                 let s = suggest(text, by: in labels)
                 report(ref b, through: ref c, for: .unknownParameter, at: n, by: (name, text, "", "", ""),
                     help: (s is { } h) ? $"did you mean `{h}`?" : "", hasFix: s is not null, fixSpan: s is not null ? n : null, fixReplacement: s ?? "")
-                let _ = t20BindArgumentValue(ref b, through: ref c, for: call.args[ai], as: -1)
+                let _ = t20BindArgumentValue(ref b, through: ref c, for: args[ai], as: -1)
                 mismatched = true
                 continue
             }
         } else {
             if sawNamed {
                 report(ref b, through: ref c, for: .positionalAfterNamed, at: argSpan, by: ("", "", "", "", ""))
-                let _ = t20BindArgumentValue(ref b, through: ref c, for: call.args[ai], as: -1)
+                let _ = t20BindArgumentValue(ref b, through: ref c, for: args[ai], as: -1)
                 mismatched = true
                 continue
             }
             if positional >= ps.length {
                 report(ref b, through: ref c, for: .tooManyArguments, at: argSpan, by: (name, $"{ps.length}", "", "", ""))
-                let _ = t20BindArgumentValue(ref b, through: ref c, for: call.args[ai], as: -1)
+                let _ = t20BindArgumentValue(ref b, through: ref c, for: args[ai], as: -1)
                 positional += 1
                 continue
             }
@@ -657,8 +668,8 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
                 let particle = param.label
                 report(ref b, through: ref c, for: .argumentNeedsParticle, at: argSpan, by: (pname, particle, "", "", ""), label: $"needs `{particle}:`",
                     help: $"add `{particle}:` before the argument", hasFix: true, fixSpan: TextSpan { start: argSpan.start, length: 0 }, fixReplacement: $"{particle}: ")
-            } else if enforceNames && isBool(c.locals[rule[c.locals[p].ordinal]].type) && t20ImpliedName(c, from: b.file, for: call.args[ai].value) != pname {
-                report(ref b, through: ref c, for: .argumentMustBeNamed, at: parser.exprSpan(in call.args[ai].value), by: (pname, "", "", "", ""),
+            } else if enforceNames && isBool(c.locals[rule[c.locals[p].ordinal]].type) && t20ImpliedName(c, from: b.file, for: args[ai].value) != pname {
+                report(ref b, through: ref c, for: .argumentMustBeNamed, at: parser.exprSpan(in args[ai].value), by: (pname, "", "", "", ""),
                     help: $"write `{pname}: …`; a `bool` argument says nothing at the call site",
                     hasFix: true, fixSpan: TextSpan { start: argSpan.start, length: 0 }, fixReplacement: $"{pname}: ")
             }
@@ -669,11 +680,11 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
             let _ = b.prebound.remove(argSpan.start)
             continue
         }
-        result[o] = t20BindArgument(ref b, through: ref c, for: call.args[ai], by: p, as: name)
+        result[o] = t20BindArgument(ref b, through: ref c, for: args[ai], by: p, as: name)
         given[o] = true
     }
     if rest != -1 && !given[c.locals[rest].ordinal] {
-        result[c.locals[rest].ordinal] = t20BindRestTail(ref b, through: ref c, for: call, by: rest, from: tail)
+        result[c.locals[rest].ordinal] = t20BindRestTail(ref b, through: ref c, for: in args, at: span, by: rest, from: tail)
         given[c.locals[rest].ordinal] = true
     }
     var missing = List<string>()
@@ -681,24 +692,24 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
         if given[i] { continue }
         let p = ps[i]
         if (t20Param(c, for: p).syntax is { } x) && x.hasDefault && fn != -1 {
-            result[i] = parameterDefault(ref c, for: fn, by: p) ?? addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+            result[i] = parameterDefault(ref c, for: fn, by: p) ?? addErrorExpr(ref c, from: BErrorExpr { span: span })
             continue
         }
         if fn != -1 && c.functions[fn].builtin == .log && c.locals[p].ordinal == 1 {
             let info = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "LogLevel")), for: "info")
-            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: info })
+            result[i] = addEnumMember(ref c, from: BEnumMember { span: span, member: info })
             continue
         }
         if fn != -1 && c.functions[fn].builtin == .print && c.locals[p].ordinal == 1 {
             let stdout = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Stream")), for: "stdout")
-            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: stdout })
+            result[i] = addEnumMember(ref c, from: BEnumMember { span: span, member: stdout })
             continue
         }
         missing.append(label(ref c, for: p))
-        result[i] = addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        result[i] = addErrorExpr(ref c, from: BErrorExpr { span: span })
     }
     if missing.length > 0 && !mismatched {
-        report(ref b, through: ref c, for: .missingArgument, at: call.span, by: (missing.joined(by: "`, `"), name, "", "", ""))
+        report(ref b, through: ref c, for: .missingArgument, at: span, by: (missing.joined(by: "`, `"), name, "", "", ""))
     }
     return result
 }
@@ -706,10 +717,10 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
 /// BinderCalls.cs:467 BindRestTail: the arguments of a `rest` tail (indexes into `call.args`) as a span literal, which
 /// lowers to stack slots in the caller (J62). A lone `..x` passes the span of collection `x`; on anything else it stays a
 /// range (J63).
-BExpr t20BindRestTail(ref Binder b, through ref Ctx c, for parser.CallExpr call, by LocalId p, from List<i64> tail) {
+BExpr t20BindRestTail(ref Binder b, through ref Ctx c, for in List<parser.Argument> args, at TextSpan span, by LocalId p, from List<i64> tail) {
     let type = c.locals[p].type
-    if tail.length == 1 && call.args[tail[0]].name is null && call.args[tail[0]].modifier == .none {
-        switch call.args[tail[0]].value {
+    if tail.length == 1 && args[tail[0]].name is null && args[tail[0]].modifier == .none {
+        switch args[tail[0]].value {
             case .rangeExpr(let range):
                 if range.value.start is .none && range.value.end is not .none && !range.value.inclusive {
                     let collection = bindExpr(ref b, through: ref c, for: in range.value.end)
@@ -727,8 +738,8 @@ BExpr t20BindRestTail(ref Binder b, through ref Ctx c, for parser.CallExpr call,
     }
     let element = c.spanTypes[typeIndex(type)].element
     var elements = List<BExpr>()
-    for i in tail { elements.append(t20BindArgumentValue(ref b, through: ref c, for: call.args[i], as: element)) }
-    return addCollection(ref c, from: BCollection { span: call.span, type: type, elements: move elements })
+    for i in tail { elements.append(t20BindArgumentValue(ref b, through: ref c, for: args[i], as: element)) }
+    return addCollection(ref c, from: BCollection { span: span, type: type, elements: move elements })
 }
 
 /// C# `p.Syntax` with `Label(p)`: read from the declaration of the function whose parameter `p` is (Q713); a parameter

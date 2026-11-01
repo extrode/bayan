@@ -2,6 +2,11 @@
 
 import parser
 
+type T28MemberExpr = parser.MemberExpr
+type T28CallExpr = parser.CallExpr
+type T28TryExpr = parser.TryExpr
+type T28ParenExpr = parser.ParenExpr
+
 // ── Binder.cs:987 UserElement ───────────────────────────────────────────────────
 
 /// The `Item` of a struct conforming to `IIndexable` (preferred) or `IEnumerator`, with how the loop walks it in
@@ -24,8 +29,10 @@ Type userElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
             }
         }
         if constraint == -1 { return -1 }
-        // C# `_c.MutationChecks.Add(new MutationCheck(this, constraint.FindMethods("moveNext").First(), iterable))` when the
-        // constraint is `IEnumerator` and the iterable is a place: blocked until T28 designs a binder-free `MutationCheck` (Q582, Q730, Q679).
+        let k = boundKind(iterable)
+        if constraint == iEnumerator && (k == .local || k == .thisRef || k == .field || k == .tupleElement || k == .index) {
+            c.mutationChecks.append(MutationCheck { source: b.file, function: host(b, through: c), callee: findInterfaceMethods(ref c, by: constraint, for: "moveNext")[0], receiver: iterable })
+        }
         return typeParamTypeOf(associatedType(ref c, for: tp, by: "Item"))
     }
     if kindOf(itType) != .structType { return -1 }
@@ -62,8 +69,7 @@ Type userElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
     if !indexable {
         let k = boundKind(iterable)
         if k == .local || k == .thisRef || k == .field || k == .tupleElement || k == .index {
-            // C# `_c.MutationChecks.Add(new MutationCheck(this, advance, iterable))`: blocked until T28 designs a
-            // binder-free `MutationCheck` (Q582, Q730, Q679).
+            c.mutationChecks.append(MutationCheck { source: b.file, function: host(b, through: c), callee: advance, receiver: iterable })
         } else {
             let span = parser.exprSpan(in f.iterable)
             spill = newLocal(ref c, by: LocalSymbol { name: $"enumerator_{b.nextLocalId}", nameSpan: span, span: span, type: itType, kind: .varKeyword, id: b.nextLocalId })
@@ -138,7 +144,6 @@ BStmt bindForBody(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by L
 
 // ── Binder.cs:1078 BindForTry ───────────────────────────────────────────────────
 
-// stub: T36 ports Binder.cs:1078 BindForTry (blocked: Q679; the not-iterable branch is ported, the stepping branch is not)
 /// `for try x in e { … }` over a value whose `next()` returns `T?` and fails: the loop owns the value (or borrows a
 /// `var` in place) and runs `while (try seq.next() is { } x) { … }`, so a failing step propagates like any `try`.
 BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BExpr iterable, to JumpTarget target) {
@@ -157,11 +162,66 @@ BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
         popScope(ref b)
         return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
     }
-    // Blocked (Q679): Binder.cs:1090-1100 binds `try <sequence N>.next()` built from synthetic `Name`s (`<sequence N>`, `next`);
-    // a Bayan name is a `TextSpan` read back as source text, so the step, the loop variable and the body are not bound.
-    // The scope `bindFor` pushed closes where the C# `PopScope` runs (Binder.cs:1101), and the loop is a `BErrorStmt`.
+    let span = parser.exprSpan(in f.iterable)
+    // A `var` (or `ref` parameter) is stepped in place, so its state advances; any other value is stepped in a hidden copy.
+    let inPlace = boundKind(iterable) == .local
+        && (localIsMutable(ref c, by: c.bLocals[boundIndex(iterable)].local) || paramIsByRef(ref c, by: c.bLocals[boundIndex(iterable)].local))
+    var sequence: LocalId = -1
+    if !inPlace {
+        sequence = declareLocal(ref b, through: ref c, at: t28SyntheticName(ref c, for: $"<sequence {b.nextLocalId}>"), as: itType, for: .temp)
+        // C# `new Location(Source, name.Span)`: the synthetic name stands at the iterable.
+        c.locals[sequence].nameSpan = span
+        c.locals[sequence].span = span
+    }
+    // f.Iterable cannot be copied out of its Owned tree (Q471), so the in-place receiver is rebuilt from its spans (Q679).
+    let sequenceName = sequence == -1 ? "" : c.locals[sequence].name
+    let receiver = sequence == -1 ? t28CloneLocalName(in f.iterable)
+        : parser.Expr.nameExpr(Owned(NameExpr { span: span, name: t28SyntheticName(ref c, for: sequenceName), typeArgs: List<parser.TypeSyntax>() }))
+    let member = parser.Expr.memberExpr(Owned(T28MemberExpr { span: span, target: move receiver, member: t28SyntheticName(ref c, for: "next"), nullConditional: false }))
+    let call = parser.Expr.callExpr(Owned(T28CallExpr { span: span, callee: move member, args: List<parser.Argument>() }))
+    let next = parser.Expr.tryExpr(Owned(T28TryExpr { span: span, operand: move call }))
+    let step = bindExpr(ref b, through: ref c, for: in next)
+    let stepType = exprType(in c, for: step)
+    if !(f.type is .none) {
+        let declared = resolveType(ref b, through: ref c, for: in f.type)
+        if !isError(declared) && !isError(unwrap(ref c, for: stepType)) && declared != unwrap(ref c, for: stepType) {
+            report(ref b, through: ref c, for: .typeMismatch, at: parser.typeSpan(in f.type),
+                by: (typeDisplay(ref c, by: unwrap(ref c, for: stepType)), typeDisplay(ref c, by: declared), "", "", ""))
+        }
+    }
+    let pattern = bindPresent(ref b, through: ref c, at: f.variable, as: stepType)
+    let body = bindForBody(ref b, through: ref c, for: in f, by: c.bPropertyPatterns[boundIndex(pattern)].designation, to: target)
     popScope(ref b)
-    return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
+    let loop = addWhile(ref c, from: BWhile {
+        span: f.span,
+        condition: addIs(ref c, from: BIs { span: f.span, value: step, pattern: pattern }),
+        body: body,
+        target: target.id,
+    })
+    if sequence == -1 { return loop }
+    var statements = List<BStmt>()
+    statements.append(addLocalDecl(ref c, from: BLocalDecl { span: f.span, local: sequence, initializer: iterable }))
+    statements.append(loop)
+    return addBlock(ref c, from: BBlock { span: f.span, statements: move statements })
+}
+
+/// A name the C# synthesizes for `for try` (`<sequence N>`, `next`): its text is not in the source, so it gets its own
+/// span, `start` -1 - index into `c.syntheticNames`, which `t15Text` and `t18Text` read (Q679).
+TextSpan t28SyntheticName(ref Ctx c, for string text) {
+    c.syntheticNames.append(text)
+    return TextSpan { start: -c.syntheticNames.length, length: 0 }
+}
+
+/// The in-place receiver: a local bound from a name, possibly parenthesized (Q679).
+parser.Expr t28CloneLocalName(in parser.Expr e) {
+    switch e {
+        case .nameExpr(let n):
+            return parser.Expr.nameExpr(Owned(NameExpr { span: n.value.span, name: n.value.name, typeArgs: List<parser.TypeSyntax>() }))
+        case .parenExpr(let p):
+            return parser.Expr.parenExpr(Owned(T28ParenExpr { span: p.value.span, inner: t28CloneLocalName(in p.value.inner) }))
+        default:
+            panic("internal error: an in-place `for try` iterable is a local")
+    }
 }
 
 /// Binder.cs:1107 FallibleNext: the `T? next() fails …` method that `for try` steps with, if `type` has one; -1 for none.
@@ -654,7 +714,8 @@ BStmt bindSwitchStatement(ref Binder b, through ref Ctx c, for in parser.SwitchS
         if states != -1 {
             var subjectType = valueType
             if (subject(ref b, through: ref c, for: value) is { } found) { subjectType = found.type }
-            exhaustive = checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in arms)
+            let lastSection: TextSpan? = s.sections.length > 0 ? s.sections[s.sections.length - 1].span : null
+            exhaustive = checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in arms, until: -1, to: lastSection)
         } else {
             exhaustive = checkExhaustive(ref b, through: ref c, at: parser.exprSpan(in s.value), as: valueType, by: in arms, statement: true)
         }

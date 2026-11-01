@@ -308,6 +308,10 @@ FuncId t14CloneDefault(ref Ctx c, for StructId s, from InterfaceId i, by FuncId 
         owner: s,
         template: template,
         typeMap: t14CopyMap(in map),
+        // C# `Decl = member.Decl` (Q656 (e)).
+        becomes: c.functions[member].becomes,
+        refThis: c.functions[member].refThis,
+        moveThis: c.functions[member].moveThis,
     })
     switch c.files[f].unit.members[d] {
         case .interfaceDecl(let n):
