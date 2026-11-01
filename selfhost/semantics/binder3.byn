@@ -157,9 +157,11 @@ BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
         popScope(ref b)
         return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
     }
-    // Blocked (Q679): the C# binds `try <sequence N>.next()` built from synthetic `Name`s (`<sequence N>`, `next`) that a
-    // `TextSpan` cannot carry, so the stepping loop is not ported and the stub's -1 stands.
-    return -1
+    // Blocked (Q679): Binder.cs:1090-1100 binds `try <sequence N>.next()` built from synthetic `Name`s (`<sequence N>`, `next`);
+    // a Bayan name is a `TextSpan` read back as source text, so the step, the loop variable and the body are not bound.
+    // The scope `bindFor` pushed closes where the C# `PopScope` runs (Binder.cs:1101), and the loop is a `BErrorStmt`.
+    popScope(ref b)
+    return addErrorStmt(ref c, from: BErrorStmt { span: f.span })
 }
 
 /// Binder.cs:1107 FallibleNext: the `T? next() fails …` method that `for try` steps with, if `type` has one; -1 for none.

@@ -11,9 +11,10 @@ namespace Bayan.Tests;
 /// <summary>
 /// T36: <c>selfhost/semantics/binder3.byn</c> against the C# <c>Binder</c> (Binder.cs 987-1467: for bodies, return/fail,
 /// break/continue, defers, <c>Panic.handler</c>, <c>context</c>, the switch statement). Each case is a golden diag input
-/// compiled whole by both sides: the C# via <c>Compilation.Create</c>, the Bayan via <c>loadModule</c> + <c>declare</c>,
-/// hand-set signatures (T38's <c>declareSignature</c> is a stub) and every body bound. Both print the diagnostics with
-/// the codes only T36 reports, then each function's bound body; every expected line is computed from the C#.
+/// or an inline source, compiled whole by both sides: the C# via <c>Compilation.Create</c>, the Bayan via
+/// <c>loadModule</c> + <c>declare</c>, conformances checked and every body bound. Both print the diagnostics with the
+/// codes only T36 reports (plus the case's <see cref="Shared"/> codes), then each function's bound body; every expected
+/// line is computed from the C#.
 /// </summary>
 public sealed class SelfhostSemanticsT36Tests
 {
@@ -21,14 +22,15 @@ public sealed class SelfhostSemanticsT36Tests
 
     /// <summary>
     /// Golden diag inputs. Dropped (Q680): the T35 <c>propertyType</c> stub (express4.byn:42) types every builtin property
-    /// -1, which panics in <c>typeDisplay</c>; T34's <c>bindTry</c> and T35's <c>bindInterpolated</c> stubs change the rest.
+    /// -1, which panics in <c>typeDisplay</c>; T34's <c>bindTry</c> and T35's <c>bindInterpolated</c> and <c>bindLambda</c>
+    /// stubs change the rest (Q681).
     /// The <see cref="Inline"/> cases cover their T36 branches without those.
     /// </summary>
     private static readonly string[] Golden =
     [
         "not-iterable", "jump-out-of-defer", "fail-in-defer", "missing-return-value", "return-value-in-void", "continue-switch",
         "unknown-label", "jump-outside-loop", "errdefer-without-fails", "defer-failing-without-fails", "unknown-handler",
-        "duplicate-default", "ambiguous-variant", "unknown-variant",
+        "duplicate-default", "ambiguous-variant", "unknown-variant", "coalesce-break-outside-loop",
     ];
 
     /// <summary>Inputs written for T36: each reaches the branches named, with no builtin property, `try` or interpolation.</summary>
@@ -297,7 +299,7 @@ public sealed class SelfhostSemanticsT36Tests
                     takeMaybe(n)
                 }
                 for n: bool in rows {
-                    print("b")
+                    take(n)
                 }
                 let lines = Lines { at: 0 }
                 for line in lines {
@@ -309,6 +311,101 @@ public sealed class SelfhostSemanticsT36Tests
                 for (a, b) in xs {
                     take(a)
                 }
+            }
+            """,
+        // bindForBody's tuple branch (a prelude of element bindings in a block) and its count mismatch.
+        ["x-tuple"] = """
+            void take(i64 x) {
+            }
+
+            void takeBool(bool x) {
+            }
+
+            void walk(List<(i64, bool)> pairs) {
+                for (a, b) in pairs {
+                    take(a)
+                    takeBool(b)
+                }
+                for (a, b, d) in pairs {
+                    take(a)
+                }
+            }
+            """,
+        // userElement: a unique `Item` (BYN2022).
+        ["x-unique"] = """
+            struct Rows : IIndexable {
+                type Item = List<i64>
+
+                i64 count => 1
+
+                List<i64> get(i64 index) => List<i64>()
+            }
+
+            void main() {
+                let rows = Rows {}
+                for row in rows {
+                    print("row")
+                }
+            }
+            """,
+        // userElement's type-parameter branch: an `IIndexable` and an `IEnumerator` constraint, and no iterable one.
+        ["x-generic"] = """
+            struct Rows : IIndexable {
+                type Item = i64
+
+                i64 count => 2
+
+                i64 get(i64 index) => index
+            }
+
+            i64 walk<T>(T items) where T : IIndexable {
+                for x in items {
+                    let y = x
+                }
+                return 0
+            }
+
+            i64 step<T>(T items) where T : IEnumerator {
+                var it = items
+                for x in it {
+                    let y = x
+                }
+                return 0
+            }
+
+            void none<T>(T items) {
+                for x in items {
+                    print("x")
+                }
+            }
+
+            i64 run() => walk(Rows {})
+            """,
+        // bindFail with a payload call: one match, no match, an infallible function, a qualified variant.
+        ["x-payload"] = """
+            union error CarrierError {
+                timeout(i64 after)
+                closed
+            }
+
+            union error Other {
+                gone(i64 code)
+            }
+
+            void ok() fails CarrierError {
+                fail .timeout(after: 5)
+            }
+
+            void unknown() fails CarrierError {
+                fail .missing(nope)
+            }
+
+            void infallible() {
+                fail .timeout(after: 1)
+            }
+
+            void qualified() fails CarrierError {
+                fail Other.gone(1)
             }
             """,
         // bindSwitchStatement: default arms only, a duplicate default, a guard-free default with statements.
@@ -326,6 +423,26 @@ public sealed class SelfhostSemanticsT36Tests
     };
 
     private static readonly string[] Cases = [.. Golden, .. Inline.Keys];
+
+    /// <summary>
+    /// Codes other functions also report, compared only in cases where every report of them comes from T36 code:
+    /// <c>declaredElement</c> and <c>bindFail</c> (BYN2202), <c>bindForBody</c> (BYN2411), <c>userElement</c> and
+    /// <c>bindContext</c> (BYN2022), <c>bindContext</c> (BYN2301), <c>bindOnPanic</c> (BYN2202); BYN2001 from the arguments
+    /// <c>bindFail</c> binds for recovery.
+    /// </summary>
+    private static readonly Dictionary<string, DiagnosticDescriptor[]> Shared = new()
+    {
+        ["x-for"] = [DiagnosticCodes.TypeMismatch, DiagnosticCodes.PatternMismatch],
+        ["x-tuple"] = [DiagnosticCodes.PatternMismatch],
+        ["x-unique"] = [DiagnosticCodes.Unsupported],
+        ["x-fail"] = [DiagnosticCodes.TypeMismatch],
+        ["x-defer"] = [DiagnosticCodes.TypeMismatch],
+        ["x-onpanic"] = [DiagnosticCodes.TypeMismatch],
+        ["x-context"] = [DiagnosticCodes.Unsupported, DiagnosticCodes.MissingArgument],
+        ["x-payload"] = [DiagnosticCodes.UndefinedName],
+    };
+
+    private static string[] CodesOf(string name) => [.. Codes, .. Shared.GetValueOrDefault(name, []).Select(d => d.Code)];
 
     /// <summary>The codes only the T36 functions report (BYN2022, BYN2202, BYN2301, BYN2411 have other reporters).</summary>
     private static readonly string[] Codes =
@@ -361,7 +478,7 @@ public sealed class SelfhostSemanticsT36Tests
     {
         ["this"] = "thisRef", ["return"] = "returnStmt", ["fail"] = "failStmt", ["break"] = "breakStmt", ["continue"] = "continueStmt",
         ["if"] = "ifStmt", ["while"] = "whileStmt", ["for"] = "forStmt", ["switch"] = "switchStmt", ["defer"] = "deferStmt",
-        ["assert"] = "assertStmt", ["errdefer"] = "errdeferStmt", ["context"] = "contextStmt",
+        ["assert"] = "assertStmt", ["errdefer"] = "errdeferStmt", ["context"] = "contextStmt", ["default"] = "defaultValue",
     };
 
     private static string KindName(System.Type t)
@@ -381,20 +498,22 @@ public sealed class SelfhostSemanticsT36Tests
         var sb = new StringBuilder(new string(' ', depth * 2));
         sb.Append($"{KindName(n.GetType())} {n.Syntax.Span.Start}..{n.Syntax.Span.End}");
         if (n is BoundExpr e) sb.Append($" : {e.Type.DisplayName}");
+        if (n is BoundFor { UserIteration: { } u })
+            sb.Append($" user {(u.Kind == IterationKind.Indexable ? "indexable" : "enumerator")} {u.Advance.Name} {u.Item.Name} {u.Spill?.Name ?? "-"}");
         lines.Add(sb.ToString());
         foreach (var ch in BoundTree.Children(n)) Dump(lines, ch, depth + 1);
     }
 
     /// <summary>The functions whose bodies are dumped: one of their name, declared, not generic, by name.</summary>
     private static List<string> Dumped(Compilation c) =>
-        [.. c.EntryModule.Functions.Where(kv => kv.Value.Count == 1 && kv.Value[0].TypeParameters.Count == 0 && kv.Value[0].Body is not null)
+        [.. c.EntryModule.Functions.Where(kv => kv.Value.Count == 1 && kv.Value[0].Body is not null)
             .Select(kv => kv.Key).Order(StringComparer.Ordinal)];
 
     private static List<string> Expected(string name)
     {
         var c = Compile(name);
         var lines = new List<string>();
-        foreach (var d in c.Diagnostics.Items.Where(d => Codes.Contains(d.Code))) lines.AddRange(Diag(d).Split('\n'));
+        foreach (var d in c.Diagnostics.Items.Where(d => CodesOf(name).Contains(d.Code))) lines.AddRange(Diag(d).Split('\n'));
         foreach (var f in Dumped(c))
         {
             lines.Add($"fn {f}");
@@ -437,16 +556,17 @@ public sealed class SelfhostSemanticsT36Tests
             let span = nodeSpan(in c, for: n)
             sb.append($"{k} {span.start}..{span.end}")
             if isExprKind(k) { sb.append($" : {typeDisplay(ref c, by: exprType(in c, for: n))}") }
+            if k == .forStmt {
+                if (c.bFors[boundIndex(n)].userIteration is { } u) {
+                    let advance = u.advance != -1 ? c.functions[u.advance].name : c.fields[u.advanceField].name
+                    let item = u.item != -1 ? c.functions[u.item].name : c.fields[u.itemField].name
+                    sb.append($" user {u.kind == .indexable ? "indexable" : "enumerator"} {advance} {item} {u.spill == -1 ? "-" : c.locals[u.spill].name}")
+                }
+            }
             print($"{sb.finish()}")
             var kids = List<BNode>()
             for ch in children(in c, for: n) { kids.append(ch) }
             for ch in kids { tcDump(ref c, for: ch, at: depth + 1) }
-        }
-
-        void tcParam(ref Ctx c, for FuncId f, by string name, at TextSpan span, as Type type, to parser.ParamModifier modifier) {
-            let ordinal = c.functions[f].parameters.length
-            let p = newLocal(ref c, by: LocalSymbol { name: name, nameSpan: span, span: span, type: type, kind: .parameter, isParameter: true, modifier: modifier, ordinal: ordinal })
-            c.functions[f].parameters.append(p)
         }
 
         /// The `k`th function named `name` of the entry module, in declaration order.
@@ -471,9 +591,10 @@ public sealed class SelfhostSemanticsT36Tests
             }
         }
 
-        void tcT36Diags(ref Ctx c) {
+        void tcT36Diags(ref Ctx c, for string name) {
             var keep = Map<string, bool>()
         KEEP
+            tcShared(name, to: ref keep)
             for i in 0..c.diagnostics.length {
                 if !keep.contains(c.diagnostics[i].code) { continue }
                 let pos = linePosition(c.files[c.diagnostics[i].file].text.span, at: c.diagnostics[i].span.start)
@@ -510,7 +631,7 @@ public sealed class SelfhostSemanticsT36Tests
                 declare(ref c)
                 print($"== {name}")
                 tcBindAll(ref c)
-                tcT36Diags(ref c)
+                tcT36Diags(ref c, for: name)
                 tcBodies(ref c, for: in tcDumped(name))
             }
             return 0
@@ -524,6 +645,10 @@ public sealed class SelfhostSemanticsT36Tests
         sb.AppendLine("string tcSource(string name) {");
         foreach (var d in Cases) sb.AppendLine($"    if name == \"{d}\" {{ return \"{Escape(CaseSource(d))}\" }}");
         sb.AppendLine("    return \"\"");
+        sb.AppendLine("}");
+        sb.AppendLine("void tcShared(string name, to ref Map<string, bool> keep) {");
+        foreach (var (d, codes) in Shared)
+            foreach (var k in codes) sb.AppendLine($"    if name == \"{d}\" {{ keep[\"{k.Code}\"] = true }}");
         sb.AppendLine("}");
         sb.AppendLine("List<string> tcDumped(string name) {");
         sb.AppendLine("    var names = List<string>()");
