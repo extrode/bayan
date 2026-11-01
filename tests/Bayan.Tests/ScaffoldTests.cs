@@ -60,7 +60,7 @@ public sealed class ScaffoldTests
         var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(app, "tally-bin")) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using (var p = System.Diagnostics.Process.Start(psi)!)
         {
-            Assert.Equal("Hello, world!\n", p.StandardOutput.ReadToEnd().ReplaceLineEndings("\n"));
+            Assert.Equal("Hello, world!\n", p.StandardOutput.ReadToEndLf().ReplaceLineEndings("\n"));
             p.WaitForExit();
         }
         var (exit, output, stderr) = Run("test", app);

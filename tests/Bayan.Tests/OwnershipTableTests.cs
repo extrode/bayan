@@ -88,8 +88,8 @@ public sealed class OwnershipTableTests
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         await p.WaitForExitAsync(new CancellationTokenSource(60_000).Token);
         return (p.ExitCode, await stdout, await stderr);
     }

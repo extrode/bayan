@@ -32,3 +32,11 @@ internal static class TestSetup
         }
     }
 }
+
+/// <summary>Child-process text with <c>\r\n</c> read as <c>\n</c>, the rule <c>Golden.Compare</c> applies: a program's newlines are not what its tests check.</summary>
+internal static class ProcessText
+{
+    internal static string ReadToEndLf(this StreamReader reader) => reader.ReadToEnd().Replace("\r\n", "\n");
+
+    internal static async Task<string> ReadToEndLfAsync(this StreamReader reader) => (await reader.ReadToEndAsync()).Replace("\r\n", "\n");
+}

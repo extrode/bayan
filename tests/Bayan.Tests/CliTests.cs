@@ -586,7 +586,8 @@ public sealed class CliTests
     public void TodoReportsPending()
     {
         var dir = TestSuite("cli-test-todo", "test \"one\" {\n    assert(true)\n}\n\ntest \"later\" {\n    todo(\"x\")\n}\n");
-        var (exit, stdout, _) = Run("test", "--json", dir);
+        var (exit, json, _) = Run("test", "--json", dir);
+        var stdout = json.Replace("\\r\\n", "\\n"); // the program's stderr, JSON-escaped, ends its lines in CRLF where stderr is in text mode
         Assert.Equal(CliApp.ExitOk, exit);
         Assert.Contains("\"status\": \"pending\"", stdout);
         Assert.Contains("\"output\": \"pending: x\\n  at main.test.byn:6\"", stdout);
@@ -651,7 +652,7 @@ public sealed class CliTests
         psi.ArgumentList.Add("-c");
         psi.ArgumentList.Add("printf '%s' " + quoted);
         using var sh = System.Diagnostics.Process.Start(psi)!;
-        var echoed = sh.StandardOutput.ReadToEnd();
+        var echoed = sh.StandardOutput.ReadToEndLf();
         sh.WaitForExit();
         Assert.Equal(name, echoed);
         Assert.False(File.Exists(Path.Combine(dir, "owned")));
@@ -737,7 +738,7 @@ public sealed class CliTests
         Assert.True(exit == CliApp.ExitOk, stderr);
         var psi = new System.Diagnostics.ProcessStartInfo(output) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = System.Diagnostics.Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
+        var stdout = p.StandardOutput.ReadToEndLf();
         p.WaitForExit();
         Assert.Equal(0, p.ExitCode);
         return stdout.ReplaceLineEndings("\n");

@@ -231,8 +231,8 @@ public sealed class SelfhostParserT9Tests(ITestOutputHelper output)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         p.WaitForExit();
         return (p.ExitCode, stdout.Result, stderr.Result);
     }

@@ -192,8 +192,8 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
             UseShellExecute = false,
         };
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         var stdin = new StringBuilder();
         foreach (var bytes in inputs) stdin.Append(Convert.ToHexStringLower(bytes)).Append('\n');
         p.StandardInput.Write(stdin.ToString());

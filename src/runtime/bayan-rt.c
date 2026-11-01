@@ -36,14 +36,6 @@
 extern char** environ;
 #endif
 
-#ifdef _WIN32
-/* Text mode would turn each LF the program writes to stdout or stderr into CRLF. */
-__attribute__((constructor)) static void byn_binary_output(void) {
-    _setmode(_fileno(stdout), _O_BINARY);
-    _setmode(_fileno(stderr), _O_BINARY);
-}
-#endif
-
 /* ── Panics ──────────────────────────────────────────────────────────────── */
 
 /* The panic in progress: its message (copied, since it may live in the panicking frame the handlers jump over) and

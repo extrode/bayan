@@ -30,8 +30,8 @@ public sealed class SelfhostParserT3Tests(ITestOutputHelper output)
         if (!build.Succeeded) Assert.Fail($"did not build:\n{build.Errors}");
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         p.WaitForExit();
         output.WriteLine(stderr.Result);
         output.WriteLine(stdout.Result);

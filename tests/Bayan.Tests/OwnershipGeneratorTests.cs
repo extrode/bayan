@@ -56,7 +56,7 @@ public sealed class OwnershipGeneratorTests(ITestOutputHelper output)
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stderr = p.StandardError.ReadToEnd();
+        var stderr = p.StandardError.ReadToEndLf();
         p.WaitForExit();
         Assert.NotEqual(0, p.ExitCode);
         Assert.Contains("AddressSanitizer", stderr);

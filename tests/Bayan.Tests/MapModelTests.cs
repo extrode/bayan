@@ -292,8 +292,8 @@ public sealed class MapModelTests
             WorkingDirectory = work,
         };
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         if (!p.WaitForExit(120_000))
         {
             p.Kill();

@@ -103,7 +103,8 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
             var actual = SelfhostParserTests.BeforeSpanLines(segment);
 
             var tree = SyntaxTree.Parse(new SourceText(inputs[i].Label, inputs[i].Bytes));
-            var expected = AstDump.Dump(tree);
+            // The child's text is read with \r\n as \n (the Golden.Compare rule), so the dump of an input holding \r\n is compared the same way.
+            var expected = AstDump.Dump(tree).Replace("\r\n", "\n");
             if (actual != expected && !IsWrappingOnly(actual, expected, tree))
             {
                 var expectedPath = Path.Combine(dir, Path.ChangeExtension(Name(i), ".ast"));
@@ -191,7 +192,7 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
         psi.ArgumentList.Add(path);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.BaseStream.CopyToAsync(Stream.Null);
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         await p.WaitForExitAsync().ConfigureAwait(false);
         await stdout.ConfigureAwait(false);
         _ = await stderr.ConfigureAwait(false);

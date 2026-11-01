@@ -117,8 +117,8 @@ public sealed class L013DirectAndIndirectCallsAgreeTests(ITestOutputHelper outpu
     private static (int Code, string Stdout, string Stderr) Exec(ProcessStartInfo psi)
     {
         using var p = Process.Start(psi)!;
-        var stderrTask = p.StandardError.ReadToEndAsync();
-        var stdout = p.StandardOutput.ReadToEnd();
+        var stderrTask = p.StandardError.ReadToEndLfAsync();
+        var stdout = p.StandardOutput.ReadToEndLf();
         var stderr = stderrTask.Result;
         p.WaitForExit();
         return (p.ExitCode, stdout, stderr);

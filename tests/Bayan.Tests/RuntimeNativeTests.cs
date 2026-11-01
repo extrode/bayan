@@ -113,8 +113,8 @@ public sealed class RuntimeNativeTests
         var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "cov-flush.c"));
         var psi = new ProcessStartInfo(Build(driver)) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
-        p.StandardError.ReadToEnd();
+        var stdout = p.StandardOutput.ReadToEndLf();
+        p.StandardError.ReadToEndLf();
         p.WaitForExit();
         Assert.NotEqual(0, p.ExitCode);
         Assert.Equal("flushed\n", stdout.Replace("\r\n", "\n"));
@@ -132,7 +132,7 @@ public sealed class RuntimeNativeTests
         var psi = new ProcessStartInfo(exe) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
+        var stdout = p.StandardOutput.ReadToEndLf();
         p.WaitForExit();
         Assert.Equal(0, p.ExitCode);
         return stdout;

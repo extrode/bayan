@@ -117,7 +117,7 @@ public sealed partial class LineDirectiveTests
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEnd();
+        var stdout = p.StandardOutput.ReadToEndLf();
         p.WaitForExit();
         Assert.Equal(0, p.ExitCode);
         Assert.Equal("6\n", stdout);

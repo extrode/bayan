@@ -91,8 +91,8 @@ public sealed class OwnershipCheckerTests
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stderrTask = p.StandardError.ReadToEndAsync();
-        var actual = p.StandardOutput.ReadToEnd();
+        var stderrTask = p.StandardError.ReadToEndLfAsync();
+        var actual = p.StandardOutput.ReadToEndLf();
         await stderrTask;
         await p.WaitForExitAsync();
         Assert.Equal(0, p.ExitCode);
@@ -397,8 +397,8 @@ public sealed class OwnershipCheckerTests
     private static (int Code, string Stdout, string Stderr) Exec(ProcessStartInfo psi)
     {
         using var p = Process.Start(psi)!;
-        var stderrTask = p.StandardError.ReadToEndAsync();
-        var stdout = p.StandardOutput.ReadToEnd();
+        var stderrTask = p.StandardError.ReadToEndLfAsync();
+        var stdout = p.StandardOutput.ReadToEndLf();
         var stderr = stderrTask.Result;
         p.WaitForExit();
         return (p.ExitCode, stdout, stderr);
@@ -410,8 +410,8 @@ public sealed class OwnershipCheckerTests
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stderrTask = p.StandardError.ReadToEndAsync();
-        var stdout = await p.StandardOutput.ReadToEndAsync();
+        var stderrTask = p.StandardError.ReadToEndLfAsync();
+        var stdout = await p.StandardOutput.ReadToEndLfAsync();
         await stderrTask;
         await p.WaitForExitAsync();
         return (p.ExitCode, stdout.Replace("\r\n", "\n"));
@@ -434,8 +434,8 @@ public sealed class OwnershipCheckerTests
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
-        var stdoutTask = p.StandardOutput.ReadToEndAsync();
-        var actual = p.StandardError.ReadToEnd();
+        var stdoutTask = p.StandardOutput.ReadToEndLfAsync();
+        var actual = p.StandardError.ReadToEndLf();
         stdoutTask.Wait();
         p.WaitForExit();
         Assert.Equal(134, p.ExitCode);
