@@ -336,14 +336,14 @@ List<string> endingReplacements(string ending) => ending switch {
     _ => ["", "e"],
 }
 
-/// The project dictionary from `package.byn` (Q551): the file the loader read as `"package.byn"`, lowered;
-/// empty without one. The C# caches it per compilation; this reads it per `checkMembers`.
+/// Naming.cs:187 GrammarOf: the project dictionary from `package.byn` beside the package's sources (`displayRoot`),
+/// lowered; empty without one. The C# caches it per compilation; this reads it per `checkMembers` (Q657).
 Grammar grammarOf(ref Ctx c) {
-    let i = packageFileIndex(in c.files)
-    if i < 0 { return Grammar {} }
-    var bytes = List<u8>()
-    for b in c.files[i].text { bytes.append(b) }
-    let manifest = manifestParse(lexer.SourceText.create(c.files[i].path, from: move bytes))
+    let path = t11Combine(c.displayRoot, by: "package.byn")
+    // `File.Exists(path) ? Manifest.Read(path)`: a directory or an unreadable path is no file.
+    if t11DirectoryExists(path) { return Grammar {} }
+    let bytes = Io.readFile(path) catch return Grammar {}
+    let manifest = manifestParse(lexer.SourceText.create("package.byn", from: move bytes))
     return lowerGrammar(in manifest.grammar)
 }
 

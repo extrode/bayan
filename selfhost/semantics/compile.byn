@@ -894,6 +894,9 @@ void declareFile(ref Ctx c, for FileId file) {
                 checkType(ref c, from: file, at: s.value.name)
             case .functionDecl(let f):
                 let name = t11Text(in c, from: file, at: f.value.name)
+                // C# `Decl = f`: the symbol keeps its `becomes`, `ref this` and `move this` scalars (Q656 (e)).
+                var becomes: string? = null
+                if (f.value.becomes is { } becomesAt) { becomes = t11Text(in c, from: file, at: becomesAt) }
                 let sym = newFunction(ref c, by: FunctionSymbol {
                     name: name,
                     nameSpan: f.value.name,
@@ -904,6 +907,9 @@ void declareFile(ref Ctx c, for FileId file) {
                     modifiers: i64(f.value.modifiers),
                     file: file,
                     declIndex: d,
+                    becomes: becomes,
+                    refThis: f.value.refThis,
+                    moveThis: f.value.moveThis,
                 })
                 checkValue(ref c, from: file, at: f.value.name)
                 var into = List<TypeParamId>()

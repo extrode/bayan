@@ -24,8 +24,10 @@ Type userElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
             }
         }
         if constraint == -1 { return -1 }
-        // C# `_c.MutationChecks.Add(new MutationCheck(this, constraint.FindMethods("moveNext").First(), iterable))` when the
-        // constraint is `IEnumerator` and the iterable is a place: blocked until T28 designs a binder-free `MutationCheck` (Q582, Q730, Q679).
+        let k = boundKind(iterable)
+        if constraint == iEnumerator && (k == .local || k == .thisRef || k == .field || k == .tupleElement || k == .index) {
+            c.mutationChecks.append(MutationCheck { source: b.file, function: host(b, through: c), callee: findInterfaceMethods(ref c, by: constraint, for: "moveNext")[0], receiver: iterable })
+        }
         return typeParamTypeOf(associatedType(ref c, for: tp, by: "Item"))
     }
     if kindOf(itType) != .structType { return -1 }
@@ -62,8 +64,7 @@ Type userElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
     if !indexable {
         let k = boundKind(iterable)
         if k == .local || k == .thisRef || k == .field || k == .tupleElement || k == .index {
-            // C# `_c.MutationChecks.Add(new MutationCheck(this, advance, iterable))`: blocked until T28 designs a
-            // binder-free `MutationCheck` (Q582, Q730, Q679).
+            c.mutationChecks.append(MutationCheck { source: b.file, function: host(b, through: c), callee: advance, receiver: iterable })
         } else {
             let span = parser.exprSpan(in f.iterable)
             spill = newLocal(ref c, by: LocalSymbol { name: $"enumerator_{b.nextLocalId}", nameSpan: span, span: span, type: itType, kind: .varKeyword, id: b.nextLocalId })

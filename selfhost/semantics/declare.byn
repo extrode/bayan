@@ -109,6 +109,9 @@ void declareMembers(ref Ctx c, for StructId s) {
                                 if !typeMap.contains(k) { typeMap[k] = v }
                             }
                         }
+                        // C# `Decl = m`: the symbol keeps its `becomes`, `ref this` and `move this` scalars (Q656 (e)).
+                        var becomes: string? = null
+                        if (m.value.becomes is { } becomesAt) { becomes = t12Text(in c, from: file, at: becomesAt) }
                         let fn = newFunction(ref c, by: FunctionSymbol {
                             name: mText,
                             nameSpan: mName,
@@ -122,6 +125,9 @@ void declareMembers(ref Ctx c, for StructId s) {
                             declIndex: dIdx,
                             memberIndex: mIdx,
                             typeMap: t11CopyMap(in typeMap),
+                            becomes: becomes,
+                            refThis: m.value.refThis,
+                            moveThis: m.value.moveThis,
                         })
                         if c.structs[s].template < 0 {
                             // C#'s `typeMap` is null when the struct and the method have no type parameters.

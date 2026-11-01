@@ -303,6 +303,9 @@ void declareInterfaceMembers(ref Ctx c, for InterfaceId i) {
                     case .functionDecl(let m):
                         checkValue(ref c, from: file, at: m.value.name)
                         rejectStatic(ref c, from: file, by: m.value.modifiers, at: m.value.name)
+                        // C# `Decl = m`: the symbol keeps its `becomes`, `ref this` and `move this` scalars (Q656 (e)).
+                        var becomes: string? = null
+                        if (m.value.becomes is { } becomesAt) { becomes = t12Text(in c, from: file, at: becomesAt) }
                         let fn = newFunction(ref c, by: FunctionSymbol {
                             name: t12Text(in c, from: file, at: m.value.name),
                             nameSpan: m.value.name,
@@ -318,6 +321,9 @@ void declareInterfaceMembers(ref Ctx c, for InterfaceId i) {
                             isAbstract: m.value.body is .none && m.value.expressionBody is .none,
                             isStatic: (m.value.modifiers & 4) != 0,
                             typeMap: t11CopyMap(in typeMap),
+                            becomes: becomes,
+                            refThis: m.value.refThis,
+                            moveThis: m.value.moveThis,
                         })
                         var ownParameters = List<TypeParamId>()
                         if (declareTypeParameters(ref c, from: file, for: in m.value.typeParams, to: ref ownParameters) is { } own) {
