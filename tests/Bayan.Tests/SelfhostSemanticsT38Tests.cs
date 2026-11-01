@@ -10,7 +10,7 @@ namespace Bayan.Tests;
 /// <summary>
 /// T38: <c>selfhost/semantics/declare2.byn</c> against the C# <c>Compilation</c>. Each case is a module directory
 /// under <c>tmp/t38-cases/</c>, loaded and declared file by file (T11), then run through the phases its flags name,
-/// in flag order: <c>u</c> DeclareUnionVariants, <c>m</c> DeclareMembers (each method's DeclareSignature,
+/// in flag order: <c>e</c> DeclareVariants of each error set, <c>u</c> DeclareUnionVariants, <c>m</c> DeclareMembers (each method's DeclareSignature,
 /// DeclareCheck), <c>s</c> DeclareSignature of each free function, <c>i</c> DeclareInterfaceMembers, <c>t</c>
 /// CheckStateNames, <c>h</c> CheckStructShape then CheckUnionShape. The oracle calls the same private methods by
 /// reflection and prints the same lines. Diagnostics print as <c>code line:col message | label | help | fix</c>.
@@ -39,16 +39,20 @@ public sealed class SelfhostSemanticsT38Tests
             i64 f2() fails { return 1 }
             public void f3() fails { }
             void f4() fails E1, E1 { }
-            void f5() fails E1 except .a, E1 { }
-            void f6() fails E1 except .a, E1 except .b { }
-            void f7() fails E1, E1 except .a { }
+            union error R1 = E1 except .a
+            union error R2 = E1 except .b
+            void f5() fails R1, E1 { }
+            void f6() fails R1, R2 { }
+            void f7() fails E1, R1 { }
             void f8() fails i64 { }
             void f9() fails Missing { }
             void f10(ref this) { }
             void f11(Missing x) { }
             void f12(i64 Bad) { }
-            void f13() fails E1 except .a, E2, E1 except .a { }
+            void f13() fails R1, E2, R1 { }
             void f14(move i64 m, out i64 o, ref i64 r) { }
+            (i64) -> i64 f15() { }
+            void f16(i64 a, by i64 b, for i64 a) { }
             """),
         // DeclareInterfaceMembers: associated types, abstract and default methods, getters and properties,
         // `static`, duplicates, a generic method and another kind of member.
@@ -69,12 +73,18 @@ public sealed class SelfhostSemanticsT38Tests
                 void Bad()
                 void p(ref this)
                 public i64 f() fails
+                static void sm()
+                static i64 sg
+                static i64 sp => 1
+                (i64) -> i64 fr()
+                Missing mg
             }
             public interface IC {
                 void q() fails
             }
             """),
-        // DeclareMembers (each method's signature, `requires` checks), CheckStateNames on structs without states,
+        // DeclareMembers (each method's signature, `requires` checks), a free function naming a check's
+        // `ValidationError<T>` again, CheckStateNames on structs without states,
         // CheckStructShape and CheckUnionShape.
         ("structs/main.byn", """
             struct S {
@@ -92,7 +102,8 @@ public sealed class SelfhostSemanticsT38Tests
                 void m8(ref this) becomes .open { }
                 static void m9() becomes .open { }
                 void m10(this is .closed) { }
-                void m11(this is .a, .b) becomes .open { }
+                (i64) -> i64 m11() { }
+                static void m12(ref this) becomes .open { }
             }
             struct R {
                 i64 y
@@ -124,6 +135,16 @@ public sealed class SelfhostSemanticsT38Tests
             struct Ok {
                 List<Ok> xs
             }
+            struct Ar {
+                Ar[2] a
+            }
+            struct Fn {
+                (i64) -> i64 f
+                StrBuf sb
+            }
+            struct Tb {
+                (i64, ReadOnlySpan<i64>) t
+            }
             union U {
                 a(U inner)
                 b(ReadOnlySpan<i64> s)
@@ -132,17 +153,22 @@ public sealed class SelfhostSemanticsT38Tests
             union V {
                 a(W w)
             }
+            union Q {
+                a(Q? q)
+                b(StrBuf sb)
+            }
             struct W {
                 V v
             }
+            void vf() fails ValidationError<S>, ValidationError<R> { }
             """),
     ];
 
     private static readonly (string Name, string Flags)[] Runs =
     [
-        ("sigs", "s"),
+        ("sigs", "es"),
         ("ifaces", "i"),
-        ("structs", "umth"),
+        ("structs", "umsth"),
     ];
 
     private static string DirOf(string run) => Path.Combine(CasesDir, run.Split('-')[0]);
@@ -197,6 +223,7 @@ public sealed class SelfhostSemanticsT38Tests
         {
             switch (flag)
             {
+                case 'e': foreach (var e in m.ErrorSets) Call(c, "DeclareVariants", e); break;
                 case 'u': foreach (var u in m.Unions) Call(c, "DeclareUnionVariants", u); break;
                 case 'm': foreach (var s in m.Structs) Call(c, "DeclareMembers", s); break;
                 case 's':
@@ -287,7 +314,9 @@ public sealed class SelfhostSemanticsT38Tests
                 for f in copyIds(in c.modules[m].files) { declareFile(ref c, for: f) }
                 for k in 0..flags.length {
                     let flag = flags[k..k + 1]
-                    if flag == "u" {
+                    if flag == "e" {
+                        for e in copyIds(in c.modules[m].errorSets) { declareVariants(ref c, for: e) }
+                    } else if flag == "u" {
                         for u in copyIds(in c.modules[m].unions) { declareUnionVariants(ref c, for: u) }
                     } else if flag == "m" {
                         for s in copyIds(in c.modules[m].structs) { declareMembers(ref c, for: s) }

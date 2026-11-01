@@ -168,6 +168,8 @@ void declareCheck(ref Ctx c, for StructId s) {
         owner: s,
         file: file,
         access: c.structs[s].access,
+        // C# `FunctionSymbol.ReturnType` starts as `void`; Bayan's `returnType` starts as -1.
+        returnType: prim(.void),
         hasFails: true,
     })
     let validation = validationErrorOf(ref c, for: structTypeOf(s))
@@ -208,12 +210,12 @@ UnionId statesOf(ref Ctx c, for StructId s) {
     // An instance's states were checked on the template.
     if c.structs[s].template >= 0 {
         let outer = pushBag(ref c)
-        declareUnionVariants(ref c, for: u) // mutation-exempt: Q689
-        popBag(ref c, to: outer) // mutation-exempt: Q689
-        return u // mutation-exempt: Q689
+        declareUnionVariants(ref c, for: u)
+        popBag(ref c, to: outer)
+        return u
     }
-    declareUnionVariants(ref c, for: u) // mutation-exempt: Q689
-    switch c.files[file].unit.members[dIdx] { // mutation-exempt: Q689 through 220
+    declareUnionVariants(ref c, for: u)
+    switch c.files[file].unit.members[dIdx] {
         case .structDecl(let node):
             for member in node.value.members {
                 var name: string? = null
@@ -422,7 +424,7 @@ void declareSignature(ref Ctx c, for FuncId fn, from in parser.FunctionDecl decl
         report(ref c, for: .unsupported, from: file, at: refThis, by: (c.functions[fn].isStatic ? "`ref this` on a static method" : "`ref this` outside a struct", "", "", "", ""), help: "remove `ref this`; only an instance method has a `this` to change")
     }
     // Only a `ref this` caller still holds the value whose state changed (revision 0010); a static `becomes` is BYN2022 at its `become`.
-    if (decl.becomes is { } becomes) && decl.refThis == null && instanceMethod {
+    if (decl.becomes is { } becomes) && decl.refThis is null && instanceMethod {
         // `move this is .s` and `this is .s` are written; a method with neither takes `this` unwritten.
         var start = decl.paramsStart
         if (decl.moveThis is { } mt) { start = mt.start }
@@ -496,7 +498,7 @@ void declareParameters(ref Ctx c, for FuncId fn, from in List<parser.Param> para
             modifier: p.modifier,
             ordinal: c.functions[fn].parameters.length,
         })
-        for q in c.functions[fn].parameters {
+        for q in copyIds(in c.functions[fn].parameters) {
             if c.locals[q].name == name {
                 reportDuplicate(ref c, from: file, at: p.name, as: loc(file, at: c.locals[q].span))
                 break
@@ -534,7 +536,8 @@ void checkStructShape(ref Ctx c, for StructId s) {
             report(ref c, for: .borrowField, from: file, at: span, by: (typeDisplay(ref c, by: type), "", "", "", ""), help: help)
         }
     }
-    checkRecursion(ref c, for: structTypeOf(s), by: c.structs[s].name, from: file, at: c.structs[s].nameSpan)
+    let name = $"{c.structs[s].name}"
+    checkRecursion(ref c, for: structTypeOf(s), by: name, from: file, at: c.structs[s].nameSpan)
 }
 
 // ── Compilation.cs:1307 FunctionTypeNotHere ─────────────────────────────────────
@@ -557,7 +560,8 @@ void checkUnionShape(ref Ctx c, for UnionId u) {
             }
         }
     }
-    checkRecursion(ref c, for: unionTypeOf(u), by: c.unions[u].name, from: file, at: c.unions[u].nameSpan)
+    let name = $"{c.unions[u].name}"
+    checkRecursion(ref c, for: unionTypeOf(u), by: name, from: file, at: c.unions[u].nameSpan)
 }
 
 // ── Compilation.cs:1332 CheckRecursion ──────────────────────────────────────────
