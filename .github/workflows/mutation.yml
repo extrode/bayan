@@ -1,0 +1,69 @@
+# Nightly and on-demand batch mutation run (spec 013 T28): scripts/selfhost/mutate-batch.sh over the selfhost .byn files,
+# split into SHARDS parallel jobs (--shard k/4). It only measures: it never commits or pushes. Each shard uploads its reports
+# (tmp/mutate-batch/, paths relative to the repo root); the `merge` job runs one quality-baseline.py update over all of them and
+# uploads tests/quality-baseline.json and the accepted reports. Apply the run by `python3 -I scripts/selfhost/quality-baseline.py update tests/quality-baseline.json . <reports...>`
+# on a chore/ branch off current dev, never by copying the baseline file.
+name: mutation
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]  # n = 4: --shard k/4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # The tests cross-compile (OutputTests) and `bayan doctor` expects zig; no runner image has it.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - name: Build
+        run: dotnet build Bayan.slnx
+      - name: Mutate
+        run: bash scripts/selfhost/mutate-batch.sh --shard ${{ matrix.shard }}/4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-reports-${{ matrix.shard }}
+          path: tmp/mutate-batch/
+  merge:
+    needs: mutate
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mutation-reports-*
+          path: reports
+      - name: Merge
+        run: python3 -I scripts/selfhost/quality-baseline.py update tests/quality-baseline.json . $(find reports -name 'quality-[0-9]*.json' | sort)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quality-baseline
+          path: tests/quality-baseline.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: accepted-reports
+          path: reports/**/quality-[0-9]*.json

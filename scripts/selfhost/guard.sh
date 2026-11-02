@@ -1,17 +1,26 @@
 #!/bin/bash
 # guard.sh — run in a writer worktree before finishing. Prints GUARD PASS or GUARD FAIL + the items to fix.
-#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]] [--mutations N] [--seed S]
+#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]]
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
-# 3 build 0 warnings, 4 tests pass with 0 skipped, 5 banned C#-isms in changed .byn, 6 mutation: each of N semantic
-# mutations per --mutate file (random (line, operator) pairs; `mutation seed: S` is printed, --seed S repeats a run) must make
-# the filtered tests fail (a surviving mutation = an untested line; a mutant run is killed after max(60s, 5x the clean run)),
+# 3 build 0 warnings, 4 tests pass with 0 skipped, and coverage (spec 013 T26): when the branch changes selfhost .byn files the
+# tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
+# holds a line added or changed against the merge base with --base; a new function counts) must be covered, each missed one
+# named (coverage-gate.py); each file's other functions get one info line, never a FAIL. The guard makes no baseline check of
+# coverage: it leaves the report at tmp/guard-run/coverage/bayan-quality.json, and land.sh records it (raise-only) in
+# tests/quality-baseline.json. 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
+# mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
+# recording; a survivor = an untested change; `@unobservable because "…"` marks a statement whose mutants no test can see),
+# and no file's score may fall below tests/quality-baseline.json (only with --mutate),
 # 7 content checks from guard-checks.py (C# oracle in the tests, no stubs or empty bodies left, ctx.byn only in the
 # task's own section, no open gating Question, docs: progress log entry and Question line citations that hold).
+# Per-task landing runs no mutation (land.sh drops --mutate, user decision 2026-11-01): it runs in batches and CI; coverage
+# runs on every guard (when a selfhost .byn changed), landing included. A python helper that exits non-zero (a malformed report, manifest or baseline) is a
+# FAIL item naming its input, never a silent pass.
 set -u
-BASE=""; ALLOW=""; FILTER=""; TASK=""; MUTATE=""; N=6; SEED=""; TT=0
+BASE=""; ALLOW=""; FILTER=""; TASK=""; MUTATE=""
 while [ $# -gt 0 ]; do case "$1" in
   --base) BASE=$2; shift 2;; --allow) ALLOW=$2; shift 2;; --filter) FILTER=$2; shift 2;; --task) TASK=$2; shift 2;;
-  --mutate) MUTATE=$2; shift 2;; --mutations) N=$2; shift 2;; --seed) SEED=$2; shift 2;; *) echo "unknown arg $1"; exit 2;; esac; done
+  --mutate) MUTATE=$2; shift 2;; *) echo "unknown arg $1"; exit 2;; esac; done
 [ -n "$BASE" ] && [ -n "$FILTER" ] || { echo "need --base and --filter"; exit 2; }
 FAIL=(); note() { FAIL+=("$1"); }
 mkdir -p "$PWD/tmp/guard-run"; LOG=$PWD/tmp/guard-run
@@ -25,6 +34,10 @@ for f in $CHANGED; do
   b=$(basename "$f"); [[ "$b" != *.* ]] && note "junk: $f has no extension (stray run-case output?); delete it"
   [ -f "$f" ] && ! grep -Iq . "$f" 2>/dev/null && [ -s "$f" ] && note "junk: $f is binary; delete it"
 done
+# the changed selfhost .byn files still present: the files coverage is measured over
+COVER=$(for f in $CHANGED; do case "$f" in selfhost/*.byn) [ -f "$f" ] && echo "$f";; esac; done | tr '\n' ',' | sed 's/,$//')
+rm -f $LOG/quality-*.json  # a mutation report left by an earlier run must not reach this run's baseline check
+COV=$LOG/coverage; rm -f "$COV/bayan-quality.json" "$COV/functions.json"; TX=1
 
 # 3 build
 dotnet build -v q > $LOG/build.txt 2>&1
@@ -33,11 +46,24 @@ W=$(grep -cE ' warning [A-Z]+[0-9]+' $LOG/build.txt); E=$(grep -cE ' error [A-Z]
 
 # 4 tests
 if [ "$E" = 0 ]; then
-  t0=$SECONDS; dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" > $LOG/test.txt 2>&1; TX=$?; TT=$((SECONDS - t0))
+  ( [ -n "$COVER" ] && export BAYAN_COVERAGE=$COV BAYAN_COVERAGE_FILES=$COVER
+    dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" ) > $LOG/test.txt 2>&1; TX=$?
   R=$(grep -E 'Total tests:|^ *(Passed|Failed|Skipped): *[0-9]+' $LOG/test.txt | tr -s ' \n' ' ')
   [ $TX = 0 ] || note "tests: FAIL ($R) — first failure: $(grep -m1 -A8 'Error Message' $LOG/test.txt | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
   grep -qE 'No test matches|Total tests: 0' $LOG/test.txt && note "tests: filter '$FILTER' matched no tests"
   echo "$R" | grep -qE 'Skipped: [1-9]' && note "tests: skipped tests present ($R)"
+fi
+
+# 4 coverage of the functions the branch touches in the changed selfhost .byn files (a red run's coverage proves nothing):
+# 100% of their lines and branches; no baseline check (see the header)
+if [ $TX = 0 ] && [ -n "$COVER" ]; then
+  if [ ! -f "$COV/bayan-quality.json" ]; then
+    note "coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter '$FILTER' builds a selfhost program with $COVER"
+  else
+    out=$(python3 -I "$(dirname "$0")/coverage-gate.py" "$(git merge-base "$BASE" HEAD)" "$COV/bayan-quality.json" "$COV/functions.json" 2> $LOG/coverage-gate.txt) \
+      || note "coverage: $(tail -1 $LOG/coverage-gate.txt)"
+    while read -r l; do case "$l" in "- "*) note "${l#- }";; ?*) echo "$l";; esac; done <<< "$out"
+  fi
 fi
 
 # 5 banned C#-isms (Bayan has none of these; see scripts/selfhost/bayan-cheatsheet.md)
@@ -51,61 +77,24 @@ while read -r l; do [ -n "$l" ] && note "$l"; done < $LOG/banned.txt
 # the task comes from --task, else from a SelfhostSemanticsT<n>Tests class in --filter (T26/T27 test classes carry no number)
 [ -n "$TASK" ] || TASK=$(echo "$FILTER" | grep -oE 'SelfhostSemanticsT[0-9]+Tests' | head -1 | sed -E 's/SelfhostSemantics(T[0-9]+)Tests/\1/')
 if [ -n "$TASK" ]; then
-  while read -r l; do [ -n "$l" ] && note "$l"; done < <(python3 -I "$(dirname "$0")/guard-checks.py" "$BASE" "$TASK" "$ALLOW")
+  out=$(python3 -I "$(dirname "$0")/guard-checks.py" "$BASE" "$TASK" "$ALLOW" 2> $LOG/checks.txt) || note "checks: guard-checks.py failed: $(tail -1 $LOG/checks.txt)"
+  while read -r l; do [ -n "$l" ] && note "$l"; done <<< "$out"
 else note "checks: no --task and --filter names no SelfhostSemanticsT<n>Tests class, so the content checks cannot run"; fi
 
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
-# a mutate-orig.txt left by a killed run that matches no --mutate file means a file may still hold a mutant: refuse
-IFS=',' read -ra MF <<< "$MUTATE"
-rm -f $LOG/mutate-orig.txt.part  # a backup copy cut short by a signal; the file it copied was not yet mutated
-if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ] && [ -f $LOG/mutate-orig.txt ]; then
-  same=0; for f in "${MF[@]}"; do cmp -s $LOG/mutate-orig.txt "$f" && same=1; done
-  if [ $same = 1 ]; then rm -f $LOG/mutate-orig.txt
-  else note "mutation: tmp/guard-run/mutate-orig.txt is left from an interrupted run and differs from $MUTATE; it is a complete copy of the file before that run mutated it: copy it back over the mutated file, then delete it"; fi
-fi
+# the recording and the per-build runs are mutation-step.sh (shared with mutate-batch.sh); the reports are copied to
+# tmp/guard-run/ as quality-<n>-<binary>.json
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
-  . "$(dirname "$0")/mutant-outcome.sh"
-  [ -n "$SEED" ] || SEED=$RANDOM$RANDOM; echo "mutation seed: $SEED"
-  # [regex, replacement] per operator; the first match of one operator on the line is changed
-  OPS="(['==','!='],['!=','=='],['<=','<'],['>=','>'],[' < ',' >= '],[' > ',' <= '],['\\btrue\\b','false'],['\\bfalse\\b','true'],['\\+ 1\\b','+ 2'],['- 1\\b','- 2'],['&&','||'],['\\|\\|','&&'])"
-  LIMIT=$((5 * TT)); MINT=${GUARD_MUTANT_TIMEOUT_MIN:-60}; [ $LIMIT -ge $MINT ] || LIMIT=$MINT
-  # portable timeout (no GNU coreutils): the child leads its own process group, killed whole on expiry; exit 124
-  run_limited() { perl -e '$t = shift; $p = fork; if (!$p) { setpgrp(0, 0); exec @ARGV or exit 127 } $SIG{ALRM} = sub { kill "KILL", -$p; waitpid($p, 0); exit 124 }; alarm $t; waitpid($p, 0); exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$@"; }
-  # the file holds a mutant during the loop: put the original back however the guard ends
-  restore() { cp $LOG/mutate-orig.txt "$f" && rm -f $LOG/mutate-orig.txt; }
-  for f in "${MF[@]}"; do
-    trap - EXIT INT TERM  # the previous file is restored; a signal during this cp must not restore a half copy
-    # copy beside it, then rename: mutate-orig.txt is never a half copy, so a later run can trust it (a stray .part is not)
-    cp "$f" $LOG/mutate-orig.txt.part && mv -f $LOG/mutate-orig.txt.part $LOG/mutate-orig.txt
-    trap restore EXIT; trap 'exit 130' INT TERM
-    # candidates are (line, operator) pairs: comparison, boolean, +/- 1, &&/||, outside comment lines and strings
-    SITES=(); while read -r s; do SITES+=("$s"); done < <(OPS="$OPS" perl -ne 'BEGIN { @o = eval $ENV{OPS} } next if m{^\s*//}; for $i (0..$#o) { print "$.:$i\n" if /$o[$i][0]/ }' "$f")
-    # lines whose only observable effect goes through an unported sibling may be exempted: `// mutation-exempt: Qnnn`
-    # on the line above (or `… through N` for a span), the Question citing a line of the span (mutation-exempt.py)
-    EX=(); while read -r k v; do case "$k" in skip) EX+=("$v");; note) note "$v";; esac; done < <(python3 -I "$(dirname "$0")/mutation-exempt.py" "$f" docs/bayan-handoff.md)
-    KEEP=(); for s in "${SITES[@]}"; do skip=0; for e in ${EX[@]+"${EX[@]}"}; do [ "${s%%:*}" = "$e" ] && skip=1; done; [ $skip = 0 ] && KEEP+=("$s"); done; SITES=(${KEEP[@]+"${KEEP[@]}"})
-    total=${#SITES[@]}; [ "$total" = 0 ] && { note "mutation: $f has no mutable lines"; restore; continue; }
-    PICK=(); while read -r s; do PICK+=("$s"); done < <(printf '%s\n' "${SITES[@]}" | perl -e 'srand(shift); @a = <STDIN>; for ($i = @a; --$i > 0;) { $j = int rand($i + 1); @a[$i, $j] = @a[$j, $i] } print @a' "$SEED")
-    killed=0; tried=0
-    for s in "${PICK[@]}"; do
-      [ $tried -lt $N ] || break
-      ln=${s%%:*}
-      OPS="$OPS" LN=$ln IDX=${s##*:} perl -i -pe 'BEGIN { @o = eval $ENV{OPS} } if ($. == $ENV{LN}) { $r = $o[$ENV{IDX}]; s/$r->[0]/$r->[1]/ }' "$f"
-      # the harness compiles the .byn when the tests run; a mutant it rejects proves nothing: skip it, try the next pair
-      run_limited $LIMIT dotnet test -v q --no-build --filter "$FILTER" --logger 'console;verbosity=normal' > $LOG/mt.txt 2>&1
-      outcome=$(mutant_outcome $? $LOG/mt.txt)
-      if [ "$outcome" = uncompiled ]; then cp $LOG/mutate-orig.txt "$f"; continue; fi
-      tried=$((tried+1))
-      if [ "$outcome" = survived ]; then note "mutation survived: $f:$ln ($(sed -n "${ln}p" "$f" | sed 's/^ *//' | cut -c1-90)) — no test fails when this line is changed; add a test that covers it"; else
-        killed=$((killed+1)); [ "$outcome" = timeout ] && echo "mutation timeout: $f:$ln killed after ${LIMIT}s"; fi
-      cp $LOG/mutate-orig.txt "$f"
-    done
-    restore
-    [ $tried -lt $N ] && [ $tried -lt $total ] && note "mutation: only $tried of $N mutants of $f compiled; add tests until enough distinct sites are covered"
-    echo "mutation $f: $killed/$tried killed"
-  done
-  trap - EXIT INT TERM
-  dotnet build -v q > /dev/null 2>&1
+  . "$(dirname "$0")/mutation-step.sh"
+  if mutation_step "$LOG" "$FILTER" "$MUTATE" 1; then
+    # a score below tests/quality-baseline.json fails (mutate-batch.sh, the batch run, raises the baseline)
+    if ls $LOG/quality-*.json > /dev/null 2>&1; then
+      # exit 1 with lines: the drops; a non-zero exit without them: quality-baseline.py failed on its inputs
+      out=$(python3 -I "$(dirname "$0")/quality-baseline.py" check tests/quality-baseline.json . $LOG/quality-*.json 2> $LOG/baseline.txt); BX=$?
+      while read -r l; do [ -n "$l" ] && note "$l"; done <<< "$out"
+      [ $BX = 0 ] || [ -n "$out" ] || note "baseline: quality-baseline.py check failed on tests/quality-baseline.json and tmp/guard-run/quality-*.json — $(tail -1 $LOG/baseline.txt)"
+    fi
+  fi
 fi
 
 if [ ${#FAIL[@]} = 0 ]; then echo "GUARD PASS"; exit 0; fi

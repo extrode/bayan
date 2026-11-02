@@ -1,3 +1,3 @@
 # Previous
 
-Spec 008, HashMap and Symbol (`docs/specs/008-hashmap-symbols/`): `Symbol`, an interned 4-byte identifier (`==` by ID, ordering by text, `Symbol.intern`, `.text`); `Map` keys over tuples, structs, enums and `Symbol` with field-wise hashing; `HashMap<K, V>` as BYN2830; BYN2831–2832; laws L015 and L016. Review fixes: typed `const` of `Symbol`, `switch` on `Symbol`, `.debug` of a `Symbol` field, use-site BYN2831 for deferred struct keys.
+Spec 013, test tooling (`docs/specs/013-test-tooling/`), merged partial: `bayan test --mutate` (mutant schemata, external mode, `@unobservable`), `bayan test --coverage` (lines, branches, error paths), reports and package minimums, the spec 010 guard's coverage gate, `land.sh` raise-only coverage baseline, batch mutation in CI. Open: T19 on Windows (82 failures on wp1: Q743 path joins, `Toolchain.ReplaceFile`, POSIX-only snapshot fixtures) and T27 (marker conversion, waiting on its site-map evidence).

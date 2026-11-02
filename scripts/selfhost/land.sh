@@ -1,11 +1,15 @@
 #!/bin/bash
 # land.sh — the only way a spec 010 task reaches the base branch. Run by the dispatcher, from the repo root, on the base branch.
 #   bash scripts/selfhost/land.sh T13 feat/010-t13
-# Refuses unless: (1) the branch leaves scripts/selfhost/ alone and the base checkout's guard passes on it, (2)
+# Refuses unless: (1) the branch leaves scripts/selfhost/ and tests/quality-baseline.json (written only by land.sh and the batch mutation run, never by a task branch) alone and the base checkout's guard passes on it, (2)
 # docs/specs/010-self-hosted-semantics/reviews/<T>.md exists on that branch, the branch's last commit touches only it and is
 # titled `docs(010): <T> review (PASS, …`, the file names that commit's parent, says `Verdict: PASS`, and lists no open HIGH
 # finding (earlier commits may hold earlier review rounds). Then merges the
-# commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task.
+# commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task. When the guard run left a coverage
+# report (tmp/guard-run/coverage/bayan-quality.json, written whenever the branch changed a selfhost .byn), after the merge the
+# tick commit raises the baseline's coverage and branches (update; a lower value never replaces an entry): a filtered per-task run
+# can only raise the recorded coverage, and the drop check waits for a full-suite measurement (work/todo.md).
+# No mutation runs here (--mutate is dropped): the mutation scores come from the batch run (013 T28).
 set -eu
 T=$1; BR=$2; N=${T#T}; t=$(echo "$T" | tr '[:upper:]' '[:lower:]')
 BASE=$(git rev-parse --abbrev-ref HEAD)
@@ -15,20 +19,22 @@ PATH="/usr/bin:$PATH" python3 -I scripts/selfhost/wave-brief.py . "$T" > /dev/nu
 # the base checkout's guard, by absolute path: a branch cannot run a guard it rewrote
 LINE=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-$t/prompt.md") || {
   echo "LAND REFUSED: tmp/010-$t/prompt.md has no line starting 'bash scripts/selfhost/guard.sh' (wave-brief.py writes it from $T's guard line in 010-tasks.md)"; exit 1; }
-# the prompt's words (single quotes stripped) become array elements; --mutate/--mutations and their values are dropped, --base is the base
-# branch; nothing is re-parsed by a shell, so a path with & | ' runs the right guard
+# the prompt's words (single quotes stripped) become array elements; --mutate/--mutations/--seed and their values are dropped
+# (per-task landing runs no mutation, user decision 2026-11-01), --base is the base branch; nothing is re-parsed by a shell, so a path with & | ' runs the right guard
 read -ra W <<< "${LINE#bash scripts/selfhost/guard.sh}"
 GUARD=(bash "$PWD/scripts/selfhost/guard.sh"); i=0
 while [ $i -lt ${#W[@]} ]; do
   case "${W[$i]}" in
     --base) GUARD+=(--base "$BASE"); i=$((i+2));;
-    --mutate|--mutations) i=$((i+2));;
+    --mutate|--mutations|--seed) i=$((i+2));;
     *) w=${W[$i]}; w=${w#\'}; GUARD+=("${w%\'}"); i=$((i+1));;
   esac
 done
 REVIEW=docs/specs/010-self-hosted-semantics/reviews/$T.md
 CHANGED=$(git diff --name-only "$BASE...$SHA" -- scripts/selfhost/) || { echo "LAND REFUSED: cannot diff $BR against $BASE (no merge base?)"; exit 1; }
 [ -z "$CHANGED" ] || { echo "LAND REFUSED: $BR changes scripts/selfhost/; the guard and the landing scripts change only on the base"; exit 1; }
+[ -z "$(git diff --name-only "$BASE...$SHA" -- tests/quality-baseline.json)" ] \
+  || { echo "LAND REFUSED: $BR edits tests/quality-baseline.json; only land.sh and the batch mutation run write it (revert the edit on the branch)"; exit 1; }
 
 WT=tmp/land-$t; rm -rf "$WT"; git worktree prune
 git worktree add -q --detach "$WT" "$SHA"
@@ -51,7 +57,15 @@ trap cleanup EXIT
   grep -q '^GUARD PASS' "../guard-land-$t.txt" || { echo "LAND REFUSED: guard failed"; exit 1; }
 )
 
+COVREPORT=$WT/tmp/guard-run/coverage/bayan-quality.json
+# the update after the merge must not fail half-way (merge done, tick uncommitted): try it on a copy first
+if [ -f "$COVREPORT" ]; then
+  mkdir -p tmp; cp tests/quality-baseline.json "tmp/land-$t-baseline.json"
+  python3 -I "$(dirname "$0")/quality-baseline.py" update "tmp/land-$t-baseline.json" "$WT" "$COVREPORT" 2> "tmp/land-$t-baseline.txt" \
+    || { echo "LAND REFUSED: quality-baseline.py failed on $COVREPORT — $(tail -1 "tmp/land-$t-baseline.txt")"; exit 1; }
+fi
 [ "$(git rev-parse "$BR")" = "$SHA" ] || { echo "LAND REFUSED: $BR moved from $SHA while it was checked; land again"; exit 1; }
 git merge --no-ff -m "chore(010): land $T" "$SHA"
 perl -i -pe "s/^- \[ \] $T /- [x] $T /" docs/specs/010-self-hosted-semantics/010-tasks.md
+[ ! -f "$COVREPORT" ] || python3 -I "$(dirname "$0")/quality-baseline.py" update tests/quality-baseline.json "$WT" "$COVREPORT"
 git commit -qam "chore(010): tick $T" && echo "LANDED $T"
