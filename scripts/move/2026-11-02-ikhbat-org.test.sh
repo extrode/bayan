@@ -386,6 +386,20 @@ run_undo --discard-changes-since-move
 if grep -qF "$NKEY" "$CLAUDE_HOME/lessons/INDEX.md" || ! grep -qF "$OKEY" "$CLAUDE_HOME/lessons/INDEX.md"; then fail "N4: undo did not restore INDEX.md"; fi
 [ -f "$LL/n.md" ] && [ ! -e "$CLAUDE_HOME/lessons/$NKEY--worktrees-new" ] || fail "N4: undo did not reverse the late lessons dir"
 
+# --- N5: the late lessons dir's INDEX.md rewrite survives a resume interrupted in between
+build_fixture
+STOP_AFTER=6 run_mv --execute
+[ "$RC" -eq 99 ] || fail "N5: stop after 6: exit $RC: $OUT"
+mkdir -p "$CLAUDE_HOME/projects/$OKEY--worktrees-new" "$CLAUDE_HOME/lessons/$OKEY--worktrees-new"
+printf '{"cwd":"%s/.worktrees/new"}\n' "$OLD_REPO" > "$CLAUDE_HOME/projects/$OKEY--worktrees-new/t.jsonl"
+echo "lesson n" > "$CLAUDE_HOME/lessons/$OKEY--worktrees-new/n.md"
+echo "- late $OKEY--worktrees-new/n.md" >> "$CLAUDE_HOME/lessons/INDEX.md"
+STOP_AFTER_MV=$CLAUDE_HOME/projects/$NKEY--worktrees-new/t.jsonl run_mv --execute
+[ "$RC" -eq 99 ] || fail "N5: interrupted resume: exit $RC: $OUT"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "N5: second resume: exit $RC: $OUT"
+grep -qxF -- "- late $NKEY--worktrees-new/n.md" "$CLAUDE_HOME/lessons/INDEX.md" || fail "N5: INDEX.md not rewritten after the interrupted resume"
+
 # --- N3: a git stderr warning on exit 0 is not "not clean"
 build_fixture
 mkdir -p "$FX/gitshim"
