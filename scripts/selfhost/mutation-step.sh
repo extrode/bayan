@@ -13,30 +13,30 @@ mutation_step() {
   if [ ! -x "$BAYAN" ]; then note "mutation: $BAYAN is missing; build src/Bayan.Cli (dotnet build) and run the guard again"
   else
     rm -f "$SNAP/manifest.json" "$SNAP/runs.jsonl"
-    BAYAN_SNAPSHOT=$SNAP BAYAN_SNAPSHOT_FILES=$MUTATE dotnet test --no-build --filter "($FILTER)&Snapshot!=skip" --logger "console;verbosity=normal" > $LOG/record.txt 2>&1 \
-      || note "mutation: recording the tests under BAYAN_SNAPSHOT failed ($REL/record.txt) — $(grep -m1 -A8 'Error Message' $LOG/record.txt | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
+    BAYAN_SNAPSHOT=$SNAP BAYAN_SNAPSHOT_FILES=$MUTATE dotnet test --no-build --filter "($FILTER)&Snapshot!=skip" --logger "console;verbosity=normal" > "$LOG/record.txt" 2>&1 \
+      || note "mutation: recording the tests under BAYAN_SNAPSHOT failed ($REL/record.txt) — $(grep -m1 -A8 'Error Message' "$LOG/record.txt" | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
     if [ ${#FAIL[@]} = 0 ] && [ ! -f "$SNAP/manifest.json" ]; then
       note "mutation: the recording wrote no $REL/snap/manifest.json: no test under --filter '$FILTER' builds a selfhost program"; fi
   fi
   if [ ${#FAIL[@]} = 0 ]; then
-    BUILDS=$(python3 -I -c 'import json, sys; [print(b["binary"] + "\t" + b["sites"]) for b in json.load(open(sys.argv[1]))["builds"]]' "$SNAP/manifest.json" 2> $LOG/manifest.txt) \
-      || note "mutation: $REL/snap/manifest.json is unreadable — $(tail -1 $LOG/manifest.txt)"
+    BUILDS=$(python3 -I -c 'import json, sys; [print(b["binary"] + "\t" + b["sites"]) for b in json.load(open(sys.argv[1]))["builds"]]' "$SNAP/manifest.json" 2> "$LOG/manifest.txt") \
+      || note "mutation: $REL/snap/manifest.json is unreadable — $(tail -1 "$LOG/manifest.txt")"
   fi
   [ ${#FAIL[@]} = 0 ] || return 1
   n=0
   while IFS=$'\t' read -r bin sites; do
     [ -n "$bin" ] || continue; n=$((n+1)); name=$n-$(basename "$bin"); rm -f "$(dirname "$bin")/bayan-quality.json"
     # site ids are per build: the replay runs only this build's recorded runs
-    "$BAYAN" mutate --binary "$bin" --sites "$sites" -- python3 -I "$REPLAY" --binary "$bin" "$SNAP" > $LOG/mutate-$name.txt 2>&1; MX=$?
+    "$BAYAN" mutate --binary "$bin" --sites "$sites" -- python3 -I "$REPLAY" --binary "$bin" "$SNAP" > "$LOG/mutate-$name.txt" 2>&1; MX=$?
     # bayan mutate exits 1 only when mutant 0 fails (usage errors exit 2, a gate below its minimum 3)
     if [ $MX = 1 ]; then
       note "mutation: the recording does not replay on the unmutated build $bin (mutant 0) — $(BAYAN_MUTANT=0 python3 -I "$REPLAY" --binary "$bin" "$SNAP" 2>&1 | tail -3 | tr '\n' ' ' | cut -c1-400)"; continue; fi
-    [ -f "$(dirname "$bin")/bayan-quality.json" ] || { note "mutation: bayan mutate exited $MX on $bin without a report — $(tail -3 $LOG/mutate-$name.txt | tr '\n' ' ')"; continue; }
-    cp "$(dirname "$bin")/bayan-quality.json" $LOG/quality-$name.json
+    [ -f "$(dirname "$bin")/bayan-quality.json" ] || { note "mutation: bayan mutate exited $MX on $bin without a report — $(tail -3 "$LOG/mutate-$name.txt" | tr '\n' ' ')"; continue; }
+    cp "$(dirname "$bin")/bayan-quality.json" "$LOG/quality-$name.json"
     echo "mutation build $name (per site: $REL/mutate-$name.txt, report: $REL/quality-$name.json):"
-    sed -n '/^mutation: [0-9]/,$p' $LOG/mutate-$name.txt
+    sed -n '/^mutation: [0-9]/,$p' "$LOG/mutate-$name.txt"
     [ $SURV = 1 ] && while read -r l; do l=${l%: survived}; [ -n "$l" ] && note "mutation survived: ${l#$PWD/} — no test fails under this change; add one that does, or mark the statement @unobservable because \"…\""
-    done < <(grep -E ': survived$' $LOG/mutate-$name.txt)
+    done < <(grep -E ': survived$' "$LOG/mutate-$name.txt")
   done <<< "$BUILDS"
   return 0
 }

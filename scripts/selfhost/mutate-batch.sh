@@ -80,15 +80,15 @@ if [ $LIST = 1 ]; then while IFS=$'\t' read -r g f flt; do echo "$f -> $flt"; do
 FAIL=(); note() { FAIL+=("$1"); }
 . "$HERE/mutation-step.sh"
 BAD=0; OK=()
-for g in $(cut -f1 <<< "$PLAN" | awk '!s[$0]++'); do
-  flt=$(awk -F'\t' -v g=$g '$1==g{print $3; exit}' <<< "$PLAN")
-  mut=$(awk -F'\t' -v g=$g '$1==g{print $2}' <<< "$PLAN" | paste -sd, -)
-  LOG=$OUT/$g; rm -rf "$LOG"; mkdir -p "$LOG"; FAIL=()
+while IFS= read -r g <&3; do
+  flt=$(awk -F'\t' -v g="$g" '$1==g{print $3; exit}' <<< "$PLAN")
+  mut=$(awk -F'\t' -v g="$g" '$1==g{print $2}' <<< "$PLAN" | paste -sd, -)
+  LOG="$OUT/$g"; rm -rf "$LOG"; mkdir -p "$LOG"; FAIL=()
   echo "== group $g ($flt): $mut"
   mutation_step "$LOG" "$flt" "$mut" 0
   # bayan mutate writes absolute source paths: make each report's paths repo-root-relative, so any machine can read it
   if [ ${#FAIL[@]} = 0 ]; then for rp in "$LOG"/quality-*.json; do
-    [ -f "$rp" ] && { python3 -I - "$rp" "$PWD" <<'PY' 2> $LOG/relpath.txt || note "report: $(tail -1 $LOG/relpath.txt)"
+    [ -f "$rp" ] && { python3 -I - "$rp" "$PWD" <<'PY' 2> "$LOG/relpath.txt" || note "report: $(tail -1 "$LOG/relpath.txt")"
 import json, os, sys
 rp, root = sys.argv[1:3]
 root = os.path.realpath(root)
@@ -111,14 +111,17 @@ PY
       [ -f "$rp" ] && mv "$rp" "$LOG/rejected/rejected-$(basename "$rp")"
     done
   fi
-done
+done 3< <(cut -f1 <<< "$PLAN" | awk '!s[$0]++')
 REPORTS=(); for g in ${OK[@]+"${OK[@]}"}; do REPORTS+=("$OUT/$g"/quality-*.json); done
 if [ ${#REPORTS[@]} -gt 0 ]; then
-  out=$(python3 -I "$HERE/quality-baseline.py" check $BASELINE . "${REPORTS[@]}" 2> $OUT/baseline.txt); BX=$?
+  out=$(python3 -I "$HERE/quality-baseline.py" check "$BASELINE" . "${REPORTS[@]}" 2> "$OUT/baseline.txt"); BX=$?
   if [ $BX != 0 ]; then
-    [ -n "$out" ] && echo "$out" || echo "baseline: quality-baseline.py check failed on $BASELINE — $(tail -1 $OUT/baseline.txt)"
+    [ -n "$out" ] && echo "$out" || echo "baseline: quality-baseline.py check failed on $BASELINE — $(tail -1 "$OUT/baseline.txt")"
+    # a refused shard uploads no accepted report: every report it would have applied moves to its group's rejected/
+    for g in "${OK[@]}"; do mkdir -p "$OUT/$g/rejected"
+      for rp in "$OUT/$g"/quality-*.json; do [ -f "$rp" ] && mv "$rp" "$OUT/$g/rejected/rejected-$(basename "$rp")"; done; done
     echo "mutate-batch: baseline not updated"; exit 1; fi
-  python3 -I "$HERE/quality-baseline.py" update $BASELINE . "${REPORTS[@]}" || { echo "mutate-batch: baseline update failed"; exit 1; }
+  python3 -I "$HERE/quality-baseline.py" update "$BASELINE" . "${REPORTS[@]}" || { echo "mutate-batch: baseline update failed"; exit 1; }
   echo "baseline: $BASELINE updated from ${#REPORTS[@]} report(s)"
 fi
 exit $BAD
