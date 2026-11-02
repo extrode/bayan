@@ -2,7 +2,20 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-02
+
+First release: milestones M0–M12 of the handoff's "What v0.1 is". Compiler archives for linux-x64, linux-arm64,
+macos-arm64, macos-x64, windows-x64 and windows-arm64, with SHA256SUMS.
+
+### Known limits
+- Windows is a preview: 82 tests fail there (spec 013 T19, `tests/windows-known-failures.txt`).
+- `bayan dist --target all` fails on wasm32: the runtime needs `sys/wait.h`, signals and `pipe` (WASM is v0.3).
+- No `List.sort(by:)` (only primitive lists sort) and no format specifiers such as `{x,8}` (spec Appendix B).
+- Laws L018 "No parser panic" and L023 "No checker panic" are proved but stay proposed (C# parser counterexamples).
+- The compiler is still the C# implementation; the self-hosted lexer, parser and checker are in `selfhost/`, the emitter is spec 011.
+
 ### Added
+- Compiler releases: a `v*` tag builds the NativeAOT compiler on each target's runner (`.github/workflows/release.yml`) and opens a draft GitHub Release with `bayan-<version>-<target>` archives, SHA256SUMS and this section as notes (`scripts/release/package.sh`)
 - Spec 013 (partial, T19 Windows and T27 open): test tooling. `bayan test --mutate` over mutant schemata (one build holds every mutant, chosen at run time; mutants that would not type-check are never emitted and are counted apart), an external mode that runs a given command per mutant, documented operators counted one by one, survivors with file, line, column, original and mutated text and a suggested case, `@unobservable because "…"` marks, timing per report. `bayan test --coverage` with compiler-inserted counters for lines, branches and `fails` paths; instrumented runs keep output and exit code, normal builds' C is byte-identical. Terminal summary, `bayan-quality.json` and a per-line listing; package minimums fail a run below them; a one-line coverage summary on plain Debug `bayan test`. Spec 010 guard gates on coverage of a task's files; `land.sh` records coverage raise-only in `tests/quality-baseline.json`; mutation runs in batches (`scripts/selfhost/mutate-batch.sh`, nightly `.github/workflows/mutation.yml`, shards merged into one baseline update). Coverage and mutation reports for C# `src/`. Verified on macOS and Linux; Windows (wp1) fails 82 tests, `docs/specs/013-test-tooling/013-results.md`
 - Spec 010: the type checker in Bayan (`selfhost/semantics/`, driver `bayan-check`): names, types, overloads, interfaces, lambdas, error flow, effects, flow, ownership, regions, the project manifest and the lints, plus `--types` (same JSON as `bayan types`), `--many`, `--golden`, `--spans` and `--time`. Checked against `bayan check` and `bayan types` on every `diag/` and `typed/` golden, 79 generator seeds and a 1 MB program (1.42 times `bayan check`). Law L022 "Binder equivalence" enacted; law L023 "No checker panic" proved and kept proposed (C# parser counterexamples, Q662–Q663). Tooling in `scripts/selfhost/` (wave briefs, guard, mutation-exempt checks, review briefs, land). Questions 520–738
 - Spec 009: the parser in Bayan (`selfhost/parser/`): recursive-descent parser, syntax-tree unions over `Owned<…>` nodes, literal decoders, `--ast` S-expression dump, span-bounds walker and `bayan-parse` driver (`<path>|-`, `--many`, `--time`, `--codes`) sharing `selfhost/lexer/`, checked for byte-identical dumps, diagnostics and exit codes against `bayan parse --ast` on every `parse/` golden, every `BYN1` `diag/` golden and seeded valid and corrupted program corpora (266 `SelfhostParser*` tests). Law L017 "Parser equivalence" enacted; law L018 "No parser panic" proven and kept proposed (C# counterexamples, Q509–Q510). Questions 430–510
