@@ -5,7 +5,7 @@
 # 3. (--delete-scratch) gitignored scratch in tmp/ from 013's review, refute, T19 and agy-shell work;
 # 4. (--remove-docker-image) the bayan-t19 image (2.16 GB) built for the T19 Linux run;
 # 5. (--delete-remote) the T19 scratch clone, bundles and run script on wp1 and wlt1 (ssh), and wp1's old zig 0.16.0-dev and the 0.17.0 zip.
-# Section 1 also takes the 2026-11-02 review-fix, Q742, docs and tmp/win-combined (test/win-combined-1102) worktrees once dev holds them.
+# Section 1 also takes the 2026-11-02 review-fix, Q742, docs and tmp/win-combined (test/win-combined-1102), tmp/combined-1102b (test/combined-1102b) worktrees once dev holds them.
 # Dry run by default. --execute / -e acts on worktrees and branches; each later section also needs its own flag.
 # Merged-ness, tracked-ness and existence are asked at run time, never taken from this header.
 set -euo pipefail
@@ -66,7 +66,7 @@ printf '== 1. bayan worktrees and branches\n'
 remove_worktrees "$repo" '.worktrees/worker-w-013-*' '.worktrees/worker-w-winport' '.worktrees/feat-013-test-tooling' \
   '.worktrees/docs-011-spec' '.worktrees/fix-windows-portability' '.worktrees/worker-w-rev1102*' '.worktrees/worker-w-q742*' \
   '.worktrees/fix-q742-lf-output' '.worktrees/fix-review-2026-11-02-2' '.worktrees/chore-remove-mutant-outcome' \
-  '.worktrees/docs-handoff-1102' 'tmp/win-combined' '.worktrees/chore-q743-known-failures' '.worktrees/worker-w-q743kf'
+  '.worktrees/docs-handoff-1102' 'tmp/win-combined' '.worktrees/chore-q743-known-failures' '.worktrees/worker-w-q743kf' '.worktrees/fix-windows-raw-stdout' '.worktrees/fix-review-2026-11-02-3' 'tmp/combined-1102b'
 delete_branches "$repo"
 
 # 2. ~/.claude (its own dev).
@@ -82,7 +82,7 @@ fi
 # 3. Scratch under tmp/ (gitignored; refused if git tracks it).
 printf '== 3. tmp/ scratch\n'
 for rel in tmp/agy-sh tmp/agy-sh-repo tmp/audit-013.txt tmp/refute2 tmp/review-013 tmp/review-dev-1102 tmp/win-port \
-           tmp/c4 tmp/t19 tmp/bk tmp/mutate-batch tmp/guard-run tmp/013-t27 tmp/law-tier-proposal.md tmp/q743-known tmp/mb-break.out; do
+           tmp/c4 tmp/t19 tmp/bk tmp/mutate-batch tmp/guard-run tmp/013-t27 tmp/law-tier-proposal.md tmp/q743-known tmp/mb-break.out tmp/review-1102b tmp/win-port/raw.trx tmp/win-port/raw2.trx tmp/win-port/raw2.bundle tmp/win-port/wp1-raw.out tmp/win-port/wp1-raw2.out; do
   if [ ! -e "$rel" ]; then printf 'skip:  %s already gone\n' "$rel"; continue; fi
   if [ -n "$(git ls-files -- "$rel" | head -1)" ]; then
     printf 'refuse: %s is tracked by git. Propose it as a commit instead. Left alone.\n' "$rel"; failed=1; continue
