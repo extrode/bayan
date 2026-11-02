@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Installs the pinned zig into DEST and prints its bin directory; checks the archive's sha256 first.
 # Replaces mlugg/setup-zig, whose latest release (v2.2.1) still runs on Node 20.
-# Usage: install-zig.sh DEST   (ZIG_BASE_URL overrides https://ziglang.org/download for tests)
+# Usage: install-zig.sh DEST   (tests only: ZIG_BASE_URL replaces https://ziglang.org/download, ZIG_SHA256 the pinned sum)
 set -euo pipefail
 
-version=0.17.0
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+sums_for=0.17.0  # the release the sums below belong to
+version="$(tr -d '[:space:]' < "$root/.zig-version")"
+if [ "$version" != "$sums_for" ]; then
+  echo "install-zig: .zig-version is $version but the sums here are for $sums_for; copy $version's from https://ziglang.org/download/index.json" >&2
+  exit 1
+fi
 dest="${1:?usage: install-zig.sh DEST}"
 base="${ZIG_BASE_URL:-https://ziglang.org/download}"
 

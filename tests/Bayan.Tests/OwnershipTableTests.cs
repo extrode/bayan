@@ -54,11 +54,17 @@ public sealed class OwnershipTableTests
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "own-table", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var (file, args) = OperatingSystem.IsWindows() ? ("ping", new[] { "-n", "30", "127.0.0.1" }) : ("sleep", new[] { "30" });
-        var clock = Stopwatch.StartNew();
-        var e = await Assert.ThrowsAsync<TimeoutException>(() => RunAsync(file, args, dir, timeoutMs: 500));
-        Assert.Contains($"{file} did not exit within 500 ms", e.Message);
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20), $"took {clock.Elapsed}");
-        Directory.Delete(dir, recursive: true);
+        try
+        {
+            var clock = Stopwatch.StartNew();
+            var e = await Assert.ThrowsAsync<TimeoutException>(() => RunAsync(file, args, dir, timeoutMs: 500));
+            Assert.Contains($"{file} did not exit within 500 ms", e.Message);
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20), $"took {clock.Elapsed}");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]
