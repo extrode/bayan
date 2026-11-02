@@ -220,8 +220,9 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
     /// <summary>Programs and arguments for snapshot test fixtures across platforms.</summary>
     private static class SnapshotFixture
     {
-        internal static readonly string DifferProgram = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh";
-        internal static readonly string[] DifferArgs = OperatingSystem.IsWindows() ? ["/c", "echo", "%RANDOM%"] : ["-c", "echo $$"];
+        // cmd.exe's %RANDOM% is seeded from the clock in seconds, so two runs in one second print the same number (wp1).
+        internal static readonly string DifferProgram = OperatingSystem.IsWindows() ? "powershell.exe" : "/bin/sh";
+        internal static readonly string[] DifferArgs = OperatingSystem.IsWindows() ? ["-NoProfile", "-Command", "$PID"] : ["-c", "echo $$"];
         internal static string DifferCommand => $"{DifferProgram} {string.Join(' ', DifferArgs)}";
 
         internal static readonly string EchoProgram = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/echo";
