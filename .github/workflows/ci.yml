@@ -30,6 +30,11 @@ jobs:
       - name: Install zig
         shell: bash
         run: bash scripts/ci/install-zig.sh "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+      - name: Script tests
+        if: runner.os != 'Windows'
+        run: |
+          bash scripts/ci/install-zig.test.sh
+          bash scripts/ci/known-failures.test.sh
       - name: Test
         if: runner.os != 'Windows'
         run: dotnet test Bayan.slnx -c Release

@@ -41,6 +41,12 @@ mkdir -p "$tmp/shim"; printf '#!/bin/sh\ncase "$1" in -s) echo Plan9;; -m) echo 
 if out="$(PATH="$tmp/shim:$PATH" "$script" "$tmp/none" 2>&1)"; then fail "an unknown host was accepted"; fi
 echo "$out" | grep -q "no pinned zig 0.17.0 for Plan9-mips" || fail "no unknown-host message: $out"
 
+# A .zig-version the sums are not for is refused before anything is downloaded.
+mkdir -p "$tmp/repo/scripts/ci"; cp "$script" "$tmp/repo/scripts/ci/"; echo 0.18.0 > "$tmp/repo/.zig-version"
+if out="$(ZIG_BASE_URL="file://$tmp/site" "$tmp/repo/scripts/ci/install-zig.sh" "$tmp/other" 2>&1)"; then fail "a .zig-version without sums was installed"; fi
+echo "$out" | grep -q ".zig-version is 0.18.0 but the sums here are for 0.17.0" || fail "no version-mismatch message: $out"
+[ ! -e "$tmp/other" ] || fail "something was downloaded for an unpinned version"
+
 # Wiring: no workflow uses a Node 20 action; each zig step runs the script.
 for wf in "$root/.github/workflows/ci.yml" "$root/.github/workflows/mutation.yml"; do
   ! grep -q "mlugg/setup-zig" "$wf" || fail "$wf still uses mlugg/setup-zig"

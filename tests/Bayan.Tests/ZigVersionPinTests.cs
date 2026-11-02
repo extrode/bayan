@@ -18,9 +18,15 @@ public sealed class ZigVersionPinTests
     public void WorkflowsInstallThePinnedZig(string workflow)
     {
         var text = File.ReadAllText(Path.Combine(Golden.RepoRoot, ".github", "workflows", workflow));
-        var versions = Regex.Matches(text, @"uses: mlugg/setup-zig@\S+\s+with:\s+version: (\S+)").Select(m => m.Groups[1].Value).ToList();
-        Assert.NotEmpty(versions);
-        Assert.All(versions, v => Assert.Equal(Pinned, v));
+        Assert.Contains("bash scripts/ci/install-zig.sh", text);
+        Assert.DoesNotContain("setup-zig", text);
+    }
+
+    [Fact]
+    public void InstallScriptHoldsThePinnedSums()
+    {
+        var script = File.ReadAllText(Path.Combine(Golden.RepoRoot, "scripts", "ci", "install-zig.sh"));
+        Assert.Equal(Pinned, Regex.Match(script, @"(?m)^sums_for=(\S+)").Groups[1].Value);
     }
 
     [Fact]
