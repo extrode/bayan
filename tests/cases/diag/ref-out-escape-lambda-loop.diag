@@ -1,0 +1,9 @@
+error BYN3002: the lambda on line 8 does not live as long as `last`, which borrows it
+
+  2 │     g = f
+    │         - `pass` stores `f` into `g` here
+    │
+  8 │         pass(x => x + i, to: out last)
+    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the lambda on line 8 is freed at the end of its block
+    │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

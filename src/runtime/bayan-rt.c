@@ -359,7 +359,8 @@ void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
         case BYN_WRITE_GROW: {
             int64_t grown = w->cap < 16 ? 16 : w->cap * 2;
             if (grown < w->len + n) grown = w->len + n;
-            /* A fresh block, not a resize: text already taken with asString() keeps pointing at the old one. */
+            /* A fresh block, not a resize: text already taken with asString() keeps pointing at the old one.
+             * The checker relies on this (Q745): append after finish() or view is allowed (tests/native/strbuf-grow.c). */
             uint8_t* p = (uint8_t*)w->alloc->resize(w->alloc, NULL, 0, grown);
             if (w->len > 0) memcpy(p, w->buf, (size_t)w->len);
 #ifdef BYN_DEBUG

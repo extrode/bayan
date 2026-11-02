@@ -1,0 +1,13 @@
+error BYN3004: `sb` is modified while `s` still borrows it
+
+  6 │     sb.insert("b", at: 0)
+    │     ^^^^^^^^^^^^^^^^^^^^^ `s` is used again on line 7
+    │
+  help: finish using `s` first, or copy what it needs before changing `sb`
+
+error BYN3006: `sb` is moved while `s` still borrows it
+
+  14 │     let t = sb.take()
+     │             ^^^^^^^^^ `s` is used again on line 15
+     │
+  help: finish using `s` first, or copy what it needs before moving `sb`

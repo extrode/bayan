@@ -1,0 +1,12 @@
+void pass((i64 -> i64) f, to ref (i64 -> i64) g) {
+    g = f
+}
+
+void main() {
+    var last: i64 -> i64 = x => x
+    {
+        let k = 5
+        pass(x => x + k, to: ref last)
+    }
+    print($"{last(1)}")
+}
