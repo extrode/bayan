@@ -22,14 +22,14 @@ jobs:
             exe: bayan.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       # The tests cross-compile (OutputTests) and `bayan doctor` expects zig; no runner image has it.
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
+      - name: Install zig
+        shell: bash
+        run: bash scripts/ci/install-zig.sh "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
       - name: Test
         if: runner.os != 'Windows'
         run: dotnet test Bayan.slnx -c Release
