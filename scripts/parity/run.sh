@@ -20,6 +20,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tool="${1:?usage: run.sh <tool> [--impl cmd] [--record] [case...]}"; shift
 dir="$root/tests/parity/$tool"
+case "$tool" in ""|.|..|*/*) echo "parity: bad tool name: $tool" >&2; exit 2 ;; esac
 [ -d "$dir" ] || { echo "parity: no cases at tests/parity/$tool" >&2; exit 2; }
 impl=""; record=0; cases=()
 while [ $# -gt 0 ]; do
@@ -43,6 +44,7 @@ same_files() {
 scratch="$root/tmp/parity/$tool"
 bad=0; n=0
 for c in "${cases[@]}"; do
+  case "$c" in ""|.|..|*/*) echo "FAIL $tool/$c: bad case name"; bad=1; continue ;; esac
   case_dir="$dir/$c"; [ -d "$case_dir" ] || { echo "FAIL $tool/$c: no such case"; bad=1; continue; }
   n=$((n+1))
   work="$scratch/$c/work"; got="$scratch/$c/got"
@@ -66,7 +68,8 @@ for c in "${cases[@]}"; do
   set -e
   mkdir -p "$got/files"; (cd "$work" && tar --exclude ./.git -cf - .) | (cd "$got/files" && tar -xf -)
   # Scratch paths differ per checkout: the work and repo paths read as $WORK and $ROOT.
-  for f in stdout stderr; do sed -i.bak -e "s|$work|\$WORK|g" -e "s|$root|\$ROOT|g" "$got/$f" && rm -f "$got/$f.bak"; done
+  # Literal match, and only a whole path: a root of /w must not rewrite /wave-brief.
+  for f in stdout stderr; do W="$work" R="$root" perl -pi -e 's/\Q$ENV{W}\E(?![\w.-])/\$WORK/g; s/\Q$ENV{R}\E(?![\w.-])/\$ROOT/g' "$got/$f"; done
   if [ $record = 1 ]; then
     rm -rf "$case_dir/expected"; mkdir -p "$case_dir/expected"
     cp "$got/exit" "$got/stdout" "$got/stderr" "$case_dir/expected/"; cp -R "$got/files" "$case_dir/expected/files"
@@ -79,6 +82,6 @@ for c in "${cases[@]}"; do
   same_files "$case_dir/expected/files" "$got/files" > "$got/files.diff" 2>&1 \
     || { echo "FAIL $tool/$c: files differ: $(head -3 "$got/files.diff" | tr '\n' ' ' | cut -c1-300)"; bad=1; }
 done
-[ $record = 1 ] && { echo "RECORDED $tool $n cases"; exit 0; }
+[ $record = 1 ] && { echo "RECORDED $tool $n cases"; exit $bad; }
 [ $bad = 0 ] && echo "PASS $tool $n cases"
 exit $bad
