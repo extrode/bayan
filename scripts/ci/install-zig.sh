@@ -27,7 +27,7 @@ sum="${ZIG_SHA256:-$sum}"
 mkdir -p "$dest"
 archive="$dest/$name.$ext"
 curl -fsSL --retry 3 -o "$archive" "$base/$version/$name.$ext"
-if command -v sha256sum >/dev/null; then got="$(sha256sum "$archive" | cut -d' ' -f1)"; else got="$(shasum -a 256 "$archive" | cut -d' ' -f1)"; fi
+if command -v sha256sum >/dev/null; then got="$(sha256sum < "$archive" | cut -d' ' -f1)"; else got="$(shasum -a 256 < "$archive" | cut -d' ' -f1)"; fi # stdin: GNU sha256sum prefixes the sum with \ when the path holds one (Windows runners)
 if [ "$got" != "$sum" ]; then
   echo "install-zig: sha256 mismatch for $name.$ext: got $got, want $sum" >&2
   rm -f "$archive"; exit 1

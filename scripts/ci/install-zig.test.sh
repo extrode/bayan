@@ -36,6 +36,9 @@ bin="$(ZIG_BASE_URL="file://$tmp/site" ZIG_SHA256="$good" "$script" "$tmp/good" 
 grep -qx 0.17.0 "$tmp/err" || fail "zig version not reported on stderr"
 [ ! -e "$tmp/good/$name.tar.xz" ] || fail "archive not removed after unpacking"
 
+# A destination path holding a backslash, as Windows runners' RUNNER_TEMP does.
+ZIG_BASE_URL="file://$tmp/site" ZIG_SHA256="$good" "$script" "$tmp/back\\slash" >/dev/null 2>"$tmp/err" || fail "backslash path refused: $(cat "$tmp/err")"
+
 # A host with no pinned build is refused by name.
 mkdir -p "$tmp/shim"; printf '#!/bin/sh\ncase "$1" in -s) echo Plan9;; -m) echo mips;; esac\n' > "$tmp/shim/uname"; chmod +x "$tmp/shim/uname"
 if out="$(PATH="$tmp/shim:$PATH" "$script" "$tmp/none" 2>&1)"; then fail "an unknown host was accepted"; fi
