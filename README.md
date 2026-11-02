@@ -7,6 +7,7 @@ Bayan (بيان) is a value-oriented, natively compiled language derived from C#
 - Language spec: [`docs/bayan-spec.md`](docs/bayan-spec.md)
 - Naming and style guides: [`docs/bayan-grammar.md`](docs/bayan-grammar.md), [`docs/bayan-style.md`](docs/bayan-style.md)
 - v0.1 plan, milestones, progress log: [`docs/bayan-handoff.md`](docs/bayan-handoff.md)
+- Home: <https://bayan.run>. Repository: <https://github.com/ikhbat-org/bayan> (Ikhbat Foundation).
 
 ## Build and test
 
