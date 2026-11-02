@@ -109,11 +109,16 @@ keeps redirecting.
 2. **Move script** `scripts/move/2026-11-02-ikhbat-org.sh` + `.test.sh`, written by
    `codegen-lite`, gated against this plan. Dry run by default, `--execute` acts. Every path from
    variables (`OLD_REPO`, `NEW_REPO`, `CLAUDE_HOME`, `CLAUDE_JSON`, `NEW_REMOTE`, `PGREP`)
-   defaulting to the real ones. Every rewrite matches `OLD_REPO` or the key prefix (fixed strings,
-   never regex built from the path) only when the next character is not a name character
-   `[A-Za-z0-9._]`, or at end of string: so `/`, `-`, `"`, `)` and space all end a match, and
-   `bayan-x`/`bayan.x`/`bayan_x` never do (INDEX.md has 16 `(key)` tags; queue.jsonl has the key
-   before `"` and space). Each step prints `would:`/`run:`/`skip:`/`refuse:` and is idempotent: the
+   defaulting to the real ones. Matching uses fixed strings, never a regex built from the path, and
+   two boundary rules (rev 3a, found by the script's writer: one class cannot serve both forms):
+   - `OLD_REPO` (a path) matches only when the next character is not `[A-Za-z0-9._-]`, or at end
+     of string: `/`, `"`, `)` and space end it; `bayan-x`, `bayan.x`, `bayan_x` never match.
+   - The key prefix matches only when the next character is not `[A-Za-z0-9._]`, or at end: `-`
+     must end it, since the key turns `/` and `.` into `-` (`…-bayan-tmp-wt-x`,
+     `…-bayan--worktrees-x`). A sibling repo `extrode.com/bayan<anything>` would get a key that
+     this cannot tell apart, so preflight refuses when any entry of `OLD_REPO`'s parent is named
+     `bayan` plus at least one more character (none exists today). INDEX.md has 16 `(key)` tags;
+     queue.jsonl has the key before `"` and space. Each step prints `would:`/`run:`/`skip:`/`refuse:` and is idempotent: the
    manifest records finished steps, a rerun after an interruption skips them, and a step whose
    target already holds the new form is a `skip:`.
    1. Preflight, all refusals before any change. With no manifest every check below applies. With
@@ -124,8 +129,9 @@ keeps redirecting.
       - no Claude process: `pgrep -fl` for `/claude/versions/`, `ClaudeCode.app`, `bin/claude`,
         and `pgrep -x claude` for a bare argv; the script prints each PID and command line and
         stops nothing itself;
-      - no `sessions/*.json` whose `pid` is alive names an old path; `daemon.lock` names no live
-        PID;
+      - no `$CLAUDE_HOME/sessions/*.json` whose `pid` is alive (`kill -0`) has a `cwd` at an old
+        path (files without `pid` are skipped); `$CLAUDE_HOME/daemon.lock`'s `pid` is not alive;
+      - no entry of `OLD_REPO`'s parent named `bayan` plus more characters (key collision);
       - `daemon/roster.json` and every `jobs/*/state.json` with `.state != "done"` name no old
         path;
       - `NEW_REPO` and every target project/lesson dir absent;
@@ -151,8 +157,8 @@ keeps redirecting.
    8. Same `jq` discipline, every string value at a boundary: `workers/registry.json` (`cwd`,
       `repo`, `worktree`, `criteria`), `history.jsonl` (`project` only, line by line, line count
       unchanged; `display` is message text and stays), `lessons/queue.jsonl` (`transcript`, `cwd`,
-      `project`, line by line, line count unchanged), `jobs/*/state.json` (`cwd`, `linkScanPath`,
-      the project key in session paths).
+      `project`, line by line, line count unchanged), `jobs/*/state.json` (every string value, path
+      and key rules both; today `cwd`, `linkScanPath` and `fan[].label`).
    9. `undo.sh` in the backup dir reverses 3–8 from the manifest and backups; idempotent.
    10. Verify: zero `projects/`/`lessons/` dirs with the old prefix; renamed counts equal the
        manifest's; `grep -c` of old-path `cwd` lines in the new dirs is 0; the two `.claude.json`
@@ -162,8 +168,9 @@ keeps redirecting.
    (tree hash before/after); each preflight refusal (each process form via a stub `PGREP`, the
    bare-argv form included; a live `sessions/*.json`; a job with `"state":"working"` and one with
    `"state":"done"` that must not refuse; dirty repo, linked worktree, ls-remote mismatch, target
-   exists); boundary cases (`/…/bayan-x`, `-…-bayan-x`, `bayan.x` untouched; `"cwd":"<old>/sub"`,
-   `(key)`, key before `"` and space rewritten); a full execute (repo moved, remote set, dirs
+   exists; a sibling `bayan-x` dir next to `OLD_REPO`); boundary cases (paths `/…/bayan-x`,
+   `/…/bayan.x`, `/…/bayan_x` untouched; key `-…-bayanx` untouched; `"cwd":"<old>/sub"`, `(key)`,
+   key before `-`, `"` and space rewritten); a full execute (repo moved, remote set, dirs
    renamed with suffixes, transcripts' `cwd` rewritten and other bytes equal, INDEX,
    `.claude.json` keys moved and other keys byte-equal, registry, history with a `display` row
    left unchanged, queue.jsonl, job state); runs interrupted after steps 3, 5 and 6, each resumed
