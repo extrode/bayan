@@ -18,14 +18,17 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     private static string LexerDir => Path.Combine(Golden.RepoRoot, "selfhost", "lexer");
 
     /// <summary>The built <c>bayan-lex</c>, or the compiler's complaint.</summary>
-    private static readonly Lazy<(string? Path, string Error)> BayanLex = new(() =>
+    private static readonly Lazy<(string? Path, string Error)> BayanLex = new(() => BuildLex(SelfhostSemanticsHarness.SnapshotDir));
+
+    /// <summary><c>selfhost/lexer</c> built in fast mode; under <paramref name="snapshot"/> a schemata build listed in its <c>manifest.json</c>.</summary>
+    private static (string? Path, string Error) BuildLex(string? snapshot)
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.FromPath(Path.Combine(LexerDir, "main.byn"));
         if (c.Diagnostics.HasErrors) return (null, string.Join("\n", c.Diagnostics.Items));
-        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal));
+        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal), snapshot, SelfhostSemanticsHarness.CoverageDir, Environment.GetEnvironmentVariable("BAYAN_COVERAGE_FILES"));
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
-    });
+    }
 
     private static string Built
     {
@@ -38,9 +41,11 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     }
 
     /// <summary>Runs <paramref name="program"/>; under <c>BAYAN_SNAPSHOT</c> the run is recorded (spec 013 R14).</summary>
-    private static (int Exit, string Out, string Err) Run(string program, params string[] args)
+    private static (int Exit, string Out, string Err) Run(string program, params string[] args) => RunIn(SelfhostSemanticsHarness.SnapshotDir, program, args);
+
+    private static (int Exit, string Out, string Err) RunIn(string? snapshot, string program, string[] args)
     {
-        if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
+        if (snapshot is { } dir)
         {
             var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, null, args);
             return (exit, Encoding.UTF8.GetString(ProcessText.Lf(o)), Encoding.UTF8.GetString(ProcessText.Lf(e)));
@@ -58,9 +63,11 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     private static (int Exit, byte[] Out, string Err) RunBytes(string program, params string[] args) => RunBytes(program, null, args);
 
     /// <summary><see cref="RunBytes(string, string[])"/> with <paramref name="input"/> fed to stdin.</summary>
-    private static (int Exit, byte[] Out, string Err) RunBytes(string program, byte[]? input, params string[] args)
+    private static (int Exit, byte[] Out, string Err) RunBytes(string program, byte[]? input, params string[] args) => RunBytesIn(SelfhostSemanticsHarness.SnapshotDir, program, input, args);
+
+    private static (int Exit, byte[] Out, string Err) RunBytesIn(string? snapshot, string program, byte[]? input, string[] args)
     {
-        if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
+        if (snapshot is { } dir)
         {
             var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, input, args);
             return (exit, ProcessText.Lf(o), Encoding.UTF8.GetString(ProcessText.Lf(e)));
@@ -88,6 +95,22 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         var input = Path.Combine(Golden.CasesRoot, name);
         var (_, stdout, _) = Run(Built, input);
         if (Golden.Compare(Path.ChangeExtension(input, ".tokens"), stdout, update: false).Failure is { } failure) Assert.Fail(failure);
+    }
+
+    /// <summary>Spec 013 R14: the lexer group records: its build is listed in <c>manifest.json</c> and both run helpers append to <c>runs.jsonl</c>.</summary>
+    [Fact]
+    [Trait("Snapshot", "skip")]
+    public void BuildAndRunsAreRecordedUnderASnapshotDirectory()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-lexer-snap");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        var (path, error) = BuildLex(dir);
+        Assert.True(path is not null, error);
+        Assert.True(File.Exists(Path.Combine(dir, "manifest.json")), "the build wrote no manifest.json");
+        var input = Directory.GetFiles(Path.Combine(Golden.CasesRoot, "lex"), "*.byn").Order(StringComparer.Ordinal).First();
+        RunIn(dir, path!, [input]);
+        RunBytesIn(dir, path!, null, [input]);
+        Assert.Equal(2, File.ReadAllLines(Path.Combine(dir, "runs.jsonl")).Length);
     }
 
     [Fact]
