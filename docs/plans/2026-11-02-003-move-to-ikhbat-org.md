@@ -1,6 +1,6 @@
 # Move Bayān to the Ikhbat Foundation
 
-Date: 2026-11-02. Tier: Standard. Status: rev 2 (reviews A and B folded in, the user's choices
+Date: 2026-11-02. Tier: Standard. Status: rev 3 (reviews A, B and C folded in, the user's choices
 applied), waiting for the user's approval.
 
 ## Goal
@@ -35,15 +35,18 @@ keeps redirecting.
   Release `v0.1.0` has 7 assets (6 archives + SHA256SUMS). GitHub branches: `dev`, `main`.
 - GitHub transfer moves issues, releases, tags, Actions history and settings, and redirects the old
   web and git URLs for as long as no new `extrode/bayan` is created.
-- Local `dev` = 52f5c35e, `origin/dev` = e27f0daf. Local branches with commits not on any remote:
-  `dev`, `docs/011-plan` (in dev), `docs/ikhbat-move-plan` (merges in step 1). Local refs move with
+- `origin/dev` = 52f5c35e (pushed by the user); local `dev` = 64ed9dba (011 rev 4 merged since).
+  Local branches with commits not on any remote: `dev`, `docs/011-rev4` (in dev), `fix/q745` (in
+  flight; its worktree lands or is removed before step 7), `docs/ikhbat-move-plan` (merges in step 1). Local refs move with
   the directory, so nothing depends on pushing them, but the transfer check compares `dev`.
 - Review watermark: local config `review.reviewedthrough` = e27f0daf (no `refs/review/reviewed`
   locally or on origin). It lives in `.git/config` and moves with the checkout.
 - Tracked files naming the old path: `docs/misc/b-trees.md` (three `file:///…` links),
   `scripts/cleanup/016-spec-013-and-011-draft.sh` (`/home/code/extrode.com/bayan`).
   `docs/laws/README.md` names `Extrode.Jaunty`, unrelated, unchanged.
-- mb1 Claude state naming the path or its key:
+- mb1 Claude state naming the path or its key. Counts drift while sessions run (transcripts 911
+  then 912, history 336 then 338), so the script computes every count at run time; these are
+  orientation only:
 
   | Where | Count | Handled by |
   |---|---|---|
@@ -52,6 +55,9 @@ keeps redirecting.
   | `lessons/-Users-sy-Developer-extrode-com-bayan*` dirs | 163 | rename (2.5) |
   | `lessons/INDEX.md` lines naming the key | 274 | rewrite (2.6) |
   | `history.jsonl` rows with `"project":"<old>"` | 336 | rewrite (2.8) |
+  | `history.jsonl` rows with the old path in `display` (message text) | 10 | not rewritten, on purpose |
+  | `lessons/queue.jsonl` rows (`transcript`, `cwd`, `project`) | 5 | backup + rewrite (2.8), line by line |
+  | `sessions/*.json` `cwd` of live sessions; `daemon.lock` `spawnedBy.cwd` | 3 + 1 | not rewritten: preflight refuses while any is live; files left after their process ends are stale |
   | `~/.claude.json` `projects["<old>"]`, `githubRepoPaths["extrode/bayan"]` | 1 + 1 | rewrite (2.7) |
   | `workers/registry.json` string fields: `cwd` 331, `repo` 114, `worktree` 114, `criteria` 74 | 633 | rewrite (2.8) |
   | `jobs/c6b5c540/state.json` (`cwd`, `linkScanPath`); `daemon/roster.json` (this job's worker) | 2 | this job ends before step 7; state.json rewritten (2.8) |
@@ -61,10 +67,15 @@ keeps redirecting.
   `-tmp-bench-*`, 1 main); no `extrode.com/bayan-x` sibling exists. Accepted as history, not
   rewritten: `workers/dispatch-log.jsonl`, `workers/logs/`, `file-history/`, `~/.claude/tmp/`,
   `backups/.claude.json.backup.*`, `jobs/*/timeline.jsonl`, `~/.cache/zig`, the repo's `.cache/`
-  and `obj/` (rebuilt in step 10), message text inside transcripts.
+  and `obj/` (rebuilt in step 10), message text inside transcripts. Also accepted: `tmp/bench/repo`,
+  a nested scratch repo whose 7 linked worktrees hold absolute `gitdir` paths under `OLD_REPO`; they
+  break after the `mv`, and the 5 `-tmp-bench-*` session dirs point into them. Scratch, not repaired.
 - Running Claude processes take several forms: `~/.local/bin/claude` (incl. `claude daemon run`),
   `~/.local/share/claude/versions/<v>` (basename is the version), `ClaudeCode.app/…/claude
-  --bg-pty-host`. This session is bg job c6b5c540 with the old cwd.
+  --bg-pty-host`, and a bare `claude` argv (PID 89218, interactive). Live sessions with the old cwd
+  (`sessions/*.json`, 2026-11-02): this one (bg job c6b5c540), 89218 (interactive), 10319 (a
+  `--print` worker); the daemon was spawned from an old-path worktree (`daemon.lock`). Job files
+  carry `.state` (`done`/`working`), not `status`.
 - Vault (`~/dotfiles/claude-vault`, keyed by git remote): no bayan entry. The slug for the new
   remote is `github.com--ikhbat-org--bayan`.
 - wp1 and wlt1: checkout at `C:\home\code\extrode.com\bayan` on `feat/013-test-tooling` at
@@ -98,22 +109,31 @@ keeps redirecting.
 2. **Move script** `scripts/move/2026-11-02-ikhbat-org.sh` + `.test.sh`, written by
    `codegen-lite`, gated against this plan. Dry run by default, `--execute` acts. Every path from
    variables (`OLD_REPO`, `NEW_REPO`, `CLAUDE_HOME`, `CLAUDE_JSON`, `NEW_REMOTE`, `PGREP`)
-   defaulting to the real ones. Every rewrite matches `OLD_REPO` only when followed by `/`, `"` or
-   end of string, and the key prefix only when followed by `-`, `/` or end (fixed strings, never
-   regex built from the path). Each step prints `would:`/`run:`/`skip:`/`refuse:` and is
-   idempotent: the manifest records finished steps, a rerun after an interruption skips them,
-   and a step whose target already holds the new form is a `skip:`.
-   1. Preflight, all refusals before any change:
-      - no Claude process: `pgrep -fl` for `/claude/versions/`, `ClaudeCode.app`, `bin/claude`;
-        the script prints each PID and command line and stops nothing itself;
-      - `daemon/roster.json` and every `jobs/*/state.json` whose status is not finished name no
-        old path;
+   defaulting to the real ones. Every rewrite matches `OLD_REPO` or the key prefix (fixed strings,
+   never regex built from the path) only when the next character is not a name character
+   `[A-Za-z0-9._]`, or at end of string: so `/`, `-`, `"`, `)` and space all end a match, and
+   `bayan-x`/`bayan.x`/`bayan_x` never do (INDEX.md has 16 `(key)` tags; queue.jsonl has the key
+   before `"` and space). Each step prints `would:`/`run:`/`skip:`/`refuse:` and is idempotent: the
+   manifest records finished steps, a rerun after an interruption skips them, and a step whose
+   target already holds the new form is a `skip:`.
+   1. Preflight, all refusals before any change. With no manifest every check below applies. With
+      a manifest (a resumed run) the checks a finished step made obsolete are replaced by the
+      manifest's recorded state: after step 3, `NEW_REPO` must exist and `OLD_REPO` be absent;
+      after step 5, the recorded targets must exist and their sources be absent. Process checks
+      always apply.
+      - no Claude process: `pgrep -fl` for `/claude/versions/`, `ClaudeCode.app`, `bin/claude`,
+        and `pgrep -x claude` for a bare argv; the script prints each PID and command line and
+        stops nothing itself;
+      - no `sessions/*.json` whose `pid` is alive names an old path; `daemon.lock` names no live
+        PID;
+      - `daemon/roster.json` and every `jobs/*/state.json` with `.state != "done"` name no old
+        path;
       - `NEW_REPO` and every target project/lesson dir absent;
       - `OLD_REPO` clean, `git worktree list` shows the main checkout only;
       - `git ls-remote "$NEW_REMOTE" refs/heads/dev` equals local `dev`;
       - `jq` and `perl` present.
    2. Backup to `~/.claude/backups/bayan-move-2026-11-02/`: `~/.claude.json`,
-      `workers/registry.json`, `lessons/INDEX.md`, `history.jsonl`, `jobs/*/state.json` that name
+      `workers/registry.json`, `lessons/INDEX.md`, `lessons/queue.jsonl`, `history.jsonl`, `jobs/*/state.json` that name
       the path, and `cp -c` clones of every transcript the rewrite touches. Manifest: each dir
       rename (old, new) and each file rewritten.
    3. `mkdir -p` the parent; `mv OLD_REPO NEW_REPO`.
@@ -129,20 +149,25 @@ keeps redirecting.
       `ikhbat-org/bayan` to `[NEW_REPO]`. Refuses if the output is invalid or the top-level key
       count changed.
    8. Same `jq` discipline, every string value at a boundary: `workers/registry.json` (`cwd`,
-      `repo`, `worktree`, `criteria`), `history.jsonl` (`project`, line by line, line count
-      unchanged), `jobs/*/state.json` (`cwd`, `linkScanPath`, the project key in session paths).
+      `repo`, `worktree`, `criteria`), `history.jsonl` (`project` only, line by line, line count
+      unchanged; `display` is message text and stays), `lessons/queue.jsonl` (`transcript`, `cwd`,
+      `project`, line by line, line count unchanged), `jobs/*/state.json` (`cwd`, `linkScanPath`,
+      the project key in session paths).
    9. `undo.sh` in the backup dir reverses 3–8 from the manifest and backups; idempotent.
    10. Verify: zero `projects/`/`lessons/` dirs with the old prefix; renamed counts equal the
        manifest's; `grep -c` of old-path `cwd` lines in the new dirs is 0; the two `.claude.json`
        keys read back; `git -C NEW_REPO status -sb` and `remote -v`; `OLD_REPO` absent.
 
    The test runs on a fixture `$HOME` under the repo's `tmp/` and covers: dry run changes nothing
-   (tree hash before/after); each preflight refusal (each process form via a stub `PGREP`, live
-   job, dirty repo, linked worktree, ls-remote mismatch, target exists); boundary cases
-   (`/…/bayan-x` and `-…-bayan-x` untouched, `"cwd":"<old>/sub"` rewritten); a full execute
-   (repo moved, remote set, dirs renamed with suffixes, transcripts' `cwd` rewritten and other
-   bytes equal, INDEX, `.claude.json` keys moved and other keys byte-equal, registry, history,
-   job state); an interrupted run resumed; `undo.sh` restores the starting tree hash, twice.
+   (tree hash before/after); each preflight refusal (each process form via a stub `PGREP`, the
+   bare-argv form included; a live `sessions/*.json`; a job with `"state":"working"` and one with
+   `"state":"done"` that must not refuse; dirty repo, linked worktree, ls-remote mismatch, target
+   exists); boundary cases (`/…/bayan-x`, `-…-bayan-x`, `bayan.x` untouched; `"cwd":"<old>/sub"`,
+   `(key)`, key before `"` and space rewritten); a full execute (repo moved, remote set, dirs
+   renamed with suffixes, transcripts' `cwd` rewritten and other bytes equal, INDEX,
+   `.claude.json` keys moved and other keys byte-equal, registry, history with a `display` row
+   left unchanged, queue.jsonl, job state); runs interrupted after steps 3, 5 and 6, each resumed
+   to the same end tree as an uninterrupted run; `undo.sh` restores the starting tree hash, twice.
 3. **~/.claude edits** (branch off its dev, merge `--no-ff`): `mac-background-services.sh`
    (the variable and the comment at line 12) and `.test.sh` (`bayan=` at line 14) name the new
    path. The two open agy worktree branches keep the old copy; noted in `~/.claude`'s
@@ -156,8 +181,9 @@ keeps redirecting.
    --homepage https://bayan.run`. Checks: `gh release view v0.1.0 --repo ikhbat-org/bayan` lists 7
    assets; `git ls-remote git@github.com:ikhbat-org/bayan.git refs/heads/dev refs/heads/main`
    equals local `dev` and `origin/main`; tags `v0.1.0` present. Never create `extrode/bayan` again.
-7. **mb1 local move**: the user ends this session and its bg job, quits the desktop app and the
-   `claude daemon`, then in a plain terminal:
+7. **mb1 local move**: the user ends every Claude session (this one and its bg job, the
+   interactive one, any `--print` worker; the dry run lists what is still live), quits the desktop
+   app and the daemon, then in a plain terminal:
    ```
    bash ~/Developer/extrode.com/bayan/scripts/move/2026-11-02-ikhbat-org.sh            # dry run, read it
    bash ~/Developer/extrode.com/bayan/scripts/move/2026-11-02-ikhbat-org.sh --execute
@@ -188,7 +214,7 @@ keeps redirecting.
 ## Risks
 
 - **A Claude process writes during the move** → split state. Preflight refuses on any process form
-  and any live job.
+  (bare argv included), any live session file and any job not `done`.
 - **`.claude.json` or registry corruption** → `jq` to temp, validate, key count, backup, `undo.sh`.
 - **Transcript rewrite damage** → `cwd` field only, boundary-matched, size delta checked, clone
   backups restored by `undo.sh`.
