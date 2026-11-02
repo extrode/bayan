@@ -45,6 +45,7 @@ jobs:
         run: |
           bash scripts/ci/install-zig.test.sh
           bash scripts/ci/install-dotnet.test.sh
+          bash scripts/ci/sdk-patch-check.test.sh
           bash scripts/ci/known-failures.test.sh
       - name: Test
         if: runner.os != 'Windows'

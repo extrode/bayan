@@ -1,0 +1,25 @@
+# Monthly reminder to bump the pinned .NET SDK patch (spec 015 D2): fails when a newer 10.0.x SDK is out, which mails
+# the repo owner. It changes nothing; the bump is a chore/ branch editing scripts/ci/install-dotnet.sh.
+name: sdk-reminder
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          git init -q .
+          git fetch -q --depth=1 --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
+      - name: Check for a newer SDK patch
+        run: bash scripts/ci/sdk-patch-check.sh
