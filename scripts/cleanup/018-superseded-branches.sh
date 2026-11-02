@@ -6,7 +6,8 @@
 #    - tmp/wt/t28survey: un-skipped T28 parity tests (dev removed those skips since); reverted only when every removed
 #      line is a `Skip = "T28 ...` attribute and every added one a bare `[Fact]` or `[Theory]`.
 # 2. every worktree whose work dev holds, including ones that moved today, through merged-worktree-backlog.sh with
-#    CLEANUP_RECENT_HOURS=0 (its other checks unchanged); --delete-worktree-scratch passes through.
+#    CLEANUP_RECENT_HOURS=1 (the day's merged worktrees go; one cut in the last hour, say by another session, stays);
+#    --delete-worktree-scratch passes through.
 # Dry run by default. --execute / -e acts.
 set -euo pipefail
 
@@ -30,10 +31,15 @@ act() { [ $execute -eq 1 ] && [ $discard -eq 1 ]; }
 
 printf '== 1. leftover changes\n'
 w=.worktrees/feat-010-self-hosted-semantics
+on="$( [ -d "$w" ] && git -C "$w" branch --show-current || true)"
 for f in a.txt b.txt C.txt copy.bin empty.bin input.bin; do
   if [ ! -e "$w/$f" ]; then printf 'skip:  %s/%s already gone\n' "$w" "$f"; continue; fi
   if [ -z "$(git -C "$w" status --porcelain -- "$f" | grep '^??' || true)" ]; then
     printf 'refuse: %s/%s is not untracked. Left alone.\n' "$w" "$f"; failed=1; continue
+  fi
+  # As left on 2026-11-01: on that branch, and at most 6 bytes (the run cases write 0-6).
+  if [ "$on" != feat/010-self-hosted-semantics ] || [ "$(wc -c < "$w/$f" | tr -d ' ')" -gt 6 ]; then
+    printf 'refuse: %s/%s is not the run-case leftover (branch %s, or over 6 bytes). Left alone.\n' "$w" "$f" "${on:-none}"; failed=1; continue
   fi
   if act; then rm -f -- "$w/$f"; printf 'removed: %s/%s\n' "$w" "$f"
   else printf 'would: rm %s/%s (needs --execute --discard-worktree-changes)\n' "$w" "$f"; fi
@@ -48,7 +54,7 @@ elif act; then git -C "$w" checkout -- tests/Bayan.Tests; printf 'reverted: %s (
 else printf 'would: git -C %s checkout -- tests/Bayan.Tests (needs --execute --discard-worktree-changes)\n' "$w"; fi
 
 printf '== 2. worktrees whose work dev holds\n'
-CLEANUP_RECENT_HOURS=0 bash "$repo/scripts/cleanup/merged-worktree-backlog.sh" ${pass[@]+"${pass[@]}"} || failed=1
+CLEANUP_RECENT_HOURS=1 bash "$repo/scripts/cleanup/merged-worktree-backlog.sh" ${pass[@]+"${pass[@]}"} || failed=1
 
 if [ $execute -eq 1 ] && [ $failed -eq 1 ]; then exit 1; fi
 exit 0
