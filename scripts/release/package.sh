@@ -2,7 +2,8 @@
 # Compiler release packaging, run by .github/workflows/release.yml (decision 2026-11-02: GitHub Release per v* tag).
 #   package.sh check-tag <tag>                  exit 0 when <tag> is v + Toolchain.CompilerVersion
 #   package.sh pack <rid> <publish-dir> <out>   <out>/bayan-<version>-<target>.tar.gz (.zip for Windows), the binary
-#                                               inside a bayan-<version>-<target>/ folder with README.md and LICENSE
+#                                               inside a bayan-<version>-<target>/ folder with README.md (and LICENSE,
+#                                               warning when the repo has none)
 #   package.sh sums <dir>                       <dir>/SHA256SUMS over every archive in <dir>
 #   package.sh notes <version>                  the CHANGELOG.md section `## [<version>]`, heading excluded
 # Targets use bayan's own names (bayan dist): osx-arm64 -> macos-arm64, win-x64 -> windows-x64.
@@ -32,14 +33,15 @@ case "${1:-}" in
     mkdir -p "$out"; out="$(cd "$out" && pwd)"
     stage="$out/.stage-$target"; rm -rf "$stage"; mkdir -p "$stage/$name"
     cp "$pub/$exe" "$stage/$name/"
-    for f in README.md LICENSE; do [ -f "$root/$f" ] && cp "$root/$f" "$stage/$name/"; done
+    cp "$root/README.md" "$stage/$name/"
+    if [ -f "$root/LICENSE" ]; then cp "$root/LICENSE" "$stage/$name/"; else echo "::warning::package: the repo has no LICENSE; $name ships without one" >&2; fi
     if [ "$ext" = zip ]; then
       # bsdtar writes zip: System32's on Windows runners, the system tar on macOS; else Info-ZIP.
       if [ -n "${SYSTEMROOT:-}" ] && [ -x "$SYSTEMROOT/System32/tar.exe" ]; then (cd "$stage" && "$SYSTEMROOT/System32/tar.exe" -a -cf "$out/$name.zip" "$name")
       elif tar --version 2>/dev/null | grep -q bsdtar; then (cd "$stage" && tar -a -cf "$out/$name.zip" "$name")
       else (cd "$stage" && zip -qr "$out/$name.zip" "$name"); fi
     else
-      tar -czf "$out/$name.tar.gz" -C "$stage" "$name"
+      COPYFILE_DISABLE=1 tar -czf "$out/$name.tar.gz" -C "$stage" "$name"
     fi
     rm -rf "$stage"
     echo "$out/$name.$ext" ;;

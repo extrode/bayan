@@ -35,6 +35,8 @@ jobs:
         run: bash scripts/release/package.sh check-tag "$GITHUB_REF_NAME"
       - name: Install .NET SDK
         shell: bash
+        env:
+          DOTNET_RID: ${{ matrix.rid }}
         run: |
           dotnet_root="$(bash scripts/ci/install-dotnet.sh "$RUNNER_TEMP/dotnet")"
           echo "DOTNET_ROOT=$dotnet_root" >> "$GITHUB_ENV"
@@ -72,6 +74,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           v="$(bash scripts/release/package.sh check-tag "$GITHUB_REF_NAME")"
           bash scripts/release/package.sh sums dist

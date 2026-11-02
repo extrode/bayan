@@ -23,7 +23,8 @@ setv 1.2.3
 
 mkdir -p "$t/pub/unix" "$t/pub/win"
 printf 'bin' > "$t/pub/unix/bayan"; printf 'exe' > "$t/pub/win/bayan.exe"
-bash "$s" pack osx-arm64 "$t/pub/unix" "$t/out" >/dev/null
+bash "$s" pack osx-arm64 "$t/pub/unix" "$t/out" >/dev/null 2>"$t/warn"
+grep -q "::warning::package: the repo has no LICENSE" "$t/warn" || fail "no missing-LICENSE warning: $(cat "$t/warn")"
 bash "$s" pack linux-x64 "$t/pub/unix" "$t/out" >/dev/null
 bash "$s" pack win-arm64 "$t/pub/win" "$t/out" >/dev/null
 [ -f "$t/out/bayan-1.2.3-macos-arm64.tar.gz" ] && [ -f "$t/out/bayan-1.2.3-linux-x64.tar.gz" ] || fail "tar.gz names wrong: $(ls "$t/out")"

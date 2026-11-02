@@ -44,6 +44,15 @@ mkdir -p "$tmp/shim"; printf '#!/bin/sh\ncase "$1" in -s) echo Plan9;; -m) echo 
 if out="$(PATH="$tmp/shim:$PATH" "$script" "$tmp/none" 2>&1)"; then fail "an unknown host was accepted"; fi
 echo "$out" | grep -q "no pinned SDK 10.0.403 for Plan9-mips" || fail "no unknown-host message: $out"
 
+# DOTNET_RID picks another target's archive (release.yml on windows-11-arm); an unknown one is refused by name.
+cp "$tmp/site/10.0.403/$name.tar.gz" "$tmp/site/10.0.403/dotnet-sdk-10.0.403-linux-arm64.tar.gz"
+DOTNET_RID=linux-arm64 DOTNET_BASE_URL="file://$tmp/site" DOTNET_SHA512="$good" "$script" "$tmp/rid" >/dev/null 2>"$tmp/err" || fail "DOTNET_RID archive refused: $(cat "$tmp/err")"
+[ -x "$tmp/rid/dotnet" ] || fail "DOTNET_RID archive not unpacked"
+rm -f "$tmp/site/10.0.403/dotnet-sdk-10.0.403-linux-arm64.tar.gz"
+if out="$(DOTNET_RID=linux-arm64 DOTNET_BASE_URL="file://$tmp/site" DOTNET_SHA512="$good" "$script" "$tmp/rid2" 2>&1)"; then fail "DOTNET_RID ignored: the host archive was installed"; fi
+if out="$(DOTNET_RID=plan9-x64 "$script" "$tmp/rid3" 2>&1)"; then fail "an unknown DOTNET_RID was accepted"; fi
+echo "$out" | grep -q "no pinned SDK 10.0.403 for plan9-x64" || fail "no unknown-rid message: $out"
+
 # A global.json for another release line is refused before anything is downloaded.
 mkdir -p "$tmp/repo/scripts/ci"; cp "$script" "$tmp/repo/scripts/ci/"
 printf '{\n  "sdk": {\n    "version": "11.0.100",\n    "rollForward": "latestFeature"\n  }\n}\n' > "$tmp/repo/global.json"
@@ -54,7 +63,7 @@ echo "$out" | grep -q "global.json asks for 11.0.x but the sums here are for 10.
 # Wiring: checkout and the SDK are shell steps; only the artifact actions remain.
 # Every release target has a pinned 128-hex sum.
 for r in linux-x64 linux-arm64 osx-arm64 osx-x64 win-x64 win-arm64; do
-  grep -qE "rid=$r; +ext=[a-z.]+; +sum=[0-9a-f]{128} ;;" "$script" || fail "no pinned sum for $r"
+  grep -qE "^  $r\) +ext=[a-z.]+; +sum=[0-9a-f]{128} ;;" "$script" || fail "no pinned sum for $r"
 done
 
 for wf in "$root/.github/workflows/ci.yml" "$root/.github/workflows/mutation.yml" "$root/.github/workflows/release.yml"; do

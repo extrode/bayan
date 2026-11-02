@@ -443,3 +443,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Repo has no `LICENSE` while public; `scripts/release/package.sh` ships one in each archive only when it exists. License choice is the user's.
 - `bayan dist --target wasm32` once left a 0-byte `a.o` in the project directory (tmp/demo/wordcount, 2026-11-02, not reproduced in 3 runs); look for a zig/clang `-o` falling back to the cwd on a failed compile.
 - `List.sort(by:)` for non-primitive elements (spec line 1776 defers it): the wordcount demo needed a hand-written insertion sort (2026-11-02).
+- LOW scripts/release/package.sh:38-42: the Windows zip branch (System32 tar.exe / bsdtar / Info-ZIP) is only exercised on whichever tar the test host has; first real check is the v0.1.0 windows runners (review of chore/release-0.1.0).
