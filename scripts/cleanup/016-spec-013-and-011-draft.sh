@@ -105,17 +105,17 @@ elif ! docker image inspect bayan-t19 >/dev/null 2>&1; then printf 'skip:  image
 elif [ $execute -eq 1 ] && [ $docker_img -eq 1 ]; then docker image rm bayan-t19 || { printf '  refused: docker image rm bayan-t19. Left alone.\n'; failed=1; }
 else printf 'would: docker image rm bayan-t19 (needs --execute --remove-docker-image)\n'; fi
 
-# 5. Remote T19 scratch (PowerShell over ssh). /home/code/extrode.com/bayan is the hosts' real checkout: only the run script there.
+# 5. Remote T19 scratch (PowerShell over ssh). /home/code/ikhbat.org/bayan is the hosts' real checkout: only the run script there.
 printf '== 5. wp1 / wlt1 T19 scratch\n'
 for h in wp1 wlt1; do
-  for p in C:/Users/Sy/bayan-bcl C:/Users/Sy/bcl.bundle C:/Users/Sy/AppData/Local/Temp/bayan-013.bundle /home/code/extrode.com/bayan/tmp-t19-run.ps1 \
+  for p in C:/Users/Sy/bayan-bcl C:/Users/Sy/bcl.bundle C:/Users/Sy/AppData/Local/Temp/bayan-013.bundle /home/code/ikhbat.org/bayan/tmp-t19-run.ps1 \
            C:/Users/Sy/winport.bundle C:/home/lang/zig-0.16.0-dev.2682 C:/home/lang/zig-x86_64-windows-0.17.0.zip C:/Users/Sy/kf-trx; do
     if ! there="$(ssh -o ConnectTimeout=5 "$h" "if (Test-Path '$p') { 'yes' } else { 'no' }" 2>/dev/null | tr -d '\r')"; then
       printf 'skip:  %s unreachable\n' "$h"; continue 2
     fi
     if [ "$there" != yes ]; then printf 'skip:  %s:%s already gone\n' "$h" "$p"; continue; fi
     if [ "${p##*/}" = tmp-t19-run.ps1 ] && \
-       [ "$(ssh "$h" "git -C /home/code/extrode.com/bayan ls-files -- tmp-t19-run.ps1" 2>/dev/null | tr -d '\r')" != "" ]; then
+       [ "$(ssh "$h" "git -C /home/code/ikhbat.org/bayan ls-files -- tmp-t19-run.ps1" 2>/dev/null | tr -d '\r')" != "" ]; then
       printf 'refuse: %s:%s is tracked by git there. Left alone.\n' "$h" "$p"; failed=1; continue
     fi
     if [ $execute -eq 1 ] && [ $remote -eq 1 ]; then

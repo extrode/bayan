@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The repository moved to `github.com/ikhbat-org/bayan` (Ikhbat Foundation); home page `https://bayan.run`.
+
 ## [0.1.0] - 2026-11-02
 
 First release: milestones M0–M12 of the handoff's "What v0.1 is". Compiler archives for linux-x64, linux-arm64,
