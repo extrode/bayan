@@ -227,7 +227,7 @@ Round 4 holds every syntax change in one batch, landed after 012 with one migrat
 | `!(x is .s)` input form (BYN1069) | One spelling of negated `is` | One more code |
 | Payload size-ratio lint | Keeps `Result` small | Heuristic threshold |
 | Diagnostic renumbering | Codes grouped by category, as intended | One-time alias table |
-| Store summaries across packages (Q745) | A caller's acceptance depends on callee bodies (the Q745 per-callee store summaries), so a public function's body change can break another package; decide: public functions declare their store summary in the signature, or `bayan api diff` reports a summary change as breaking | Signature syntax, or a tooling rule that only catches the break at diff time |
+| Store and return summaries across packages (Q745) | A caller's acceptance depends on callee bodies (the Q745 per-callee store summaries, and the return summaries that replace rule 4 for calls with a body), so a public function's body change can break another package; decide: public functions declare their store and return summaries in the signature, or `bayan api diff` reports a summary change as breaking | Signature syntax, or a tooling rule that only catches the break at diff time |
 
 ```cs
 // subjectless switch
