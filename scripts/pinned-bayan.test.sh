@@ -17,6 +17,7 @@ echo build >> "$AUX/builds.txt"
 proj=$2; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done
 [ -f "$proj/broken" ] && { echo "error CS0001: stub failure"; exit 1; }
 git -C "$proj" rev-parse HEAD > "$AUX/commit.txt"
+[ -n "${RACE_CACHE:-}" ] && { mkdir -p "$RACE_CACHE/bin"; printf '#!/bin/sh\necho winner\n' > "$RACE_CACHE/bin/bayan"; chmod +x "$RACE_CACHE/bin/bayan"; }
 mkdir -p "$out"; printf '#!/bin/sh\necho %s\n' "$(cat "$proj/stamp")" > "$out/bayan"; chmod +x "$out/bayan"
 STUB
 chmod +x "$tmp/aux/dotnet"
@@ -47,6 +48,19 @@ git worktree add -q --detach "$tmp/wt" feat/x
 
 # PINNED_BAYAN_REF picks another commit.
 [ "$(PINNED_BAYAN_REF=feat/x "$script" | xargs sh)" = two ] || fail "PINNED_BAYAN_REF was not honoured"
+
+# A concurrent build of the same commit that finishes first wins; ours leaves nothing behind.
+git checkout -q -b race feat/x; echo race > src/Bayan.Cli/stamp; git commit -qam race; racesha=$(git rev-parse race)
+rc="$r/.cache/bayan/$racesha"
+RACE_CACHE="$rc" PINNED_BAYAN_REF=race "$script" > "$tmp/out" || fail "the lost race failed"
+[ "$(cat "$tmp/out")" = "$rc/bin/bayan" ] && [ "$("$rc/bin/bayan")" = winner ] || fail "the race did not keep the winner's build"
+[ -z "$(ls -d "$rc"/.build-* "$r/.cache/bayan"/.build-"$racesha"-* 2>/dev/null)" ] || fail "the losing build was left behind: $(ls -a "$rc")"
+
+# A cache directory without a binary is refused, not rebuilt into.
+git checkout -q -b hollow race; echo hollow > src/Bayan.Cli/stamp; git commit -qam hollow; mkdir -p "$r/.cache/bayan/$(git rev-parse hollow)"
+if PINNED_BAYAN_REF=hollow "$script" > "$tmp/out" 2> "$tmp/err"; then fail "a hollow cache was accepted: $(cat "$tmp/out")"; fi
+grep -q "exists but holds no bin/bayan" "$tmp/err" || fail "no hollow-cache message: $(cat "$tmp/err")"
+git checkout -q feat/x
 
 # A failed build exits 1 naming the commit and the log, and prints no binary.
 git checkout -q -- src/Bayan.Cli/stamp; git checkout -q dev; touch src/Bayan.Cli/broken; git add src; git commit -qm broken; badsha=$(git rev-parse dev)

@@ -17,6 +17,9 @@ sha="$(git rev-parse -q --verify "$ref^{commit}")" || { echo "pinned-bayan: no c
 main="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"  # shared by every worktree of the repo
 cache="$main/.cache/bayan/$sha"
 exe=bayan; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exe=bayan.exe ;; esac
+if [ -e "$cache" ] && [ ! -x "$cache/bin/$exe" ]; then
+  echo "pinned-bayan: $cache exists but holds no bin/$exe; remove it and rerun" >&2; exit 1
+fi
 if [ ! -x "$cache/bin/$exe" ]; then
   # Built from a fresh `git clone --shared` checked out at the commit: the caller's tree, index and worktrees are never
   # touched, and the CLI's version line (git rev-parse HEAD in the project) names the pinned commit.
@@ -27,6 +30,10 @@ if [ ! -x "$cache/bin/$exe" ]; then
     echo "pinned-bayan: building bayan at $sha ($ref) failed; log: $log" >&2; exit 1
   fi
   mkdir -p "$(dirname "$cache")"
-  mv "$build" "$cache" 2>/dev/null || [ -x "$cache/bin/$exe" ] || { echo "pinned-bayan: could not move $build to $cache" >&2; exit 1; }
+  # A concurrent build of the same commit may have won: then mv nests ours inside the cache (exit 0), so drop it.
+  mv "$build" "$cache" 2>/dev/null || true
+  [ -d "$cache/$(basename "$build")" ] && rm -rf "${cache:?}/$(basename "$build")"
+  [ -d "$build" ] && rm -rf "$build"
+  [ -x "$cache/bin/$exe" ] || { echo "pinned-bayan: could not move $build to $cache" >&2; exit 1; }
 fi
 echo "$cache/bin/$exe"
