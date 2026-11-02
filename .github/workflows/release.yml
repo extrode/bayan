@@ -1,0 +1,80 @@
+name: release
+
+# A v* tag builds the NativeAOT compiler on each target's own runner and opens a draft GitHub Release with the
+# archives and SHA256SUMS; publishing the draft is a manual step. Decision 2026-11-02 (handoff progress log).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, rid: linux-x64, exe: bayan }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, exe: bayan }
+          - { os: macos-15, rid: osx-arm64, exe: bayan }
+          - { os: macos-15-intel, rid: osx-x64, exe: bayan }
+          - { os: windows-2025, rid: win-x64, exe: bayan.exe }
+          - { os: windows-11-arm, rid: win-arm64, exe: bayan.exe }
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Same shell checkout as ci.yml: the exact commit at depth 1. The repo is public, so no token.
+      - name: Checkout
+        shell: bash
+        run: |
+          git init -q .
+          git fetch -q --depth=1 --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
+      - name: Check tag against CompilerVersion
+        shell: bash
+        run: bash scripts/release/package.sh check-tag "$GITHUB_REF_NAME"
+      - name: Install .NET SDK
+        shell: bash
+        run: |
+          dotnet_root="$(bash scripts/ci/install-dotnet.sh "$RUNNER_TEMP/dotnet")"
+          echo "DOTNET_ROOT=$dotnet_root" >> "$GITHUB_ENV"
+          echo "$dotnet_root" >> "$GITHUB_PATH"
+      - name: Publish (NativeAOT)
+        run: dotnet publish src/Bayan.Cli -c Release -r ${{ matrix.rid }} -o publish
+      - name: Smoke test
+        shell: bash
+        run: ./publish/${{ matrix.exe }} --version | grep -F "bayan ${GITHUB_REF_NAME#v} "
+      - name: Package
+        shell: bash
+        run: bash scripts/release/package.sh pack ${{ matrix.rid }} publish dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bayan-${{ matrix.rid }}
+          path: dist/bayan-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          git init -q .
+          git fetch -q --depth=1 --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="$(bash scripts/release/package.sh check-tag "$GITHUB_REF_NAME")"
+          bash scripts/release/package.sh sums dist
+          mkdir -p tmp && bash scripts/release/package.sh notes "$v" > tmp/notes.md
+          gh release create "$GITHUB_REF_NAME" dist/bayan-* dist/SHA256SUMS --draft --verify-tag \
+            --title "Bayān $v" --notes-file tmp/notes.md

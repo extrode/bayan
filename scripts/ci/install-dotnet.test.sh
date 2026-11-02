@@ -52,7 +52,12 @@ echo "$out" | grep -q "global.json asks for 11.0.x but the sums here are for 10.
 [ ! -e "$tmp/other" ] || fail "something was downloaded for an unpinned release line"
 
 # Wiring: checkout and the SDK are shell steps; only the artifact actions remain.
-for wf in "$root/.github/workflows/ci.yml" "$root/.github/workflows/mutation.yml"; do
+# Every release target has a pinned 128-hex sum.
+for r in linux-x64 linux-arm64 osx-arm64 osx-x64 win-x64 win-arm64; do
+  grep -qE "rid=$r; +ext=[a-z.]+; +sum=[0-9a-f]{128} ;;" "$script" || fail "no pinned sum for $r"
+done
+
+for wf in "$root/.github/workflows/ci.yml" "$root/.github/workflows/mutation.yml" "$root/.github/workflows/release.yml"; do
   ! grep -qE "uses: actions/(checkout|setup-dotnet)@" "$wf" || fail "$wf still uses actions/checkout or actions/setup-dotnet"
   grep -q 'git fetch .*"\$GITHUB_SHA"' "$wf" || fail "$wf does not fetch GITHUB_SHA"
   ! grep -E "uses: " "$wf" | grep -vqE "uses: actions/(upload|download)-artifact@" || fail "$wf uses an action other than the artifact ones"
