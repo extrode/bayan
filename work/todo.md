@@ -420,3 +420,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - wlt1 lacks a T19 toolchain (zig 0.17.0, a C compiler, a real python3); wp1 has zig 0.16.0-dev while CI pins 0.17.0.
 - LOW (review d63bec8..95a0276 re-review, fix/review-2026-11-02-2) tests/Bayan.Tests/SelfhostLexerTests.cs `BuildAndRunsAreRecordedUnderASnapshotDirectory` only checks manifest.json exists, not that it lists the binary BuildLex returned; an empty `builds` array would pass. Fix in T28.
 - LOW (same review) tests/Bayan.Tests/SelfhostLexerTests.cs the recording test uses a fixed tmp/selfhost-lexer-snap and deletes it first; two concurrent test hosts would delete each other's recording and flake the runs.jsonl count. Fix in T28 (per-process dir).
+- Q743: tests/windows-known-failures.txt lists 76 Windows-only failures; spec 014 removes entries as they pass (the CI step fails on a listed test that passes).
+- Q743 review LOW: scripts/ci/known-failures.py:44-45 a listed test with an outcome other than Passed/Failed (e.g. NotExecuted) prints nothing; report it as "not run". (gate w-q743kf)
