@@ -1,0 +1,36 @@
+// A list field of a loop item is the iterable's storage: what a call returns from it outlives the loop (Q745).
+struct Expense {
+    string payer
+    List<string> participants
+}
+
+List<string> everyone(ReadOnlySpan<string> names) uses alloc {
+    var all = List<string>()
+    for n in names {
+        all.append(n)
+    }
+    return all
+}
+
+void credit(string name, to ref List<string> totals) {
+    totals.append(name)
+}
+
+List<string> names(ReadOnlySpan<Expense> expenses) uses alloc {
+    var totals = List<string>()
+    for e in expenses {
+        for name in everyone(e.participants) {
+            credit(name, to: ref totals)
+        }
+    }
+    return totals
+}
+
+var ps = List<string>()
+ps.append("ann")
+ps.append("bob")
+var xs = List<Expense>()
+xs.append({ payer: "cy", participants: move ps })
+for n in names(xs.span) {
+    print(n)
+}

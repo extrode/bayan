@@ -67,6 +67,8 @@ internal sealed class RegionAnalysis
     private readonly List<Mutation> _mutations = new();
     /// <summary>For a writable <c>dyn ref</c> local, whether any value it was set to may hold storage a write through it can change.</summary>
     private readonly Dictionary<LocalSymbol, bool> _referentMayBorrow = new();
+    /// <summary>A by-value loop variable over a list, array, span or map, with the iterable and its borrow: its lists share the element's storage.</summary>
+    private readonly Dictionary<LocalSymbol, (BoundExpr Iterable, Borrow Borrow)> _loopItems = new();
     private readonly Stack<Borrow> _contexts = new();
     private readonly HashSet<(int, int)> _reported = new();
     /// <summary>The regions standing for <c>rest</c> parameters, with the parameter's name.</summary>
@@ -239,6 +241,9 @@ internal sealed class RegionAnalysis
                     : f.Iterable.Type is SpanType ? iterable
                     : iterable with { Owners = [] };
                 Store(f.Variable, item, f.Iterable.Syntax.Span);
+                // Q745: the item is a shallow copy the loop never frees, and `BorrowsSubject` refuses changing it (BYN2783).
+                if (f.UserIteration is null && f.Variable is { Type: not DynRefType, BorrowsSubject: true } && f.Iterable.Type is ListType or ArrayType or SpanType or MapType)
+                    _loopItems[f.Variable] = (f.Iterable, iterable);
                 if (f.Variable.Type is DynRefType)
                     _referentMayBorrow[f.Variable] = f.Iterable.Type switch
                     {
@@ -620,6 +625,9 @@ internal sealed class RegionAnalysis
         if (IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(1, $"the temporary on line {Line(source.Syntax.Span)}")], []));
         if (RootLocal(source) is { } root)
         {
+            // A list in a loop item is the iterable's: lend what the iterable lends (a span already names where it points).
+            if (source.Type is ListType && _loopItems.TryGetValue(root, out var loop))
+                return loop.Iterable.Type is SpanType ? sourceBorrow.Union(loop.Borrow) : Lend(loop.Iterable, sourceBorrow.Union(loop.Borrow), at);
             var depth = _depthOf.GetValueOrDefault(root, 0);
             var regions = depth > 0 ? sourceBorrow.Regions.Add(new Region(depth, $"`{root.Name}`")) : sourceBorrow.Regions;
             return (sourceBorrow with { Regions = regions }).Lent(root, at);

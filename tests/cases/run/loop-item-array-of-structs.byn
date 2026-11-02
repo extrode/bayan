@@ -1,0 +1,19 @@
+// A list field of an item of an array of structs is the array's storage (Q745).
+struct Inner {
+    List<string> list
+}
+
+ReadOnlySpan<string> pass(ReadOnlySpan<string> s) => s
+
+var ps = List<string>()
+ps.append("ann")
+var qs = List<string>()
+qs.append("bob")
+let arr = [Inner { list: move ps }, Inner { list: move qs }]
+var kept = List<string>()
+for e in arr {
+    for s in pass(e.list) {
+        kept.append(s)
+    }
+}
+print($"{kept[0]} {kept[1]}")

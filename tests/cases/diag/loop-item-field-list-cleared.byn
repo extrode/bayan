@@ -1,0 +1,19 @@
+// Clearing an element's list field while a loop result still borrows it is refused (Q745).
+struct Expense {
+    List<string> participants
+}
+
+ReadOnlySpan<string> pass(ReadOnlySpan<string> s) => s
+
+void main() uses alloc {
+    var ps = List<string>()
+    ps.append("ann")
+    var expenses = List<Expense>()
+    expenses.append({ participants: move ps })
+    var shares = List<ReadOnlySpan<string>>()
+    for e in expenses {
+        shares.append(pass(e.participants))
+    }
+    expenses[0].participants.clear()
+    let n = shares[0].length
+}

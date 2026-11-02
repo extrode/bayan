@@ -1,0 +1,23 @@
+// A user iteration's items may be fresh values: what one of them lends does not outlive the loop (Q745).
+struct Bag {
+    string[1] names
+}
+
+struct Bags : IIndexable {
+    type Item = Bag
+    i64 count
+    Bag get(i64 index) => { names: ["ann"] }
+}
+
+ReadOnlySpan<string> pass(ReadOnlySpan<string> s) => s
+
+void main() uses alloc {
+    let bags = Bags { count: 2 }
+    var kept = List<string>()
+    for b in bags {
+        for s in pass(b.names) {
+            kept.append(s)
+        }
+    }
+    let n = kept[0]
+}
