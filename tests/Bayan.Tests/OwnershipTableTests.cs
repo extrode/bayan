@@ -49,6 +49,19 @@ public sealed class OwnershipTableTests
         """;
 
     [Fact]
+    public async Task ARunPastItsTimeoutIsKilledAndReported()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "own-table", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var (file, args) = OperatingSystem.IsWindows() ? ("ping", new[] { "-n", "30", "127.0.0.1" }) : ("sleep", new[] { "30" });
+        var clock = Stopwatch.StartNew();
+        var e = await Assert.ThrowsAsync<TimeoutException>(() => RunAsync(file, args, dir, timeoutMs: 500));
+        Assert.Contains($"{file} did not exit within 500 ms", e.Message);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20), $"took {clock.Elapsed}");
+        Directory.Delete(dir, recursive: true);
+    }
+
+    [Fact]
     public async Task RekeyOntoAnAddressInTheSameProbeRunLeavesNothingStale()
     {
         var compiler = Toolchain.FindCompiler();
@@ -62,7 +75,7 @@ public sealed class OwnershipTableTests
             var exe = Path.Combine(dir, OperatingSystem.IsWindows() ? "harness.exe" : "harness");
             var args = new List<string>(compiler[1..]) { "-std=c11", "-DBYN_DEBUG", "-w", "-I", runtime, "harness.c", "-o", exe };
             args.Add(OperatingSystem.IsWindows() ? "-lshell32" : "-lm");
-            var build = await RunAsync(compiler[0], args, dir);
+            var build = await RunAsync(compiler[0], args, dir, timeoutMs: 300_000); // a cold zig cache builds Windows libc first
             Assert.True(build.Exit == 0, build.Stdout + build.Stderr);
             var run = await RunAsync(exe, [], dir);
             Assert.Equal("", run.Stderr);
@@ -75,7 +88,7 @@ public sealed class OwnershipTableTests
         }
     }
 
-    private static async Task<(int Exit, string Stdout, string Stderr)> RunAsync(string file, IEnumerable<string> args, string dir)
+    internal static async Task<(int Exit, string Stdout, string Stderr)> RunAsync(string file, IEnumerable<string> args, string dir, int timeoutMs = 60_000)
     {
         var psi = new ProcessStartInfo(file)
         {
@@ -90,7 +103,15 @@ public sealed class OwnershipTableTests
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndLfAsync();
         var stderr = p.StandardError.ReadToEndLfAsync();
-        await p.WaitForExitAsync(new CancellationTokenSource(60_000).Token);
+        using var timeout = new CancellationTokenSource(timeoutMs);
+        try { await p.WaitForExitAsync(timeout.Token); }
+        catch (OperationCanceledException)
+        {
+            // Killed so the finally's Directory.Delete can run: on Windows a live process keeps its directory, and that IOException hid this timeout (CI 41396961495).
+            p.Kill(entireProcessTree: true);
+            await p.WaitForExitAsync();
+            throw new TimeoutException($"{file} did not exit within {timeoutMs} ms");
+        }
         return (p.ExitCode, await stdout, await stderr);
     }
 }
