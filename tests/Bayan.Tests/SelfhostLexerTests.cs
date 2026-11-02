@@ -23,7 +23,7 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.FromPath(Path.Combine(LexerDir, "main.byn"));
         if (c.Diagnostics.HasErrors) return (null, string.Join("\n", c.Diagnostics.Items));
-        var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
+        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal));
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
     });
 
@@ -37,8 +37,14 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>Runs <paramref name="program"/>; under <c>BAYAN_SNAPSHOT</c> the run is recorded (spec 013 R14).</summary>
     private static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
+        if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
+        {
+            var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, null, args);
+            return (exit, Encoding.UTF8.GetString(ProcessText.Lf(o)), Encoding.UTF8.GetString(ProcessText.Lf(e)));
+        }
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
@@ -54,6 +60,11 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     /// <summary><see cref="RunBytes(string, string[])"/> with <paramref name="input"/> fed to stdin.</summary>
     private static (int Exit, byte[] Out, string Err) RunBytes(string program, byte[]? input, params string[] args)
     {
+        if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
+        {
+            var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, input, args);
+            return (exit, ProcessText.Lf(o), Encoding.UTF8.GetString(ProcessText.Lf(e)));
+        }
         var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
@@ -337,6 +348,7 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
 
     /// <summary>Spec 001 R10: the Bayan lexer, built in fast mode, is within 10x of the C# lexer on 1 MB.</summary>
     [Fact]
+    [Trait("Snapshot", "skip")]
     public void LexesOneMegabyteWithinTenTimesTheReferenceLexer()
     {
         if (Environment.GetEnvironmentVariable("BAYAN_SKIP_TIMING") == "1")

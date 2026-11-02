@@ -10,7 +10,7 @@
 # branch adds g: g fully covered passes with f uncovered (f an info line); each missed or unknown line and branch of g fails by
 # file:line, none of f's; a deleted line in f makes f gated, and a file new since --base is gated throughout; no coverage
 # baseline check runs and no quality-coverage.json is left (F2); no report fails, a malformed report fails naming it, and a
-# red test run is not checked for coverage.
+# red test run is not checked for coverage. A changed file whose name has a space is reported by its full name.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/guard-test"; aux="$root/tmp/guard-test-aux"  # stubs and logs live outside the fixture repo
@@ -81,6 +81,7 @@ result 2 0 1; printf '{ "version": 1, "files": ' > tests/quality-baseline.json
 badbase=$(ALLOWX=,tests/quality-baseline.json g --mutate selfhost/semantics/a.byn); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
 touch $aux/recordfail; recordfail=$(g --mutate selfhost/semantics/a.byn); rm $aux/recordfail
 rm $aux/record.txt; plain=$(g); [ -f $aux/record.txt ] && plainrec=1 || plainrec=0; ls tmp/guard-run/quality-*.json > /dev/null 2>&1 && plainrep=1 || plainrep=0
+printf x > "stray file.txt"; space=$(g); rm "stray file.txt"
 mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(g --mutate selfhost/semantics/a.byn)
 # cov <covered> <total> <missed lines> <unknown lines> <branches [line, column, outcome, status]>: the coverage report of a.byn
 cov() { python3 -I -c 'import json, sys
@@ -152,6 +153,7 @@ echo "$covmiss" | grep -q '^- coverage: unknown branch selfhost/semantics/a.byn:
 echo "$covmiss" | grep -qE '^- coverage: .* selfhost/semantics/a.byn:(3|2:10)' && fail "an untouched function's miss was a FAIL item" "$covmiss"
 echo "$covred" | grep -q '^- tests: FAIL' && ! echo "$covred" | grep -q '^- coverage:' || fail "a red test run was checked for coverage" "$covred"
 echo "$covbase" | grep -q '^GUARD PASS$' || fail "the guard checked coverage against the baseline" "$covbase"
+echo "$space" | grep -qxF -- "- scope: stray file.txt is outside --allow (selfhost/semantics/a.byn,tmp/*); revert it or record the need as a Question" || fail "a changed file with a space in its name was not reported by its full name" "$space"
 echo "$covbad" | grep -q '^GUARD FAIL' && echo "$covbad" | grep -q "^- coverage: coverage-gate.py: $r/tmp/guard-run/coverage/bayan-quality.json is unreadable: " || fail "a malformed coverage report did not fail naming it" "$covbad"
 echo "$covtouch" | grep -q '^- coverage: missed line selfhost/semantics/a.byn:2; ' || fail "a deleted line in f did not make f gated" "$covtouch"
 echo "$covnew" | grep -q '^- coverage: missed line selfhost/semantics/b.byn:2; ' || fail "a function of a file new since --base was not gated" "$covnew"
