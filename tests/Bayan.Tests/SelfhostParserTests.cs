@@ -64,18 +64,19 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         Assert.Equal("", BeforeSpanLines("span out of range: 1..9\n"));
     }
 
-    /// <summary>Runs <paramref name="program"/>; under <c>BAYAN_SNAPSHOT</c> the run is recorded (spec 013 R14).</summary>
+    /// <summary>Runs <paramref name="program"/>; under <c>BAYAN_SNAPSHOT</c> the run is recorded (spec 013 R14). Stdout is returned as written:
+    /// the runtime writes LF on every OS (Q742), so a <c>\r\n</c> in it is the program's own output, such as a dump of a CRLF input.</summary>
     internal static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
         if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
         {
             var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, null, args);
-            return (exit, ProcessText.Lf(Encoding.UTF8.GetString(o)), Encoding.UTF8.GetString(e));
+            return (exit, Encoding.UTF8.GetString(o), Encoding.UTF8.GetString(e));
         }
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndLfAsync();
         p.WaitForExit();
         return (p.ExitCode, stdout.Result, stderr.Result);
@@ -90,7 +91,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
         {
             var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, input, args);
-            return (exit, ProcessText.Lf(o), Encoding.UTF8.GetString(e));
+            return (exit, o, Encoding.UTF8.GetString(e));
         }
         var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
@@ -105,7 +106,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         }
         p.WaitForExit();
         copy.Wait();
-        return (p.ExitCode, ProcessText.Lf(stdout.ToArray()), stderr.Result);
+        return (p.ExitCode, stdout.ToArray(), stderr.Result);
     }
 
     /// <summary>The stubbed program builds through <c>import lexer</c> and prints the C# dump of an empty file.</summary>
