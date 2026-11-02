@@ -58,7 +58,10 @@ jobs:
           pattern: mutation-reports-*
           path: reports
       - name: Merge
-        run: python3 -I scripts/selfhost/quality-baseline.py update tests/quality-baseline.json . $(find reports -name 'quality-[0-9]*.json' | sort)
+        run: |
+          reports=$(find reports -name 'quality-[0-9]*.json' | sort)
+          python3 -I scripts/selfhost/quality-baseline.py check tests/quality-baseline.json . $reports
+          python3 -I scripts/selfhost/quality-baseline.py update tests/quality-baseline.json . $reports
       - uses: actions/upload-artifact@v4
         with:
           name: quality-baseline

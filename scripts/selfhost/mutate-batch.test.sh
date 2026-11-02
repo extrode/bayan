@@ -6,7 +6,7 @@
 # limit the groups; the reports land in tmp/mutate-batch/<group>/; an empty baseline is filled, a higher score replaces a lower
 # one, a drop fails naming the file with old and new score and leaves the baseline unchanged; a failed mutant 0, a missing CLI
 # and a manifest-less recording fail naming the group, the other groups still raise the baseline; a failed group's reports are
-# moved to rejected/ and not matched by the merge job's glob; the copied reports' absolute
+# moved to rejected/ (a score drop moves every OK group's reports there too) and not matched by the merge job's glob; the copied reports' absolute
 # paths (as bayan mutate writes them) are rewritten repo-root-relative, a path outside the root fails the group naming the
 # report; .github/workflows/mutation.yml: read-only permissions, no persisted credentials, a concurrency group, shards upload
 # reports and not the baseline, a final job needing the shards merges all reports in one update, uploads the accepted reports, and documents applying the run.
@@ -71,6 +71,7 @@ printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": 1.0
 cp tests/quality-baseline.json $aux/before.json
 rep selfhost/semantics/a.byn 1 1 0; rep selfhost/semantics/b.byn 4 0 0; set +e; PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md > $aux/drop.txt 2>&1; dropx=$?; set -e; drop=$(cat $aux/drop.txt)
 cmp -s tests/quality-baseline.json $aux/before.json && dropsame=1 || dropsame=0
+dropleft=$(find tmp/mutate-batch -name 'quality-[0-9]*.json' -not -path '*/rejected/*'); droprej=$(find tmp/mutate-batch -path '*/rejected/rejected-quality-[0-9]*.json' | wc -l | tr -d ' ')
 # shards over the 3 groups (p, a, b+c): 1/2 takes groups 1 and 3, 2/2 group 2
 rep_all 2 0 0; rm $aux/record.txt; s1=$(b --shard 1/2 | grep '^== group' | cut -d' ' -f3 | tr '\n' ' '); s2=$(b --shard 2/2 | grep '^== group' | cut -d' ' -f3 | tr '\n' ' ')
 badshard=$(b --shard 3/2)
@@ -104,6 +105,7 @@ echo "$fill" | grep -q '^mutation: 3 killed, 1 survived, 0 timeout, 1 marked' ||
 [ "$rrec" = "selfhost/semantics/a.byn ($A)&Snapshot!=skip" ] || fail "--files a.byn did not record a's group" "$rrec"
 echo "$drop" | grep -q '^baseline: mutation score of selfhost/semantics/a.byn fell from 1.0 to 0.5 ' || fail "a drop did not name the file with old and new score" "$drop"
 [ $dropx != 0 ] && [ $dropsame = 1 ] || fail "a drop exited $dropx or changed the baseline" "$drop"
+[ -z "$dropleft" ] && [ "$droprej" = 3 ] || fail "a refused check left accepted reports ($dropleft) or rejected $droprej, not 3" "$drop"
 [ "$s1" = "parser-p semantics-b " ] && [ "$s2" = "semantics-a " ] || fail "--shard split the groups as '$s1' / '$s2'" ""
 echo "$badshard" | grep -q 'want k/n' || fail "a bad --shard was accepted" "$badshard"
 [ "$m0x" != 0 ] && [ "$m0a" = 1.0 ] && [ "$m0b" = None ] || fail "a failed mutant 0 exited $m0x (a=$m0a b=$m0b)" "$m0"
@@ -120,7 +122,9 @@ has '^concurrency:' "no concurrency group"; has 'group: mutation-\$\{\{ github.r
 has 'cancel-in-progress: false' "concurrency cancels runs in progress"
 [ "$(echo "$wf" | grep -c 'name: quality-baseline-')" = 0 ] || fail "mutation.yml: a shard uploads its own tests/quality-baseline.json" ""
 has '^    needs: mutate$' "no merge job needing the shard job"
-has 'quality-baseline.py update tests/quality-baseline.json \. \$\(find reports' "the merge job runs no single update over all reports"
+has 'reports=\$\(find reports' "the merge job collects no reports"
+has 'quality-baseline.py check tests/quality-baseline.json \. \$reports' "the merge job does not check the reports before updating"
+has 'quality-baseline.py update tests/quality-baseline.json \. \$reports' "the merge job runs no single update over all reports"
 has 'Apply the run by `python3 -I scripts/selfhost/quality-baseline.py update tests/quality-baseline\.json \. <reports\.\.\.>`' "the header does not document applying the run by updating from the reports"
 has 'on a chore/ branch off current dev, never by copying the baseline file' "the header does not warn against copying the baseline file"
 has 'name: accepted-reports' "the merge job does not upload the accepted reports artifact"
