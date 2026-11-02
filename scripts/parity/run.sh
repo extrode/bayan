@@ -10,7 +10,8 @@
 #   args       arguments, one per line (optional); `$ROOT` in a line becomes the repo root
 #   in/        inputs; copied to a scratch directory that becomes the working directory
 #   stdin      bytes fed on stdin (optional)
-#   env        KEY=VALUE lines added to the environment (optional); `$ROOT` and `$WORK` expand
+#   env        KEY=VALUE lines added to the environment (optional); `$ROOT`, `$WORK` and `$PATH` expand, so
+#              PATH=$WORK/bin:$PATH puts a stub (say a `git` printing a recorded diff) first
 #   setup      a bash script run in the work directory before the tool (optional; e.g. builds a git repo)
 #   expected/  exit, stdout, stderr, and files/ (the work directory after the run, setup's .git excluded)
 # Prints `PASS <tool> <n> cases` or one `FAIL <tool>/<case>: …` line per mismatch and exits 1.
@@ -43,7 +44,7 @@ for c in "${cases[@]}"; do
   if [ -f "$case_dir/args" ]; then while IFS= read -r a || [ -n "$a" ]; do argv+=("${a//\$ROOT/$root}"); done < "$case_dir/args"; fi
   envv=()
   if [ -f "$case_dir/env" ]; then while IFS= read -r e || [ -n "$e" ]; do
-    [ -n "$e" ] || continue; e="${e//\$ROOT/$root}"; envv+=("${e//\$WORK/$work}")
+    [ -n "$e" ] || continue; e="${e//\$ROOT/$root}"; e="${e//\$WORK/$work}"; envv+=("${e//\$PATH/$PATH}")
   done < "$case_dir/env"; fi
   stdin=/dev/null; [ -f "$case_dir/stdin" ] && stdin="$case_dir/stdin"
   if [ -f "$case_dir/setup" ] && ! (cd "$work" && env ${envv[@]+"${envv[@]}"} bash "$case_dir/setup") > "$got/setup.log" 2>&1; then
