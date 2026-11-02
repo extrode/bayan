@@ -66,7 +66,7 @@ printf '== 1. bayan worktrees and branches\n'
 remove_worktrees "$repo" '.worktrees/worker-w-013-*' '.worktrees/worker-w-winport' '.worktrees/feat-013-test-tooling' \
   '.worktrees/docs-011-spec' '.worktrees/fix-windows-portability' '.worktrees/worker-w-rev1102*' '.worktrees/worker-w-q742*' \
   '.worktrees/fix-q742-lf-output' '.worktrees/fix-review-2026-11-02-2' '.worktrees/chore-remove-mutant-outcome' \
-  '.worktrees/docs-handoff-1102' 'tmp/win-combined' '.worktrees/chore-q743-known-failures' '.worktrees/worker-w-q743kf' '.worktrees/fix-windows-raw-stdout' '.worktrees/fix-review-2026-11-02-3' 'tmp/combined-1102b'
+  '.worktrees/docs-handoff-1102' '.worktrees/docs-handoff-1102-close' 'tmp/win-combined' '.worktrees/chore-q743-known-failures' '.worktrees/worker-w-q743kf' '.worktrees/fix-windows-raw-stdout' '.worktrees/fix-review-2026-11-02-3' 'tmp/combined-1102b'
 delete_branches "$repo"
 
 # 2. ~/.claude (its own dev).
