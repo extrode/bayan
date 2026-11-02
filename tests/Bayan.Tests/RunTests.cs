@@ -107,7 +107,7 @@ public sealed class RunTests
         p.StandardInput.Close();
         var stdout = p.StandardOutput.ReadToEndLfAsync();
         var stderr = p.StandardError.ReadToEndLfAsync();
-        // Generous: after a runtime change every case cold-compiles at once (Warm), and a trivial run can wait 20 s+ for CPU.
+        // Generous: after a runtime change every case cold-compiles (Warm, ProcessorCount at a time), and a trivial run can wait 20 s+ for CPU.
         if (!p.WaitForExit(120_000))
         {
             p.Kill();

@@ -48,7 +48,7 @@ internal static class TestDirs
     }
 }
 
-/// <summary>Starts the theories' warm-up builds in the background, at most <see cref="Environment.ProcessorCount"/> at once across every class. Unbounded, three classes' 190 builds each ran zig together and hit the 7 GB Windows runner's commit limit (zig `failed to spawn: SystemResources`, exit 0xC000012D).</summary>
+/// <summary>Starts the theories' warm-up builds in the background, at most <see cref="Environment.ProcessorCount"/> at once across every class (each class's sequential theory may build one more of its own, outside the gate). Unbounded, three classes' 190 builds each ran zig together and hit the 7 GB Windows runner's commit limit (zig `failed to spawn: SystemResources`, exit 0xC000012D).</summary>
 internal static class WarmUp
 {
     private static readonly SemaphoreSlim Gate = new(Environment.ProcessorCount);
