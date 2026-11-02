@@ -1,0 +1,5 @@
+mul(l: add(l: lit(v: 1), r: lit(v: 2)), r: add(l: lit(v: 4), r: add(l: lit(v: 3), r: add(l: lit(v: 2), r: lit(v: 1)))))
+30 5
+true 30
+true false true
+500500

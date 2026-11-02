@@ -1,0 +1,6 @@
+error BYN2320: a `requires` clause must be `bool`, got `i32`
+
+  1 │ i32 half(i32 n) expects n {
+    │                         ^
+    │
+  help: write a condition the arguments must meet, such as `count > 0`

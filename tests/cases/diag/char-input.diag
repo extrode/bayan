@@ -1,0 +1,17 @@
+error BYN1048: `char` is now `rune`
+
+  1 │ bool isVowel(char c) => c == 'a' or c == 'e'
+    │              ^^^^ the input form
+    │
+  help: rename the type to `rune`
+    │ 1 │ bool isVowel(rune c) => c == 'a' or c == 'e'
+    │   │              ++++
+
+error BYN1048: `char` is now `rune`
+
+  4 │     let letters = Map<char, bool>()
+    │                       ^^^^ the input form
+    │
+  help: rename the type to `rune`
+    │ 4 │     let letters = Map<rune, bool>()
+    │   │                       ++++

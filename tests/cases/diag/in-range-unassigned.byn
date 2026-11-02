@@ -1,0 +1,3 @@
+var hi: i32
+let n = 3
+print($"{n in 0..=hi}")

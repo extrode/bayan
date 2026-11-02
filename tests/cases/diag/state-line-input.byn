@@ -1,0 +1,5 @@
+struct Order {
+    i64 total
+    state draft
+    state paid(i64 payment)
+}

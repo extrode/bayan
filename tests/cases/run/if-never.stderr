@@ -1,0 +1,2 @@
+panic: `if never` condition was true
+  at if-never.byn:7

@@ -1,0 +1,4 @@
+error BYN2411: `ParseError.blank` cannot match `ParseError`
+
+  11 │ assert f("") fails ParseError.blank
+     │                    ^^^^^^^^^^^^^^^^

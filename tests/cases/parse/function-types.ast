@@ -1,0 +1,17 @@
+CompilationUnit
+  TypeAlias Pred = i32 -> bool
+  TypeAlias Combine = (i32, string) -> i32
+  TypeAlias Tick = () -> void
+  TypeAlias Next = () -> Token fails LexError
+  TypeAlias Send = Order -> void uses net
+  TypeAlias Read = () -> Token fails LexError uses fs
+  TypeAlias Curried = A -> B -> C
+  TypeAlias MaybeB = A -> B?
+  Function any(Token -> bool p, i32 n) -> bool => true
+  Function indexWhere(Span<Token> items, by Token -> bool p) -> i32 => 0
+  Function pull(() -> Token fails A, B next, i32 limit) -> void
+    Block
+  Function main() -> void
+    Block
+      Let f: Pred = isBig
+      Let g: i32 -> bool = isBig

@@ -1,0 +1,1718 @@
+// T4: BoundNodes.cs, BoundTree.cs and the BoundMethodGroup/BoundBuiltinGroup/BoundVariantGroup records from BinderExpressions.cs.
+//
+// A bound node is a handle `(BoundKind << 32) | index` into the per-kind arena on `Ctx` (`bLiterals`,
+// `bCalls`, …); -1 is C#'s `null`. `BExpr`, `BStmt` and `BPattern` (ctx.byn) share the one `BoundKind`, so
+// any of them is a `BNode`. One struct per C# record, fields in C# order: `Node Syntax` is `TextSpan span`,
+// a symbol is its T3 handle, `T[]` is a `List<T>`, and a base type computed from a symbol or a child
+// (`BoundLocal`'s `Local.Type`) is a trailing `type` the constructor fills. `BoundExpr.Constant` lives in
+// `Ctx.constants` and the facts C# reads from `Syntax` in `Ctx.syntaxFlags`, both keyed by the handle (Q537).
+// Helper records that are not nodes (`BSwitchArm`, `BSwitchSection`, …) are stored inline in their parent.
+
+import parser
+
+type BNode = i64
+
+// ── Kinds ──────────────────────────────────────────────────────────────────────
+
+/// Every concrete `BoundExpr`, `BoundStmt` and `BoundPattern` record of `BoundNodes.cs` in file order, then the
+/// three group records of `BinderExpressions.cs`; keyword names are renamed (Q535). The ordinals are fixed.
+enum BoundKind {
+    literal
+    symbolLiteral
+    defaultValue
+    local
+    thisRef
+    field
+    tupleElement
+    call
+    builtinCall
+    unary
+    binary
+    conversion
+    tryFrom
+    conditional
+    coalesce
+    structLiteral
+    withExpr
+    tuple
+    collection
+    spread
+    index
+    slice
+    range
+    isExpr
+    switchExpr
+    interpolated
+    moveExpr
+    tryExpr
+    catchExpr
+    jump
+    blockExpr
+    errorVariant
+    enumMember
+    unionNew
+    enumValues
+    staticArray
+    stackalloc
+    errorExpr
+    typeRef
+    moduleRef
+    lambda
+    functionRef
+    block
+    localDecl
+    exprStmt
+    assign
+    returnStmt
+    failStmt
+    becomeStmt
+    breakStmt
+    continueStmt
+    ifStmt
+    whileStmt
+    doWhile
+    forStmt
+    switchStmt
+    deferStmt
+    assertStmt
+    errdeferStmt
+    panicDefer
+    setOnPanic
+    contextStmt
+    errorStmt
+    constantPattern
+    relationalPattern
+    rangePattern
+    bindPattern
+    notPattern
+    binaryPattern
+    propertyPattern
+    unionField
+    unionPattern
+    errorField
+    errorPattern
+    methodGroup
+    variantGroup
+    builtinGroup
+}
+
+/// C# `BuiltinMember`, in C# order.
+enum BuiltinMember {
+    stringLength
+    stringBytes
+    stringIsEmpty
+    stringRuneCount
+    stringIsAscii
+    stringCopy
+    stringStartsWith
+    stringEndsWith
+    stringContains
+    stringPosition
+    stringLastPosition
+    stringCount
+    stringTrimmed
+    stringTrimmedBy
+    stringLowercased
+    stringUppercased
+    stringEquals
+    stringReplaced
+    stringRepeated
+    stringJoined
+    stringPadded
+    bytesToString
+    intTryParse
+    stringRunes
+    stringUtf16
+    stringLines
+    stringParts
+    stringPartsRune
+    runesTake
+    runesSkip
+    runesTakeLast
+    utf16Copy
+    textViewMore
+    textViewNext
+    spanLength
+    spanIsEmpty
+    spanCopy
+    listCopy
+    mapCopy
+    strBufCopy
+    listLength
+    listIsEmpty
+    listAdd
+    listAsSpan
+    listMutableSpan
+    arrayMutableSpan
+    listClear
+    listRemoveLast
+    listRemoveRange
+    listRemoveThrough
+    listRemoveAt
+    listRemoveAtRange
+    listReplace
+    listSort
+    listTryGet
+    mapLength
+    mapTryGet
+    mapContains
+    mapRemove
+    mapClear
+    mapIndex
+    mapIndexSet
+    mapSlot
+    mapSlotCount
+    mapSlotLive
+    mapSlotEntry
+    arrayLength
+    arrayAsSpan
+    arenaReset
+    strBufAppend
+    strBufAppendRepeated
+    strBufInsert
+    strBufLength
+    strBufAsString
+    strBufClear
+    symbolText
+    listTake
+    mapTake
+    strBufTake
+    optionalTake
+    charValue
+    intToString
+    resultIsOk
+    resultValue
+    resultError
+    ownedValue
+    ioWrite
+    ioReadAll
+    enumName
+    enumOrdinal
+    enumField
+    processExitCode
+    processStdout
+    processStderr
+    panicMessage
+    formatSpecRadix
+    formatSpecDebug
+    formatSpecWidth
+    formatSpecFill
+    formatSpecAlign
+    formatSpecDigits
+    floatTryParse
+}
+
+/// C# `ConversionKind`, in C# order.
+enum ConversionKind {
+    identity
+    widen
+    numericCast
+    charToInteger
+    integerToChar
+    toOptional
+    nullToOptional
+    listToSpan
+    arrayToSpan
+    stringToBytes
+    toResult
+    errorToResult
+    fromNever
+    narrow
+    toFunction
+    toDynRef
+}
+
+/// C# `IterationKind`.
+enum IterationKind {
+    indexable
+    enumerator
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+/// What a `Constant` holds: C#'s boxed `Int128`, `double`, `bool`, `string` or `Rune` (Q536).
+enum ConstantKind {
+    integer
+    real
+    flag
+    text
+    rune
+}
+
+/// C# `ConstantValue`: only the field named by `kind` is meaningful.
+struct Constant {
+    ConstantKind kind
+    Big integer = Big { lo: 0, hi: 0 }
+    f64 real = 0.0
+    bool flag = false
+    string text = ""
+    u32 rune = 0
+}
+
+/// `ConstantValue.ToString()`.
+string constantText(in Constant k) {
+    switch k.kind {
+        case .integer: return bigText(k.integer)
+        case .real: return realText(k.real)
+        case .flag: return k.flag ? "true" : "false"
+        case .text: return $"\"{k.text}\""
+        case .rune: return $"{rune(k.rune)}"
+    }
+}
+
+/// C#'s `double.ToString()` under the invariant culture: the shortest round-trip digits, in exponent form
+/// `1E+20` / `1E-05` when the decimal exponent is at least 17 or below -4; `Infinity`, `-Infinity`, `NaN`.
+string realText(f64 v) {
+    if v != v { return "NaN" }
+    let s = $"{v}"
+    if s == "inf" { return "Infinity" }
+    if s == "-inf" { return "-Infinity" }
+    let b = s.bytes
+    // Bayan prints the same shortest digits; re-lay them out C#'s way.
+    var sb = StrBuf()
+    var i = 0
+    if i64(b[0]) == 45 {
+        sb.append("-")
+        i = 1
+    }
+    var d = List<i64>()
+    var point = -1
+    while i < b.length && i64(b[i]) != 101 {
+        if i64(b[i]) == 46 {
+            point = d.length
+        } else {
+            d.append(i64(b[i]) - 48)
+        }
+        i += 1
+    }
+    if point < 0 { point = d.length }
+    var exp = 0
+    if i < b.length {
+        i += 1
+        var negExp = false
+        if i64(b[i]) == 45 {
+            negExp = true
+            i += 1
+        }
+        while i < b.length {
+            exp = exp * 10 + i64(b[i]) - 48
+            i += 1
+        }
+        if negExp { exp = -exp }
+    }
+    var lead = 0
+    while lead < d.length && d[lead] == 0 { lead += 1 }
+    if lead == d.length {
+        sb.append("0")
+        return $"{sb.finish()}"
+    }
+    var last = d.length - 1
+    while d[last] == 0 { last -= 1 }
+    // The decimal exponent of the first significant digit.
+    let x = point - lead - 1 + exp
+    if x >= 17 || x < -4 {
+        sb.append($"{d[lead]}")
+        if last > lead {
+            sb.append(".")
+            for j in lead + 1..last + 1 { sb.append($"{d[j]}") }
+        }
+        var ax = x
+        if x < 0 {
+            sb.append("E-")
+            ax = -x
+        } else {
+            sb.append("E+")
+        }
+        if ax < 10 { sb.append("0") }
+        sb.append($"{ax}")
+        return $"{sb.finish()}"
+    }
+    if x < 0 {
+        sb.append("0.")
+        for j in 0..-x - 1 { sb.append("0") }
+        for j in lead..last + 1 { sb.append($"{d[j]}") }
+        return $"{sb.finish()}"
+    }
+    for j in 0..x + 1 {
+        if lead + j <= last {
+            sb.append($"{d[lead + j]}")
+        } else {
+            sb.append("0")
+        }
+    }
+    if lead + x < last {
+        sb.append(".")
+        for j in lead + x + 1..last + 1 { sb.append($"{d[j]}") }
+    }
+    return $"{sb.finish()}"
+}
+
+// ── Handles ────────────────────────────────────────────────────────────────────
+
+BNode makeBound(BoundKind kind, at i64 index) => (i64(kind.ordinal) << 32) | index
+
+BoundKind boundKind(BNode n) => BoundKind.fromOrdinal(n >> 32) ?? .errorExpr
+
+i64 boundIndex(BNode n) => n & 0xFFFFFFFF
+
+bool isStmtKind(BoundKind k) => k.ordinal >= BoundKind.block.ordinal && k.ordinal <= BoundKind.errorStmt.ordinal
+
+bool isPatternKind(BoundKind k) {
+    switch k {
+        case .constantPattern or .relationalPattern or .rangePattern or .bindPattern or .notPattern or .binaryPattern
+            or .propertyPattern or .unionPattern or .errorPattern:
+            return true
+        default:
+            return false
+    }
+}
+
+bool isExprKind(BoundKind k) => !isStmtKind(k) && !isPatternKind(k)
+
+// ── Constants and syntax facts keyed by handle ──────────────────────────────────
+
+/// C# `BoundExpr.Constant`; null when `e` is not a compile-time constant.
+Constant? exprConstant(in Ctx c, for BExpr e) => c.constants.tryGet(at: e)
+
+void setConstant(ref Ctx c, for BExpr e, to Constant k) {
+    c.constants[e] = k
+}
+
+/// `Syntax is LiteralExpr` (BinderExpressions.cs:94, :1496).
+const syntaxLiteral: i64 = 1
+/// `Syntax is UnaryExpr` (BinderExpressions.cs:1496).
+const syntaxUnary: i64 = 2
+/// `Syntax is Expr x && IsUntypedLiteral(x)` (BinderExpressions.cs:249).
+const syntaxUntypedLiteral: i64 = 4
+/// `Syntax is DiscardPattern` (BinderCalls.cs:1590).
+const syntaxDiscard: i64 = 8
+
+/// The `syntax…` bits recorded for `n` (0 when none were).
+i64 syntaxFlags(in Ctx c, for BNode n) => c.syntaxFlags.tryGet(at: n) ?? 0
+
+/// Records the `syntax…` bits of the node C# would build from the same `Syntax`.
+void setSyntaxFlags(ref Ctx c, for BNode n, to i64 flags) {
+    c.syntaxFlags[n] = flags
+}
+
+bool hasSyntax(in Ctx c, for BNode n, by i64 flag) => (syntaxFlags(in c, for: n) & flag) != 0
+
+// ── Records ────────────────────────────────────────────────────────────────────
+
+struct BLiteral {
+    TextSpan span
+    Type type
+    Constant value
+}
+
+struct BSymbolLiteral {
+    TextSpan span
+    string text
+}
+
+struct BDefault {
+    TextSpan span
+    Type type
+}
+
+struct BLocal {
+    TextSpan span
+    LocalId local
+    Type type = -1
+}
+
+struct BThis {
+    TextSpan span
+    Type type
+}
+
+struct BField {
+    TextSpan span
+    BExpr receiver
+    FieldId field
+    Type type = -1
+}
+
+struct BTupleElement {
+    TextSpan span
+    BExpr receiver
+    i64 index
+    Type type
+}
+
+struct BCall {
+    TextSpan span
+    FuncId function
+    BExpr receiver = -1
+    List<BExpr> arguments = List<BExpr>()
+    Type type
+}
+
+struct BBuiltinCall {
+    TextSpan span
+    BuiltinMember member
+    BExpr receiver
+    List<BExpr> arguments = List<BExpr>()
+    Type type
+}
+
+struct BUnary {
+    TextSpan span
+    parser.UnaryOp op
+    BExpr operand
+    Type type
+}
+
+struct BBinary {
+    TextSpan span
+    parser.BinaryOp op
+    BExpr left
+    BExpr right
+    Type type
+}
+
+struct BConversion {
+    TextSpan span
+    BExpr operand
+    Type type
+    ConversionKind kind
+}
+
+struct BTryFrom {
+    TextSpan span
+    BExpr operand
+    Type target
+    Type type
+}
+
+struct BConditional {
+    TextSpan span
+    BExpr condition
+    BExpr whenTrue
+    BExpr whenFalse
+    Type type
+}
+
+struct BCoalesce {
+    TextSpan span
+    BExpr left
+    BExpr right
+    Type type
+}
+
+struct BStructLiteral {
+    TextSpan span
+    StructId structId
+    List<BExpr> fields = List<BExpr>()
+    VariantId state = -1
+    List<BExpr> payload = List<BExpr>()
+    Type type = -1
+}
+
+struct BWith {
+    TextSpan span
+    BExpr target
+    List<BWithUpdate> updates = List<BWithUpdate>()
+    Type type = -1
+}
+
+struct BTuple {
+    TextSpan span
+    Type tupleType
+    List<BExpr> elements = List<BExpr>()
+}
+
+struct BCollection {
+    TextSpan span
+    Type type
+    List<BExpr> elements = List<BExpr>()
+}
+
+struct BSpread {
+    TextSpan span
+    BExpr operand
+    Type type
+}
+
+struct BIndex {
+    TextSpan span
+    BExpr target
+    BExpr index
+    bool fromEnd = false
+    Type type
+}
+
+struct BSlice {
+    TextSpan span
+    BExpr target
+    BExpr start = -1
+    bool startFromEnd = false
+    BExpr end = -1
+    bool endFromEnd = false
+    bool inclusive = false
+    Type type
+}
+
+struct BRange {
+    TextSpan span
+    BExpr start
+    BExpr end
+    bool inclusive = false
+    Type type
+}
+
+struct BIs {
+    TextSpan span
+    BExpr value
+    BPattern pattern
+}
+
+struct BSwitchExpr {
+    TextSpan span
+    BExpr value
+    List<BSwitchArm> arms = List<BSwitchArm>()
+    Type type
+}
+
+struct BInterpolated {
+    TextSpan span
+    List<BInterpolationPart> parts = List<BInterpolationPart>()
+}
+
+struct BMove {
+    TextSpan span
+    BExpr operand
+    Type type = -1
+}
+
+struct BTry {
+    TextSpan span
+    BExpr operand
+    Type type
+}
+
+struct BCatch {
+    TextSpan span
+    BExpr operand
+    LocalId binding = -1
+    VariantId variant = -1
+    BExpr handler
+    Type type
+}
+
+struct BJump {
+    TextSpan span
+    BStmt jump
+}
+
+struct BBlockExpr {
+    TextSpan span
+    BStmt block
+    Type type
+}
+
+struct BErrorVariant {
+    TextSpan span
+    VariantId variant
+    List<BExpr> payload = List<BExpr>()
+    Type type = -1
+}
+
+struct BEnumMember {
+    TextSpan span
+    EnumMemberId member
+    Type type = -1
+}
+
+struct BUnionNew {
+    TextSpan span
+    VariantId variant
+    List<BExpr> payload = List<BExpr>()
+    Type type = -1
+}
+
+struct BEnumValues {
+    TextSpan span
+    EnumId enumId
+    Type type
+}
+
+struct BStaticArray {
+    TextSpan span
+    ConstId constId
+    Type type = -1
+}
+
+struct BStackalloc {
+    TextSpan span
+    Type element
+    i64 count
+    Type type
+}
+
+struct BErrorExpr {
+    TextSpan span
+}
+
+struct BTypeRef {
+    TextSpan span
+    Type referenced
+}
+
+struct BModuleRef {
+    TextSpan span
+    ModId module
+}
+
+struct BLambda {
+    TextSpan span
+    FuncId lambda
+    List<BExpr> captures = List<BExpr>()
+    Type functionType
+}
+
+struct BFunctionRef {
+    TextSpan span
+    FuncId function
+    Type functionType
+}
+
+struct BBlock {
+    TextSpan span
+    List<BStmt> statements = List<BStmt>()
+}
+
+struct BLocalDecl {
+    TextSpan span
+    LocalId local
+    BExpr initializer = -1
+}
+
+struct BExprStmt {
+    TextSpan span
+    BExpr expr
+}
+
+struct BAssign {
+    TextSpan span
+    BExpr target
+    BExpr value
+    parser.BinaryOp? op = null
+}
+
+struct BReturn {
+    TextSpan span
+    BExpr value = -1
+}
+
+struct BFail {
+    TextSpan span
+    BExpr error
+}
+
+struct BBecome {
+    TextSpan span
+    VariantId state
+    List<BExpr> payload = List<BExpr>()
+}
+
+struct BBreak {
+    TextSpan span
+    i64 target
+}
+
+struct BContinue {
+    TextSpan span
+    i64 target
+}
+
+struct BIf {
+    TextSpan span
+    BExpr condition
+    BStmt then
+    BStmt elseBranch = -1
+    bool isNever = false
+}
+
+struct BWhile {
+    TextSpan span
+    BExpr condition
+    BStmt body
+    i64 target
+}
+
+struct BDoWhile {
+    TextSpan span
+    BStmt body
+    BExpr condition
+    i64 target
+}
+
+struct BFor {
+    TextSpan span
+    LocalId variable
+    BExpr iterable
+    BStmt body
+    i64 target
+    UserIteration? userIteration = null
+}
+
+struct BSwitch {
+    TextSpan span
+    BExpr value
+    List<BSwitchSection> sections = List<BSwitchSection>()
+    i64 target
+    bool exhaustive = false
+}
+
+struct BDefer {
+    TextSpan span
+    BStmt body
+}
+
+struct BAssert {
+    TextSpan span
+    BExpr condition
+    ErrorSetId failsWith = -1
+    VariantId failsCase = -1
+}
+
+struct BErrdefer {
+    TextSpan span
+    LocalId error = -1
+    BStmt body
+}
+
+struct BPanicDefer {
+    TextSpan span
+    LocalId panic = -1
+    BStmt body
+}
+
+struct BSetOnPanic {
+    TextSpan span
+    FuncId handler
+}
+
+struct BContext {
+    TextSpan span
+    BExpr allocator
+    BStmt body
+}
+
+struct BErrorStmt {
+    TextSpan span
+}
+
+struct BConstantPattern {
+    TextSpan span
+    Type inputType
+    BExpr value
+}
+
+struct BRelationalPattern {
+    TextSpan span
+    Type inputType
+    parser.BinaryOp op
+    BExpr value
+}
+
+struct BRangePattern {
+    TextSpan span
+    Type inputType
+    BExpr start
+    BExpr end
+    bool inclusive = false
+}
+
+struct BBindPattern {
+    TextSpan span
+    Type inputType
+    LocalId local = -1
+}
+
+struct BNotPattern {
+    TextSpan span
+    Type inputType
+    BPattern operand
+}
+
+struct BBinaryPattern {
+    TextSpan span
+    Type inputType
+    bool isAnd = false
+    BPattern left
+    BPattern right
+}
+
+struct BPropertyPattern {
+    TextSpan span
+    Type inputType
+    Type valueType
+    List<BSubpattern> subpatterns = List<BSubpattern>()
+    LocalId designation = -1
+}
+
+struct BUnionField {
+    TextSpan span
+    BExpr receiver
+    VariantId variant
+    i64 index
+    Type type = -1
+}
+
+struct BUnionPattern {
+    TextSpan span
+    Type inputType
+    VariantId variant
+    List<BPattern> subpatterns = List<BPattern>()
+    LocalId designation = -1
+}
+
+struct BErrorField {
+    TextSpan span
+    BExpr receiver
+    VariantId variant
+    i64 index
+    Type type = -1
+}
+
+struct BErrorPattern {
+    TextSpan span
+    Type inputType
+    VariantId variant
+    List<BPattern> subpatterns = List<BPattern>()
+}
+
+struct BMethodGroup {
+    TextSpan span
+    BExpr receiver = -1
+    FuncId function
+    List<TextSpan> typeArgs = List<TextSpan>()
+}
+
+struct BVariantGroup {
+    TextSpan span
+    VariantId variant
+}
+
+struct BBuiltinGroup {
+    TextSpan span
+    BExpr receiver
+    string name
+}
+
+struct BSwitchArm {
+    TextSpan span
+    BPattern pattern
+    BExpr guard = -1
+    BExpr value
+}
+
+struct BInterpolationPart {
+    string? text = null
+    BExpr value = -1
+    BFormatSpec? spec = null
+}
+
+struct BFormatSpec {
+    i64 radix = 0
+    bool debug = false
+    i64 width = 0
+    u32 fill = 32
+    i64 align = -1
+    i64 digits = -1
+}
+
+struct UserIteration {
+    IterationKind kind
+    FuncId advance = -1
+    FuncId item = -1
+    LocalId spill = -1
+    FieldId advanceField = -1
+    FieldId itemField = -1
+}
+
+struct BSwitchSection {
+    TextSpan span
+    BPattern pattern = -1
+    BExpr guard = -1
+    List<BStmt> body = List<BStmt>()
+}
+
+struct BSubpattern {
+    List<BMemberStep> path = List<BMemberStep>()
+    BPattern pattern
+}
+
+struct BMemberStep {
+    FieldId field = -1
+    PropertyId propertyId = -1
+    i64 tupleIndex = -1
+    BuiltinMember? builtin = null
+    Type type
+}
+
+struct StructChecks {
+    FuncId check
+    List<StructRule> rules = List<StructRule>()
+}
+
+struct StructRule {
+    TextSpan span
+    FieldId field = -1
+    BExpr condition
+    List<FieldId> reads = List<FieldId>()
+}
+
+struct BWithUpdate {
+    FieldId field
+    BExpr value
+}
+
+// ── Constructors ───────────────────────────────────────────────────────────────
+
+BExpr addLiteral(ref Ctx c, from move BLiteral n) {
+    c.bLiterals.append(move n)
+    return makeBound(.literal, at: c.bLiterals.length - 1)
+}
+
+BExpr addSymbolLiteral(ref Ctx c, from move BSymbolLiteral n) {
+    c.bSymbolLiterals.append(move n)
+    return makeBound(.symbolLiteral, at: c.bSymbolLiterals.length - 1)
+}
+
+BExpr addDefault(ref Ctx c, from move BDefault n) {
+    c.bDefaults.append(move n)
+    return makeBound(.defaultValue, at: c.bDefaults.length - 1)
+}
+
+BExpr addLocal(ref Ctx c, from move BLocal n) {
+    var m = move n
+    // C# `new BoundLocal(n, local) { Type = known }` keeps a narrowed state type (BinderExpressions.cs:526).
+    if m.type == -1 { m.type = c.locals[m.local].type }
+    c.bLocals.append(move m)
+    return makeBound(.local, at: c.bLocals.length - 1)
+}
+
+BExpr addThis(ref Ctx c, from move BThis n) {
+    c.bThises.append(move n)
+    return makeBound(.thisRef, at: c.bThises.length - 1)
+}
+
+BExpr addField(ref Ctx c, from move BField n) {
+    var m = move n
+    m.type = c.fields[m.field].type
+    c.bFields.append(move m)
+    return makeBound(.field, at: c.bFields.length - 1)
+}
+
+BExpr addTupleElement(ref Ctx c, from move BTupleElement n) {
+    c.bTupleElements.append(move n)
+    return makeBound(.tupleElement, at: c.bTupleElements.length - 1)
+}
+
+BExpr addCall(ref Ctx c, from move BCall n) {
+    c.bCalls.append(move n)
+    return makeBound(.call, at: c.bCalls.length - 1)
+}
+
+BExpr addBuiltinCall(ref Ctx c, from move BBuiltinCall n) {
+    c.bBuiltinCalls.append(move n)
+    return makeBound(.builtinCall, at: c.bBuiltinCalls.length - 1)
+}
+
+BExpr addUnary(ref Ctx c, from move BUnary n) {
+    c.bUnaries.append(move n)
+    return makeBound(.unary, at: c.bUnaries.length - 1)
+}
+
+BExpr addBinary(ref Ctx c, from move BBinary n) {
+    c.bBinaries.append(move n)
+    return makeBound(.binary, at: c.bBinaries.length - 1)
+}
+
+BExpr addConversion(ref Ctx c, from move BConversion n) {
+    c.bConversions.append(move n)
+    return makeBound(.conversion, at: c.bConversions.length - 1)
+}
+
+BExpr addTryFrom(ref Ctx c, from move BTryFrom n) {
+    c.bTryFroms.append(move n)
+    return makeBound(.tryFrom, at: c.bTryFroms.length - 1)
+}
+
+BExpr addConditional(ref Ctx c, from move BConditional n) {
+    c.bConditionals.append(move n)
+    return makeBound(.conditional, at: c.bConditionals.length - 1)
+}
+
+BExpr addCoalesce(ref Ctx c, from move BCoalesce n) {
+    c.bCoalesces.append(move n)
+    return makeBound(.coalesce, at: c.bCoalesces.length - 1)
+}
+
+BExpr addStructLiteral(ref Ctx c, from move BStructLiteral n) {
+    var m = move n
+    // A state literal `T.s { … }` is of type `T.s` (`literal with { State = state, Type = stateType }`, BinderExpressions.cs:1609).
+    if m.state == -1 || m.type == -1 { m.type = makeType(.structType, at: m.structId) }
+    c.bStructLiterals.append(move m)
+    return makeBound(.structLiteral, at: c.bStructLiterals.length - 1)
+}
+
+BExpr addWith(ref Ctx c, from move BWith n) {
+    var m = move n
+    m.type = exprType(in c, for: m.target)
+    c.bWiths.append(move m)
+    return makeBound(.withExpr, at: c.bWiths.length - 1)
+}
+
+BExpr addTuple(ref Ctx c, from move BTuple n) {
+    c.bTuples.append(move n)
+    return makeBound(.tuple, at: c.bTuples.length - 1)
+}
+
+BExpr addCollection(ref Ctx c, from move BCollection n) {
+    c.bCollections.append(move n)
+    return makeBound(.collection, at: c.bCollections.length - 1)
+}
+
+BExpr addSpread(ref Ctx c, from move BSpread n) {
+    c.bSpreads.append(move n)
+    return makeBound(.spread, at: c.bSpreads.length - 1)
+}
+
+BExpr addIndex(ref Ctx c, from move BIndex n) {
+    c.bIndexes.append(move n)
+    return makeBound(.index, at: c.bIndexes.length - 1)
+}
+
+BExpr addSlice(ref Ctx c, from move BSlice n) {
+    c.bSlices.append(move n)
+    return makeBound(.slice, at: c.bSlices.length - 1)
+}
+
+BExpr addRange(ref Ctx c, from move BRange n) {
+    c.bRanges.append(move n)
+    return makeBound(.range, at: c.bRanges.length - 1)
+}
+
+BExpr addIs(ref Ctx c, from move BIs n) {
+    c.bIses.append(move n)
+    return makeBound(.isExpr, at: c.bIses.length - 1)
+}
+
+BExpr addSwitchExpr(ref Ctx c, from move BSwitchExpr n) {
+    c.bSwitchExprs.append(move n)
+    return makeBound(.switchExpr, at: c.bSwitchExprs.length - 1)
+}
+
+BExpr addInterpolated(ref Ctx c, from move BInterpolated n) {
+    c.bInterpolateds.append(move n)
+    return makeBound(.interpolated, at: c.bInterpolateds.length - 1)
+}
+
+BExpr addMove(ref Ctx c, from move BMove n) {
+    var m = move n
+    m.type = exprType(in c, for: m.operand)
+    c.bMoves.append(move m)
+    return makeBound(.moveExpr, at: c.bMoves.length - 1)
+}
+
+BExpr addTry(ref Ctx c, from move BTry n) {
+    c.bTries.append(move n)
+    return makeBound(.tryExpr, at: c.bTries.length - 1)
+}
+
+BExpr addCatch(ref Ctx c, from move BCatch n) {
+    c.bCatches.append(move n)
+    return makeBound(.catchExpr, at: c.bCatches.length - 1)
+}
+
+BExpr addJump(ref Ctx c, from move BJump n) {
+    c.bJumps.append(move n)
+    return makeBound(.jump, at: c.bJumps.length - 1)
+}
+
+BExpr addBlockExpr(ref Ctx c, from move BBlockExpr n) {
+    c.bBlockExprs.append(move n)
+    return makeBound(.blockExpr, at: c.bBlockExprs.length - 1)
+}
+
+BExpr addErrorVariant(ref Ctx c, from move BErrorVariant n) {
+    var m = move n
+    m.type = makeType(.errorSet, at: c.errorVariants[m.variant].set)
+    c.bErrorVariants.append(move m)
+    return makeBound(.errorVariant, at: c.bErrorVariants.length - 1)
+}
+
+BExpr addEnumMember(ref Ctx c, from move BEnumMember n) {
+    var m = move n
+    m.type = makeType(.enumType, at: c.enumMembers[m.member].owner)
+    c.bEnumMembers.append(move m)
+    return makeBound(.enumMember, at: c.bEnumMembers.length - 1)
+}
+
+BExpr addUnionNew(ref Ctx c, from move BUnionNew n) {
+    var m = move n
+    m.type = makeType(.unionType, at: c.unionVariants[m.variant].owner)
+    c.bUnionNews.append(move m)
+    return makeBound(.unionNew, at: c.bUnionNews.length - 1)
+}
+
+BExpr addEnumValues(ref Ctx c, from move BEnumValues n) {
+    c.bEnumValues.append(move n)
+    return makeBound(.enumValues, at: c.bEnumValues.length - 1)
+}
+
+BExpr addStaticArray(ref Ctx c, from move BStaticArray n) {
+    var m = move n
+    m.type = c.consts[m.constId].type
+    c.bStaticArrays.append(move m)
+    return makeBound(.staticArray, at: c.bStaticArrays.length - 1)
+}
+
+BExpr addStackalloc(ref Ctx c, from move BStackalloc n) {
+    c.bStackallocs.append(move n)
+    return makeBound(.stackalloc, at: c.bStackallocs.length - 1)
+}
+
+BExpr addErrorExpr(ref Ctx c, from move BErrorExpr n) {
+    c.bErrorExprs.append(move n)
+    return makeBound(.errorExpr, at: c.bErrorExprs.length - 1)
+}
+
+BExpr addTypeRef(ref Ctx c, from move BTypeRef n) {
+    c.bTypeRefs.append(move n)
+    return makeBound(.typeRef, at: c.bTypeRefs.length - 1)
+}
+
+BExpr addModuleRef(ref Ctx c, from move BModuleRef n) {
+    c.bModuleRefs.append(move n)
+    return makeBound(.moduleRef, at: c.bModuleRefs.length - 1)
+}
+
+BExpr addLambda(ref Ctx c, from move BLambda n) {
+    c.bLambdas.append(move n)
+    return makeBound(.lambda, at: c.bLambdas.length - 1)
+}
+
+BExpr addFunctionRef(ref Ctx c, from move BFunctionRef n) {
+    c.bFunctionRefs.append(move n)
+    return makeBound(.functionRef, at: c.bFunctionRefs.length - 1)
+}
+
+BStmt addBlock(ref Ctx c, from move BBlock n) {
+    c.bBlocks.append(move n)
+    return makeBound(.block, at: c.bBlocks.length - 1)
+}
+
+BStmt addLocalDecl(ref Ctx c, from move BLocalDecl n) {
+    c.bLocalDecls.append(move n)
+    return makeBound(.localDecl, at: c.bLocalDecls.length - 1)
+}
+
+BStmt addExprStmt(ref Ctx c, from move BExprStmt n) {
+    c.bExprStmts.append(move n)
+    return makeBound(.exprStmt, at: c.bExprStmts.length - 1)
+}
+
+BStmt addAssign(ref Ctx c, from move BAssign n) {
+    c.bAssigns.append(move n)
+    return makeBound(.assign, at: c.bAssigns.length - 1)
+}
+
+BStmt addReturn(ref Ctx c, from move BReturn n) {
+    c.bReturns.append(move n)
+    return makeBound(.returnStmt, at: c.bReturns.length - 1)
+}
+
+BStmt addFail(ref Ctx c, from move BFail n) {
+    c.bFails.append(move n)
+    return makeBound(.failStmt, at: c.bFails.length - 1)
+}
+
+BStmt addBecome(ref Ctx c, from move BBecome n) {
+    c.bBecomes.append(move n)
+    return makeBound(.becomeStmt, at: c.bBecomes.length - 1)
+}
+
+BStmt addBreak(ref Ctx c, from move BBreak n) {
+    c.bBreaks.append(move n)
+    return makeBound(.breakStmt, at: c.bBreaks.length - 1)
+}
+
+BStmt addContinue(ref Ctx c, from move BContinue n) {
+    c.bContinues.append(move n)
+    return makeBound(.continueStmt, at: c.bContinues.length - 1)
+}
+
+BStmt addIf(ref Ctx c, from move BIf n) {
+    c.bIfs.append(move n)
+    return makeBound(.ifStmt, at: c.bIfs.length - 1)
+}
+
+BStmt addWhile(ref Ctx c, from move BWhile n) {
+    c.bWhiles.append(move n)
+    return makeBound(.whileStmt, at: c.bWhiles.length - 1)
+}
+
+BStmt addDoWhile(ref Ctx c, from move BDoWhile n) {
+    c.bDoWhiles.append(move n)
+    return makeBound(.doWhile, at: c.bDoWhiles.length - 1)
+}
+
+BStmt addFor(ref Ctx c, from move BFor n) {
+    c.bFors.append(move n)
+    return makeBound(.forStmt, at: c.bFors.length - 1)
+}
+
+BStmt addSwitch(ref Ctx c, from move BSwitch n) {
+    c.bSwitches.append(move n)
+    return makeBound(.switchStmt, at: c.bSwitches.length - 1)
+}
+
+BStmt addDefer(ref Ctx c, from move BDefer n) {
+    c.bDefers.append(move n)
+    return makeBound(.deferStmt, at: c.bDefers.length - 1)
+}
+
+BStmt addAssert(ref Ctx c, from move BAssert n) {
+    c.bAsserts.append(move n)
+    return makeBound(.assertStmt, at: c.bAsserts.length - 1)
+}
+
+BStmt addErrdefer(ref Ctx c, from move BErrdefer n) {
+    c.bErrdefers.append(move n)
+    return makeBound(.errdeferStmt, at: c.bErrdefers.length - 1)
+}
+
+BStmt addPanicDefer(ref Ctx c, from move BPanicDefer n) {
+    c.bPanicDefers.append(move n)
+    return makeBound(.panicDefer, at: c.bPanicDefers.length - 1)
+}
+
+BStmt addSetOnPanic(ref Ctx c, from move BSetOnPanic n) {
+    c.bSetOnPanics.append(move n)
+    return makeBound(.setOnPanic, at: c.bSetOnPanics.length - 1)
+}
+
+BStmt addContext(ref Ctx c, from move BContext n) {
+    c.bContexts.append(move n)
+    return makeBound(.contextStmt, at: c.bContexts.length - 1)
+}
+
+BStmt addErrorStmt(ref Ctx c, from move BErrorStmt n) {
+    c.bErrorStmts.append(move n)
+    return makeBound(.errorStmt, at: c.bErrorStmts.length - 1)
+}
+
+BPattern addConstantPattern(ref Ctx c, from move BConstantPattern n) {
+    c.bConstantPatterns.append(move n)
+    return makeBound(.constantPattern, at: c.bConstantPatterns.length - 1)
+}
+
+BPattern addRelationalPattern(ref Ctx c, from move BRelationalPattern n) {
+    c.bRelationalPatterns.append(move n)
+    return makeBound(.relationalPattern, at: c.bRelationalPatterns.length - 1)
+}
+
+BPattern addRangePattern(ref Ctx c, from move BRangePattern n) {
+    c.bRangePatterns.append(move n)
+    return makeBound(.rangePattern, at: c.bRangePatterns.length - 1)
+}
+
+BPattern addBindPattern(ref Ctx c, from move BBindPattern n) {
+    c.bBindPatterns.append(move n)
+    return makeBound(.bindPattern, at: c.bBindPatterns.length - 1)
+}
+
+BPattern addNotPattern(ref Ctx c, from move BNotPattern n) {
+    c.bNotPatterns.append(move n)
+    return makeBound(.notPattern, at: c.bNotPatterns.length - 1)
+}
+
+BPattern addBinaryPattern(ref Ctx c, from move BBinaryPattern n) {
+    c.bBinaryPatterns.append(move n)
+    return makeBound(.binaryPattern, at: c.bBinaryPatterns.length - 1)
+}
+
+BPattern addPropertyPattern(ref Ctx c, from move BPropertyPattern n) {
+    c.bPropertyPatterns.append(move n)
+    return makeBound(.propertyPattern, at: c.bPropertyPatterns.length - 1)
+}
+
+BExpr addUnionField(ref Ctx c, from move BUnionField n) {
+    var m = move n
+    m.type = c.locals[c.unionVariants[m.variant].fields[m.index]].type
+    c.bUnionFields.append(move m)
+    return makeBound(.unionField, at: c.bUnionFields.length - 1)
+}
+
+BPattern addUnionPattern(ref Ctx c, from move BUnionPattern n) {
+    c.bUnionPatterns.append(move n)
+    return makeBound(.unionPattern, at: c.bUnionPatterns.length - 1)
+}
+
+BExpr addErrorField(ref Ctx c, from move BErrorField n) {
+    var m = move n
+    m.type = c.locals[c.errorVariants[m.variant].fields[m.index]].type
+    c.bErrorFields.append(move m)
+    return makeBound(.errorField, at: c.bErrorFields.length - 1)
+}
+
+BPattern addErrorPattern(ref Ctx c, from move BErrorPattern n) {
+    c.bErrorPatterns.append(move n)
+    return makeBound(.errorPattern, at: c.bErrorPatterns.length - 1)
+}
+
+BExpr addMethodGroup(ref Ctx c, from move BMethodGroup n) {
+    c.bMethodGroups.append(move n)
+    return makeBound(.methodGroup, at: c.bMethodGroups.length - 1)
+}
+
+BExpr addVariantGroup(ref Ctx c, from move BVariantGroup n) {
+    c.bVariantGroups.append(move n)
+    return makeBound(.variantGroup, at: c.bVariantGroups.length - 1)
+}
+
+BExpr addBuiltinGroup(ref Ctx c, from move BBuiltinGroup n) {
+    c.bBuiltinGroups.append(move n)
+    return makeBound(.builtinGroup, at: c.bBuiltinGroups.length - 1)
+}
+
+// ── Base-class members ─────────────────────────────────────────────────────────
+
+/// C# `BoundExpr.Type`.
+Type exprType(in Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .literal: return c.bLiterals[i].type
+        case .symbolLiteral: return builtinType(.symbol)
+        case .defaultValue: return c.bDefaults[i].type
+        case .local: return c.bLocals[i].type
+        case .thisRef: return c.bThises[i].type
+        case .field: return c.bFields[i].type
+        case .tupleElement: return c.bTupleElements[i].type
+        case .call: return c.bCalls[i].type
+        case .builtinCall: return c.bBuiltinCalls[i].type
+        case .unary: return c.bUnaries[i].type
+        case .binary: return c.bBinaries[i].type
+        case .conversion: return c.bConversions[i].type
+        case .tryFrom: return c.bTryFroms[i].type
+        case .conditional: return c.bConditionals[i].type
+        case .coalesce: return c.bCoalesces[i].type
+        case .structLiteral: return c.bStructLiterals[i].type
+        case .withExpr: return c.bWiths[i].type
+        case .tuple: return c.bTuples[i].tupleType
+        case .collection: return c.bCollections[i].type
+        case .spread: return c.bSpreads[i].type
+        case .index: return c.bIndexes[i].type
+        case .slice: return c.bSlices[i].type
+        case .range: return c.bRanges[i].type
+        case .isExpr: return prim(.bool)
+        case .switchExpr: return c.bSwitchExprs[i].type
+        case .interpolated: return prim(.string)
+        case .moveExpr: return c.bMoves[i].type
+        case .tryExpr: return c.bTries[i].type
+        case .catchExpr: return c.bCatches[i].type
+        case .jump: return prim(.neverKind)
+        case .blockExpr: return c.bBlockExprs[i].type
+        case .errorVariant: return c.bErrorVariants[i].type
+        case .enumMember: return c.bEnumMembers[i].type
+        case .unionNew: return c.bUnionNews[i].type
+        case .enumValues: return c.bEnumValues[i].type
+        case .staticArray: return c.bStaticArrays[i].type
+        case .stackalloc: return c.bStackallocs[i].type
+        case .errorExpr: return errorType()
+        case .typeRef: return errorType()
+        case .moduleRef: return errorType()
+        case .lambda: return c.bLambdas[i].functionType
+        case .functionRef: return c.bFunctionRefs[i].functionType
+        case .unionField: return c.bUnionFields[i].type
+        case .errorField: return c.bErrorFields[i].type
+        case .methodGroup: return errorType()
+        case .variantGroup: return errorType()
+        case .builtinGroup: return errorType()
+        default: return errorType()
+    }
+}
+
+/// C# `BoundNode.Syntax.Span`.
+TextSpan nodeSpan(in Ctx c, for BNode n) {
+    let i = boundIndex(n)
+    switch boundKind(n) {
+        case .literal: return c.bLiterals[i].span
+        case .symbolLiteral: return c.bSymbolLiterals[i].span
+        case .defaultValue: return c.bDefaults[i].span
+        case .local: return c.bLocals[i].span
+        case .thisRef: return c.bThises[i].span
+        case .field: return c.bFields[i].span
+        case .tupleElement: return c.bTupleElements[i].span
+        case .call: return c.bCalls[i].span
+        case .builtinCall: return c.bBuiltinCalls[i].span
+        case .unary: return c.bUnaries[i].span
+        case .binary: return c.bBinaries[i].span
+        case .conversion: return c.bConversions[i].span
+        case .tryFrom: return c.bTryFroms[i].span
+        case .conditional: return c.bConditionals[i].span
+        case .coalesce: return c.bCoalesces[i].span
+        case .structLiteral: return c.bStructLiterals[i].span
+        case .withExpr: return c.bWiths[i].span
+        case .tuple: return c.bTuples[i].span
+        case .collection: return c.bCollections[i].span
+        case .spread: return c.bSpreads[i].span
+        case .index: return c.bIndexes[i].span
+        case .slice: return c.bSlices[i].span
+        case .range: return c.bRanges[i].span
+        case .isExpr: return c.bIses[i].span
+        case .switchExpr: return c.bSwitchExprs[i].span
+        case .interpolated: return c.bInterpolateds[i].span
+        case .moveExpr: return c.bMoves[i].span
+        case .tryExpr: return c.bTries[i].span
+        case .catchExpr: return c.bCatches[i].span
+        case .jump: return c.bJumps[i].span
+        case .blockExpr: return c.bBlockExprs[i].span
+        case .errorVariant: return c.bErrorVariants[i].span
+        case .enumMember: return c.bEnumMembers[i].span
+        case .unionNew: return c.bUnionNews[i].span
+        case .enumValues: return c.bEnumValues[i].span
+        case .staticArray: return c.bStaticArrays[i].span
+        case .stackalloc: return c.bStackallocs[i].span
+        case .errorExpr: return c.bErrorExprs[i].span
+        case .typeRef: return c.bTypeRefs[i].span
+        case .moduleRef: return c.bModuleRefs[i].span
+        case .lambda: return c.bLambdas[i].span
+        case .functionRef: return c.bFunctionRefs[i].span
+        case .block: return c.bBlocks[i].span
+        case .localDecl: return c.bLocalDecls[i].span
+        case .exprStmt: return c.bExprStmts[i].span
+        case .assign: return c.bAssigns[i].span
+        case .returnStmt: return c.bReturns[i].span
+        case .failStmt: return c.bFails[i].span
+        case .becomeStmt: return c.bBecomes[i].span
+        case .breakStmt: return c.bBreaks[i].span
+        case .continueStmt: return c.bContinues[i].span
+        case .ifStmt: return c.bIfs[i].span
+        case .whileStmt: return c.bWhiles[i].span
+        case .doWhile: return c.bDoWhiles[i].span
+        case .forStmt: return c.bFors[i].span
+        case .switchStmt: return c.bSwitches[i].span
+        case .deferStmt: return c.bDefers[i].span
+        case .assertStmt: return c.bAsserts[i].span
+        case .errdeferStmt: return c.bErrdefers[i].span
+        case .panicDefer: return c.bPanicDefers[i].span
+        case .setOnPanic: return c.bSetOnPanics[i].span
+        case .contextStmt: return c.bContexts[i].span
+        case .errorStmt: return c.bErrorStmts[i].span
+        case .constantPattern: return c.bConstantPatterns[i].span
+        case .relationalPattern: return c.bRelationalPatterns[i].span
+        case .rangePattern: return c.bRangePatterns[i].span
+        case .bindPattern: return c.bBindPatterns[i].span
+        case .notPattern: return c.bNotPatterns[i].span
+        case .binaryPattern: return c.bBinaryPatterns[i].span
+        case .propertyPattern: return c.bPropertyPatterns[i].span
+        case .unionField: return c.bUnionFields[i].span
+        case .unionPattern: return c.bUnionPatterns[i].span
+        case .errorField: return c.bErrorFields[i].span
+        case .errorPattern: return c.bErrorPatterns[i].span
+        case .methodGroup: return c.bMethodGroups[i].span
+        case .variantGroup: return c.bVariantGroups[i].span
+        case .builtinGroup: return c.bBuiltinGroups[i].span
+    }
+}
+
+/// C# `BoundPattern.InputType`.
+Type patternInput(in Ctx c, for BPattern p) {
+    let i = boundIndex(p)
+    switch boundKind(p) {
+        case .constantPattern: return c.bConstantPatterns[i].inputType
+        case .relationalPattern: return c.bRelationalPatterns[i].inputType
+        case .rangePattern: return c.bRangePatterns[i].inputType
+        case .bindPattern: return c.bBindPatterns[i].inputType
+        case .notPattern: return c.bNotPatterns[i].inputType
+        case .binaryPattern: return c.bBinaryPatterns[i].inputType
+        case .propertyPattern: return c.bPropertyPatterns[i].inputType
+        case .unionPattern: return c.bUnionPatterns[i].inputType
+        case .errorPattern: return c.bErrorPatterns[i].inputType
+        default: return errorType()
+    }
+}
+
+// ── Walk ───────────────────────────────────────────────────────────────────────
+
+/// C# `BoundTree.Children`: the direct children of a node, in evaluation order.
+List<BNode> children(in Ctx c, for BNode n) {
+    var result = List<BNode>()
+    let i = boundIndex(n)
+    switch boundKind(n) {
+        case .field:
+            result.append(c.bFields[i].receiver)
+        case .tupleElement:
+            result.append(c.bTupleElements[i].receiver)
+        case .unionField:
+            result.append(c.bUnionFields[i].receiver)
+        case .errorField:
+            result.append(c.bErrorFields[i].receiver)
+        case .call:
+            if c.bCalls[i].receiver != -1 { result.append(c.bCalls[i].receiver) }
+            for x in c.bCalls[i].arguments { result.append(x) }
+        case .builtinCall:
+            result.append(c.bBuiltinCalls[i].receiver)
+            for x in c.bBuiltinCalls[i].arguments { result.append(x) }
+        case .unary:
+            result.append(c.bUnaries[i].operand)
+        case .binary:
+            result.append(c.bBinaries[i].left)
+            result.append(c.bBinaries[i].right)
+        case .conversion:
+            result.append(c.bConversions[i].operand)
+        case .tryFrom:
+            result.append(c.bTryFroms[i].operand)
+        case .conditional:
+            result.append(c.bConditionals[i].condition)
+            result.append(c.bConditionals[i].whenTrue)
+            result.append(c.bConditionals[i].whenFalse)
+        case .coalesce:
+            result.append(c.bCoalesces[i].left)
+            result.append(c.bCoalesces[i].right)
+        case .structLiteral:
+            for x in c.bStructLiterals[i].fields { result.append(x) }
+            for x in c.bStructLiterals[i].payload { result.append(x) }
+        case .unionNew:
+            for x in c.bUnionNews[i].payload { result.append(x) }
+        case .errorVariant:
+            for x in c.bErrorVariants[i].payload { result.append(x) }
+        case .withExpr:
+            result.append(c.bWiths[i].target)
+            for u in c.bWiths[i].updates { result.append(u.value) }
+        case .tuple:
+            for x in c.bTuples[i].elements { result.append(x) }
+        case .collection:
+            for x in c.bCollections[i].elements { result.append(x) }
+        case .spread:
+            result.append(c.bSpreads[i].operand)
+        case .index:
+            result.append(c.bIndexes[i].target)
+            result.append(c.bIndexes[i].index)
+        case .slice:
+            result.append(c.bSlices[i].target)
+            if c.bSlices[i].start != -1 { result.append(c.bSlices[i].start) }
+            if c.bSlices[i].end != -1 { result.append(c.bSlices[i].end) }
+        case .range:
+            result.append(c.bRanges[i].start)
+            result.append(c.bRanges[i].end)
+        case .isExpr:
+            result.append(c.bIses[i].value)
+            result.append(c.bIses[i].pattern)
+        case .switchExpr:
+            result.append(c.bSwitchExprs[i].value)
+            for a in c.bSwitchExprs[i].arms {
+                result.append(a.pattern)
+                if a.guard != -1 { result.append(a.guard) }
+                result.append(a.value)
+            }
+        case .interpolated:
+            for p in c.bInterpolateds[i].parts {
+                if p.value != -1 { result.append(p.value) }
+            }
+        case .tryExpr:
+            result.append(c.bTries[i].operand)
+        case .moveExpr:
+            result.append(c.bMoves[i].operand)
+        case .catchExpr:
+            result.append(c.bCatches[i].operand)
+            result.append(c.bCatches[i].handler)
+        case .jump:
+            result.append(c.bJumps[i].jump)
+        case .blockExpr:
+            result.append(c.bBlockExprs[i].block)
+        case .lambda:
+            for x in c.bLambdas[i].captures { result.append(x) }
+        case .block:
+            for x in c.bBlocks[i].statements { result.append(x) }
+        case .localDecl:
+            if c.bLocalDecls[i].initializer != -1 { result.append(c.bLocalDecls[i].initializer) }
+        case .exprStmt:
+            result.append(c.bExprStmts[i].expr)
+        case .assertStmt:
+            result.append(c.bAsserts[i].condition)
+        case .assign:
+            result.append(c.bAssigns[i].target)
+            result.append(c.bAssigns[i].value)
+        case .returnStmt:
+            if c.bReturns[i].value != -1 { result.append(c.bReturns[i].value) }
+        case .failStmt:
+            result.append(c.bFails[i].error)
+        case .becomeStmt:
+            for x in c.bBecomes[i].payload { result.append(x) }
+        case .ifStmt:
+            result.append(c.bIfs[i].condition)
+            result.append(c.bIfs[i].then)
+            if c.bIfs[i].elseBranch != -1 { result.append(c.bIfs[i].elseBranch) }
+        case .whileStmt:
+            result.append(c.bWhiles[i].condition)
+            result.append(c.bWhiles[i].body)
+        case .doWhile:
+            result.append(c.bDoWhiles[i].body)
+            result.append(c.bDoWhiles[i].condition)
+        case .forStmt:
+            result.append(c.bFors[i].iterable)
+            result.append(c.bFors[i].body)
+        case .switchStmt:
+            result.append(c.bSwitches[i].value)
+            for s in c.bSwitches[i].sections {
+                if s.pattern != -1 { result.append(s.pattern) }
+                if s.guard != -1 { result.append(s.guard) }
+                for b in s.body { result.append(b) }
+            }
+        case .deferStmt:
+            result.append(c.bDefers[i].body)
+        case .errdeferStmt:
+            result.append(c.bErrdefers[i].body)
+        case .panicDefer:
+            result.append(c.bPanicDefers[i].body)
+        case .contextStmt:
+            result.append(c.bContexts[i].allocator)
+            result.append(c.bContexts[i].body)
+        case .constantPattern:
+            result.append(c.bConstantPatterns[i].value)
+        case .relationalPattern:
+            result.append(c.bRelationalPatterns[i].value)
+        case .rangePattern:
+            result.append(c.bRangePatterns[i].start)
+            result.append(c.bRangePatterns[i].end)
+        case .notPattern:
+            result.append(c.bNotPatterns[i].operand)
+        case .binaryPattern:
+            result.append(c.bBinaryPatterns[i].left)
+            result.append(c.bBinaryPatterns[i].right)
+        case .propertyPattern:
+            for s in c.bPropertyPatterns[i].subpatterns { result.append(s.pattern) }
+        case .unionPattern:
+            for x in c.bUnionPatterns[i].subpatterns { result.append(x) }
+        case .errorPattern:
+            for x in c.bErrorPatterns[i].subpatterns { result.append(x) }
+        default:
+            return result
+    }
+    return result
+}
+
+/// C# `BoundTree.Descendants`: the node and everything below it, pre-order.
+List<BNode> descendants(in Ctx c, for BNode n) {
+    var result = List<BNode>()
+    var stack = List<BNode>()
+    stack.append(n)
+    while stack.length > 0 {
+        let m = stack.removeLast()
+        result.append(m)
+        let ch = children(in c, for: m)
+        var j = ch.length - 1
+        while j >= 0 {
+            stack.append(ch[j])
+            j -= 1
+        }
+    }
+    return result
+}

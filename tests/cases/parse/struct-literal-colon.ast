@@ -1,0 +1,25 @@
+CompilationUnit
+  Struct Money
+    Field i64 cents = 0
+  Struct LineItem
+    Field string name
+    Field Money unitPrice
+    Field i64 qty = 1
+  Let price = (struct Money (cents 250))
+  Let item = (struct LineItem (name "tea") (unitPrice (struct _ (cents 250))) (qty 2))
+  Let more = (with item (name "coffee") (qty 3))
+  Let none = (struct Money)
+  Function pick() -> Money => (struct _ (cents 1))
+  Block
+    Label outer
+      For Let i in (.. 0 2)
+        Block
+          Break outer
+  ErrorEnum MkError
+    Variant bad
+  Function mk(bool ok) -> Money fails MkError
+    Block
+      Guarded if (! ok)
+        Fail .bad
+      Return (struct _ (cents 7))
+  Let caught: Money = (catch (call mk (ok: false)) (struct _ (cents 1)))

@@ -1,0 +1,484 @@
+// Expressions B. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 3607–4056: primaries, literals and
+// interpolation, collections, struct literals, lambdas, block and switch expressions. Owner: 
+//
+// `with`, block and switch expressions are built in T9's range (`ParsePostfix`, `ParseSwitchExpr`);
+// `parseFieldInits` and `braceBodyHasStatementBreak` here are what they call. A C# `NameOf(token)` is
+// `spanOf(token)`: a name is its span. The C# renames in place (`int` → `i32` in `ParseTypeNameOnly`,
+// the `as`/`digits` names of `ParseCompactSpec`) cannot be stored in a span (Q475).
+
+import lexer
+
+Expr parsePrimary(ref Parser p) {
+    let start = p.current().start
+    let token = p.current()
+    let kind = token.kind
+    switch kind {
+        case .integerLiteral or .floatLiteral:
+            let _ = p.advance()
+            var suffix: TextSpan? = null
+            if p.kind() == .numericSuffix && !p.current().hasTriviaBefore { suffix = spanOf(p.advance()) }
+            let literal: LiteralKind = kind == .integerLiteral ? .integer : .floatKeyword
+            return Expr.literalExpr(Owned(LiteralExpr { span: p.spanFrom(start), kind: literal, text: p.textOf(token), suffix: suffix }))
+        case .charLiteral:
+            let _ = p.advance()
+            return literal(.char, at: spanOf(token), as: p.textOf(token))
+        case .stringLiteral:
+            let _ = p.advance()
+            return literal(.string, at: spanOf(token), as: decodeString(p.text(token)))
+        case .cStringLiteral:
+            let _ = p.advance()
+            return literal(.cString, at: spanOf(token), as: decodeString(p.text(token)))
+        case .u16StringLiteral:
+            let _ = p.advance()
+            return literal(.u16String, at: spanOf(token), as: decodeString(p.text(token)))
+        case .rawStringLiteral:
+            let _ = p.advance()
+            return literal(.rawString, at: spanOf(token), as: decodeRawString(p.text(token)))
+        case .trueKeyword:
+            let _ = p.advance()
+            return literal(.trueKeyword, at: spanOf(token), as: "true")
+        case .falseKeyword:
+            let _ = p.advance()
+            return literal(.falseKeyword, at: spanOf(token), as: "false")
+        case .nullKeyword:
+            let _ = p.advance()
+            return literal(.nullKeyword, at: spanOf(token), as: "null")
+        case .thisKeyword:
+            let _ = p.advance()
+            return Expr.thisExpr(Owned(ThisExpr { span: spanOf(token) }))
+        case .interpolatedStringStart:
+            return parseInterpolated(ref p)
+        default:
+            if kind == .dot && isName(p.peek(1)) {
+                let _ = p.advance()
+                let member = spanOf(p.advance())
+                return Expr.targetMemberExpr(Owned(TargetMemberExpr { span: p.spanFrom(start), member: member }))
+            }
+            if kind == .openParen && !p.noLambda && p.kindAt(matchingClose(ref p, at: p.pos) + 1) == .fatArrow {
+                return parseLambda(ref p)
+            }
+            if kind == .openParen { return parseParenOrTuple(ref p) }
+            if kind == .openBracket { return parseCollection(ref p) }
+            if isName(kind) && p.peek(1) == .fatArrow && !p.noLambda { return parseLambda(ref p) }
+            if kind == .openBrace && braceLiteralAllowed(ref p) {
+                let fields = parseFieldInits(ref p)
+                return Expr.structLiteralExpr(Owned(StructLiteralExpr { span: p.spanFrom(start), type: .none, fields: move fields }))
+            }
+            if kind == .identifier && isPatternExprStart(ref p) {
+                let _ = p.report(.patternOutsideConst, at: spanOf(token), label: "`pattern` outside a `const`",
+                    help: "declare the pattern as `const name = pattern T { … }`")
+                return parsePatternExpr(ref p)
+            }
+            if kind == .identifier || isContextualKeyword(kind) { return parseNameOrStructLiteral(ref p) }
+            if kind == .neverKeyword {
+                let _ = p.advance()
+                return Expr.nameExpr(Owned(NameExpr { span: spanOf(token), name: spanOf(token), typeArgs: List<TypeSyntax>() }))
+            }
+    }
+    let _ = p.report(.expectedExpression, at: spanOf(p.current()), arg0: p.describe(p.current()))
+    return Expr.errorExpr(Owned(ErrorExpr { span: TextSpan { start: start, length: 0 } }))
+}
+
+/// A `LiteralExpr` with no suffix.
+Expr literal(LiteralKind kind, at TextSpan span, as string text) =>
+    Expr.literalExpr(Owned(LiteralExpr { span: span, kind: kind, text: text, suffix: null }))
+
+/// `x => body`, `(a, b) => body` or `() => body`; the body is a block on `{`, else an expression. A
+/// parameter is a name only: a type, a modifier, a particle or a default is an error.
+Expr parseLambda(ref Parser p) {
+    let start = p.current().start
+    var parameters = List<TextSpan>()
+    if p.kind() != .openParen {
+        parameters.append(spanOf(p.advance()))
+    } else {
+        let close = matchingClose(ref p, at: p.pos)
+        let _ = p.advance()
+        while p.pos < close {
+            if isName(p.kind()) && (p.peek(1) == .comma || p.peek(1) == .closeParen) {
+                parameters.append(spanOf(p.advance()))
+                if p.pos < close { let _ = p.advance() }
+                continue
+            }
+            if p.kind() == .comma {
+                let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a lambda parameter name", arg1: "`,`",
+                    label: "an empty parameter", help: "write the parameter's name")
+                let _ = p.advance()
+                continue
+            }
+            let from = p.pos
+            var depth: i64 = 0
+            while p.pos < close && !(depth == 0 && p.kind() == .comma) {
+                switch p.kind() {
+                    case .openParen or .openBracket or .openBrace:
+                        depth += 1
+                    case .closeParen or .closeBracket or .closeBrace:
+                        depth -= 1
+                    default:
+                        let _ = 0
+                }
+                let _ = p.advance()
+            }
+            let text = tokensText(ref p, from: from, to: p.pos)
+            let _ = p.report(.expected, at: TextSpan.fromBounds(p.lexed.tokens[from].start, until: p.prevEnd),
+                arg0: "a lambda parameter name", arg1: $"`{text}`", label: "not a bare name",
+                help: "write the parameter's name only; a lambda takes its parameter types from the function type it is passed to")
+            if p.pos < close { let _ = p.advance() }
+        }
+        let _ = p.expect(.closeParen)
+        // A mismatched closer (`(a] => 1`) was reported by expect; step over it to the `=>`.
+        if p.pos == close && p.kind() != .fatArrow { let _ = p.advance() }
+    }
+    let _ = p.expect(.fatArrow)
+    if p.kind() == .openBrace {
+        // The C# takes the span before it parses the block, so it ends at `=>` (work/todo.md).
+        let span = p.spanFrom(start)
+        let block = parseBlock(ref p)
+        return Expr.lambdaExpr(Owned(LambdaExpr { span: span, params: move parameters, body: .none, block: move block }))
+    }
+    let body = parseExpression(ref p)
+    return Expr.lambdaExpr(Owned(LambdaExpr { span: p.spanFrom(start), params: move parameters, body: move body, block: .none }))
+}
+
+/// The contextual `pattern` followed on its line by a type name; `pattern` is a name everywhere else,
+/// and a name followed by a name is never an expression.
+bool isPatternExprStart(ref Parser p) =>
+    atContextual(ref p, as: "pattern") && p.peek(1) == .identifier && !p.peekToken(1).hasNewlineBefore
+
+Expr parsePatternExpr(ref Parser p) {
+    let start = p.advance().start
+    let pattern = parsePattern(ref p)
+    return Expr.patternExpr(Owned(PatternExpr { span: p.spanFrom(start), pattern: move pattern }))
+}
+
+Expr parseNameOrStructLiteral(ref Parser p) {
+    let start = p.current().start
+    let token = p.advance()
+    let name = spanOf(token)
+    let upper = isAsciiUpper(p.text(token)[0])
+
+    if lexer.sameBytes(p.text(token), as: "stackalloc".bytes) && isTypeNameToken(p.kind()) {
+        let element = parseTypeNameOnly(ref p)
+        let _ = p.expect(.openBracket)
+        let count = parseExpression(ref p)
+        let _ = p.expect(.closeBracket)
+        return Expr.stackallocExpr(Owned(StackallocExpr { span: p.spanFrom(start), element: move element, count: move count }))
+    }
+
+    var typeArgs = List<TypeSyntax>()
+    if p.kind() == .less {
+        let after = scanExprTypeArgs(ref p, at: p.pos)
+        if after > 0 && endsExprTypeArgs(p.kindAt(after)) { typeArgs = parseTypeArgs(ref p) }
+    }
+
+    if p.kind() == .openBrace && !breaksLine(ref p, at: p.pos) && isStructLiteralBody(ref p) && upper && braceLiteralAllowed(ref p) {
+        var path = List<TextSpan>()
+        path.append(name)
+        let type = TypeSyntax.namedType(Owned(NamedType { span: p.spanFrom(start), path: move path, args: move typeArgs }))
+        let fields = parseFieldInits(ref p)
+        return Expr.structLiteralExpr(Owned(StructLiteralExpr { span: p.spanFrom(start), type: move type, fields: move fields }))
+    }
+    // A state literal `Order.paid { … }` (spec §3.17).
+    if p.kind() == .dot && p.peek(1) == .identifier && isAsciiLower(p.text(p.peekToken(1))[0]) && p.peek(2) == .openBrace
+        && !breaksLine(ref p, at: p.pos + 2) && (p.peek(3) == .closeBrace || (isName(p.peek(3)) && (p.peek(4) == .colon || p.peek(4) == .equals)))
+        && upper && braceLiteralAllowed(ref p) {
+        let _ = p.advance()
+        let state = spanOf(p.advance())
+        var path = List<TextSpan>()
+        path.append(name)
+        path.append(state)
+        let type = TypeSyntax.namedType(Owned(NamedType { span: p.spanFrom(start), path: move path, args: move typeArgs }))
+        let fields = parseFieldInits(ref p)
+        return Expr.structLiteralExpr(Owned(StructLiteralExpr { span: p.spanFrom(start), type: move type, fields: move fields }))
+    }
+    return Expr.nameExpr(Owned(NameExpr { span: p.spanFrom(start), name: name, typeArgs: move typeArgs }))
+}
+
+/// The kinds after `<…>` that make it a name's type arguments in `parseNameOrStructLiteral`.
+bool endsExprTypeArgs(TokenKind kind) => kind switch {
+    .openParen or .dot or .closeParen or .comma or .semicolon or .closeBracket or .closeBrace or .openBrace => true,
+    _ => false,
+}
+
+/// The C# `char.IsUpper`/`char.IsLower` of a name's first character, for ASCII only (Q475).
+bool isAsciiUpper(u8 b) => b >= 'A' && b <= 'Z'
+
+bool isAsciiLower(u8 b) => b >= 'a' && b <= 'z'
+
+/// A type written without array or optional suffixes (for `stackalloc T[n]`).
+TypeSyntax parseTypeNameOnly(ref Parser p) {
+    let start = p.current().start
+    let first = p.advance()
+    var path = List<TextSpan>()
+    path.append(spanOf(first))
+    var args = List<TypeSyntax>()
+    if p.kind() == .less && scanTypeArgs(ref p, at: p.pos) > 0 { args = parseTypeArgs(ref p) }
+    // The C# first renames a C# type name (`int` → `i32`), which a span cannot hold (Q475); `char` is
+    // not one of them, so the `else` is reached for it alone.
+    if path.length == 1 && args.length == 0 && lexer.sameBytes(p.text(first), as: "char".bytes) {
+        let _ = p.reportFix(.charInput, at: spanOf(first), through: spanOf(first), by: "rune", label: "the input form",
+            help: "rename the type to `rune`")
+    }
+    return TypeSyntax.namedType(Owned(NamedType { span: p.spanFrom(start), path: move path, args: move args }))
+}
+
+/// Whether the brace body opening at the current token separates statements at its own depth: a line
+/// break not after `,` or `{` (fields of a struct literal end their lines with `,`), or a `;`.
+bool braceBodyHasStatementBreak(ref Parser p) {
+    var depth: i64 = 0
+    for i in p.pos + 1..p.count {
+        if depth == 0 && p.lexed.tokens[i].hasNewlineBefore && p.kindAt(i) != .closeBrace
+            && p.kindAt(i - 1) != .comma && p.kindAt(i - 1) != .openBrace {
+            return true
+        }
+        switch p.kindAt(i) {
+            case .openBrace or .openParen or .openBracket:
+                depth += 1
+            case .closeBrace or .closeParen or .closeBracket:
+                if depth == 0 { return false }
+                depth -= 1
+            case .semicolon:
+                if depth == 0 { return true }
+            case .endOfFile:
+                return false
+            default:
+                continue
+        }
+    }
+    return false
+}
+
+/// At `{`: is this `{ }` or `{ name: …` (or the older `{ name = …`), a struct literal rather than a block?
+bool isStructLiteralBody(ref Parser p) =>
+    p.peek(1) == .closeBrace || (isName(p.peek(1)) && (p.peek(2) == .colon || p.peek(2) == .equals))
+
+List<FieldInit> parseFieldInits(ref Parser p) {
+    let open = p.expect(.openBrace)
+    var fields = List<FieldInit>()
+    while p.kind() != .closeBrace && !p.atEnd() {
+        let start = p.current().start
+        let before = p.pos
+        let name = expectName(ref p, what: "a field name")
+        if p.kind() == .equals {
+            let nameEnd = p.prevEnd
+            let equals = p.advance()
+            // A missing name is the C# `<missing>`.
+            let nameText = name.length == 0 ? "<missing>" : p.lexed.source.getText(name)
+            let _ = p.reportFix(.fieldInitEquals, at: spanOf(equals), through: TextSpan.fromBounds(nameEnd, until: equals.end),
+                by: ":", arg0: nameText, label: "the input form", help: "write `:` after the field name")
+        } else {
+            let _ = p.expect(.colon)
+        }
+        let value = parseExpression(ref p)
+        fields.append(FieldInit { span: p.spanFrom(start), name: name, value: move value })
+        unless p.accept(.comma) { break }
+        if p.pos == before { break }
+    }
+    expectClose(ref p, from: open, for: "struct literal")
+    return fields
+}
+
+Expr parseParenOrTuple(ref Parser p) {
+    let start = p.current().start
+    let _ = p.advance()
+    if p.kind() == .closeParen {
+        let _ = p.report(.expectedExpression, at: spanOf(p.current()), arg0: p.describe(p.current()),
+            help: "write a value; `()` is not one, and a tuple has at least two elements")
+        let _ = p.advance()
+        return Expr.errorExpr(Owned(ErrorExpr { span: p.spanFrom(start) }))
+    }
+    var elements = List<TupleElement>()
+    // The C# `ParseTupleElement` in two parts, so the value can move into a `ParenExpr` (Q477).
+    let firstStart = p.current().start
+    let name = parseTupleName(ref p)
+    let value = parseExpression(ref p)
+    if name is null && p.kind() == .closeParen {
+        let _ = p.advance()
+        return Expr.parenExpr(Owned(ParenExpr { span: p.spanFrom(start), inner: move value }))
+    }
+    elements.append(TupleElement { span: p.spanFrom(firstStart), name: name, value: move value })
+    while p.accept(.comma) { elements.append(parseTupleElement(ref p)) }
+    let _ = p.expect(.closeParen)
+    return Expr.tupleExpr(Owned(TupleExpr { span: p.spanFrom(start), elements: move elements }))
+}
+
+TupleElement parseTupleElement(ref Parser p) {
+    let start = p.current().start
+    let name = parseTupleName(ref p)
+    let value = parseExpression(ref p)
+    return TupleElement { span: p.spanFrom(start), name: name, value: move value }
+}
+
+/// The `name:` of a tuple element, or `null`.
+TextSpan? parseTupleName(ref Parser p) {
+    var name: TextSpan? = null
+    if isName(p.kind()) && p.peek(1) == .colon {
+        name = spanOf(p.advance())
+        let _ = p.advance()
+    }
+    return name
+}
+
+Expr parseCollection(ref Parser p) {
+    let start = p.current().start
+    let _ = p.advance()
+    var elements = List<Expr>()
+    while p.kind() != .closeBracket && !p.atEnd() {
+        let before = p.pos
+        let elementStart = p.current().start
+        if p.kind() == .dotDot {
+            let _ = p.advance()
+            let operand = parseExpression(ref p)
+            elements.append(Expr.spreadExpr(Owned(SpreadExpr { span: p.spanFrom(elementStart), operand: move operand })))
+        } else {
+            let element = parseCollectionPart(ref p)
+            if p.accept(.colon) {
+                // The C# takes the span before it parses the value, so it ends at `:` (work/todo.md).
+                let span = p.spanFrom(elementStart)
+                let value = parseCollectionPart(ref p)
+                elements.append(Expr.mapEntryExpr(Owned(MapEntryExpr { span: span, key: move element, value: move value })))
+            } else {
+                elements.append(move element)
+            }
+        }
+        unless p.accept(.comma) { break }
+        if p.pos == before { break }
+    }
+    let _ = p.expect(.closeBracket)
+    return Expr.collectionExpr(Owned(CollectionExpr { span: p.spanFrom(start), elements: move elements }))
+}
+
+/// An element, map key or map value; a bare conditional is BYN1013.
+Expr parseCollectionPart(ref Parser p) {
+    let part = parseExpression(ref p)
+    switch part {
+        case .conditionalExpr(let n):
+            let span = n.value.span
+            let _ = p.reportFix(.ternaryInCollection, at: span, through: span, by: $"({p.lexed.source.getText(span)})",
+                help: "wrap it in parentheses")
+        default:
+            let _ = 0
+    }
+    return part
+}
+
+Expr parseInterpolated(ref Parser p) {
+    let start = p.current().start
+    let _ = p.advance()
+    var parts = List<InterpolationPart>()
+    while true {
+        switch p.kind() {
+            case .interpolatedStringText:
+                let token = p.advance()
+                parts.append(InterpolationPart.interpolationText(Owned(InterpolationText {
+                    span: spanOf(token),
+                    // A decoded text would borrow `p` through `text` (BYN3004); the hole copies it (Q477).
+                    text: $"{decodeInterpolatedText(p.text(token))}",
+                })))
+            case .interpolationStart:
+                let holeStart = p.advance().start
+                let expr = parseExpression(ref p)
+                var specs = List<Argument>()
+                if p.kind() == .comma {
+                    specs = parseFormatSpecs(ref p)
+                } else if p.kind() == .colon {
+                    specs = parseCompactSpec(ref p)
+                }
+                if p.kind() != .interpolationEnd {
+                    let _ = p.report(.expected, at: spanOf(p.current()), arg0: "`}` to end the interpolated expression",
+                        arg1: p.describe(p.current()))
+                    while p.kind() != .interpolationEnd && p.kind() != .interpolatedStringEnd && p.kind() != .endOfFile
+                        && p.kind() != .semicolon {
+                        let _ = p.advance()
+                    }
+                }
+                let _ = p.accept(.interpolationEnd)
+                parts.append(InterpolationPart.interpolationHole(Owned(InterpolationHole {
+                    span: p.spanFrom(holeStart),
+                    expr: move expr,
+                    specs: move specs,
+                })))
+            case .interpolatedStringEnd:
+                let _ = p.advance()
+                return Expr.interpolatedExpr(Owned(InterpolatedExpr { span: p.spanFrom(start), parts: move parts }))
+            default:
+                // Unterminated: the lexer has reported it.
+                return Expr.interpolatedExpr(Owned(InterpolatedExpr { span: p.spanFrom(start), parts: move parts }))
+        }
+    }
+}
+
+/// `, as: .hex, width: 6` after a hole's value: the named format specs (SPEC §6.6).
+List<Argument> parseFormatSpecs(ref Parser p) {
+    var specs = List<Argument>()
+    while p.accept(.comma) {
+        let specStart = p.current().start
+        // `as` is a keyword, but the name of a spec.
+        if !(isName(p.kind()) || p.kind() == .asKeyword) || p.peek(1) != .colon {
+            let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a named format spec such as `as: .hex`",
+                arg1: p.describe(p.current()))
+            break
+        }
+        let name = spanOf(p.advance())
+        let _ = p.advance()
+        // The C# takes the span before it parses the value, so it ends at `:` (work/todo.md).
+        let span = p.spanFrom(specStart)
+        let value = parseExpression(ref p)
+        specs.append(Argument { span: span, name: name, modifier: .none, value: move value })
+    }
+    return specs
+}
+
+/// `:hex`, `:binary`, `:octal`, `:iso`, `:debug` or `:.2` after a hole's value: the BYN1068 input
+/// forms of `, as: .hex` and `, digits: 2`, parsed as those specs.
+List<Argument> parseCompactSpec(ref Parser p) {
+    let colon = p.advance()
+    let first = p.pos
+    while p.kind() != .interpolationEnd && p.kind() != .interpolatedStringEnd && p.kind() != .endOfFile {
+        let _ = p.advance()
+    }
+    if p.pos == first {
+        let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a format spec", arg1: p.describe(p.current()))
+        return List<Argument>()
+    }
+    let specSpan = TextSpan.fromBounds(p.lexed.tokens[first].start, until: p.prevEnd)
+    let spec = p.lexed.source.getText(specSpan)
+    var name = ""
+    var value = ""
+    switch spec {
+        case "hex" or "binary" or "octal" or "iso" or "debug":
+            name = "as"
+            value = $".{spec}"
+        default:
+            if spec.length > 1 && spec.bytes[0] == '.' && allAsciiDigits(spec.bytes[1..]) {
+                name = "digits"
+                value = p.lexed.source.getText(TextSpan.fromBounds(specSpan.start + 1, until: specSpan.end))
+            }
+    }
+    let whole = TextSpan.fromBounds(colon.start, until: p.prevEnd)
+    if name.isEmpty {
+        let _ = p.report(.expected, at: whole, arg0: "a named format spec such as `, as: .hex`", arg1: $"`:{spec}`")
+        return List<Argument>()
+    }
+    let canonical = $"{name}: {value}"
+    let _ = p.reportFix(.compactFormatSpec, at: whole, through: whole, by: $", {canonical}", arg0: $":{spec}",
+        arg1: $", {canonical}", label: "the input form", help: $"write the spec as named arguments: `, {canonical}`")
+    // The C# names the spec `as` or `digits` at the colon's span; a span cannot hold that text (Q475).
+    var specValue = literal(.integer, at: specSpan, as: value)
+    if name == "as" { specValue = Expr.targetMemberExpr(Owned(TargetMemberExpr { span: specSpan, member: specSpan })) }
+    var specs = List<Argument>()
+    specs.append(Argument { span: specSpan, name: spanOf(colon), modifier: .none, value: move specValue })
+    return specs
+}
+
+/// The C# `All(char.IsAsciiDigit)`.
+bool allAsciiDigits(ReadOnlySpan<u8> bytes) {
+    for b in bytes {
+        if b < '0' || b > '9' { return false }
+    }
+    return true
+}
+
+// ── Stand-ins (Q476) ──────────────────────────────────────────────────────────────
+// Helpers this file calls whose C# lives in a sibling's range and which T1 did not stub. Each is the
+// C# body or a conservative stub; T15 deletes this section when the owners' ports merge and makes the
+// call sites above match their signatures.

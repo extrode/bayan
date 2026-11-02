@@ -1,0 +1,8 @@
+error BYN6002: `undeclared` uses `alloc` but does not declare it
+
+  3 │     return Symbol.intern(text)
+    │            ^^^^^^^^^^^^^^^^^^^ uses `alloc`
+    │
+  help: add `alloc` to the `uses` clause, or remove the call
+    │ 2 │ public Symbol undeclared(string text) uses alloc {
+    │   │                                      +++++++++++

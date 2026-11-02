@@ -1,0 +1,5 @@
+void sum(rest ReadOnlySpan<i32> xs, i32 extra) {
+}
+
+void both(rest ReadOnlySpan<i32> xs, rest ReadOnlySpan<i32> ys) {
+}

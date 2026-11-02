@@ -1,0 +1,2 @@
+panic: slice out of range
+  at list-remove-range-past-end.byn:6

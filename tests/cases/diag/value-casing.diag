@@ -1,7 +1,8 @@
 error BYN2009: `Total` must be camelCase
 
-  1 │ let Total = 0;
+  1 │ let Total = 0
     │     ^^^^^
     │
-  help: only types are PascalCase; rename it `total`
-    │ 1 │ let total = 0;
+  help: rename it `total`; only types are PascalCase
+    │ 1 │ let total = 0
+    │   │     +

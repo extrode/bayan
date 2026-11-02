@@ -1,0 +1,15 @@
+error BYN6002: `quiet` uses `console` but does not declare it
+
+  15 │     each(xs, by: x => print($"{x}"))
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ uses `console`
+     │
+  help: add `console` to the `uses` clause, or remove the call
+     │ 14 │ public void quiet(List<i64> xs) uses console {
+     │    │                                +++++++++++++
+
+error BYN6005: `stored$lambda1` uses `console`, beyond the bound `pure` declared by `i64 -> void`
+
+  24 │     let f: i64 -> void = x => print($"{x}")
+     │                          ^^^^^^^^^^^^^^^^^^ uses `console`
+     │
+  help: add `console` to the function type's `uses`, or pass a function without it

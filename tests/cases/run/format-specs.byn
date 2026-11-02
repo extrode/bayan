@@ -1,0 +1,16 @@
+let n = 255
+let id = 42
+let neg: i32 = -10
+print($"{n, as: .hex} {n, as: .binary} {n, as: .octal} {n, as: .decimal}")
+print($"{neg, as: .hex} {id, width: 6, fill: '0'} [{id, width: 5}]")
+print($"[{"ab", width: 5}] [{"ab", width: 5, align: .end}] [{"ab", width: 6, fill: '*', align: .center}]")
+print($"[{"é", width: 3, fill: '-'}] [{"toolong", width: 3}]")
+let x = 3.14159
+let y = -0.004
+print($"{x, digits: 2} {x, digits: 0} {y, digits: 2} {2.5, digits: 3}")
+print($"{"say \"hi\"", as: .debug} {'q', as: .debug} {id, as: .debug}")
+var buf = StrBuf()
+buf.append($"{n, as: .hex, width: 4, fill: '0'}")
+print(buf.view)
+let s = $"{x, digits: 1, width: 6}"
+print($"[{s}]")

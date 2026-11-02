@@ -1,0 +1,42 @@
+string show(List<i64> xs) {
+    var line = StrBuf()
+    for x in xs { line.append($" {x}") }
+    return $"{xs.length}:{line.finish()}"
+}
+
+List<i64> make() {
+    var xs = List<i64>()
+    for i in 0..6 { xs.append(i * 10) }
+    return xs
+}
+
+var middle = make()
+middle.remove(from: 2, until: 4)
+print($"middle {show(middle)}")
+
+var prefix = make()
+prefix.remove(from: 0, until: 2)
+print($"prefix {show(prefix)}")
+
+var suffix = make()
+suffix.remove(from: 4, until: 6)
+print($"suffix {show(suffix)}")
+
+var empty = make()
+empty.remove(from: 3, until: 3)
+empty.remove(from: 6, until: 6)
+print($"empty {show(empty)}")
+
+var whole = make()
+whole.remove(from: 0, until: whole.length)
+print($"whole {show(whole)} {whole.isEmpty}")
+whole.append(7)
+print($"reused {show(whole)}")
+
+var words = List<string>()
+let letters: string[5] = ["a", "b", "c", "d", "e"]
+for w in letters { words.append(w) }
+words.remove(from: 1, until: 3)
+var joined = StrBuf()
+for w in words { joined.append(w) }
+print($"order {joined.finish()}")

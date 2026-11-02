@@ -1,0 +1,15 @@
+error BYN2743: `<` cannot be applied to a value of type parameter `T`
+
+  1 │ T max<T>(move T a, by move T b) => a < b ? move b : move a
+    │                                    ^^^^^
+    │
+  help: use a `T` only to copy, compare with `==` and `!=`, pass, store, return and format; type
+        parameters have no constraints
+
+error BYN2743: `>=` cannot be applied to a value of type parameter `T`
+
+  2 │ bool atLeast<T>(T? a, as T b) => a >= b
+    │                                  ^^^^^^
+    │
+  help: use a `T` only to copy, compare with `==` and `!=`, pass, store, return and format; type
+        parameters have no constraints

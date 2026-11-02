@@ -17,7 +17,7 @@ public sealed class ScaffoldTests
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "scaffold", name);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -57,15 +57,15 @@ public sealed class ScaffoldTests
         var stdout = new StringWriter();
         var psiExit = CliApp.Run(["build", "-o", Path.Combine(app, "tally-bin"), app], stdout, stdout);
         Assert.True(psiExit == CliApp.ExitOk, stdout.ToString());
-        var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(app, "tally-bin")) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(app, "tally-bin")) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using (var p = System.Diagnostics.Process.Start(psi)!)
         {
-            Assert.Equal("Hello, world!\n", p.StandardOutput.ReadToEnd().ReplaceLineEndings("\n"));
+            Assert.Equal("Hello, world!\n", p.StandardOutput.ReadToEndLf().ReplaceLineEndings("\n"));
             p.WaitForExit();
         }
         var (exit, output, stderr) = Run("test", app);
         Assert.True(exit == CliApp.ExitOk, output + stderr);
-        Assert.Contains("1 test: 1 passed", output);
+        Assert.Contains("1 passed · ", output);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class ScaffoldTests
         Assert.True(File.Exists(Path.Combine(lib, "src", "myLib", "myLib.byn")));
         var (exit, output, stderr) = Run("test", lib);
         Assert.True(exit == CliApp.ExitOk, output + stderr);
-        Assert.Contains("1 test: 1 passed", output);
+        Assert.Contains("1 passed · ", output);
         Assert.Equal(CliApp.ExitOk, Run("check", lib).Exit);
         var (runExit, _, runErr) = Run("run", lib);
         Assert.Equal(CliApp.ExitUsage, runExit);
@@ -159,7 +159,7 @@ public sealed class ScaffoldTests
     {
         var dir = Path.Combine(Fresh("camel"), "myApp");
         Assert.Equal(CliApp.ExitOk, Run("new", dir, "--vcs", "none").Exit);
-        Assert.Contains("name    = \"local/my-app\"", File.ReadAllText(Path.Combine(dir, "package.byn")));
+        Assert.Contains("name: \"local/my-app\"", File.ReadAllText(Path.Combine(dir, "package.byn")));
     }
 
     [Fact]
@@ -196,7 +196,7 @@ public sealed class ScaffoldTests
         }
         finally
         {
-            if (Directory.Exists(outside)) Directory.Delete(outside, recursive: true);
+            TestDirs.Delete(outside);
         }
     }
 
@@ -205,7 +205,7 @@ public sealed class ScaffoldTests
     {
         var dir = Path.Combine(Fresh("bad-manifest"), "tally");
         Assert.Equal(CliApp.ExitOk, Run("new", dir, "--vcs", "none").Exit);
-        File.WriteAllText(Path.Combine(dir, "package.byn"), "Package { name = \"local/tally\" }\n");
+        File.WriteAllText(Path.Combine(dir, "package.byn"), "Package { name: \"local/tally\" }\n");
         var (exit, _, stderr) = Run("check", dir);
         Assert.Equal(CliApp.ExitFailure, exit);
         Assert.Contains("error BYN3103: `package.byn` has no `version`", stderr);

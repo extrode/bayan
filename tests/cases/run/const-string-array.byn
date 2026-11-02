@@ -1,0 +1,6 @@
+const names: string[5] = ["alpha", "beta", "gamma", "tab\there \"q\"", "héllo wörld ✓"]
+
+print($"length {names.length} second {names[1]}")
+for n in names {
+    print(n)
+}

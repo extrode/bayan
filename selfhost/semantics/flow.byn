@@ -1,0 +1,496 @@
+// T23: FlowAnalysis.cs.
+//
+// Checks that need control flow, run once every body is bound and error sets are inferred: definite assignment
+// (locals declared without a value, `out` parameters), missing returns, unreachable code, that each `try`
+// propagates only declared errors, and that a function that `becomes` a state does not return normally without
+// `become`. The C# `HashSet<LocalSymbol>` sets are `List<LocalId>` searched in order; a `JumpTarget` is its
+// `Ctx.jumpTargets` index, which is its identity.
+
+import parser
+
+/// C# `FlowAnalysis.State`: reachability plus the set of tracked locals assigned on every path.
+struct FlowState {
+    bool reachable = true
+    List<LocalId> assigned = List<LocalId>()
+    /// A `become` ran on every path.
+    bool became = false
+}
+
+/// The C# `FlowAnalysis` instance: the function, its file, and the per-run sets.
+struct Flow {
+    FuncId fn
+    FileId file
+    /// Locals that start unassigned: `var x;` and `out` parameters.
+    List<LocalId> tracked = List<LocalId>()
+    List<LocalId> reported = List<LocalId>()
+    Map<i64, FlowState> breaks = []
+    Map<i64, FlowState> continues = []
+}
+
+void analyzeFlow(ref Ctx c, for FuncId fn) {
+    if c.functions[fn].file == -1 || c.functions[fn].body == -1 { return }
+    var f = Flow { fn: fn, file: c.functions[fn].file }
+    t23Run(ref f, through: ref c)
+}
+
+FlowState t23Clone(in FlowState s) {
+    var a = List<LocalId>()
+    for x in s.assigned { a.append(x) }
+    return FlowState { reachable: s.reachable, assigned: move a, became: s.became }
+}
+
+FlowState t23Unreachable() => FlowState { reachable: false }
+
+/// Paths meeting: assigned only if assigned on every reachable path.
+FlowState t23Join(in FlowState s, by in FlowState other) {
+    if !s.reachable { return t23Clone(in other) }
+    if !other.reachable { return t23Clone(in s) }
+    var r = t23Clone(in s)
+    var kept = List<LocalId>()
+    for x in r.assigned {
+        if listContains(in other.assigned, by: x) { kept.append(x) }
+    }
+    r.assigned = move kept
+    r.became = r.became && other.became
+    return move r
+}
+
+void t23Assign(ref FlowState s, by LocalId l) {
+    if !listContains(in s.assigned, by: l) { s.assigned.append(l) }
+}
+
+void t23Run(ref Flow f, through ref Ctx c) {
+    let fn = f.fn
+    for p in c.functions[fn].parameters {
+        if c.locals[p].modifier == .outKeyword { t23Track(ref f, by: p) }
+    }
+    let body = c.functions[fn].body
+    let statements = copyIds(in c.bBlocks[boundIndex(body)].statements)
+    let end = t23Block(ref f, through: ref c, for: in statements, by: FlowState {})
+    if !end.reachable { return }
+    let bodyEnd = c.bBlocks[boundIndex(body)].span.end
+    let closing = TextSpan { start: bodyEnd - 1 > 0 ? bodyEnd - 1 : 0, length: 1 }
+    let returns = c.functions[fn].returnType
+    let kind = c.functions[fn].kind
+    if !isVoid(returns) && !isError(returns) && kind != .main && kind != .testKeyword && kind != .constructor {
+        if isNever(returns) {
+            report(ref c, for: .neverReturns, from: f.file, at: closing, by: (c.functions[fn].name, "", "", "", ""), help: "end every path with `panic(…)` or a call that never returns")
+        } else {
+            let shown = typeDisplay(ref c, by: returns)
+            report(ref c, for: .missingReturn, from: f.file, at: closing, by: (c.functions[fn].name, shown, "", "", ""), help: "add a `return` (or `panic(…)`) on the paths that reach the end")
+        }
+        return
+    }
+    t23CheckOutAssigned(ref f, through: ref c, for: in end, at: closing)
+    t23CheckBecame(ref f, through: ref c, for: in end, at: closing)
+}
+
+void t23Track(ref Flow f, by LocalId l) {
+    if !listContains(in f.tracked, by: l) { f.tracked.append(l) }
+}
+
+void t23CheckOutAssigned(ref Flow f, through ref Ctx c, for in FlowState state, at TextSpan span) {
+    let fn = f.fn
+    for p in copyIds(in c.functions[fn].parameters) {
+        if c.locals[p].modifier == .outKeyword && !listContains(in state.assigned, by: p) {
+            let name = c.locals[p].name
+            report(ref c, for: .outNotAssigned, from: f.file, at: span, by: (name, "", "", "", ""), help: $"assign `{name}` before every `return`")
+        }
+    }
+}
+
+/// BYN7009: a normal return from a function that `becomes .s` must follow a `become`; not after BYN7010.
+void t23CheckBecame(ref Flow f, through ref Ctx c, for in FlowState state, at TextSpan span) {
+    let fn = f.fn
+    if state.became { return }
+    let becomes = c.functions[fn].becomes ?? return
+    if c.functions[fn].kind == .method && !c.functions[fn].isStatic && c.functions[fn].refThis is null { return }
+    report(ref c, for: .missingBecome, from: f.file, at: span, by: (c.functions[fn].name, becomes, "", "", ""), help: $"add `become .{becomes}(…)` before returning, or fail")
+}
+
+// ── Statements ───────────────────────────────────────────────────────────────
+
+FlowState t23Block(ref Flow f, through ref Ctx c, for in List<BStmt> statements, by move FlowState start) {
+    var state = move start
+    var warned = false
+    for s in statements {
+        if !state.reachable && !warned && boundKind(s) != .errorStmt && !(boundKind(s) == .block && c.bBlocks[boundIndex(s)].statements.length == 0) {
+            report(ref c, for: .unreachableCode, from: f.file, at: nodeSpan(in c, for: s), by: ("", "", "", "", ""))
+            warned = true
+        }
+        state = t23Statement(ref f, through: ref c, for: s, by: move state)
+    }
+    return move state
+}
+
+/// C# `Constant?.Value as bool?`: the constant's `bool`, or null when it is not a `bool` constant.
+bool? t23ConstantBool(in Ctx c, for BExpr e) {
+    let k = exprConstant(in c, for: e) ?? return null
+    if k.kind != .flag { return null }
+    return k.flag
+}
+
+FlowState t23Statement(ref Flow f, through ref Ctx c, for BStmt s, by move FlowState start) {
+    var state = move start
+    let i = boundIndex(s)
+    switch boundKind(s) {
+        case .block:
+            let statements = copyIds(in c.bBlocks[i].statements)
+            return t23Block(ref f, through: ref c, for: in statements, by: move state)
+        case .localDecl:
+            let local = c.bLocalDecls[i].local
+            let initializer = c.bLocalDecls[i].initializer
+            if initializer == -1 {
+                t23Track(ref f, by: local)
+                return move state
+            }
+            state = t23Expr(ref f, through: ref c, for: initializer, by: move state)
+            t23Assign(ref state, by: local)
+            return move state
+        case .exprStmt:
+            return t23Expr(ref f, through: ref c, for: c.bExprStmts[i].expr, by: move state)
+        case .assertStmt:
+            return t23Expr(ref f, through: ref c, for: c.bAsserts[i].condition, by: move state)
+        case .assign:
+            let target = c.bAssigns[i].target
+            let value = c.bAssigns[i].value
+            if c.bAssigns[i].op is null && boundKind(target) == .local {
+                let l = c.bLocals[boundIndex(target)].local
+                state = t23Expr(ref f, through: ref c, for: value, by: move state)
+                t23Assign(ref state, by: l)
+                return move state
+            }
+            state = t23Expr(ref f, through: ref c, for: target, by: move state)
+            return t23Expr(ref f, through: ref c, for: value, by: move state)
+        case .returnStmt:
+            let value = c.bReturns[i].value
+            if value != -1 { state = t23Expr(ref f, through: ref c, for: value, by: move state) }
+            if state.reachable {
+                let span = c.bReturns[i].span
+                t23CheckOutAssigned(ref f, through: ref c, for: in state, at: span)
+                t23CheckBecame(ref f, through: ref c, for: in state, at: span)
+            }
+            return t23Unreachable()
+        case .failStmt:
+            let _ = t23Expr(ref f, through: ref c, for: c.bFails[i].error, by: move state)
+            return t23Unreachable()
+        case .breakStmt:
+            t23Merge(ref f.breaks, for: c.bBreaks[i].target, by: in state)
+            return t23Unreachable()
+        case .continueStmt:
+            t23Merge(ref f.continues, for: c.bContinues[i].target, by: in state)
+            return t23Unreachable()
+        case .ifStmt:
+            let condition = c.bIfs[i].condition
+            let then = c.bIfs[i].then
+            let elseBranch = c.bIfs[i].elseBranch
+            let neverIf = c.bIfs[i].isNever
+            state = t23Expr(ref f, through: ref c, for: condition, by: move state)
+            let constant = t23ConstantBool(in c, for: condition)
+            let thenStart = constant == false ? t23Unreachable() : t23Clone(in state)
+            var thenState = t23Statement(ref f, through: ref c, for: then, by: move thenStart)
+            if neverIf { thenState = t23Unreachable() }
+            var otherwise = t23Unreachable()
+            if constant == true {
+                otherwise = t23Unreachable()
+            } else if elseBranch == -1 {
+                otherwise = t23Clone(in state)
+            } else {
+                otherwise = t23Statement(ref f, through: ref c, for: elseBranch, by: t23Clone(in state))
+            }
+            return t23Join(in thenState, by: in otherwise)
+        case .whileStmt:
+            let condition = c.bWhiles[i].condition
+            let body = c.bWhiles[i].body
+            let target = c.bWhiles[i].target
+            state = t23Expr(ref f, through: ref c, for: condition, by: move state)
+            let constant = t23ConstantBool(in c, for: condition)
+            let bodyStart = constant == false ? t23Unreachable() : t23Clone(in state)
+            let _ = t23Statement(ref f, through: ref c, for: body, by: move bodyStart)
+            let after = constant == true ? t23Unreachable() : move state
+            return t23Exit(ref f, for: target, by: move after)
+        case .doWhile:
+            let condition = c.bDoWhiles[i].condition
+            let target = c.bDoWhiles[i].target
+            var body = t23Statement(ref f, through: ref c, for: c.bDoWhiles[i].body, by: t23Clone(in state))
+            if f.continues.contains(target) {
+                body = t23Join(in body, by: in f.continues[target])
+                let _ = f.continues.remove(target)
+            }
+            let afterCondition = t23Expr(ref f, through: ref c, for: condition, by: move body)
+            let after = t23ConstantBool(in c, for: condition) == true ? t23Unreachable() : move afterCondition
+            return t23Exit(ref f, for: target, by: move after)
+        case .forStmt:
+            let body = c.bFors[i].body
+            let target = c.bFors[i].target
+            state = t23Expr(ref f, through: ref c, for: c.bFors[i].iterable, by: move state)
+            let _ = t23Statement(ref f, through: ref c, for: body, by: t23Clone(in state))
+            return t23Exit(ref f, for: target, by: move state)
+        case .switchStmt:
+            let target = c.bSwitches[i].target
+            state = t23Expr(ref f, through: ref c, for: c.bSwitches[i].value, by: move state)
+            var after = c.bSwitches[i].exhaustive ? t23Unreachable() : t23Clone(in state)
+            let count = c.bSwitches[i].sections.length
+            for k in 0..count {
+                let guard = c.bSwitches[i].sections[k].guard
+                let sectionBody = copyIds(in c.bSwitches[i].sections[k].body)
+                var branch = t23Clone(in state)
+                if guard != -1 { branch = t23Expr(ref f, through: ref c, for: guard, by: move branch) }
+                let ended = t23Block(ref f, through: ref c, for: in sectionBody, by: move branch)
+                after = t23Join(in after, by: in ended)
+            }
+            return t23Exit(ref f, for: target, by: move after)
+        case .deferStmt:
+            let _ = t23Statement(ref f, through: ref c, for: c.bDefers[i].body, by: t23Clone(in state))
+            return move state
+        case .errdeferStmt:
+            let _ = t23Statement(ref f, through: ref c, for: c.bErrdefers[i].body, by: t23Clone(in state))
+            return move state
+        case .panicDefer:
+            let _ = t23Statement(ref f, through: ref c, for: c.bPanicDefers[i].body, by: t23Clone(in state))
+            return move state
+        case .contextStmt:
+            let body = c.bContexts[i].body
+            state = t23Expr(ref f, through: ref c, for: c.bContexts[i].allocator, by: move state)
+            return t23Statement(ref f, through: ref c, for: body, by: move state)
+        case .becomeStmt:
+            let payload = copyIds(in c.bBecomes[i].payload)
+            for a in payload { state = t23Expr(ref f, through: ref c, for: a, by: move state) }
+            state.became = true
+            return move state
+        case .errorStmt:
+            // An unknown state was already reported (BYN7007); count the `become` so BYN7009 does not follow it.
+            if t23IsBecomeSyntax(ref c, for: f.file, at: c.bErrorStmts[i].span) { state.became = true }
+            return move state
+        default:
+            return move state
+    }
+}
+
+/// C# `Syntax: BecomeStmt` for a `BoundErrorStmt`, which keeps only its span: the statement's text starts with the
+/// `become` keyword (Q631).
+bool t23IsBecomeSyntax(ref Ctx c, for FileId file, at TextSpan span) {
+    let text = c.files[file].text.span
+    let word = "become".bytes
+    if span.start + word.length > text.length { return false }
+    for k in 0..word.length {
+        if text[span.start + k] != word[k] { return false }
+    }
+    if span.start + word.length == text.length { return true }
+    let next = i64(text[span.start + word.length])
+    let letter = (next >= 97 && next <= 122) || (next >= 65 && next <= 90) || (next >= 48 && next <= 57) || next == 95
+    return !letter
+}
+
+void t23Merge(ref Map<i64, FlowState> map, for i64 target, by in FlowState state) {
+    if !state.reachable { return }
+    if map.contains(target) {
+        let joined = t23Join(in map[target], by: in state)
+        map[target] = move joined
+    } else {
+        map[target] = t23Clone(in state)
+    }
+}
+
+FlowState t23Exit(ref Flow f, for i64 target, by move FlowState after) {
+    let _ = f.continues.remove(target)
+    if f.breaks.contains(target) {
+        let joined = t23Join(in after, by: in f.breaks[target])
+        let _ = f.breaks.remove(target)
+        return move joined
+    }
+    return move after
+}
+
+// ── Expressions ──────────────────────────────────────────────────────────────
+
+/// C# `arm.Value is BoundBlockExpr { Type.IsNever: true }`.
+bool t23IsNeverBlock(in Ctx c, for BExpr e) => boundKind(e) == .blockExpr && isNever(c.bBlockExprs[boundIndex(e)].type)
+
+FlowState t23Expr(ref Flow f, through ref Ctx c, for BExpr e, by move FlowState start) {
+    var state = move start
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local:
+            let l = c.bLocals[i].local
+            if state.reachable && listContains(in f.tracked, by: l) && !listContains(in state.assigned, by: l) && !listContains(in f.reported, by: l) {
+                f.reported.append(l)
+                let isParameter = c.locals[l].isParameter
+                let line = linePosition(c.files[f.file].text.span, at: c.locals[l].nameSpan.start).line
+                let label = isParameter ? "an `out` parameter starts unassigned" : $"declared without a value on line {line}"
+                let help = isParameter ? "" : "assign it on every path before this, or give the declaration a value"
+                report(ref c, for: .useBeforeAssign, from: f.file, at: c.bLocals[i].span, by: (c.locals[l].name, "", "", "", ""), label: label, help: help)
+            }
+            return move state
+        case .binary:
+            let op = c.bBinaries[i].op
+            if op == .logicalAnd || op == .logicalOr {
+                let right = c.bBinaries[i].right
+                state = t23Expr(ref f, through: ref c, for: c.bBinaries[i].left, by: move state)
+                let rightState = t23Expr(ref f, through: ref c, for: right, by: t23Clone(in state))
+                return t23Join(in state, by: in rightState)
+            }
+            return t23Default(ref f, through: ref c, for: e, by: move state)
+        case .conditional:
+            let whenTrue = c.bConditionals[i].whenTrue
+            let whenFalse = c.bConditionals[i].whenFalse
+            state = t23Expr(ref f, through: ref c, for: c.bConditionals[i].condition, by: move state)
+            let t = t23Expr(ref f, through: ref c, for: whenTrue, by: t23Clone(in state))
+            let o = t23Expr(ref f, through: ref c, for: whenFalse, by: t23Clone(in state))
+            return t23Join(in t, by: in o)
+        case .coalesce:
+            let right = c.bCoalesces[i].right
+            state = t23Expr(ref f, through: ref c, for: c.bCoalesces[i].left, by: move state)
+            let r = t23Expr(ref f, through: ref c, for: right, by: t23Clone(in state))
+            return t23Join(in state, by: in r)
+        case .switchExpr:
+            state = t23Expr(ref f, through: ref c, for: c.bSwitchExprs[i].value, by: move state)
+            var after = t23Unreachable()
+            let count = c.bSwitchExprs[i].arms.length
+            for k in 0..count {
+                let guard = c.bSwitchExprs[i].arms[k].guard
+                let value = c.bSwitchExprs[i].arms[k].value
+                var branch = t23Clone(in state)
+                if guard != -1 { branch = t23Expr(ref f, through: ref c, for: guard, by: move branch) }
+                branch = t23Expr(ref f, through: ref c, for: value, by: move branch)
+                // A block arm of a value-giving `catch switch` must leave, as a `catch` block does (J49).
+                let neverBlock = t23IsNeverBlock(in c, for: value) || (boundKind(value) == .conversion && t23IsNeverBlock(in c, for: c.bConversions[boundIndex(value)].operand))
+                if neverBlock && branch.reachable {
+                    let end = nodeSpan(in c, for: value).end
+                    report(ref c, for: .catchBlockCompletes, from: f.file, at: TextSpan { start: end - 1 > 0 ? end - 1 : 0, length: 1 }, by: ("", "", "", "", ""), help: "leave the block instead of falling through; the call returns a value")
+                    branch = t23Unreachable()
+                }
+                after = t23Join(in after, by: in branch)
+            }
+            return move after
+        case .call:
+            let function = c.bCalls[i].function
+            let receiver = c.bCalls[i].receiver
+            let arguments = copyIds(in c.bCalls[i].arguments)
+            if receiver != -1 { state = t23Expr(ref f, through: ref c, for: receiver, by: move state) }
+            var outs = List<LocalId>()
+            for k in 0..arguments.length {
+                let arg = arguments[k]
+                if k < c.functions[function].parameters.length && c.locals[c.functions[function].parameters[k]].modifier == .outKeyword && boundKind(arg) == .local {
+                    outs.append(c.bLocals[boundIndex(arg)].local)
+                } else {
+                    state = t23Expr(ref f, through: ref c, for: arg, by: move state)
+                }
+            }
+            for l in outs { t23Assign(ref state, by: l) }
+            // A `becomes` call on `this` counts as `become` (BYN7003's third form makes the caller declare it; revision 0010).
+            if receiver != -1 && boundKind(receiver) == .thisRef && c.functions[function].becomes is not null { state.became = true }
+            return isNever(c.bCalls[i].type) ? t23Unreachable() : move state
+        case .tryExpr:
+            let operand = c.bTries[i].operand
+            t23CheckPropagation(ref f, through: ref c, at: c.bTries[i].span, for: operand, by: -1)
+            state = t23Expr(ref f, through: ref c, for: operand, by: move state)
+            return move state
+        case .catchExpr:
+            let operand = c.bCatches[i].operand
+            let variant = c.bCatches[i].variant
+            let handlerExpr = c.bCatches[i].handler
+            let became = state.became
+            state = t23Expr(ref f, through: ref c, for: operand, by: move state)
+            if variant != -1 && boundKind(operand) == .call {
+                let call = boundIndex(operand)
+                let callee = c.bCalls[call].function
+                let set = c.errorVariants[variant].set
+                let sets = copyIds(in c.functions[callee].errorSets)
+                let excluded = copyIds(in c.functions[callee].excludedErrors)
+                if !listContains(in sets, by: set) && sets.length > 0 || listContains(in excluded, by: variant) {
+                    let shown = typeDisplay(ref c, by: errorUnionOf(ref c, for: in sets, as: in excluded))
+                    report(ref c, for: .unknownVariant, from: f.file, at: c.catchVariantSpans[e], by: (c.errorVariants[variant].name, shown, "", "", ""))
+                } else {
+                    t23CheckPropagation(ref f, through: ref c, at: c.bCatches[i].span, for: operand, by: variant)
+                }
+            }
+            // A failed `becomes` call left the state unchanged, so the handler's path has not run `become` (revision 0010 erratum).
+            var failed = t23Clone(in state)
+            failed.became = became
+            var handler = t23Expr(ref f, through: ref c, for: handlerExpr, by: move failed)
+            if t23IsNeverBlock(in c, for: handlerExpr) && handler.reachable {
+                let end = nodeSpan(in c, for: handlerExpr).end
+                let name = boundKind(operand) == .call ? c.functions[c.bCalls[boundIndex(operand)].function].name : ""
+                report(ref c, for: .catchBlockCompletes, from: f.file, at: TextSpan { start: end - 1 > 0 ? end - 1 : 0, length: 1 }, by: ("", "", "", "", ""), help: $"leave the block instead of falling through; `{name}` returns a value")
+                handler = t23Unreachable()
+            }
+            return t23Join(in state, by: in handler)
+        case .jump:
+            return t23Statement(ref f, through: ref c, for: c.bJumps[i].jump, by: move state)
+        case .blockExpr:
+            let block = c.bBlockExprs[i].block
+            let statements = copyIds(in c.bBlocks[boundIndex(block)].statements)
+            return t23Block(ref f, through: ref c, for: in statements, by: move state)
+        case .isExpr:
+            let value = c.bIses[i].value
+            let pattern = c.bIses[i].pattern
+            if boundKind(pattern) == .rangePattern {
+                let r = boundIndex(pattern)
+                let rangeEnd = c.bRangePatterns[r].end
+                let rangeStart = c.bRangePatterns[r].start
+                state = t23Expr(ref f, through: ref c, for: value, by: move state)
+                state = t23Expr(ref f, through: ref c, for: rangeStart, by: move state)
+                return t23Expr(ref f, through: ref c, for: rangeEnd, by: move state)
+            }
+            return t23Expr(ref f, through: ref c, for: value, by: move state)
+        default:
+            return t23Default(ref f, through: ref c, for: e, by: move state)
+    }
+}
+
+/// The C# `default` arm of `Expr`: every expression child in order, then unreachable after a `never` value.
+FlowState t23Default(ref Flow f, through ref Ctx c, for BExpr e, by move FlowState start) {
+    var state = move start
+    let kids = children(in c, for: e)
+    for child in kids {
+        if isExprKind(boundKind(child)) { state = t23Expr(ref f, through: ref c, for: child, by: move state) }
+    }
+    return isNever(exprType(in c, for: e)) && boundKind(e) != .errorExpr ? t23Unreachable() : move state
+}
+
+/// A `try` (or partial `catch`) passes the callee's errors on; the caller must be able to fail with them.
+void t23CheckPropagation(ref Flow f, through ref Ctx c, at TextSpan span, for BExpr operand, by VariantId caught) {
+    if boundKind(operand) != .call { return }
+    let callee = c.bCalls[boundIndex(operand)].function
+    let sets = caught == -1 ? copyIds(in c.functions[callee].errorSets) : uncaught(ref c, for: callee, by: caught)
+    if sets.length == 0 { return }
+    let fn = f.fn
+    if c.functions[fn].infersErrors || c.functions[fn].kind == .main || c.functions[fn].kind == .testKeyword { return }
+    if !c.functions[fn].hasFails {
+        var names = List<string>()
+        for s in sets { names.append(errorSetDisplayName(ref c, by: s)) }
+        report(ref c, for: .propagateFromInfallible, from: f.file, at: span, by: (c.functions[fn].name, t23JoinText(in names, by: "`, `"), "", "", ""), help: $"handle the error with `catch`, or declare `fails {t23JoinText(in names, by: ", ")}`")
+        return
+    }
+    for set in sets {
+        if listContains(in c.functions[fn].errorSets, by: set) { continue }
+        var named = copyIds(in c.functions[fn].errorSets)
+        named.append(set)
+        var shown = List<string>()
+        for s in named { shown.append(displayNameAmong(ref c, by: s, for: in named)) }
+        let own = displayNameAmong(ref c, by: set, for: in named)
+        report(ref c, for: .undeclaredError, from: f.file, at: span, by: (own, c.functions[fn].name, "", "", ""), help: $"add it to the signature: `fails {t23JoinText(in shown, by: ", ")}`")
+    }
+    // A case the caller takes out with `except` must not arrive from the callee.
+    for s in sets {
+        let variants = copyIds(in c.errorSets[s].variants)
+        for v in variants {
+            if v != caught && listContains(in c.functions[fn].excludedErrors, by: v) && !listContains(in c.functions[callee].excludedErrors, by: v) {
+                let setName = errorSetDisplayName(ref c, by: c.errorVariants[v].set)
+                let vName = c.errorVariants[v].name
+                report(ref c, for: .undeclaredError, from: f.file, at: span, by: ($"{setName}.{vName}", c.functions[fn].name, "", "", ""), help: $"handle it with `catch ({setName}.{vName})`, or remove `.{vName}` from the `except` list")
+            }
+        }
+    }
+}
+
+/// C# `string.Join(separator, parts)`.
+string t23JoinText(in List<string> parts, by string separator) {
+    var sb = StrBuf()
+    for k in 0..parts.length {
+        if k > 0 { sb.append(separator) }
+        sb.append(parts[k])
+    }
+    return $"{sb.finish()}"
+}

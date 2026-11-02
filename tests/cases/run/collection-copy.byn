@@ -1,0 +1,50 @@
+void showList(ReadOnlySpan<i64> xs, as string name) {
+    var line = StrBuf()
+    for x in xs { line.append($" {x}") }
+    print($"{name}: {xs.length}{line.finish()}")
+}
+
+using var arena = Arena()
+
+var list = List<i64>()
+for i in 0..5 { list.append(i) }
+var listCopy = list.copy(to: arena)
+for i in 0..100 {
+    list.append(i)
+    listCopy.append(-i)
+    if i % 3 == 0 {
+        let _ = list.removeLast()
+        listCopy[0] = i
+    }
+    list[1] = i
+}
+showList(list, as: "list")
+showList(listCopy, as: "listCopy")
+
+var map = Map<i64, i64>()
+for i in 0..6 { map[i] = i * 10 }
+let _ = map.remove(2)
+var mapCopy = map.copy(to: arena)
+for i in 0..100 {
+    map[i % 9] = i
+    mapCopy[i % 13 + 20] = -i
+    if i % 4 == 0 { let _ = map.remove(i % 7) }
+    if i % 5 == 0 { let _ = mapCopy.remove(i % 11 + 20) }
+}
+print($"map: {map.length} {map}")
+print($"mapCopy: {mapCopy.length} {mapCopy}")
+
+var buf = StrBuf()
+buf.append("seed")
+var bufCopy = buf.copy(to: arena)
+for i in 0..100 {
+    buf.append("a")
+    bufCopy.append("b")
+    if i % 25 == 24 {
+        buf.clear()
+        bufCopy.clear()
+        bufCopy.append("c")
+    }
+}
+print($"buf: {buf.finish()}")
+print($"bufCopy: {bufCopy.finish()}")

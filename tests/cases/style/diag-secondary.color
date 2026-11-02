@@ -1,0 +1,15 @@
+# DiagnosticRenderer.RenderAll
+--- stdout ---
+--- stderr ---
+[1m[38;2;255;138;128merror BYN2104[0m: `total` is immutable
+[38;2;180;178;169m  -->[0m src/ledger/ledger.byn:3:5
+
+  [38;2;180;178;169m2[0m [38;2;180;178;169m│[0m     let total = 0
+    [38;2;180;178;169m│[0m         [38;2;180;178;169m----- declared with `let` here[0m
+    [38;2;180;178;169m│[0m
+  [38;2;180;178;169m3[0m [38;2;180;178;169m│[0m     total += line.price
+    [38;2;180;178;169m│[0m     [1m[38;2;255;138;128m^^^^^ cannot be changed[0m
+    [38;2;180;178;169m│[0m
+  [1m[38;2;141;184;242mhelp:[0m declare it with `var` if it should change
+    [38;2;180;178;169m│[0m [38;2;180;178;169m2[0m [38;2;180;178;169m│[0m     var total = 0
+    [38;2;180;178;169m│[0m   [38;2;180;178;169m│[0m     [38;2;141;184;242m+++[0m

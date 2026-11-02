@@ -1,0 +1,8 @@
+enum Color {
+    red
+    green
+    blue
+}
+
+let c = Color.gren
+let d: Color = .purple

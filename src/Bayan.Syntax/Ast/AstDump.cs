@@ -12,14 +12,43 @@ namespace Bayan.Syntax.Ast;
 /// </summary>
 public static class AstDump
 {
-    public static string Dump(SyntaxTree tree)
+    public static string Dump(SyntaxTree tree) => Dump(tree, Style.Plain);
+
+    /// <param name="style">How the diagnostics after the tree render; the <c>parse/</c> goldens use <see cref="Style.Plain"/>.</param>
+    public static string Dump(SyntaxTree tree, Style style)
     {
         var w = new Writer();
         w.Line(0, "CompilationUnit");
         foreach (var member in tree.Root.Members) w.Decl(1, member);
         if (tree.Diagnostics.Count > 0)
-            w.Raw("\n" + DiagnosticRenderer.RenderAll(tree.Diagnostics));
+            w.Raw("\n" + DiagnosticRenderer.RenderAll(tree.Diagnostics, includePath: false, style));
         return w.ToString();
+    }
+
+    /// <summary>The one-part name of every type the tree spells, in dump order.</summary>
+    public static List<Name> TypeNames(SyntaxTree tree)
+    {
+        var names = new List<Name>();
+        Writer.TypeNames = names;
+        try
+        {
+            Dump(tree);
+        }
+        finally { Writer.TypeNames = null; }
+        return names;
+    }
+
+    /// <summary>The name of every name expression that is a call's callee or a member access's receiver, in dump order.</summary>
+    public static List<Name> CalleeAndReceiverNames(SyntaxTree tree)
+    {
+        var names = new List<Name>();
+        Writer.CalleeNames = names;
+        try
+        {
+            Dump(tree);
+        }
+        finally { Writer.CalleeNames = null; }
+        return names;
     }
 
     public static string Expr(Expr expr)
@@ -40,6 +69,12 @@ public static class AstDump
     {
         private readonly StringBuilder _sb = new();
 
+        /// <summary>Collects <see cref="AstDump.TypeNames"/> while it dumps.</summary>
+        [ThreadStatic] public static List<Name>? TypeNames;
+
+        /// <summary>Collects <see cref="AstDump.CalleeAndReceiverNames"/> while it dumps.</summary>
+        [ThreadStatic] public static List<Name>? CalleeNames;
+
         public override string ToString() => _sb.ToString();
 
         public void Raw(string text) => _sb.Append(text);
@@ -55,13 +90,21 @@ public static class AstDump
             return string.Join(' ', parts) + " ";
         }
 
-        private static string Params(Param[] parameters)
+        private static string TypeParams(Name[] names) =>
+            names.Length == 0 ? "" : "<" + string.Join(", ", names.Select(n => n.Text)) + ">";
+
+        private static string Params(Param[] parameters, bool refThis = false, bool moveThis = false, Name[]? states = null)
         {
-            var sb = new StringBuilder("(");
+            var stated = states is { Length: > 0 };
+            var receiver = (refThis ? "ref this" : moveThis ? "move this" : stated ? "this" : "")
+                + (stated ? " is " + string.Join(" or ", states!.Select(s => "." + s.Text)) : "");
+            var sb = new StringBuilder("(" + receiver);
             for (var i = 0; i < parameters.Length; i++)
             {
-                if (i > 0) sb.Append(", ");
+                if (i > 0 || receiver.Length > 0) sb.Append(", ");
                 var p = parameters[i];
+                if (p.Particle is not null) sb.Append(p.Particle.Text).Append(' ');
+                if (p.Rest) sb.Append("rest ");
                 if (p.Modifier != ParamModifier.None) sb.Append(p.Modifier.ToString().ToLowerInvariant()).Append(' ');
                 Type(sb, p.Type);
                 sb.Append(' ').Append(p.Name.Text);
@@ -80,9 +123,24 @@ public static class AstDump
             Line(depth, "doc " + TokenDump.Escape(decl.Doc));
         }
 
+        /// <summary><c> : I, J where T : K</c>, or nothing.</summary>
+        private static string Bases(NamedType[] bases, WhereClause[] where) =>
+            (bases.Length == 0 ? "" : " : " + string.Join(", ", bases.Select(Type))) + Where(where);
+
+        private static string Where(WhereClause[] where) =>
+            string.Concat(where.Select(w => $" where {w.Param.Text} : " + string.Join(", ", w.Bounds.Select(Type))));
+
+        private static string Attribute(AttributeSyntax a) =>
+            $"@{a.Name.Text}" + string.Concat(a.Args.Select(arg => " " + (arg.Name is null ? "" : arg.Name.Text + ": ") + AstDump.Expr(arg.Value)))
+            + (a.Because is null ? "" : " because " + TokenDump.Escape(a.Because.Reason));
+
+        private static string Rules(RequiresRule[] rules) =>
+            string.Concat(rules.Select(r => " requires " + AstDump.Expr(r.Condition) + (r.At is null ? "" : " at ." + r.At.Text)));
+
         public void Decl(int depth, Decl decl)
         {
             Doc(depth, decl);
+            foreach (var a in decl.Attributes) Line(depth, "Attribute " + Attribute(a));
             switch (decl)
             {
                 case ImportDecl d:
@@ -93,23 +151,44 @@ public static class AstDump
                     break;
                 case FunctionDecl d:
                     {
-                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{Params(d.Params)} -> {Type(d.ReturnType)}";
+                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null, d.MoveThis is not null, d.ReceiverStates)} -> {Type(d.ReturnType)}";
+                        head += Where(d.Where);
+                        foreach (var r in d.Requires) head += " expects " + AstDump.Expr(r);
+                        if (d.Becomes is not null) head += " becomes ." + d.Becomes.Text;
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
+                        if (d.Uses is not null) head += " uses " + string.Join(", ", d.Uses.Effects.Select(e => e.Text));
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
                         Line(depth, head);
                         if (d.Body is not null) Stmt(depth + 1, d.Body);
                         break;
                     }
                 case StructDecl d:
-                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}");
+                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Bases(d.Bases, d.Where)}{Rules(d.Rules)}");
+                    foreach (var member in d.Members) Decl(depth + 1, member);
+                    foreach (var v in d.States)
+                        Line(depth + 1, "State " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")"));
+                    break;
+                case InterfaceDecl d:
+                    Line(depth, $"Interface {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Where(d.Where)}");
+                    foreach (var member in d.Members) Decl(depth + 1, member);
+                    break;
+                case GetterDecl d:
+                    Line(depth, $"Getter {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}");
+                    break;
+                case AssociatedTypeDecl d:
+                    Line(depth, $"AssociatedType {d.Name.Text}");
+                    break;
+                case ExtensionDecl d:
+                    Line(depth, $"Extension {d.Name.Text}{Bases(d.Bases, [])}");
                     foreach (var member in d.Members) Decl(depth + 1, member);
                     break;
                 case FieldDecl d:
-                    Line(depth, $"Field {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Default is null ? "" : " = " + AstDump.Expr(d.Default)));
+                    Line(depth, $"Field {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Default is null ? "" : " = " + AstDump.Expr(d.Default)) + Rules(d.Requires));
                     break;
                 case PropertyDecl d:
-                    Line(depth, $"Property {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text} => {AstDump.Expr(d.Body)}");
+                    Line(depth, $"Property {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Body is null ? "" : $" => {AstDump.Expr(d.Body)}"));
+                    if (d.Block is not null) Stmt(depth + 1, d.Block);
                     break;
                 case ConstructorDecl d:
                     Line(depth, $"Constructor {Mods(d.Modifiers)}{d.Name.Text}{Params(d.Params)}");
@@ -118,13 +197,36 @@ public static class AstDump
                 case ErrorEnumDecl d:
                     Line(depth, $"ErrorEnum {Mods(d.Modifiers)}{d.Name.Text}");
                     foreach (var v in d.Variants)
-                        Line(depth + 1, "Variant " + v.Name.Text + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
+                        Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
+                            + string.Concat(v.Attributes.Select(a => " " + Attribute(a)))
+                            + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
+                    break;
+                case EnumDecl d:
+                    Line(depth, $"Enum {Mods(d.Modifiers)}{d.Name.Text}{(d.Params is null ? "" : Params(d.Params))}{Bases(d.Bases, d.Where)}");
+                    foreach (var m in d.Members)
+                        Line(depth + 1, "Member " + m.Name.Text
+                            + (m.Args is null ? "" : "(" + string.Join(", ", m.Args.Select(a => (a.Name is null ? "" : a.Name.Text + ": ") + AstDump.Expr(a.Value))) + ")")
+                            + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
+                    break;
+                case UnionDecl d:
+                    Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Bases(d.Bases, d.Where)}");
+                    foreach (var v in d.Variants)
+                        Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
+                            + (v.Value is null ? "" : " = " + AstDump.Expr(v.Value))
+                            + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case TypeAliasDecl d:
-                    Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");
+                    Line(depth, $"TypeAlias {Mods(d.Modifiers)}{(d.Distinct ? "distinct " : "")}{d.Name.Text} = {Type(d.Target)}{Rules(d.Requires)}");
+                    break;
+                case ErrorSetDecl d:
+                    Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}" +
+                        (d.Except.Length == 0 ? "" : " except " + string.Join(", ", d.Except.Select(n => "." + n.Text))));
+                    break;
+                case EffectDecl d:
+                    Line(depth, $"Effect {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Effects.Select(e => e.Text))}");
                     break;
                 case TestDecl d:
-                    Line(depth, "Test " + TokenDump.Escape(d.Title));
+                    Line(depth, "Test " + TokenDump.Escape(d.Title) + (d.Params.Length == 0 ? "" : " " + Params(d.Params)));
                     Stmt(depth + 1, d.Body);
                     break;
                 default:
@@ -135,6 +237,7 @@ public static class AstDump
 
         public void Stmt(int depth, Stmt stmt)
         {
+            foreach (var a in stmt.Attributes) Line(depth, "Attribute " + Attribute(a));
             switch (stmt)
             {
                 case BlockStmt s:
@@ -161,6 +264,9 @@ public static class AstDump
                 case ReturnStmt s:
                     Line(depth, "Return" + (s.Value is null ? "" : " " + AstDump.Expr(s.Value)));
                     break;
+                case FailStmt s:
+                    Line(depth, "Fail " + AstDump.Expr(s.Error));
+                    break;
                 case BreakStmt s:
                     Line(depth, "Break" + (s.Label is null ? "" : " " + s.Label.Text));
                     break;
@@ -168,7 +274,7 @@ public static class AstDump
                     Line(depth, "Continue" + (s.Label is null ? "" : " " + s.Label.Text));
                     break;
                 case IfStmt s:
-                    Line(depth, "If " + AstDump.Expr(s.Condition));
+                    Line(depth, "If " + s.Likelihood switch { Likelihood.Unlikely => "unlikely ", Likelihood.Never => "never ", _ => "" } + AstDump.Expr(s.Condition));
                     Stmt(depth + 1, s.Then);
                     if (s.Else is not null)
                     {
@@ -181,11 +287,15 @@ public static class AstDump
                     Stmt(depth + 1, s.Body);
                     break;
                 case GuardedStmt s:
-                    Line(depth, (s.Unless ? "Guarded unless " : "Guarded if ") + AstDump.Expr(s.Condition));
+                    Line(depth, (s.Unless ? "Guarded unless " : s.Unlikely ? "Guarded if unlikely " : "Guarded if ") + AstDump.Expr(s.Condition));
                     Stmt(depth + 1, s.Statement);
                     break;
                 case WhileStmt s:
                     Line(depth, "While " + AstDump.Expr(s.Condition));
+                    Stmt(depth + 1, s.Body);
+                    break;
+                case WhileLetStmt s:
+                    Line(depth, $"WhileLet {s.Variable.Text} = " + AstDump.Expr(s.Value));
                     Stmt(depth + 1, s.Body);
                     break;
                 case DoWhileStmt s:
@@ -193,7 +303,8 @@ public static class AstDump
                     Stmt(depth + 1, s.Body);
                     break;
                 case ForStmt s:
-                    Line(depth, $"For {s.Kind} {s.Variable.Text}" + (s.Type is null ? "" : ": " + Type(s.Type)) + " in " + AstDump.Expr(s.Iterable));
+                    Line(depth, (s.Try ? "For try " : "For ") + $"{s.Kind} "
+                        + (s.Names.Length > 0 ? "(" + string.Join(", ", s.Names.Select(n => n.Text)) + ")" : s.Variable.Text) + (s.Type is null ? "" : ": " + Type(s.Type)) + " in " + AstDump.Expr(s.Iterable));
                     Stmt(depth + 1, s.Body);
                     break;
                 case LabeledStmt s:
@@ -212,16 +323,20 @@ public static class AstDump
                     }
                     break;
                 case DeferStmt s:
-                    Line(depth, "Defer");
+                    Line(depth, "Defer" + s.Kind switch { DeferKind.Failing => " failing", DeferKind.Panicking => " panicking", _ => "" }
+                        + (s.Binding is null ? "" : $" ({s.Binding.Text})"));
                     Stmt(depth + 1, s.Body);
                     break;
-                case ErrdeferStmt s:
-                    Line(depth, "Errdefer" + (s.Error is null ? "" : $" ({s.Error.Text})"));
-                    Stmt(depth + 1, s.Body);
+                case AssertStmt s:
+                    Line(depth, "Assert " + AstDump.Expr(s.Condition) + (s.Fails is null ? "" : " fails " + AstDump.Expr(s.Fails)));
                     break;
                 case ContextStmt s:
-                    Line(depth, "Context " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
+                    Line(depth, "Provide " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
                     Stmt(depth + 1, s.Body);
+                    break;
+                case BecomeStmt s:
+                    Line(depth, "Become ." + s.State.Text
+                        + string.Concat(s.Args.Select(a => " " + (a.Name is null ? "" : a.Name.Text + ": ") + AstDump.Expr(a.Value))));
                     break;
                 case EmptyStmt:
                     Line(depth, "Empty");
@@ -304,6 +419,7 @@ public static class AstDump
             switch (type)
             {
                 case NamedType t:
+                    if (t.Path is [var only]) TypeNames?.Add(only);
                     sb.Append(string.Join('.', t.Path.Select(p => p.Text)));
                     if (t.Args.Length > 0) sb.Append('<').Append(string.Join(", ", t.Args.Select(Type))).Append('>');
                     break;
@@ -319,6 +435,28 @@ public static class AstDump
                     break;
                 case TupleType t:
                     sb.Append('(').Append(string.Join(", ", t.Elements.Select(e => Type(e.Type) + (e.Name is null ? "" : " " + e.Name.Text)))).Append(')');
+                    break;
+                case FunctionTypeSyntax t:
+                    // A lone parameter needs parentheses when it is itself a tuple or function type.
+                    if (t.Params is [var p] && p is not (TupleType or FunctionTypeSyntax)) Type(sb, p);
+                    else sb.Append('(').Append(string.Join(", ", t.Params.Select(Type))).Append(')');
+                    sb.Append(" -> ");
+                    Type(sb, t.Return);
+                    if (t.Fails is not null) sb.Append(" fails ").Append(string.Join(", ", t.Fails.Errors.Select(Type)));
+                    if (t.Uses is not null) sb.Append(" uses ").Append(string.Join(", ", t.Uses.Effects.Select(e => e.Text)));
+                    break;
+                case DynType t:
+                    sb.Append(t.IsRef ? t.IsReadOnly ? "dyn ref readonly " : "dyn ref " : "dyn ");
+                    Type(sb, t.Inner);
+                    break;
+                case RefinedType t:
+                    Type(sb, t.Inner);
+                    sb.Append(" is ").Append(string.Join(" or ", t.States.Select(s => "." + s.Text)));
+                    break;
+                case PointerType t:
+                    if (t.ReadOnly) sb.Append("readonly ");
+                    Type(sb, t.Pointee);
+                    sb.Append('*');
                     break;
             }
         }
@@ -343,10 +481,13 @@ public static class AstDump
                     sb.Append(')');
                     break;
                 case VarPattern p:
-                    sb.Append("(var ").Append(p.Name.Text).Append(')');
+                    sb.Append(p.IsLet ? "(let " : "(var ").Append(p.Name.Text).Append(')');
                     break;
                 case DiscardPattern:
                     sb.Append('_');
+                    break;
+                case DeclarationPattern p:
+                    sb.Append("(decl ").Append(Type(p.Type)).Append(' ').Append(p.Name.Text).Append(')');
                     break;
                 case NotPattern p:
                     sb.Append("(not ");
@@ -375,6 +516,16 @@ public static class AstDump
                 case PositionalPattern p:
                     sb.Append("(pos");
                     if (p.Type is not null) sb.Append(' ').Append(Type(p.Type));
+                    foreach (var e in p.Elements)
+                    {
+                        sb.Append(' ');
+                        Pattern(sb, e);
+                    }
+                    sb.Append(')');
+                    break;
+                case VariantPattern p:
+                    sb.Append("(variant .").Append(p.Variant.Member.Text);
+                    if (p.Binding is not null) sb.Append(' ').Append(p.Binding.Text);
                     foreach (var e in p.Elements)
                     {
                         sb.Append(' ');
@@ -444,6 +595,18 @@ public static class AstDump
                     {
                         sb.Append(' ');
                         if (part is InterpolationText t) sb.Append(Quote(t.Text));
+                        else if (part is InterpolationHole { Specs.Length: > 0 } h)
+                        {
+                            sb.Append("(hole ");
+                            Expr(sb, h.Expr);
+                            foreach (var spec in h.Specs)
+                            {
+                                sb.Append(" (").Append(spec.Name?.Text).Append(": ");
+                                Expr(sb, spec.Value);
+                                sb.Append(')');
+                            }
+                            sb.Append(')');
+                        }
                         else Expr(sb, ((InterpolationHole)part).Expr);
                     }
                     sb.Append(')');
@@ -456,6 +619,7 @@ public static class AstDump
                     sb.Append("this");
                     break;
                 case MemberExpr e:
+                    if (e.Target is NameExpr receiver) CalleeNames?.Add(receiver.Name);
                     sb.Append(e.NullConditional ? "(?. " : "(. ");
                     Expr(sb, e.Target);
                     sb.Append(' ').Append(e.Member.Text);
@@ -466,6 +630,7 @@ public static class AstDump
                     sb.Append('.').Append(e.Member.Text);
                     break;
                 case CallExpr e:
+                    if (e.Callee is NameExpr callee) CalleeNames?.Add(callee.Name);
                     sb.Append("(call ");
                     Expr(sb, e.Callee);
                     foreach (var arg in e.Args)
@@ -478,6 +643,7 @@ public static class AstDump
                         Expr(sb, arg.Value);
                         if (wrapped) sb.Append(')');
                     }
+                    if (e.Because is not null) sb.Append(" because ").Append(TokenDump.Escape(e.Because.Reason));
                     sb.Append(')');
                     break;
                 case IndexExpr e:
@@ -492,6 +658,9 @@ public static class AstDump
                 case RangeExpr e:
                     Sexp(sb, e.Inclusive ? "..=" : "..", e.Start, e.End);
                     break;
+                case InExpr e:
+                    Sexp(sb, "in", e.Value, e.Range);
+                    break;
                 case ConditionalExpr e:
                     Sexp(sb, "?", e.Condition, e.WhenTrue, e.WhenFalse);
                     break;
@@ -502,6 +671,13 @@ public static class AstDump
                     break;
                 case IsExpr e:
                     sb.Append("(is ");
+                    Expr(sb, e.Value);
+                    sb.Append(' ');
+                    Pattern(sb, e.Pattern);
+                    sb.Append(')');
+                    break;
+                case ExceptExpr e:
+                    sb.Append("(except ");
                     Expr(sb, e.Value);
                     sb.Append(' ');
                     Pattern(sb, e.Pattern);
@@ -528,6 +704,9 @@ public static class AstDump
                 case TryExpr e:
                     Sexp(sb, "try", e.Operand);
                     break;
+                case MoveExpr e:
+                    Sexp(sb, "move", e.Operand);
+                    break;
                 case CatchExpr e:
                     sb.Append("(catch ");
                     Expr(sb, e.Operand);
@@ -542,11 +721,25 @@ public static class AstDump
                     Expr(sb, e.Handler);
                     sb.Append(')');
                     break;
+                case BlockExpr e:
+                    sb.Append("(block");
+                    foreach (var s in e.Block.Statements)
+                    {
+                        // Statements dump one per line; inside an expression each becomes `{…}`, nested lines joined by `; `.
+                        var w = new Writer();
+                        w.Stmt(0, s);
+                        sb.Append(" {").Append(string.Join("; ", w.ToString().TrimEnd('\n').Split('\n').Select(l => l.Trim()))).Append('}');
+                    }
+                    sb.Append(')');
+                    break;
                 case JumpExpr e:
                     switch (e.Jump)
                     {
                         case ReturnStmt r:
                             Sexp(sb, "return", r.Value is null ? [] : [r.Value]);
+                            break;
+                        case FailStmt f:
+                            Sexp(sb, "fail", [f.Error]);
                             break;
                         case BreakStmt b:
                             sb.Append("(break").Append(b.Label is null ? "" : " " + b.Label.Text).Append(')');
@@ -570,8 +763,11 @@ public static class AstDump
                 case SpreadExpr e:
                     Sexp(sb, "spread", e.Operand);
                     break;
+                case MapEntryExpr e:
+                    Sexp(sb, "entry", e.Key, e.Value);
+                    break;
                 case CollectionExpr e:
-                    Sexp(sb, "list", e.Elements);
+                    Sexp(sb, e.Elements.Length > 0 && e.Elements.All(x => x is MapEntryExpr) ? "map" : "list", e.Elements);
                     break;
                 case TupleExpr e:
                     sb.Append("(tuple");
@@ -594,9 +790,23 @@ public static class AstDump
                 case ParenExpr e:
                     Sexp(sb, "paren", e.Inner);
                     break;
+                case LambdaExpr e:
+                    sb.Append("(lambda (").Append(string.Join(' ', e.Params.Select(p => p.Text))).Append(") ");
+                    if (e.Body is not null) Expr(sb, e.Body);
+                    else Expr(sb, new BlockExpr(e.Block!.Span, e.Block));
+                    sb.Append(')');
+                    break;
                 case StackallocExpr e:
                     sb.Append("(stackalloc ").Append(Type(e.Element)).Append(' ');
                     Expr(sb, e.Count);
+                    sb.Append(')');
+                    break;
+                case CaughtErrorExpr:
+                    sb.Append("(caught)");
+                    break;
+                case PatternExpr e:
+                    sb.Append("(pattern ");
+                    Pattern(sb, e.Pattern);
                     sb.Append(')');
                     break;
                 case ErrorExpr:

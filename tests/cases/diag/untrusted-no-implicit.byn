@@ -1,0 +1,10 @@
+void show(string s) {
+    print(s)
+}
+
+let u: Untrusted<string> = Untrusted("x")
+let s: string = u
+let v: Untrusted<string> = "y"
+show(u)
+print($"{u}")
+print("z".trustUnchecked() because "not wrapped")

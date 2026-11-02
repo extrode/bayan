@@ -1,0 +1,43 @@
+// A borrow taken early in an initializer is live while the rest of it runs: a later argument that grows the owner conflicts (BYN3004).
+interface IThing {
+    i64 get()
+}
+
+struct C : IThing {
+    i64 n
+
+    i64 get() => n
+}
+
+struct W {
+    List<i64> items
+
+    i64 grow(ref this) {
+        for i in 0..100 { items.append(i) }
+        return 0
+    }
+}
+
+struct Bag {
+    List<C> items
+
+    i64 grow(ref this) {
+        for i in 0..100 { items.append(C { n: i }) }
+        return 0
+    }
+}
+
+ReadOnlySpan<i64> first(ReadOnlySpan<i64> s, at i64 n) => s
+
+dyn ref IThing pick(dyn ref IThing d, at i64 n) => d
+
+void main() {
+    var w = W { items: List<i64>() }
+    w.items.append(42)
+    let sp: ReadOnlySpan<i64> = first(w.items.span, at: w.grow())
+    print($"{sp[0]}")
+    var b = Bag { items: List<C>() }
+    b.items.append(C { n: 1 })
+    let d: dyn ref IThing = pick(b.items[0], at: b.grow())
+    print($"{d.get()}")
+}

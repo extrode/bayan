@@ -1,0 +1,3 @@
+let u: Untrusted<string> = Untrusted("x")
+print(trust(u))
+print(trust(u, "checked"))

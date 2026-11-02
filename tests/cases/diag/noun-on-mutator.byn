@@ -1,0 +1,18 @@
+public struct Counter {
+    i64 n
+
+    public void total(ref this, i64 by) {
+        n += by
+    }
+
+    public void sizeUp(ref this) {
+        n *= 2
+    }
+
+    // A lint on the public API only: a member the module keeps to itself is not checked.
+    void sizeDown(ref this) {
+        n /= 2
+    }
+}
+
+print("ok")

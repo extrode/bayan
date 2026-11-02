@@ -1,0 +1,141 @@
+// T22: BinderErrors.cs.
+
+import parser
+
+// ── Error-case payloads ──────────────────────────────────────────────────────
+
+BExpr bindErrorNew(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to Type expected) {
+    var callee: BExpr = -1
+    switch call.callee {
+        case .targetMemberExpr(let t):
+            var inner = expected
+            if expected != -1 && kindOf(expected) == .optional {
+                inner = c.optionalTypes[typeIndex(expected)]
+            } else if expected != -1 && kindOf(expected) == .result {
+                inner = c.resultTypes[typeIndex(expected)].error
+            }
+            if inner == -1 || !(kindOf(inner) == .errorSet || kindOf(inner) == .errorUnion) { return -1 }
+            callee = bindTargetMember(ref b, through: ref c, for: in t.value, to: expected)
+        case .memberExpr(let m):
+            if m.value.nullConditional { return -1 }
+            switch m.value.target {
+                case .nameExpr(let n):
+                    if n.value.typeArgs.length > 0 { return -1 }
+                    let text = t15Text(in c, from: b.file, at: n.value.name)
+                    if t15Lookup(ref b, for: text) != -1 { return -1 }
+                    let type = c.modules[c.files[b.file].module].types.tryGet(at: text) ?? -1
+                    if type == -1 || kindOf(type) != .errorSet { return -1 }
+                default: return -1
+            }
+            callee = bindMember(ref b, through: ref c, for: in m.value)
+        default: return -1
+    }
+    if boundKind(callee) == .errorVariant { return bindPayload(ref b, through: ref c, for: in call, by: callee) }
+    bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+    return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+}
+
+BExpr bindPayload(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by BExpr variant) {
+    let v = c.bErrorVariants[boundIndex(variant)].variant
+    let vName = c.errorVariants[v].name
+    if c.errorVariants[v].fields.length == 0 {
+        report(ref b, through: ref c, for: .variantHasNoPayload, at: call.span, by: (vName, "", "", "", ""), help: $"write `.{vName}` without parentheses")
+        bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    let fields = copyIds(in c.errorVariants[v].fields)
+    let payload = bindArguments(ref b, through: ref c, for: in call, by: in fields, as: -1, enforceNames: false, displayName: vName)
+    return addErrorVariant(ref c, from: BErrorVariant { span: call.span, variant: v, payload: move payload })
+}
+
+/// C# `Built` (BinderErrors.cs:59-63). Pre-ported for T17 (callers use its result directly); T22 must not rewrite it.
+BExpr built(ref Binder b, through ref Ctx c, for BExpr value, from in parser.Expr syntax) {
+    let _ = checkPayloadGiven(ref b, through: ref c, for: value, from: in syntax)
+    return value
+}
+
+bool checkPayloadGiven(ref Binder b, through ref Ctx c, for BExpr error, from in parser.Expr syntax) {
+    if boundKind(error) != .errorVariant { return true }
+    let v = c.bErrorVariants[boundIndex(error)].variant
+    if c.bErrorVariants[boundIndex(error)].payload.length != 0 || c.errorVariants[v].fields.length == 0 { return true }
+    let vName = c.errorVariants[v].name
+    var names = StrBuf()
+    for i in 0..c.errorVariants[v].fields.length {
+        if i > 0 { names.append(", ") }
+        names.append(c.locals[c.errorVariants[v].fields[i]].name)
+    }
+    report(ref b, through: ref c, for: .variantNeedsPayload, at: parser.exprSpan(in syntax), by: (vName, "", "", "", ""),
+        help: $"pass it: `.{vName}({names.finish()})`")
+    return false
+}
+
+// ── Error-case patterns ──────────────────────────────────────────────────────
+
+BExpr errorCase(ref Binder b, through ref Ctx c, for in parser.Pattern p, from ErrorSetId set, at TextSpan name) {
+    let text = t15Text(in c, from: b.file, at: name)
+    let variant = findErrorVariant(ref c, by: set, for: text)
+    if variant != -1 { return addErrorVariant(ref c, from: BErrorVariant { span: parser.patternSpan(in p), variant: variant }) }
+    var names = List<string>()
+    for v in c.errorSets[set].variants { names.append(c.errorVariants[v].name) }
+    let close = suggest(text, by: in names)
+    let display = errorSetDisplayName(ref c, by: set)
+    if (close is { } s) {
+        report(ref b, through: ref c, for: .unknownVariant, at: name, by: (text, display, "", "", ""), help: $"did you mean `{s}`?")
+    } else {
+        report(ref b, through: ref c, for: .unknownVariant, at: name, by: (text, display, "", "", ""))
+    }
+    return addErrorExpr(ref c, from: BErrorExpr { span: parser.patternSpan(in p) })
+}
+
+BPattern bindErrorCasePattern(ref Binder b, through ref Ctx c, for in parser.Pattern p, as Type input, by BExpr bound, from in List<parser.Pattern> elements, at TextSpan? binding) {
+    let span = parser.patternSpan(in p)
+    let target = unwrap(ref c, for: input)
+    var variant: VariantId = -1
+    if boundKind(bound) == .errorVariant {
+        let ev = c.bErrorVariants[boundIndex(bound)].variant
+        let set = c.errorVariants[ev].set
+        var mismatch = false
+        if kindOf(target) == .errorUnion {
+            let u = typeIndex(target)
+            mismatch = c.errorUnionTypes[u].sets.length > 0
+                && (!listContains(in c.errorUnionTypes[u].sets, by: set) || listContains(in c.errorUnionTypes[u].excluded, by: ev))
+        }
+        if !mismatch && kindOf(target) == .errorSet { mismatch = typeIndex(target) != set }
+        if mismatch {
+            report(ref b, through: ref c, for: .patternMismatch, at: span,
+                by: ($"`{errorSetDisplayName(ref c, by: set)}.{c.errorVariants[ev].name}`", typeDisplay(ref c, by: target), "", "", ""))
+        } else {
+            variant = ev
+        }
+    }
+    if (binding is { } name) {
+        let local = declareLocal(ref b, through: ref c, at: name, as: variant == -1 ? errorType() : target, for: .patternVariable)
+        if variant == -1 { return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input }) }
+        b.errorNarrowed[local] = variant
+        let left = addErrorPattern(ref c, from: BErrorPattern { span: span, inputType: input, variant: variant })
+        let right = addBindPattern(ref c, from: BBindPattern { span: span, inputType: input, local: local })
+        return addBinaryPattern(ref c, from: BBinaryPattern { span: span, inputType: input, isAnd: true, left: left, right: right })
+    }
+    let fieldCount = variant == -1 ? 0 : c.errorVariants[variant].fields.length
+    if variant != -1 && fieldCount == 0 {
+        let vName = c.errorVariants[variant].name
+        report(ref b, through: ref c, for: .variantHasNoPayload, at: span, by: (vName, "", "", "", ""), help: $"match it with `.{vName}`")
+    } else if variant != -1 && elements.length != fieldCount {
+        let vName = c.errorVariants[variant].name
+        var lets = StrBuf()
+        for i in 0..fieldCount {
+            if i > 0 { lets.append(", ") }
+            lets.append($"let {c.locals[c.errorVariants[variant].fields[i]].name}")
+        }
+        report(ref b, through: ref c, for: .variantPatternArity, at: span, by: (vName, $"{fieldCount}", $"{elements.length}", "", ""),
+            help: $"list every field: `.{vName}({lets.finish()})`, or `_` to skip one")
+    }
+    let ok = variant != -1 && fieldCount == elements.length && elements.length > 0
+    var subs = List<BPattern>()
+    for i in 0..elements.length {
+        let type = ok ? c.locals[c.errorVariants[variant].fields[i]].type : errorType()
+        subs.append(bindPattern(ref b, through: ref c, for: in elements[i], as: type))
+    }
+    if ok { return addErrorPattern(ref c, from: BErrorPattern { span: span, inputType: input, variant: variant, subpatterns: move subs }) }
+    return addBindPattern(ref c, from: BBindPattern { span: span, inputType: input })
+}

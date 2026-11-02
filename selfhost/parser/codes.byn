@@ -1,0 +1,268 @@
+// The parser's entries of the message table. Ports the BYN1xxx descriptors of
+// `src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs`, the other descriptors `Parser.cs` reports, and
+// `Parser.InputForms`. Owner: 
+
+/// Every descriptor `Parser.cs` reports and every BYN1xxx descriptor, in `DiagnosticCodes.cs` order:
+/// the lexer's BYN0012, the BYN1xxx block (with the retired codes and BYN1042's second form
+/// `postfixOnNewLine`), then the codes of later ranges the parser raises (Q433). Member names are the C# names with the first letter lowered; `goto` is a
+/// keyword, so `Goto` is `gotoKeyword`.
+public enum ParseCode {
+    reservedKeyword
+    expected
+    expectedExpression
+    expectedType
+    expectedMember
+    missingLineBreak
+    unlessWithElse
+    unlessNegated
+    postfixNotSimple
+    postfixChained
+    gotoKeyword
+    invalidAssignmentTarget
+    invalidExpressionStatement
+    ternaryInCollection
+    stackedCaseLabels
+    cStyleFor
+    modifierNotAllowed
+    retiredUnlessNot
+    parenthesizedCondition
+    bodyNeedsBraces
+    forInputForm
+    errdeferInput
+    fieldInitEquals
+    unlessCompound
+    unlessNull
+    catchBinding
+    delegateDecl
+    errorSetPipe
+    retiredCSharpTypeName
+    failsShorthand
+    retiredNegatedIfToUnless
+    unlessLikelihood
+    typeNameOrder
+    semicolonInput
+    elseOnNewLine
+    onNewLine
+    postfixOnNewLine
+    declarationKeywordOrder
+    patternOutsideConst
+    bracketAttribute
+    blockComment
+    charInput
+    requiresValue
+    exceptInCase
+    exceptNotPattern
+    oneLineDeclarations
+    tryCoversMore
+    fatArrowFunctionType
+    returnErrorInput
+    castInput
+    trustInput
+    restInput
+    stateLineInput
+    interfaceGetInput
+    receiverWithoutState
+    requiresOnFunction
+    payloadNeedsName
+    clauseOrder
+    prefixPointerInput
+    pointerOutsideExtern
+    compactFormatSpec
+    statementAttribute
+    duplicateDeclaration
+    refThisNotFirst
+    requiresMixesFields
+    unknownParticle
+    noallocRemoved
+    contextBlockInput
+    singleStateInline
+    missingBecause
+}
+
+string codeText(ParseCode code) => code switch {
+    .reservedKeyword => "BYN0012",
+    .expected => "BYN1001",
+    .expectedExpression => "BYN1002",
+    .expectedType => "BYN1003",
+    .expectedMember => "BYN1004",
+    .missingLineBreak => "BYN1005",
+    .unlessWithElse => "BYN1006",
+    .unlessNegated => "BYN1007",
+    .postfixNotSimple => "BYN1008",
+    .postfixChained => "BYN1009",
+    .gotoKeyword => "BYN1010",
+    .invalidAssignmentTarget => "BYN1011",
+    .invalidExpressionStatement => "BYN1012",
+    .ternaryInCollection => "BYN1013",
+    .stackedCaseLabels => "BYN1014",
+    .cStyleFor => "BYN1015",
+    .modifierNotAllowed => "BYN1016",
+    .retiredUnlessNot => "BYN1049",
+    .parenthesizedCondition => "BYN1017",
+    .bodyNeedsBraces => "BYN1018",
+    .forInputForm => "BYN1019",
+    .errdeferInput => "BYN1020",
+    .fieldInitEquals => "BYN1021",
+    .unlessCompound => "BYN1022",
+    .unlessNull => "BYN1023",
+    .catchBinding => "BYN1025",
+    .delegateDecl => "BYN1028",
+    .errorSetPipe => "BYN1029",
+    .retiredCSharpTypeName => "BYN1030",
+    .failsShorthand => "BYN1031",
+    .retiredNegatedIfToUnless => "BYN1032",
+    .unlessLikelihood => "BYN1033",
+    .typeNameOrder => "BYN1043",
+    .semicolonInput => "BYN1040",
+    .elseOnNewLine => "BYN1041",
+    .onNewLine => "BYN1042",
+    .postfixOnNewLine => "BYN1042",
+    .declarationKeywordOrder => "BYN1044",
+    .patternOutsideConst => "BYN1046",
+    .bracketAttribute => "BYN1045",
+    .blockComment => "BYN1047",
+    .charInput => "BYN1048",
+    .requiresValue => "BYN1050",
+    .exceptInCase => "BYN1051",
+    .exceptNotPattern => "BYN1052",
+    .oneLineDeclarations => "BYN1053",
+    .tryCoversMore => "BYN1054",
+    .fatArrowFunctionType => "BYN1055",
+    .returnErrorInput => "BYN1056",
+    .castInput => "BYN1057",
+    .trustInput => "BYN1062",
+    .restInput => "BYN1058",
+    .stateLineInput => "BYN1059",
+    .interfaceGetInput => "BYN1060",
+    .receiverWithoutState => "BYN1061",
+    .requiresOnFunction => "BYN1063",
+    .payloadNeedsName => "BYN1064",
+    .clauseOrder => "BYN1065",
+    .prefixPointerInput => "BYN1066",
+    .pointerOutsideExtern => "BYN1067",
+    .compactFormatSpec => "BYN1068",
+    .statementAttribute => "BYN1069",
+    .duplicateDeclaration => "BYN2006",
+    .refThisNotFirst => "BYN2117",
+    .requiresMixesFields => "BYN3218",
+    .unknownParticle => "BYN5008",
+    .noallocRemoved => "BYN6001",
+    .contextBlockInput => "BYN6006",
+    .singleStateInline => "BYN7006",
+    .missingBecause => "BYN8001",
+}
+
+/// The message template, in `string.Format` syntax.
+string messageFormat(ParseCode code) => code switch {
+    .reservedKeyword => "`{0}` is reserved and cannot be used as an identifier",
+    .expected => "expected {0}, found {1}",
+    .expectedExpression => "expected an expression, found {0}",
+    .expectedType => "expected a type, found {0}",
+    .expectedMember => "expected a field, property, constructor or method, found {0}",
+    .missingLineBreak => "expected a line break after the statement",
+    .unlessWithElse => "`unless` cannot have an `else` branch",
+    .unlessNegated => "`unless` with a negated condition is a double negative",
+    .postfixNotSimple => "a postfix `{0}` applies only to a simple statement",
+    .postfixChained => "postfix conditions cannot be chained",
+    .gotoKeyword => "`goto` does not exist in Bayan",
+    .invalidAssignmentTarget => "cannot assign to this expression",
+    .invalidExpressionStatement => "this expression does nothing as a statement",
+    .ternaryInCollection => "a conditional expression inside a collection literal must be parenthesized",
+    .stackedCaseLabels => "stacked `case` labels",
+    .cStyleFor => "C-style `for` loops do not exist in Bayan",
+    .modifierNotAllowed => "`{0}` is not allowed here",
+    .retiredUnlessNot => "retired: merged into BYN1007",
+    .parenthesizedCondition => "parentheses around a condition are an input form",
+    .bodyNeedsBraces => "the body of `{0}` must be a block",
+    .forInputForm => "`for (let x in xs)` is an input form; write `for x in xs`",
+    .errdeferInput => "`errdefer` is now `defer failing`",
+    .fieldInitEquals => "`{0} = …` in a literal is an input form; write `{0}: …`",
+    .unlessCompound => "`unless` with `&&`/`||` reads as a double negative",
+    .unlessNull => "`unless x is null` is not allowed; write `if x is not null`",
+    .catchBinding => "`catch (e)` is an input form; bind the error in a `catch switch` arm",
+    .delegateDecl => "`delegate` is not Bayan; write a function type `type {0} = {1}`",
+    .errorSetPipe => "an error set is declared `union error {0} = A, B`",
+    .retiredCSharpTypeName => "retired: C# primitive names are accepted",
+    .failsShorthand => "`T!E` is an input form; write `T f() fails E`",
+    .retiredNegatedIfToUnless => "retired: `if !x` is no longer rewritten",
+    .unlessLikelihood => "`unless` takes no likelihood word; write `if unlikely !…` or drop `{0}`",
+    .typeNameOrder => "`{0}` is an input form; write `{1}`",
+    .semicolonInput => "`;` is an input form; a statement ends at the newline",
+    .elseOnNewLine => "`else` must follow `}}` on the same line",
+    .onNewLine => "`{0}` takes its value on the same line",
+    .postfixOnNewLine => "a postfix `{0}` must be on the line of its statement",
+    .declarationKeywordOrder => "`{0}` is an input form; write `{1}`",
+    .patternOutsideConst => "`pattern` is allowed only after `=` in a `const`",
+    .bracketAttribute => "`[{0}]` is an input form; write `@{1}`",
+    .blockComment => "`/* */` is an input form; write `//` lines",
+    .charInput => "`char` is now `rune`",
+    .requiresValue => "`value` in `requires` is now `it`",
+    .exceptInCase => "`except` is not allowed in a `case` pattern",
+    .exceptNotPattern => "`except` takes a pattern, not a condition",
+    .oneLineDeclarations => "`{0}` declares its cases on one line; write one per line",
+    .tryCoversMore => "`try` covers `{0}`, which cannot fail",
+    .fatArrowFunctionType => "`=>` in a type is an input form; write `->`",
+    .returnErrorInput => "`return .{0}` returns an error; write `fail .{0}`",
+    .castInput => "`({0})x` is an input form; write `{0}(x)`",
+    .trustInput => "`trust(x, reason: …)` is now `x.trustUnchecked() because \"…\"`",
+    .restInput => "`{0}` is an input form; write `rest ReadOnlySpan<{1}> {2}`",
+    .stateLineInput => "`state {0}` is an input form; declare the states in one `states {{ … }}` block",
+    .interfaceGetInput => "`{0} {1} {{ get }}` is an input form; write `{0} {1}`",
+    .receiverWithoutState => "`this` without a state is the default receiver",
+    .requiresOnFunction => "`requires` on a function is an input form; write `expects`",
+    .payloadNeedsName => "payload `{0}` of `.{1}` needs a name",
+    .clauseOrder => "`{0}` must come before `{1}`; the order is `where`, `expects`, `becomes`, `fails`, `uses`",
+    .prefixPointerInput => "`{0}` is an input form; write `{1}`",
+    .pointerOutsideExtern => "pointer types are allowed only in `extern` declarations",
+    .compactFormatSpec => "`{0}` is an input form; write `{1}`",
+    .statementAttribute => "attribute `{0}` is not allowed before a statement",
+    .duplicateDeclaration => "`{0}` is declared twice",
+    .refThisNotFirst => "`ref this` must be the first parameter",
+    .requiresMixesFields => "this `requires` reads `it` and other fields",
+    .unknownParticle => "`{0}` is not a particle",
+    .noallocRemoved => "`{0}` is removed; a function without `uses` is already pure",
+    .contextBlockInput => "`context (…) {{ }}` is now `provide … {{ }}`",
+    .singleStateInline => "`{0} is .{1}` is an input form; write `{2}`",
+    .missingBecause => "`{0}` bypasses a safety rule and needs `because \"…\"`",
+}
+
+/// `Parser.InputForms`: reports on a construct that still parsed in full, which do not count toward
+/// `syntaxErrors`.
+bool isInputForm(ParseCode code) => code switch {
+    .missingLineBreak or .unlessNegated or .parenthesizedCondition or .bodyNeedsBraces or
+    .forInputForm or .errdeferInput or .fieldInitEquals or .unlessCompound or .unlessNull or
+    .catchBinding or .delegateDecl or .errorSetPipe or .failsShorthand or .unlessLikelihood or
+    .typeNameOrder or .semicolonInput or .elseOnNewLine or .onNewLine or .postfixOnNewLine or
+    .bracketAttribute or .charInput or .requiresValue or .exceptInCase or .oneLineDeclarations or
+    .fatArrowFunctionType or .trustInput or .restInput or .stateLineInput or .interfaceGetInput or
+    .receiverWithoutState or .requiresOnFunction or .clauseOrder or .prefixPointerInput or
+    .compactFormatSpec or .noallocRemoved or .contextBlockInput or .singleStateInline or
+    .missingBecause or .statementAttribute => true,
+    _ => false,
+}
+
+/// `string.Format` for the templates above: `{0}`, `{1}` and `{2}` are replaced, `{{`/`}}` are unescaped.
+/// Text is copied in runs between braces, so a slice never splits a code point.
+string format(string template, by (string a0, string a1, string a2) args) {
+    var sb = StrBuf()
+    let t = template.bytes
+    var i = 0
+    var run = 0
+    while i < t.length {
+        let b = t[i]
+        if (b == '{' || b == '}') && i + 1 < t.length && t[i + 1] == b {
+            sb.append(template[run..i + 1])
+            i += 2
+            run = i
+        } else if b == '{' && i + 2 < t.length && t[i + 2] == '}' {
+            sb.append(template[run..i])
+            sb.append(t[i + 1] == '0' ? args.a0 : t[i + 1] == '1' ? args.a1 : args.a2)
+            i += 3
+            run = i
+        } else {
+            i += 1
+        }
+    }
+    sb.append(template[run..t.length])
+    return $"{sb.finish()}"
+}

@@ -1,0 +1,8 @@
+name local/shop
+version 0.1.0
+edition 2027
+kind App
+targets host
+mode safe
+booleans Symbols
+primitives Sized

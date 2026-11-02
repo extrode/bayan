@@ -1,0 +1,11 @@
+interface IShape {
+    f32 area()
+}
+
+void show(IShape s) {
+    let t: IShape = s
+}
+
+void main() {
+    let shapes: List<IShape> = []
+}

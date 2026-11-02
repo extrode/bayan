@@ -1,0 +1,25 @@
+interface IThing {
+    i64 get()
+}
+
+struct S : IThing {
+    i64 n
+
+    i64 get() => n
+}
+
+struct Box {
+    S inner
+
+    dyn ref IThing fresh(ref this) {
+        var s = S { n: 1 }
+        return s
+    }
+}
+
+dyn ref IThing make() {
+    var s = S { n: 2 }
+    return s
+}
+
+void main() {}

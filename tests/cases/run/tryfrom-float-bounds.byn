@@ -1,0 +1,19 @@
+// A float converts when it truncates into range; 0 marks null. Each pair is the bound and the next float past it.
+let minI64: f64 = -9223372036854775808.0
+let belowI64: f64 = -9223372036854777856.0
+let maxI64: f64 = 9223372036854774784.0
+let aboveI64: f64 = 9223372036854775808.0
+print($"{i64.tryFrom(minI64) ?? 0} {i64.tryFrom(belowI64) ?? 0} {i64.tryFrom(maxI64) ?? 0} {i64.tryFrom(aboveI64) ?? 0}")
+let minF32: f32 = -2147483648.0
+let belowF32: f32 = -2147483904.0
+let maxF32: f32 = 2147483520.0
+let aboveF32: f32 = 2147483648.0
+print($"{i32.tryFrom(minF32) ?? 0} {i32.tryFrom(belowF32) ?? 0} {i32.tryFrom(maxF32) ?? 0} {i32.tryFrom(aboveF32) ?? 0}")
+let minF64: f64 = -2147483648.0
+let belowF64: f64 = -2147483649.0
+let maxF64: f64 = 2147483647.0
+let aboveF64: f64 = 2147483648.0
+print($"{i32.tryFrom(minF64) ?? 0} {i32.tryFrom(belowF64) ?? 0} {i32.tryFrom(maxF64) ?? 0} {i32.tryFrom(aboveF64) ?? 0}")
+let truncMin: f64 = -2147483648.5
+let truncMax: f64 = 2147483647.5
+print($"{i32.tryFrom(truncMin) ?? 0} {i32.tryFrom(truncMax) ?? 0}")

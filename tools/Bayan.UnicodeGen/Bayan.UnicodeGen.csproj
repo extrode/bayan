@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Bayan.UnicodeGen</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Bayan.Syntax/Lexing/Nfc.cs" Link="Nfc.cs" />
+  </ItemGroup>
+</Project>

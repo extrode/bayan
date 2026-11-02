@@ -1,0 +1,7 @@
+interface IShape {
+    i64 area()
+}
+
+struct A : IShape {
+    static i64 area() => 1
+}

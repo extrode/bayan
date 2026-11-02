@@ -1,0 +1,5 @@
+i32 half(i32 n) expects n {
+    return n / 2
+}
+
+print($"{half(4)}")

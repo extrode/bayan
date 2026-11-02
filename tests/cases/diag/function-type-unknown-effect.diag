@@ -1,0 +1,7 @@
+error BYN6003: `network` is not an effect
+
+  3 │ bool check((i32 -> bool uses io, network) p) => true
+    │                                  ^^^^^^^ not an effect or an `effect` alias of this module
+    │
+  help: choose one of `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`, `process`,
+        `console`, or a declared effect alias

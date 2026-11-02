@@ -1,4 +1,4 @@
-i64 a = 1;
-u64 b = 2;
-let c = a + b;
-let d = true + 1;
+let a: i64 = 1
+let b: u64 = 2
+let c = a + b
+let d = true + 1

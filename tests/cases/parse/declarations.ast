@@ -23,4 +23,4 @@ CompilationUnit
       Return (list)
   Test `adds`
     Block
-      Expr (call assert (== (call add 1 2) 3))
+      Assert (paren (== (call add 1 2) 3))

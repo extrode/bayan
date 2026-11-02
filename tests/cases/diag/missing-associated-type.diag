@@ -1,0 +1,6 @@
+error BYN2803: `Digits` does not bind `type Item` of `IIndexable`
+
+  1 │ struct Digits : IIndexable {
+    │                 ^^^^^^^^^^ needs `type Item`
+    │
+  help: add `type Item = …` to `Digits`

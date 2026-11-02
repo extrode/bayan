@@ -1,9 +1,9 @@
 error BYN2411: `null` cannot match `i32`
 
-  2 │ let a = n is null;
+  2 │ let a = n is null
     │              ^^^^
 
 error BYN2411: 3 elements cannot match `(i32, i32)`
 
-  3 │ let b = (1, 2) is (1, 2, 3);
+  3 │ let b = (1, 2) is (1, 2, 3)
     │                   ^^^^^^^^^

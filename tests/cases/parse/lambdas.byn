@@ -1,0 +1,24 @@
+bool isBig(i32 x) => x > 2
+
+struct Lines {
+    List<string> lines
+    bool isEmpty => lines.isEmpty
+}
+
+void main() {
+    let inc = x => x + 1
+    let first = (a, b) => a
+    let zero = () => 0
+    let block = (a) => {
+        return a + 1
+    }
+    let later = x =>
+        x * 2
+    let i = indexWhere(items, t => t.size > 2, 3)
+    let k = v switch {
+        Foo => 1,
+        Bar => apply(x => x, 2),
+        _ => 0,
+    }
+    (a, b) => a
+}

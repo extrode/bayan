@@ -1,0 +1,45 @@
+error BYN2724: enum parameter `corner` must be a number, `bool`, `rune`, `string` or a plain enum
+
+  3 │ enum Shape(Point corner, ref i64 sides, i64 depth = 1) {
+    │            ^^^^^ `Point` has no static form
+    │
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
+        tables
+
+error BYN2724: enum parameter `sides` must be a number, `bool`, `rune`, `string` or a plain enum
+
+  3 │ enum Shape(Point corner, ref i64 sides, i64 depth = 1) {
+    │                          ^^^^^^^^^^^^^ `ref` is not allowed here
+    │
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
+        tables
+
+error BYN2724: enum parameter `depth` must be a number, `bool`, `rune`, `string` or a plain enum
+
+  3 │ enum Shape(Point corner, ref i64 sides, i64 depth = 1) {
+    │                                                     ^ a default value is not allowed here
+    │
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
+        tables
+
+error BYN2724: enum parameter `scale` must be a number, `bool`, `rune`, `string` or a plain enum
+
+  9 │ enum Length(Unit scale) { cm(.metre) }
+    │             ^^^^ `Unit` has no static form
+    │
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
+        tables
+
+error BYN2721: enum `Label` already has a member `name`
+
+  11 │ enum Label(string name, i64 ordinal) { a("a", 1) }
+     │                   ^^^^ every enum has it
+     │
+  help: rename the parameter
+
+error BYN2721: enum `Label` already has a member `ordinal`
+
+  11 │ enum Label(string name, i64 ordinal) { a("a", 1) }
+     │                             ^^^^^^^ every enum has it
+     │
+  help: rename the parameter

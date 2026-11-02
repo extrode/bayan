@@ -1,0 +1,5 @@
+5 4 3 2 1 
+15 5 5
+Node { item: 2, next: Node { item: 1, next: null } }
+true false
+4

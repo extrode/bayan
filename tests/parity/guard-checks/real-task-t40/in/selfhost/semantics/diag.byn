@@ -1,0 +1,67 @@
+// T2: Bayan.Syntax/Diagnostics/Diagnostic.cs and DiagnosticRenderer.cs, over ctx.byn's Diag, Related and DiagBag.
+//
+// The C# keeps the diagnostics in a `DiagnosticBag` (`Add`, `RemoveRepeats`) and the sink in
+// `Compilation` (`Report`, `ReportInto`); here both hang off `Ctx`. The renderer is the plain style
+// only: `Style.Plain`'s `│` bar, width 100 and no colours. The line and UTF-8 helpers are private
+// copies of `selfhost/lexer/source.byn` and `selfhost/lexer/diagnostics.byn` (those are not `public`).
+
+const bar: string = "│"
+
+/// Prose (message, label, help) wraps at `Style.Plain`'s width.
+const wrapWidth: i64 = 100
+
+// ── Reporting ────────────────────────────────────────────────────────────────
+
+/// Reports `code` at `span` in file `f`, formatting its template with `args` (the C#
+/// `Compilation.Report`). An empty `label`/`help` is C#'s `null`; `hasFix` carries the edit
+/// `fixSpan` → `fixReplacement`.
+void report(ref Ctx c, for SemaCode code, from FileId f, at TextSpan span, by (string a0, string a1, string a2, string a3, string a4) args, string label = "", string help = "", bool hasFix = false, TextSpan? fixSpan = null, string fixReplacement = "") {
+    addDiag(ref c, by: Diag {
+        code: codeText(code),
+        file: f,
+        span: span,
+        message: format(messageFormat(code), by: args),
+        label: label,
+        help: help,
+        isWarning: isWarning(code),
+        hasFix: hasFix,
+        fixSpan: fixSpan ?? TextSpan { start: 0, length: 0 },
+        fixReplacement: fixReplacement,
+        related: List<Related>(),
+    })
+}
+
+/// Appends an already-built diagnostic to the innermost sink (the C# `ReportHeld`/`Add`), or drops
+/// it while `c.quiet`. A `for try` synthetic name's span becomes the C# span it stands for (Q739).
+void addDiag(ref Ctx c, by move Diag d) {
+    if c.quiet { return }
+    var m = move d
+    m.span = t40RealSpan(in c, for: m.span)
+    m.fixSpan = t40RealSpan(in c, for: m.fixSpan)
+    for i in 0..m.related.length {
+        m.related[i].span = t40RealSpan(in c, for: m.related[i].span)
+    }
+    if c.sink >= 0 {
+        c.bags[c.sink].items.append(move m)
+    } else {
+        c.diagnostics.append(move m)
+    }
+}
+
+/// Opens a nested bag and makes it the sink; returns the sink to restore (the C# `ReportInto`).
+i64 pushBag(ref Ctx c) {
+    let previous = c.sink
+    c.bags.append(DiagBag { items: List<Diag>(), previous: previous })
+    c.sink = c.bags.length - 1
+    return previous
+}
+
+/// Restores the sink (the C# `ReportInto` returning the outer bag); the bag's items stay in
+/// `c.bags` for the caller to read.
+void popBag(ref Ctx c, to i64 previous) {
+    c.sink = previous
+}
+
+/// The span `span` stands for: a `for try` synthetic name's (negative start, `t28SyntheticName`) is the iterable's
+/// (Binder.cs:1110-1115); any other span is itself (Q739).
+TextSpan t40RealSpan(in Ctx c, for TextSpan span) => span.start < 0 ? c.syntheticSpans[-1 - span.start] : span

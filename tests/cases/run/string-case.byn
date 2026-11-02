@@ -1,0 +1,7 @@
+// `lowercased()`/`uppercased()` copy the text with Unicode simple case mapping; `equals(as: .caseless)` folds ASCII letters.
+void main() {
+    let s = "Hello, Wörld"
+    print(s.lowercased())
+    print(s.uppercased())
+    print($"{"ABC".equals("abc", as: .caseless)} {"ABC".equals("abc")} {"ABC".equals("abd", as: .caseless)}")
+}

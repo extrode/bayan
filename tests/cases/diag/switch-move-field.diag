@@ -1,0 +1,23 @@
+error BYN2789: `switch move …` needs a local or a `move` parameter, not field `slot`
+
+  14 │     switch move box.slot {
+     │                 ^^^^^^^^
+     │
+  help: drop `move` so the bindings borrow, declare the parameter `move`, or `.take()` a collection
+        field into a local first
+
+error BYN2789: `switch move …` needs a local or a `move` parameter, not an element
+
+  17 │     switch move slots[0] {
+     │                 ^^^^^^^^
+     │
+  help: drop `move` so the bindings borrow, declare the parameter `move`, or `.take()` a collection
+        field into a local first
+
+error BYN2789: `switch move …` needs a local or a `move` parameter, not parameter `plain`
+
+  20 │     switch move plain {
+     │                 ^^^^^
+     │
+  help: drop `move` so the bindings borrow, declare the parameter `move`, or `.take()` a collection
+        field into a local first

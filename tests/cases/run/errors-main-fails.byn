@@ -1,16 +1,16 @@
-error enum ConfigError {
+union error ConfigError {
     /// The configuration file is missing.
-    missing,
+    missing
 }
 
 void load(bool present) fails ConfigError {
-    return .missing if !present;
+    fail .missing if !present
 }
 
 void main() fails ConfigError {
-    defer print("main cleanup");
-    try load(present: true);
-    print("first load ok");
-    try load(present: false);
-    print("unreachable");
+    defer print("main cleanup")
+    try load(present: true)
+    print("first load ok")
+    try load(present: false)
+    print("unreachable")
 }

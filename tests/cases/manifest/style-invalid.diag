@@ -1,0 +1,37 @@
+error BYN3102: `style.indent` must be a positive integer, e.g. `4`
+
+  5 │         indent: "4",
+    │                 ^^^
+
+error BYN3102: `style.braces` must be `.sameLine` or `.nextLine`
+
+  6 │         braces: .allman,
+    │                 ^^^^^^^
+
+error BYN3102: `style.maxLine` must be a positive integer, e.g. `100`
+
+  7 │         maxLine: 0,
+    │                  ^
+
+error BYN3102: `style.trailingCommas` must be `true` or `false`
+
+  8 │         trailingCommas: .always,
+    │                         ^^^^^^^
+
+error BYN3102: `style.booleans` must be `.symbols` or `.words`
+
+  9 │         booleans: .both,
+    │                   ^^^^^
+
+error BYN3102: `style.primitives` must be `.sized` or `.csharp`
+
+  10 │         primitives: .int,
+     │                     ^^^^
+
+error BYN3101: `tabs` is not a field of `Style`
+
+  11 │         tabs: true,
+     │         ^^^^
+     │
+  help: use one of the fields `indent`, `braces`, `maxLine`, `trailingCommas`, `booleans`,
+        `primitives`

@@ -1,0 +1,2 @@
+panic: boom
+  at panic-handler-order.byn:3

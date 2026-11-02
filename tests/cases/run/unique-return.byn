@@ -1,0 +1,28 @@
+// Returning a local list or struct moves it out; no copy is made.
+struct Ledger {
+    string name
+    List<i64> entries
+}
+
+List<i64> numbers(i64 count) {
+    var xs = List<i64>()
+    for i in 0..count { xs.append(i * i) }
+    return xs
+}
+
+Ledger ledger(string name) {
+    var l = Ledger { name: name, entries: numbers(3) }
+    l.entries.append(100)
+    return l
+}
+
+List<i64> handOver(move List<i64> xs) => xs
+
+void main() {
+    let xs = numbers(4)
+    print($"{xs.length} {xs[3]}")
+    let l = ledger("main")
+    print($"{l.name} {l.entries.length} {l.entries[3]}")
+    let ys = handOver(numbers(2))
+    print($"{ys.length}")
+}

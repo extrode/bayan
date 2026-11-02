@@ -1,0 +1,7 @@
+error BYN2780: implicit copy of a unique value: `List<i64>` is unique: it owns its storage
+
+  3 │     List<i64> items
+    │               ^^^^^ cannot stand for `IHas.items`
+    │
+  help: rename the field and write the getter `List<i64> items => …` in `H`, returning a copy or a
+        fresh value

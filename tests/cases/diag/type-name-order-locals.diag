@@ -1,0 +1,44 @@
+error BYN1043: `i64 weight` is an input form; write `let weight: i64`
+
+  2 │     i64 weight = 0
+    │     ^^^^^^^^^^ type before name
+    │
+  help: write `let weight: i64`; local bindings put the name first
+    │ 2 │     let weight: i64 = 0
+    │   │     +++++++++++++++
+
+error BYN1043: `i64 count` is an input form; write `var count: i64`
+
+  3 │     i64 count = 0
+    │     ^^^^^^^^^ type before name
+    │
+  help: write `var count: i64`; local bindings put the name first
+    │ 3 │     var count: i64 = 0
+    │   │     ++++++++++++++
+
+error BYN1043: `i64 later` is an input form; write `var later: i64`
+
+  5 │     i64 later
+    │     ^^^^^^^^^ type before name
+    │
+  help: write `var later: i64`; local bindings put the name first
+    │ 5 │     var later: i64
+    │   │     ++++++++++++++
+
+error BYN1043: `i64 kept` is an input form; write `let kept: i64`
+
+  7 │     let i64 kept = 3
+    │         ^^^^^^^^ type before name
+    │
+  help: write `let kept: i64`; local bindings put the name first
+    │ 7 │     let kept: i64 = 3
+    │   │         +++++++++
+
+error BYN1043: `i64 limit` is an input form; write `const limit: i64`
+
+  8 │     const i64 limit = 4
+    │           ^^^^^^^^^ type before name
+    │
+  help: write `const limit: i64`; local bindings put the name first
+    │ 8 │     const limit: i64 = 4
+    │   │           ++++++++++

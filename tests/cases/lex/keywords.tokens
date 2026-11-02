@@ -70,10 +70,11 @@
 5:54 ComptimeKeyword `comptime`
 5:63 CheckedKeyword `checked`
 6:1 TestKeyword `test`
-6:6 PropertyKeyword `property`
-6:15 FuzzKeyword `fuzz`
-6:20 ModelKeyword `model`
-6:26 ForeachKeyword `foreach`
-6:34 NewKeyword `new`
-6:38 GotoKeyword `goto`
+6:6 AssertKeyword `assert`
+6:13 PropertyKeyword `property`
+6:22 FuzzKeyword `fuzz`
+6:27 ModelKeyword `model`
+6:33 ForeachKeyword `foreach`
+6:41 NewKeyword `new`
+6:45 GotoKeyword `goto`
 7:1 EndOfFile

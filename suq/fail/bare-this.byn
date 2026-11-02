@@ -1,0 +1,6 @@
+// expect: bare `this` receiver
+// fix-it: `void close(move this)`
+struct Conn {
+    public void close(this) {
+    }
+}

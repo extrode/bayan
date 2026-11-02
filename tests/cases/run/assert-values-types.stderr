@@ -1,0 +1,7 @@
+panic: assert(name == c.name)
+              │    │  │ │
+              │    │  │ green
+              │    │  green
+              │    false
+              bolts
+  at assert-values-types.byn:15

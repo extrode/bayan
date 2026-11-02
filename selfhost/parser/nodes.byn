@@ -1,0 +1,1283 @@
+// The syntax tree. Ports `src/Bayan.Syntax/Ast/Nodes.cs`. Owner: 
+//
+// Every C# record is a struct of the same name with `TextSpan span` first and the C# properties in
+// order, camelCase. A C# `Name` is its `TextSpan` (the dump slices the source), `Name?` is `TextSpan?`
+// and `Name[]` is `List<TextSpan>`; decoded texts are `string`, a nullable one `string?`. The abstract
+// records `Decl`, `TypeSyntax`, `Stmt`, `Expr`, `Pattern` and `InterpolationPart` are unions with one
+// `Owned<…>` variant per record, named after the record with its first letter lowered; the five tree
+// unions add `none` for a C# `null` child, so a child is a plain union field and a child list a
+// `List<…>` of the union. A child the C# types as one node kind (`BlockStmt`, `NamedType`,
+// `TargetMemberExpr`) is its union here (`Stmt`, `TypeSyntax`, `Expr`), as the parsing entry points
+// return it. A nullable support record (`FailsClause?`, `UsesClause?`, `BecauseClause?`) is an optional
+// struct, a nullable array a `List<…>?`. The base `Decl`'s `Doc` and `Attributes` are the last two
+// fields of each declaration struct. Every C# `{ get; init; }` property keeps its default as a field
+// default. A C# name that is a Bayan keyword gets the suffix `Keyword` (as `ParseCode.gotoKeyword`):
+// fields `defaultKeyword`, `failsKeyword`, `usesKeyword`, `requiresKeyword`, `becauseKeyword`,
+// `exceptKeyword`, `returnKeyword`, `usingKeyword`, `elseKeyword`, `tryKeyword`, `unlessKeyword`,
+// and the enum members so marked below. `Modifiers` is a `u16` with one `modifier…` const per flag.
+//
+// Checklist, C# record → Bayan (T11 dump, T12 dump and spans walker):
+//   Node                   (no node of its own; every struct starts with `span`)
+//   Name                   TextSpan
+//   CompilationUnit        CompilationUnit
+//   AttributeSyntax        AttributeSyntax
+//   BecauseClause          BecauseClause
+//   RequiresRule           RequiresRule
+//   Decl                   union Decl
+//   ImportDecl             ImportDecl, Decl.importDecl
+//   GlobalStatement        GlobalStatement, Decl.globalStatement
+//   Param                  Param
+//   FailsClause            FailsClause
+//   UsesClause             UsesClause
+//   FunctionDecl           FunctionDecl, Decl.functionDecl
+//   WhereClause            WhereClause
+//   StructDecl             StructDecl, Decl.structDecl
+//   InterfaceDecl          InterfaceDecl, Decl.interfaceDecl
+//   GetterDecl             GetterDecl, Decl.getterDecl
+//   AssociatedTypeDecl     AssociatedTypeDecl, Decl.associatedTypeDecl
+//   ExtensionDecl          ExtensionDecl, Decl.extensionDecl
+//   FieldDecl              FieldDecl, Decl.fieldDecl
+//   PropertyDecl           PropertyDecl, Decl.propertyDecl
+//   ConstructorDecl        ConstructorDecl, Decl.constructorDecl
+//   ErrorVariant           ErrorVariant
+//   ErrorEnumDecl          ErrorEnumDecl, Decl.errorEnumDecl
+//   ErrorSetDecl           ErrorSetDecl, Decl.errorSetDecl
+//   EnumMember             EnumMember
+//   EnumDecl               EnumDecl, Decl.enumDecl
+//   UnionField             UnionField
+//   UnionVariant           UnionVariant
+//   UnionDecl              UnionDecl, Decl.unionDecl
+//   TypeAliasDecl          TypeAliasDecl, Decl.typeAliasDecl
+//   EffectDecl             EffectDecl, Decl.effectDecl
+//   TestDecl               TestDecl, Decl.testDecl
+//   TypeSyntax             union TypeSyntax
+//   NamedType              NamedType, TypeSyntax.namedType
+//   OptionalType           OptionalType, TypeSyntax.optionalType
+//   ArrayType              ArrayType, TypeSyntax.arrayType
+//   TupleTypeElement       TupleTypeElement
+//   TupleType              TupleType, TypeSyntax.tupleType
+//   FunctionTypeSyntax     FunctionTypeSyntax, TypeSyntax.functionTypeSyntax
+//   DynType                DynType, TypeSyntax.dynType
+//   RefinedType            RefinedType, TypeSyntax.refinedType
+//   PointerType            PointerType, TypeSyntax.pointerType
+//   Stmt                   union Stmt
+//   BlockStmt              BlockStmt, Stmt.blockStmt
+//   LocalDecl              LocalDecl, Stmt.localDecl
+//   ExprStmt               ExprStmt, Stmt.exprStmt
+//   AssignStmt             AssignStmt, Stmt.assignStmt
+//   IncDecStmt             IncDecStmt, Stmt.incDecStmt
+//   ReturnStmt             ReturnStmt, Stmt.returnStmt
+//   FailStmt               FailStmt, Stmt.failStmt
+//   BreakStmt              BreakStmt, Stmt.breakStmt
+//   ContinueStmt           ContinueStmt, Stmt.continueStmt
+//   BecomeStmt             BecomeStmt, Stmt.becomeStmt
+//   IfStmt                 IfStmt, Stmt.ifStmt
+//   UnlessStmt             UnlessStmt, Stmt.unlessStmt
+//   GuardedStmt            GuardedStmt, Stmt.guardedStmt
+//   WhileStmt              WhileStmt, Stmt.whileStmt
+//   DoWhileStmt            DoWhileStmt, Stmt.doWhileStmt
+//   WhileLetStmt           WhileLetStmt, Stmt.whileLetStmt
+//   ForStmt                ForStmt, Stmt.forStmt
+//   LabeledStmt            LabeledStmt, Stmt.labeledStmt
+//   SwitchLabel            SwitchLabel
+//   SwitchSection          SwitchSection
+//   SwitchStmt             SwitchStmt, Stmt.switchStmt
+//   DeferStmt              DeferStmt, Stmt.deferStmt
+//   AssertStmt             AssertStmt, Stmt.assertStmt
+//   NamedArg               NamedArg
+//   ContextStmt            ContextStmt, Stmt.contextStmt
+//   EmptyStmt              EmptyStmt, Stmt.emptyStmt
+//   ErrorStmt              ErrorStmt, Stmt.errorStmt
+//   Expr                   union Expr
+//   LiteralExpr            LiteralExpr, Expr.literalExpr
+//   InterpolationPart      union InterpolationPart
+//   InterpolationText      InterpolationText, InterpolationPart.interpolationText
+//   InterpolationHole      InterpolationHole, InterpolationPart.interpolationHole
+//   InterpolatedExpr       InterpolatedExpr, Expr.interpolatedExpr
+//   NameExpr               NameExpr, Expr.nameExpr
+//   ThisExpr               ThisExpr, Expr.thisExpr
+//   MemberExpr             MemberExpr, Expr.memberExpr
+//   TargetMemberExpr       TargetMemberExpr, Expr.targetMemberExpr
+//   Argument               Argument
+//   CallExpr               CallExpr, Expr.callExpr
+//   IndexExpr              IndexExpr, Expr.indexExpr
+//   UnaryExpr              UnaryExpr, Expr.unaryExpr
+//   BinaryExpr             BinaryExpr, Expr.binaryExpr
+//   RangeExpr              RangeExpr, Expr.rangeExpr
+//   ConditionalExpr        ConditionalExpr, Expr.conditionalExpr
+//   CastExpr               CastExpr, Expr.castExpr
+//   IsExpr                 IsExpr, Expr.isExpr
+//   ExceptExpr             ExceptExpr, Expr.exceptExpr
+//   InExpr                 InExpr, Expr.inExpr
+//   SwitchArm              SwitchArm
+//   SwitchExpr             SwitchExpr, Expr.switchExpr
+//   TryExpr                TryExpr, Expr.tryExpr
+//   MoveExpr               MoveExpr, Expr.moveExpr
+//   CatchExpr              CatchExpr, Expr.catchExpr
+//   CaughtErrorExpr        CaughtErrorExpr, Expr.caughtErrorExpr
+//   JumpExpr               JumpExpr, Expr.jumpExpr
+//   BlockExpr              BlockExpr, Expr.blockExpr
+//   FieldInit              FieldInit
+//   StructLiteralExpr      StructLiteralExpr, Expr.structLiteralExpr
+//   WithExpr               WithExpr, Expr.withExpr
+//   SpreadExpr             SpreadExpr, Expr.spreadExpr
+//   MapEntryExpr           MapEntryExpr, Expr.mapEntryExpr
+//   CollectionExpr         CollectionExpr, Expr.collectionExpr
+//   TupleElement           TupleElement
+//   TupleExpr              TupleExpr, Expr.tupleExpr
+//   ParenExpr              ParenExpr, Expr.parenExpr
+//   LambdaExpr             LambdaExpr, Expr.lambdaExpr
+//   StackallocExpr         StackallocExpr, Expr.stackallocExpr
+//   PatternExpr            PatternExpr, Expr.patternExpr
+//   ErrorExpr              ErrorExpr, Expr.errorExpr
+//   Pattern                union Pattern
+//   ConstantPattern        ConstantPattern, Pattern.constantPattern
+//   RelationalPattern      RelationalPattern, Pattern.relationalPattern
+//   VarPattern             VarPattern, Pattern.varPattern
+//   DiscardPattern         DiscardPattern, Pattern.discardPattern
+//   DeclarationPattern     DeclarationPattern, Pattern.declarationPattern
+//   NotPattern             NotPattern, Pattern.notPattern
+//   BinaryPattern          BinaryPattern, Pattern.binaryPattern
+//   PropertySubpattern     PropertySubpattern
+//   PropertyPattern        PropertyPattern, Pattern.propertyPattern
+//   PositionalPattern      PositionalPattern, Pattern.positionalPattern
+//   VariantPattern         VariantPattern, Pattern.variantPattern
+//   SlicePattern           SlicePattern, Pattern.slicePattern
+//   ListPattern            ListPattern, Pattern.listPattern
+
+/// The C# `[Flags] enum Modifiers`.
+public type Modifiers = u16
+
+const modifierNone: u16 = 0
+const modifierPublic: u16 = 1
+const modifierPrivate: u16 = 2
+const modifierStatic: u16 = 4
+const modifierReadonly: u16 = 8
+const modifierRequired: u16 = 16
+const modifierConst: u16 = 32
+const modifierUnique: u16 = 64
+const modifierExtern: u16 = 128
+const modifierUnsafe: u16 = 256
+
+// ── Compilation unit and declarations ────────────────────────────────────────────
+
+public struct CompilationUnit {
+    public TextSpan span
+    public List<Decl> members
+}
+
+/// An attribute: `@name` or `@name(args)` before a declaration or an error variant.
+public struct AttributeSyntax {
+    public TextSpan span
+    public TextSpan name
+    public List<Argument> args
+    public BecauseClause? becauseKeyword = null
+}
+
+/// `because "reason"`: why an attribute or a call bypasses a safety rule (J6).
+public struct BecauseClause {
+    public TextSpan span
+    public string reason
+}
+
+/// `requires condition`, or a struct-level `requires condition at .field`.
+public struct RequiresRule {
+    public TextSpan span
+    public Expr condition
+    public TextSpan? at
+}
+
+public union Decl {
+    importDecl(Owned<ImportDecl> node)
+    globalStatement(Owned<GlobalStatement> node)
+    functionDecl(Owned<FunctionDecl> node)
+    structDecl(Owned<StructDecl> node)
+    interfaceDecl(Owned<InterfaceDecl> node)
+    getterDecl(Owned<GetterDecl> node)
+    associatedTypeDecl(Owned<AssociatedTypeDecl> node)
+    extensionDecl(Owned<ExtensionDecl> node)
+    fieldDecl(Owned<FieldDecl> node)
+    propertyDecl(Owned<PropertyDecl> node)
+    constructorDecl(Owned<ConstructorDecl> node)
+    errorEnumDecl(Owned<ErrorEnumDecl> node)
+    errorSetDecl(Owned<ErrorSetDecl> node)
+    enumDecl(Owned<EnumDecl> node)
+    unionDecl(Owned<UnionDecl> node)
+    typeAliasDecl(Owned<TypeAliasDecl> node)
+    effectDecl(Owned<EffectDecl> node)
+    testDecl(Owned<TestDecl> node)
+    none
+}
+
+public struct ImportDecl {
+    public TextSpan span
+    public List<TextSpan> path
+    public TextSpan? alias
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// A statement written at module level; together they form the implicit `main`.
+public struct GlobalStatement {
+    public TextSpan span
+    public Stmt statement
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public enum ParamModifier {
+    none
+    refKeyword
+    moveKeyword
+    outKeyword
+    inKeyword
+}
+
+public struct Param {
+    public TextSpan span
+    public ParamModifier modifier
+    public TypeSyntax type
+    public TextSpan name
+    public Expr defaultKeyword
+    /// The particle before the parameter (`by Carrier carrier`).
+    public TextSpan? particle = null
+    /// The variadic tail `rest ReadOnlySpan<T> xs`.
+    public bool rest = false
+}
+
+/// `fails` clause: `errors` empty means the set is inferred.
+public struct FailsClause {
+    public TextSpan span
+    public List<TypeSyntax> errors
+}
+
+/// `uses alloc, net`: the effects a function declares.
+public struct UsesClause {
+    public TextSpan span
+    public List<TextSpan> effects
+}
+
+/// A function or method. Exactly one of `body` and `expressionBody` is set, or neither for a declaration.
+public struct FunctionDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax returnType
+    public TextSpan name
+    public List<Param> params
+    public FailsClause? failsKeyword
+    public Stmt body
+    public Expr expressionBody
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public TextSpan? refThis = null
+    public TextSpan? moveThis = null
+    public List<TextSpan> receiverStates = List<TextSpan>()
+    /// Where a `ref this` would go: just after the `(`.
+    public i64 paramsStart = 0
+    /// The `expects` clauses after the signature (and the `requires` input form, BYN1063).
+    public List<Expr> requiresKeyword = List<Expr>()
+    public List<WhereClause> where = List<WhereClause>()
+    public TextSpan? becomes = null
+    public UsesClause? usesKeyword = null
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `where T : IA, IB`: the interfaces a type parameter must conform to.
+public struct WhereClause {
+    public TextSpan span
+    public TextSpan param
+    public List<TypeSyntax> bounds
+}
+
+public struct StructDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Decl> members
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public List<TypeSyntax> bases = List<TypeSyntax>()
+    public List<WhereClause> where = List<WhereClause>()
+    public List<RequiresRule> rules = List<RequiresRule>()
+    public List<UnionVariant> states = List<UnionVariant>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct InterfaceDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Decl> members
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public List<WhereClause> where = List<WhereClause>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `T name { get; }`: an abstract read-only property of an interface.
+public struct GetterDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax type
+    public TextSpan name
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `type Item;`: an interface's associated type.
+public struct AssociatedTypeDecl {
+    public TextSpan span
+    public TextSpan name
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct ExtensionDecl {
+    public TextSpan span
+    public TextSpan name
+    public List<TypeSyntax> bases
+    public List<Decl> members
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct FieldDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax type
+    public TextSpan name
+    public Expr defaultKeyword
+    public List<RequiresRule> requiresKeyword = List<RequiresRule>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `T name => expr`, or `T name { … }` with a `block` body (set exactly when `body` is `none`).
+public struct PropertyDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax type
+    public TextSpan name
+    public Expr body
+    public Stmt block = .none
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct ConstructorDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Param> params
+    public Stmt body
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct ErrorVariant {
+    public TextSpan span
+    public TextSpan name
+    public string? doc
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+    public List<UnionField> fields = List<UnionField>()
+}
+
+public struct ErrorEnumDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<ErrorVariant> variants
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `union error Name = A, B except .c`.
+public struct ErrorSetDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<TypeSyntax> members
+    /// The two declaration keywords, as written.
+    public TextSpan head = TextSpan { start: 0, length: 0 }
+    public List<TextSpan> exceptKeyword = List<TextSpan>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// A member; `args` is `null` without parentheses.
+public struct EnumMember {
+    public TextSpan span
+    public TextSpan name
+    public string? doc
+    public List<Argument>? args
+}
+
+/// `enum Name { a, b }`, or `enum Name(T x) { a(1), b(2); }` with associated data (`params` non-null).
+public struct EnumDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Param>? params
+    public List<EnumMember> members
+    public List<TypeSyntax> bases = List<TypeSyntax>()
+    public List<WhereClause> where = List<WhereClause>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// A positional payload field of a union variant: `f32 r`.
+public struct UnionField {
+    public TextSpan span
+    public TypeSyntax type
+    public TextSpan name
+}
+
+/// `circle(f32 r)`, or `none` without a payload; `value` is the `= 1` of `read = 1`.
+public struct UnionVariant {
+    public TextSpan span
+    public TextSpan name
+    public List<UnionField> fields
+    public string? doc
+    public Expr value = .none
+}
+
+public struct UnionDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<UnionVariant> variants
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public List<TypeSyntax> bases = List<TypeSyntax>()
+    public List<WhereClause> where = List<WhereClause>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `type Name = T`, or with `distinct` a `type distinct`.
+public struct TypeAliasDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public TypeSyntax target
+    public bool distinct = false
+    public List<RequiresRule> requiresKeyword = List<RequiresRule>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `effect name = net, fs` (§14).
+public struct EffectDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<TextSpan> effects
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `test "name" { … }`, or `test "name" (T a, U b) { … }`.
+public struct TestDecl {
+    public TextSpan span
+    public string title
+    public List<Param> params
+    public Stmt body
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+// ── Types ────────────────────────────────────────────────────────────────────────
+
+public union TypeSyntax {
+    namedType(Owned<NamedType> node)
+    optionalType(Owned<OptionalType> node)
+    arrayType(Owned<ArrayType> node)
+    tupleType(Owned<TupleType> node)
+    functionTypeSyntax(Owned<FunctionTypeSyntax> node)
+    dynType(Owned<DynType> node)
+    refinedType(Owned<RefinedType> node)
+    pointerType(Owned<PointerType> node)
+    none
+}
+
+/// `Name` or `Name<A, B>`, optionally qualified (`m.Name`).
+public struct NamedType {
+    public TextSpan span
+    public List<TextSpan> path
+    public List<TypeSyntax> args
+}
+
+public struct OptionalType {
+    public TextSpan span
+    public TypeSyntax inner
+}
+
+/// `T[N]`.
+public struct ArrayType {
+    public TextSpan span
+    public TypeSyntax element
+    public Expr size
+}
+
+public struct TupleTypeElement {
+    public TextSpan span
+    public TypeSyntax type
+    public TextSpan? name
+}
+
+public struct TupleType {
+    public TextSpan span
+    public List<TupleTypeElement> elements
+}
+
+/// `P -> R fails E uses e`: `P` is one type, `(A, B)` or `()`.
+public struct FunctionTypeSyntax {
+    public TextSpan span
+    public List<TypeSyntax> params
+    public TypeSyntax returnKeyword
+    public FailsClause? failsKeyword
+    public UsesClause? usesKeyword
+}
+
+/// `dyn ref I`, `dyn ref readonly I`, or `dyn I`; `inner` is a `namedType`.
+public struct DynType {
+    public TextSpan span
+    public bool isRef
+    public bool isReadOnly
+    public TypeSyntax inner
+}
+
+/// `T is .a or .b`.
+public struct RefinedType {
+    public TextSpan span
+    public TypeSyntax inner
+    public List<TextSpan> states
+}
+
+/// `T*`, or `readonly T*`.
+public struct PointerType {
+    public TextSpan span
+    public TypeSyntax pointee
+    public bool readOnly
+}
+
+// ── Statements ───────────────────────────────────────────────────────────────────
+
+public union Stmt {
+    blockStmt(Owned<BlockStmt> node)
+    localDecl(Owned<LocalDecl> node)
+    exprStmt(Owned<ExprStmt> node)
+    assignStmt(Owned<AssignStmt> node)
+    incDecStmt(Owned<IncDecStmt> node)
+    returnStmt(Owned<ReturnStmt> node)
+    failStmt(Owned<FailStmt> node)
+    breakStmt(Owned<BreakStmt> node)
+    continueStmt(Owned<ContinueStmt> node)
+    becomeStmt(Owned<BecomeStmt> node)
+    ifStmt(Owned<IfStmt> node)
+    unlessStmt(Owned<UnlessStmt> node)
+    guardedStmt(Owned<GuardedStmt> node)
+    whileStmt(Owned<WhileStmt> node)
+    doWhileStmt(Owned<DoWhileStmt> node)
+    whileLetStmt(Owned<WhileLetStmt> node)
+    forStmt(Owned<ForStmt> node)
+    labeledStmt(Owned<LabeledStmt> node)
+    switchStmt(Owned<SwitchStmt> node)
+    deferStmt(Owned<DeferStmt> node)
+    assertStmt(Owned<AssertStmt> node)
+    contextStmt(Owned<ContextStmt> node)
+    emptyStmt(Owned<EmptyStmt> node)
+    errorStmt(Owned<ErrorStmt> node)
+    none
+}
+
+public struct BlockStmt {
+    public TextSpan span
+    public List<Stmt> statements
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public enum BindingKind {
+    letKeyword
+    varKeyword
+    constKeyword
+}
+
+/// `let x = e;`, `var T x = e;`, C#-style `T x = e;` (a `var`), optionally `using`.
+public struct LocalDecl {
+    public TextSpan span
+    public BindingKind kind
+    public bool usingKeyword
+    public TypeSyntax type
+    public TextSpan name
+    public Expr init
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct ExprStmt {
+    public TextSpan span
+    public Expr expr
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public enum AssignOp {
+    assign
+    add
+    sub
+    mul
+    div
+    rem
+    andKeyword
+    orKeyword
+    xor
+    shl
+    shr
+    coalesce
+}
+
+public struct AssignStmt {
+    public TextSpan span
+    public Expr target
+    public AssignOp op
+    public Expr value
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct IncDecStmt {
+    public TextSpan span
+    public Expr target
+    public bool increment
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct ReturnStmt {
+    public TextSpan span
+    public Expr value
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `fail .x`.
+public struct FailStmt {
+    public TextSpan span
+    public Expr error
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct BreakStmt {
+    public TextSpan span
+    public TextSpan? label
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct ContinueStmt {
+    public TextSpan span
+    public TextSpan? label
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `become .s(…)`.
+public struct BecomeStmt {
+    public TextSpan span
+    public TextSpan state
+    public List<Argument> args
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// The word after `if`: `if unlikely` or `if never`.
+public enum Likelihood {
+    none
+    unlikely
+    neverKeyword
+}
+
+public struct IfStmt {
+    public TextSpan span
+    public Expr condition
+    public Stmt then
+    public Stmt elseKeyword
+    public Likelihood likelihood = .none
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct UnlessStmt {
+    public TextSpan span
+    public Expr condition
+    public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// A simple statement with a postfix `if`/`unless` (spec §7.3).
+public struct GuardedStmt {
+    public TextSpan span
+    public Stmt statement
+    public bool unlessKeyword
+    public Expr condition
+    public bool unlikely = false
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct WhileStmt {
+    public TextSpan span
+    public Expr condition
+    public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct DoWhileStmt {
+    public TextSpan span
+    public Stmt body
+    public Expr condition
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `while let x = e { … }`.
+public struct WhileLetStmt {
+    public TextSpan span
+    public TextSpan variable
+    public Expr value
+    public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `for x in e`, `for (k, v) in e`, `for try x in e`, or the input form `for (let x in e)`.
+public struct ForStmt {
+    public TextSpan span
+    public BindingKind kind
+    public TypeSyntax type
+    public TextSpan variable
+    public Expr iterable
+    public Stmt body
+    public bool tryKeyword = false
+    public List<TextSpan> names = List<TextSpan>()
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct LabeledStmt {
+    public TextSpan span
+    public TextSpan label
+    public Stmt statement
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// One `case` label: a pattern and optional `when` guard. A `none` pattern is `default`.
+public struct SwitchLabel {
+    public TextSpan span
+    public Pattern pattern
+    public Expr guard
+}
+
+public struct SwitchSection {
+    public TextSpan span
+    public SwitchLabel label
+    public List<Stmt> statements
+}
+
+public struct SwitchStmt {
+    public TextSpan span
+    public Expr value
+    public List<SwitchSection> sections
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public enum DeferKind {
+    always
+    failing
+    panicking
+}
+
+/// `defer stmt;`, `defer failing [(e)] stmt` or `defer panicking [(p)] stmt`.
+public struct DeferStmt {
+    public TextSpan span
+    public DeferKind kind
+    public TextSpan? binding
+    public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// `assert expr;`; `failsKeyword` is the error of `assert f() fails E.x`, `none` for a plain assert.
+public struct AssertStmt {
+    public TextSpan span
+    public Expr condition
+    public Expr failsKeyword = .none
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct NamedArg {
+    public TextSpan span
+    public TextSpan name
+    public Expr value
+}
+
+/// `provide allocator: a { … }`.
+public struct ContextStmt {
+    public TextSpan span
+    public List<NamedArg> values
+    public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+public struct EmptyStmt {
+    public TextSpan span
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+/// Placeholder after a parse error.
+public struct ErrorStmt {
+    public TextSpan span
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+}
+
+// ── Expressions ──────────────────────────────────────────────────────────────────
+
+public union Expr {
+    literalExpr(Owned<LiteralExpr> node)
+    interpolatedExpr(Owned<InterpolatedExpr> node)
+    nameExpr(Owned<NameExpr> node)
+    thisExpr(Owned<ThisExpr> node)
+    memberExpr(Owned<MemberExpr> node)
+    targetMemberExpr(Owned<TargetMemberExpr> node)
+    callExpr(Owned<CallExpr> node)
+    indexExpr(Owned<IndexExpr> node)
+    unaryExpr(Owned<UnaryExpr> node)
+    binaryExpr(Owned<BinaryExpr> node)
+    rangeExpr(Owned<RangeExpr> node)
+    conditionalExpr(Owned<ConditionalExpr> node)
+    castExpr(Owned<CastExpr> node)
+    isExpr(Owned<IsExpr> node)
+    exceptExpr(Owned<ExceptExpr> node)
+    inExpr(Owned<InExpr> node)
+    switchExpr(Owned<SwitchExpr> node)
+    tryExpr(Owned<TryExpr> node)
+    moveExpr(Owned<MoveExpr> node)
+    catchExpr(Owned<CatchExpr> node)
+    caughtErrorExpr(Owned<CaughtErrorExpr> node)
+    jumpExpr(Owned<JumpExpr> node)
+    blockExpr(Owned<BlockExpr> node)
+    structLiteralExpr(Owned<StructLiteralExpr> node)
+    withExpr(Owned<WithExpr> node)
+    spreadExpr(Owned<SpreadExpr> node)
+    mapEntryExpr(Owned<MapEntryExpr> node)
+    collectionExpr(Owned<CollectionExpr> node)
+    tupleExpr(Owned<TupleExpr> node)
+    parenExpr(Owned<ParenExpr> node)
+    lambdaExpr(Owned<LambdaExpr> node)
+    stackallocExpr(Owned<StackallocExpr> node)
+    patternExpr(Owned<PatternExpr> node)
+    errorExpr(Owned<ErrorExpr> node)
+    none
+}
+
+public enum LiteralKind {
+    integer
+    floatKeyword
+    char
+    string
+    rawString
+    cString
+    u16String
+    trueKeyword
+    falseKeyword
+    nullKeyword
+}
+
+/// A literal; `suffix` is the unit/width suffix of a number (`dec`, `u`, …).
+public struct LiteralExpr {
+    public TextSpan span
+    public LiteralKind kind
+    public string text
+    public TextSpan? suffix
+}
+
+public union InterpolationPart {
+    interpolationText(Owned<InterpolationText> node)
+    interpolationHole(Owned<InterpolationHole> node)
+}
+
+/// Literal text with escapes and doubled braces decoded.
+public struct InterpolationText {
+    public TextSpan span
+    public string text
+}
+
+public struct InterpolationHole {
+    public TextSpan span
+    public Expr expr
+    /// The named format specs after the value (`{n, as: .hex}`).
+    public List<Argument> specs = List<Argument>()
+}
+
+public struct InterpolatedExpr {
+    public TextSpan span
+    public List<InterpolationPart> parts
+}
+
+public struct NameExpr {
+    public TextSpan span
+    public TextSpan name
+    public List<TypeSyntax> typeArgs
+}
+
+public struct ThisExpr {
+    public TextSpan span
+}
+
+public struct MemberExpr {
+    public TextSpan span
+    public Expr target
+    public TextSpan member
+    public bool nullConditional
+    /// Explicit type arguments of a generic method call, `x.f<T>()`.
+    public List<TypeSyntax> typeArgs = List<TypeSyntax>()
+}
+
+/// `.member` resolved from the target type.
+public struct TargetMemberExpr {
+    public TextSpan span
+    public TextSpan member
+}
+
+public enum ArgModifier {
+    none
+    refKeyword
+    moveKeyword
+    outKeyword
+    inKeyword
+}
+
+public struct Argument {
+    public TextSpan span
+    public TextSpan? name
+    public ArgModifier modifier
+    public Expr value
+}
+
+public struct CallExpr {
+    public TextSpan span
+    public Expr callee
+    public List<Argument> args
+    public BecauseClause? becauseKeyword = null
+}
+
+public struct IndexExpr {
+    public TextSpan span
+    public Expr target
+    public Expr index
+}
+
+public enum UnaryOp {
+    plus
+    negate
+    notKeyword
+    complement
+    fromEnd
+}
+
+public struct UnaryExpr {
+    public TextSpan span
+    public UnaryOp op
+    public Expr operand
+}
+
+public enum BinaryOp {
+    add
+    sub
+    mul
+    div
+    rem
+    addWrap
+    subWrap
+    mulWrap
+    addSat
+    subSat
+    mulSat
+    shl
+    shr
+    lt
+    gt
+    le
+    ge
+    eq
+    ne
+    bitAnd
+    bitOr
+    bitXor
+    logicalAnd
+    logicalOr
+    coalesce
+}
+
+public struct BinaryExpr {
+    public TextSpan span
+    public BinaryOp op
+    public Expr left
+    public Expr right
+}
+
+/// `a..b` / `a..=b`; either end may be `none` (`..b`, `a..`).
+public struct RangeExpr {
+    public TextSpan span
+    public Expr start
+    public Expr end
+    public bool inclusive
+}
+
+public struct ConditionalExpr {
+    public TextSpan span
+    public Expr condition
+    public Expr whenTrue
+    public Expr whenFalse
+}
+
+public struct CastExpr {
+    public TextSpan span
+    public TypeSyntax type
+    public Expr operand
+}
+
+public struct IsExpr {
+    public TextSpan span
+    public Expr value
+    public Pattern pattern
+}
+
+/// `xs except p`.
+public struct ExceptExpr {
+    public TextSpan span
+    public Expr value
+    public Pattern pattern
+}
+
+/// `x in a..=b`.
+public struct InExpr {
+    public TextSpan span
+    public Expr value
+    public Expr range
+}
+
+public struct SwitchArm {
+    public TextSpan span
+    public Pattern pattern
+    public Expr guard
+    public Expr value
+}
+
+public struct SwitchExpr {
+    public TextSpan span
+    public Expr value
+    public List<SwitchArm> arms
+}
+
+public struct TryExpr {
+    public TextSpan span
+    public Expr operand
+}
+
+/// `move x`.
+public struct MoveExpr {
+    public TextSpan span
+    public Expr operand
+}
+
+/// `e catch h`, `e catch (x) h` or `e catch (Set.variant) h` (`variant` set).
+public struct CatchExpr {
+    public TextSpan span
+    public Expr operand
+    public TextSpan? binding
+    public Expr variant
+    public Expr handler
+}
+
+/// The subject of `catch switch { … }`; `span` is the `switch` keyword.
+public struct CaughtErrorExpr {
+    public TextSpan span
+}
+
+/// `return e`, `break`, `continue` used as a `never` expression after `??` or `catch`.
+public struct JumpExpr {
+    public TextSpan span
+    public Stmt jump
+}
+
+/// `{ … }` as a `catch` handler; `block` is a `blockStmt`.
+public struct BlockExpr {
+    public TextSpan span
+    public Stmt block
+}
+
+public struct FieldInit {
+    public TextSpan span
+    public TextSpan name
+    public Expr value
+}
+
+/// `T { f = v }` or target-typed `{ f = v }` (`type` is `none`).
+public struct StructLiteralExpr {
+    public TextSpan span
+    public TypeSyntax type
+    public List<FieldInit> fields
+}
+
+/// `e with { f = v }`.
+public struct WithExpr {
+    public TextSpan span
+    public Expr target
+    public List<FieldInit> fields
+}
+
+public struct SpreadExpr {
+    public TextSpan span
+    public Expr operand
+}
+
+/// `key: value` inside a collection literal.
+public struct MapEntryExpr {
+    public TextSpan span
+    public Expr key
+    public Expr value
+}
+
+public struct CollectionExpr {
+    public TextSpan span
+    public List<Expr> elements
+}
+
+public struct TupleElement {
+    public TextSpan span
+    public TextSpan? name
+    public Expr value
+}
+
+public struct TupleExpr {
+    public TextSpan span
+    public List<TupleElement> elements
+}
+
+public struct ParenExpr {
+    public TextSpan span
+    public Expr inner
+}
+
+/// `x => body`, `(a, b) => body` or `() => body`; the body is an expression or a block.
+public struct LambdaExpr {
+    public TextSpan span
+    public List<TextSpan> params
+    public Expr body
+    public Stmt block
+}
+
+/// `stackalloc T[n]`.
+public struct StackallocExpr {
+    public TextSpan span
+    public TypeSyntax element
+    public Expr count
+}
+
+/// `pattern T { … }`, a named pattern's value (BYN1046).
+public struct PatternExpr {
+    public TextSpan span
+    public Pattern pattern
+}
+
+/// Placeholder after a parse error.
+public struct ErrorExpr {
+    public TextSpan span
+}
+
+// ── Patterns ─────────────────────────────────────────────────────────────────────
+
+public union Pattern {
+    constantPattern(Owned<ConstantPattern> node)
+    relationalPattern(Owned<RelationalPattern> node)
+    varPattern(Owned<VarPattern> node)
+    discardPattern(Owned<DiscardPattern> node)
+    declarationPattern(Owned<DeclarationPattern> node)
+    notPattern(Owned<NotPattern> node)
+    binaryPattern(Owned<BinaryPattern> node)
+    propertyPattern(Owned<PropertyPattern> node)
+    positionalPattern(Owned<PositionalPattern> node)
+    variantPattern(Owned<VariantPattern> node)
+    slicePattern(Owned<SlicePattern> node)
+    listPattern(Owned<ListPattern> node)
+    none
+}
+
+/// A constant: literal, `.member`, a qualified name or a range.
+public struct ConstantPattern {
+    public TextSpan span
+    public Expr value
+}
+
+public struct RelationalPattern {
+    public TextSpan span
+    public BinaryOp op
+    public Expr value
+}
+
+/// `var x` or `let x`.
+public struct VarPattern {
+    public TextSpan span
+    public TextSpan name
+    public bool isLet = false
+}
+
+public struct DiscardPattern {
+    public TextSpan span
+}
+
+/// `DbError e`.
+public struct DeclarationPattern {
+    public TextSpan span
+    public TypeSyntax type
+    public TextSpan name
+}
+
+public struct NotPattern {
+    public TextSpan span
+    public Pattern operand
+}
+
+public struct BinaryPattern {
+    public TextSpan span
+    public bool isAnd
+    public Pattern left
+    public Pattern right
+}
+
+public struct PropertySubpattern {
+    public TextSpan span
+    public List<TextSpan> path
+    public Pattern pattern
+}
+
+/// `Type { a: p } name`; `{ } v` matches any non-null value.
+public struct PropertyPattern {
+    public TextSpan span
+    public TypeSyntax type
+    public List<PropertySubpattern> properties
+    public TextSpan? designation
+}
+
+/// `Name(p, q)` or `(p, q)`.
+public struct PositionalPattern {
+    public TextSpan span
+    public TypeSyntax type
+    public List<Pattern> elements
+}
+
+/// `.Circle(let r)`; `variant` is a `targetMemberExpr`. `.Circle c` sets `binding` with `elements` empty.
+public struct VariantPattern {
+    public TextSpan span
+    public Expr variant
+    public List<Pattern> elements
+    public TextSpan? binding = null
+}
+
+/// `..` or `.. var rest`.
+public struct SlicePattern {
+    public TextSpan span
+    public Pattern inner
+}
+
+public struct ListPattern {
+    public TextSpan span
+    public List<Pattern> elements
+}

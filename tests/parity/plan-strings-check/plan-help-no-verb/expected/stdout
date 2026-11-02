@@ -1,0 +1,4 @@
+BYN1053 help in the plan does not start with a verb from src/Bayan.Semantics/Lexicon.cs: "each case goes on its own line"
+BYN1053 help not in src/: "each case goes on its own line"
+BYN1053 help not in docs/diagnostics/BYN1053.md: "each case goes on its own line"
+3 string(s) differ from the plan

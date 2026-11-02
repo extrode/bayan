@@ -1,15 +1,15 @@
-error enum ParseError {
+union error ParseError {
     /// Nothing to parse.
-    empty,
+    empty
     /// Not a digit.
-    notDigit,
+    notDigit
 }
 
 i64 parse(string s) fails ParseError {
-    return .empty if s.isEmpty;
-    return .notDigit;
+    fail .empty if s.isEmpty
+    fail .notDigit
 }
 
-let n = parse("x") catch (e) switch {
+let n = parse("x") catch switch {
     .empty => 0,
-};
+}

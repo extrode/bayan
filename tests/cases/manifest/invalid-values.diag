@@ -1,29 +1,30 @@
-error BYN3102: `name` must be a string `namespace/name` of lowercase words joined by `-`, e.g. `"local/tally"`
+error BYN3102: `name` must be a string `namespace/name` of lowercase words joined by `-`, e.g.
+`"local/tally"`
 
-  2 │     name = "Tally",
-    │            ^^^^^^^
+  2 │     name: "Tally",
+    │           ^^^^^^^
 
 error BYN3102: `version` must be a semantic version string, e.g. `"0.1.0"`
 
-  3 │     version = "1.0",
-    │               ^^^^^
+  3 │     version: "1.0",
+    │              ^^^^^
 
 error BYN3102: `edition` must be `2027`, the only edition so far
 
-  4 │     edition = 2026,
-    │               ^^^^
+  4 │     edition: 2026,
+    │              ^^^^
 
 error BYN3102: `kind` must be `.app` or `.lib`
 
-  5 │     kind = .exe,
-    │            ^^^^
+  5 │     kind: .exe,
+    │           ^^^^
 
 error BYN3102: `dist.targets` must be a list of targets, e.g. `[.host, .linuxX64]`
 
-  6 │     dist = Dist { targets = .host, mode = .turbo },
-    │                             ^^^^^
+  6 │     dist: Dist { targets: .host, mode: .turbo },
+    │                           ^^^^^
 
 error BYN3102: `dist.mode` must be `.debug`, `.safe` or `.fast`
 
-  6 │     dist = Dist { targets = .host, mode = .turbo },
-    │                                           ^^^^^^
+  6 │     dist: Dist { targets: .host, mode: .turbo },
+    │                                        ^^^^^^

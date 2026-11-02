@@ -1,0 +1,6 @@
+import rows
+
+void go() fails rows.ReadError {
+    var r = rows.start()
+    for try x in r { print($"{x}") }
+}

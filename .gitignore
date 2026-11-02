@@ -7,3 +7,11 @@ tmp/
 .idea/
 TestResults/
 .claude/worktrees/
+*.o
+*.vsix
+.DS_Store
+__pycache__/
+.cache/
+# parity cases keep stub tools (in/bin/), and the files a tool wrote under bin/ or tmp/ (expected/files/...)
+!tests/parity/**/bin/
+!tests/parity/**/tmp/

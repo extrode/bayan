@@ -1,0 +1,4 @@
+// `HashMap` with the wrong number of type arguments is BYN2830, then `Map`'s argument count (BYN2023).
+void main() {
+    let m: HashMap<i32> = []
+}

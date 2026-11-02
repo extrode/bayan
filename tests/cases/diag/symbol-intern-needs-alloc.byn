@@ -1,0 +1,19 @@
+// `Symbol.intern` copies new text into the symbol table, so it allocates; literals and `.text` do not (spec 008 R3).
+public Symbol undeclared(string text) {
+    return Symbol.intern(text)
+}
+
+public Symbol declared(string text) uses alloc {
+    return Symbol.intern(text)
+}
+
+public string pure() {
+    let s: Symbol = "name"
+    return s.text
+}
+
+void main() {
+    let a = Symbol.intern("main")
+    let b = declared("x")
+    print($"{a} {b} {undeclared("y")} {pure()}")
+}

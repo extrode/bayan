@@ -1,0 +1,10 @@
+Package {
+    name: "local/shop",
+    version: "0.1.0",
+    grammar: Grammar {
+        verbs: "upsert",
+        nouns: [.sku],
+        forms: ["upsert"],
+        rules: [],
+    },
+}

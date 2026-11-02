@@ -1,0 +1,12 @@
+@cases((0, false), (1, true, 2), 3)
+test "quantity bounds" (i32 input, bool valid) {
+    assert(valid == (input > 0))
+}
+
+@cases((1, 2))
+test "positive" (i32 n) {
+    assert(n > 0)
+}
+
+void main() {
+}

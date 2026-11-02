@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "files": {
+    "src/A.cs": {
+      "coverage": 0.8,
+      "mutation": 0.5,
+      "branches": 0.5
+    },
+    "src/B.cs": {
+      "coverage": 1.0,
+      "mutation": null,
+      "branches": 1.0
+    }
+  }
+}

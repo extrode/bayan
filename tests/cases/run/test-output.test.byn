@@ -1,0 +1,9 @@
+test "prints while passing" {
+    print("from print")
+    log("from log")
+    assert(true)
+}
+
+test "quiet" {
+    assert(true)
+}

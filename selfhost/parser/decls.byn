@@ -1,0 +1,1190 @@
+// Declarations A. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 347–928 and 1075–1459 by content:
+// the compilation unit, `DocOf`, modifiers, `ParseDeclaration`, attributes and `because`, the delegate
+// alias, the declaration-start scans, type params, imports, structs with their states and requires
+// rules, the struct `ParseBody(string, …)` site, bases, `where`, and functions with their clauses,
+// particles, params, receivers and refinements. Owner: 
+//
+// A C# method that returns one node kind returns its struct, so the caller sets `doc` and `attributes`
+// (the C# `decl with { … }`) before wrapping it in `Owned`. A C# overload gets the suffix `With`
+// (`parseParamsWith`). Helpers owned by sibling files that have no stub yet are called through the
+// `T4` stand-ins at the end of this file (Q445).
+
+public CompilationUnit parseCompilationUnit(ref Parser p) uses alloc {
+    var members = List<Decl>()
+    while !p.atEnd() {
+        let start = p.pos
+        let errors = p.syntaxErrors
+        if p.kind() == .closeBrace {
+            let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a declaration or statement", arg1: p.describe(p.current()),
+                help: "remove this `}`; it has no matching `{`")
+            let _ = p.advance()
+            continue
+        }
+        var structRules = List<RequiresRule>()
+        let decl = parseDeclaration(ref p, topLevel: true, for: null, to: ref structRules)
+        unless decl is .none { members.append(move decl) }
+        recoverIfNeeded(ref p, from: errors)
+        if p.pos == start { let _ = p.advance() }
+    }
+    return CompilationUnit { span: TextSpan { start: 0, length: p.lexed.source.length }, members: move members }
+}
+
+string? docOf(ref Parser p, for Token token) {
+    unless token.hasDoc { return null }
+    return $"{decodeDoc(p.lexed.source.bytes.span[token.docStart..token.docStart + token.docLength])}"
+}
+
+Modifiers parseModifiers(ref Parser p) {
+    var modifiers = modifierNone
+    while true {
+        var flag = p.kind() switch {
+            .publicKeyword => modifierPublic,
+            .privateKeyword => modifierPrivate,
+            .staticKeyword => modifierStatic,
+            .readonlyKeyword => modifierReadonly,
+            .requiredKeyword => modifierRequired,
+            .uniqueKeyword => modifierUnique,
+            .externKeyword => modifierExtern,
+            .unsafeKeyword => modifierUnsafe,
+            _ => modifierNone,
+        }
+        // `const` starts a statement at module level unless it modifies a declaration.
+        if p.kind() == .constKeyword && isTypeThenName(ref p, at: p.pos + 1)
+            && p.kindAt(scanType(ref p, at: p.pos + 1) + 1) != .equals && !endsBefore(ref p, at: scanType(ref p, at: p.pos + 1) + 1) {
+            flag = modifierConst
+        }
+        if flag == modifierNone { return modifiers }
+        if (modifiers & flag) != 0 {
+            let _ = p.report(.modifierNotAllowed, at: spanOf(p.current()), arg0: p.textOf(p.current()), help: "remove the repeated modifier")
+        }
+        modifiers |= flag
+        let _ = p.advance()
+    }
+}
+
+void rejectModifiers(ref Parser p, for Modifiers modifiers, by Modifiers allowed, at i64 start) {
+    let bad = modifiers & ~allowed
+    if bad == modifierNone { return }
+    // Point at the first offending keyword.
+    for i in start..p.pos {
+        let token = p.lexed.tokens[i]
+        let flag = token.kind switch {
+            .publicKeyword => modifierPublic,
+            .privateKeyword => modifierPrivate,
+            .staticKeyword => modifierStatic,
+            .readonlyKeyword => modifierReadonly,
+            .requiredKeyword => modifierRequired,
+            .constKeyword => modifierConst,
+            .uniqueKeyword => modifierUnique,
+            .externKeyword => modifierExtern,
+            .unsafeKeyword => modifierUnsafe,
+            _ => modifierNone,
+        }
+        if (bad & flag) != 0 {
+            let _ = p.report(.modifierNotAllowed, at: spanOf(token), arg0: p.textOf(token))
+            return
+        }
+    }
+}
+
+/// `.none` is the C# `null`; `structName` is the enclosing struct's name, or null (Q448).
+Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan? structName, to ref List<RequiresRule> structRules) {
+    let first = p.current()
+    var doc = docOf(ref p, for: first)
+    let startIndex = p.pos
+    let start = first.start
+    let attributes = parseAttributes(ref p)
+    if doc is null { doc = docOf(ref p, for: p.current()) }
+    let modifiers = parseModifiers(ref p)
+    let outerExtern = p.inExtern
+    if (modifiers & modifierExtern) != 0 { p.inExtern = true }
+
+    let kind = p.kind()
+    var decl: Decl = .none
+    if kind == .importKeyword && topLevel {
+        rejectModifiers(ref p, for: modifiers, by: modifierNone, at: startIndex)
+        var d = parseImport(ref p, at: start)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.importDecl(Owned(move d))
+    } else if kind == .structKeyword {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate | modifierReadonly | modifierUnique, at: startIndex)
+        for i in startIndex..p.pos {
+            if p.lexed.tokens[i].kind == .uniqueKeyword { reportKeywordOrder(ref p, from: p.lexed.tokens[i], to: p.current(), as: "struct unique") }
+        }
+        var d = parseStruct(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.structDecl(Owned(move d))
+    } else if kind == .unionKeyword && p.peek(1) == .errorKeyword && isName(p.peek(2))
+        || kind == .errorKeyword && (p.peek(1) == .enumKeyword || p.peek(1) == .unionKeyword || p.peek(1) == .setKeyword) {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate, at: startIndex)
+        decl = parseErrorUnion(ref p, at: start, by: modifiers, through: move attributes, doc: doc)
+    } else if kind == .enumKeyword && topLevel {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate, at: startIndex)
+        var d = parseEnum(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.enumDecl(Owned(move d))
+    } else if kind == .unionKeyword && topLevel {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate, at: startIndex)
+        var d = parseUnion(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.unionDecl(Owned(move d))
+    } else if kind == .interfaceKeyword && topLevel {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate, at: startIndex)
+        var d = parseInterface(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.interfaceDecl(Owned(move d))
+    } else if kind == .extensionKeyword && topLevel {
+        rejectModifiers(ref p, for: modifiers, by: modifierNone, at: startIndex)
+        var d = parseExtension(ref p, at: start)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.extensionDecl(Owned(move d))
+    } else if kind == .typeKeyword && p.peek(1) == .identifier && p.peek(2) == .equals
+        || (kind == .typeKeyword || kind == .distinctKeyword) && (p.peek(1) == .distinctKeyword || p.peek(1) == .typeKeyword)
+            && p.peek(1) != kind && isName(p.peek(2)) && p.peek(3) == .equals {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate, at: startIndex)
+        var d = parseTypeAlias(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.typeAliasDecl(Owned(move d))
+    } else if kind == .effectKeyword && topLevel && isName(p.peek(1)) && p.peek(2) == .equals {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate, at: startIndex)
+        var d = parseEffect(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.effectDecl(Owned(move d))
+    } else if kind == .testKeyword && topLevel && modifiers == modifierNone {
+        var d = parseTest(ref p, at: start)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.testDecl(Owned(move d))
+    } else if kind == .delegateKeyword {
+        let keyword = p.advance()
+        let signature = p.pos
+        while p.kind() != .semicolon && p.kind() != .openBrace && p.kind() != .closeBrace && p.kind() != .endOfFile
+            && !breaksLine(ref p, at: p.pos) {
+            let _ = p.advance()
+        }
+        let _ = p.accept(.semicolon)
+        let span = TextSpan.fromBounds(keyword.start, until: p.prevEnd)
+        var aliasType = "(Param) -> Result"
+        let alias = delegateAlias(ref p, at: signature, to: ref aliasType)
+        let aliasName = alias ?? "Name"
+        if alias is null {
+            let _ = p.report(.delegateDecl, at: span, arg0: aliasName, arg1: aliasType, label: "a C# delegate",
+                help: $"declare it as `type {aliasName} = {aliasType}`")
+        } else {
+            let _ = p.reportFix(.delegateDecl, at: span, through: span, by: $"type {aliasName} = {aliasType}", arg0: aliasName,
+                arg1: aliasType, label: "a C# delegate", help: $"declare it as `type {aliasName} = {aliasType}`")
+        }
+    } else if structName is not null && kind == .identifier && p.textOf(p.current()) == p.lexed.source.getText(structName)
+        && p.peek(1) == .openParen {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate, at: startIndex)
+        var d = parseConstructor(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.constructorDecl(Owned(move d))
+    } else if isFunctionStart(ref p) || isNameFirstFunctionStart(ref p, allowNoBody: false) {
+        rejectModifiers(ref p, for: modifiers, by: modifierPublic | modifierPrivate | modifierStatic | modifierUnsafe, at: startIndex)
+        var d = parseFunction(ref p, at: start, by: modifiers)
+        d.doc = doc
+        d.attributes = move attributes
+        decl = Decl.functionDecl(Owned(move d))
+    } else if structName is not null {
+        decl = parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, to: ref structRules, doc: doc)
+    } else if modifiers != modifierNone {
+        let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a declaration after the modifiers", arg1: p.describe(p.current()))
+    } else {
+        let statement = parseStatement(ref p)
+        let span = stmtSpan(in statement)
+        decl = Decl.globalStatement(Owned(GlobalStatement { span: span, statement: move statement, doc: doc, attributes: move attributes }))
+    }
+    p.inExtern = outerExtern
+    return decl
+}
+
+bool isAttributeStart(ref Parser p) =>
+    p.kind() == .at && isName(p.peek(1))
+    || p.kind() == .openBracket && p.peek(1) == .identifier && (p.peek(2) == .openParen || p.peek(2) == .closeBracket)
+
+/// `@name` or `@name(args)`, each with an optional `because "…"`, repeated; the names are checked by
+/// the compiler. `[Name(args)]` is the BYN1045 input form, kept under its source name (Q446).
+List<AttributeSyntax> parseAttributes(ref Parser p) {
+    var attributes = List<AttributeSyntax>()
+    unless isAttributeStart(ref p) { return attributes }
+    while isAttributeStart(ref p) {
+        let start = p.current().start
+        let bracket = p.advance().kind == .openBracket
+        let name = expectName(ref p, what: "an attribute name")
+        let argsStart = p.current().start
+        var args = List<Argument>()
+        if p.kind() == .openParen && (bracket || !breaksLine(ref p, at: p.pos)) { args = parseArguments(ref p) }
+        let argsText = p.prevEnd > argsStart ? p.lexed.source.getText(TextSpan.fromBounds(argsStart, until: p.prevEnd)) : ""
+        var nameText = p.lexed.source.getText(name)
+        if bracket {
+            let _ = p.expect(.closeBracket)
+            let camel = $"{nameText.runes.take(1).lowercased()}{nameText.runes.skip(1)}"
+            let span = p.spanFrom(start)
+            let _ = p.reportFix(.bracketAttribute, at: TextSpan { start: start, length: 1 }, through: span, by: $"@{camel}{argsText}",
+                arg0: $"{nameText}{argsText}", arg1: $"{camel}{argsText}", help: "write the attribute with `@` and a camelCase name")
+            nameText = camel
+        }
+        let span = p.spanFrom(start)
+        var becauseClause: BecauseClause? = null
+        unless bracket { becauseClause = parseBecause(ref p, for: $"@{nameText}", at: span) }
+        var expose = false
+        for i in 0..args.length {
+            if args[i].name is null {
+                switch args[i].value {
+                    case .nameExpr(let n):
+                        if p.lexed.source.getText(n.value.name) == "expose" { expose = true }
+                    default:
+                        continue
+                }
+            }
+        }
+        if becauseClause is null && !bracket && (nameText == "allow" || nameText == "json" && expose) {
+            reportMissingBecause(ref p, for: nameText == "json" ? $"@{nameText}(expose)" : $"@{nameText}", at: span)
+        }
+        attributes.append(AttributeSyntax { span: span, name: name, args: move args, becauseKeyword: becauseClause })
+    }
+    return attributes
+}
+
+/// An optional `because "reason"` on the line of an attribute or a call (J6); an empty reason is BYN8001.
+BecauseClause? parseBecause(ref Parser p, for string construct, at TextSpan constructSpan) {
+    if p.kind() != .becauseKeyword || breaksLine(ref p, at: p.pos) { return null }
+    let start = p.advance().start
+    if p.kind() != .stringLiteral {
+        let _ = p.report(.expected, at: spanOf(p.current()), arg0: "the reason as a string literal", arg1: p.describe(p.current()))
+        return null
+    }
+    let literal = p.advance()
+    let reason = $"{decodeString(p.text(literal))}"
+    if reason.trimmed().isEmpty { reportMissingBecause(ref p, for: construct, at: constructSpan) }
+    return BecauseClause { span: p.spanFrom(start), reason: reason }
+}
+
+/// `@name` or `@name(args)` before a statement (R7), each with its `because "…"`; only `@unobservable`
+/// may come there (BYN1069), and it needs a reason (BYN8001). Every attribute is kept.
+List<AttributeSyntax> parseStatementAttributes(ref Parser p) {
+    var attributes = List<AttributeSyntax>()
+    while p.kind() == .at && isName(p.peek(1)) {
+        let start = p.advance().start
+        let name = expectName(ref p, what: "an attribute name")
+        var args = List<Argument>()
+        if p.kind() == .openParen && !breaksLine(ref p, at: p.pos) { args = parseArguments(ref p) }
+        let span = p.spanFrom(start)
+        let nameText = p.lexed.source.getText(name)
+        let becauseClause = parseBecause(ref p, for: $"@{nameText}", at: span)
+        if nameText != "unobservable" {
+            let _ = p.report(.statementAttribute, at: span, arg0: $"@{nameText}", label: "before a statement",
+                help: "remove the attribute; only `@unobservable` may come before a statement")
+        } else if becauseClause is null {
+            reportMissingBecause(ref p, for: $"@{nameText}", at: span)
+        }
+        attributes.append(AttributeSyntax { span: span, name: name, args: move args, becauseKeyword: becauseClause })
+    }
+    return attributes
+}
+
+void reportMissingBecause(ref Parser p, for string construct, at TextSpan span) {
+    let _ = p.report(.missingBecause, at: span, arg0: construct, label: "bypasses a safety rule",
+        help: "explain the bypass in a `because` clause")
+}
+
+/// The alias name of the C# delegate signature `R Name(A a, B b)` from token `index` to the current
+/// one, its function type in `type`, or null when the line is not that signature (generic, or with
+/// parameter modifiers). The C# returns the pair as a tuple.
+string? delegateAlias(ref Parser p, at i64 index, to ref string type) {
+    let returnEnd = scanType(ref p, at: index)
+    if returnEnd < 0 || !isName(p.kindAt(returnEnd)) || p.kindAt(returnEnd + 1) != .openParen { return null }
+    var types = List<string>()
+    var loneFunction = false
+    var i = returnEnd + 2
+    if p.kindAt(i) != .closeParen {
+        while true {
+            let scanned = scanTypeNested(ref p, at: i, nested: false)
+            let typeEnd = scanned.end
+            loneFunction = scanned.function
+            if typeEnd < 0 || !isName(p.kindAt(typeEnd)) { return null }
+            types.append(tokensText(ref p, from: i, to: typeEnd))
+            i = typeEnd + 1
+            if p.kindAt(i) != .comma { break }
+            i += 1
+        }
+    }
+    if p.kindAt(i) != .closeParen { return null }
+    i += 1
+    if i != p.pos && !(p.kindAt(i) == .semicolon && i + 1 == p.pos) { return null }
+    // A lone tuple type keeps its own parentheses inside the parameter list's, and a lone function type needs them
+    // since `->` is right-associative.
+    var parameters = StrBuf()
+    if types.length == 1 && !types[0].startsWith("(") && !loneFunction {
+        parameters.append(types[0])
+    } else {
+        parameters.append("(")
+        for k in 0..types.length {
+            if k > 0 { parameters.append(", ") }
+            parameters.append(types[k])
+        }
+        parameters.append(")")
+    }
+    type = $"{parameters.finish()} -> {tokensText(ref p, from: index, to: returnEnd)}"
+    return p.textOf(p.lexed.tokens[returnEnd])
+}
+
+/// The source text of tokens `start` up to, not including, `end`.
+string tokensText(ref Parser p, from i64 start, to i64 end) =>
+    p.lexed.source.getText(TextSpan.fromBounds(p.lexed.tokens[start].start, until: p.lexed.tokens[end - 1].end))
+
+bool isTypeThenName(ref Parser p, at i64 index) {
+    let after = scanType(ref p, at: index)
+    return after > 0 && isName(p.kindAt(after))
+}
+
+bool isFunctionStart(ref Parser p) {
+    let after = skipFailsShorthand(ref p, at: scanType(ref p, at: p.pos))
+    if after <= 0 || !isName(p.kindAt(after)) { return false }
+    if p.kindAt(after + 1) == .less {
+        let close = scanTypeArgs(ref p, at: after + 1)
+        if close > 0 { return p.kindAt(close) == .openParen }
+    }
+    return p.kindAt(after + 1) == .openParen
+}
+
+/// The input form `f(…) -> T`, or `f(…)` with no return type before `{` or `fails` on its line
+/// (BYN1043); with `allowNoBody` (an interface member) only the `->` form.
+bool isNameFirstFunctionStart(ref Parser p, bool allowNoBody) {
+    unless isName(p.kind()) { return false }
+    var open = p.pos + 1
+    if p.kindAt(open) == .less { open = scanTypeArgs(ref p, at: open) }
+    if open <= 0 || p.kindAt(open) != .openParen { return false }
+    let close = matchingClose(ref p, at: open)
+    if close < 0 { return false }
+    let next = close + 1
+    if p.kindAt(next) == .arrow { return true }
+    return !allowNoBody && !p.lexed.tokens[next < p.count - 1 ? next : p.count - 1].hasNewlineBefore
+        && (p.kindAt(next) == .openBrace || p.kindAt(next) == .failsKeyword)
+}
+
+/// Whether `name:` starts at `index`: the input form `name: Type` of a declaration (BYN1043).
+bool isNameThenType(ref Parser p, at i64 index) => isName(p.kindAt(index)) && p.kindAt(index + 1) == .colon
+
+/// The input form `name: Type` of a parameter, field or payload (BYN1043); the fix writes `Type name`.
+/// Returns the name, the type in `type` (the C# tuple).
+TextSpan parseNameThenType(ref Parser p, to ref TypeSyntax type) {
+    let name = spanOf(p.advance())
+    let _ = p.advance()
+    type = parseType(ref p)
+    let span = TextSpan.fromBounds(name.start, until: p.prevEnd)
+    let typeText = p.lexed.source.getText(typeSpan(in type))
+    let nameText = p.lexed.source.getText(name)
+    let _ = p.reportFix(.typeNameOrder, at: span, through: span, by: $"{typeText} {nameText}", arg0: $"{nameText}: {typeText}",
+        arg1: $"{typeText} {nameText}", label: "name before type", help: "put the type before the name; declarations are type-first")
+    return name
+}
+
+/// Past the input form `!E` or `!(A, B)` after a return type at `index`, if any.
+i64 skipFailsShorthand(ref Parser p, at i64 index) {
+    if index <= 0 || p.kindAt(index) != .bang { return index }
+    var i = index + 1
+    if p.kindAt(i) != .openParen { return skipErrorType(ref p, at: i) }
+    i = skipErrorType(ref p, at: i + 1)
+    while i > 0 && p.kindAt(i) == .comma { i = skipErrorType(ref p, at: i + 1) }
+    return i > 0 && p.kindAt(i) == .closeParen ? i + 1 : -1
+}
+
+/// Past an error type at `index`: a name with optional type arguments and `?` (not valid after `fails`, but still the input form).
+i64 skipErrorType(ref Parser p, at i64 index) {
+    var i = skipQualifiedName(ref p, at: index)
+    if i > 0 && p.kindAt(i) == .less { i = scanTypeArgs(ref p, at: i) }
+    if i > 0 && p.kindAt(i) == .question { i += 1 }
+    return i
+}
+
+/// Past `a.b.c` at `index`, or -1 if no name starts there.
+i64 skipQualifiedName(ref Parser p, at i64 index) {
+    unless isName(p.kindAt(index)) { return -1 }
+    var i = index
+    while p.kindAt(i + 1) == .dot && isName(p.kindAt(i + 2)) { i += 2 }
+    return i + 1
+}
+
+/// `<T, U>` after a declaration name, or nothing.
+List<TextSpan> parseTypeParams(ref Parser p) {
+    var names = List<TextSpan>()
+    if p.kind() != .less { return names }
+    let _ = p.advance()
+    names.append(expectName(ref p, what: "a type parameter name"))
+    while p.accept(.comma) { names.append(expectName(ref p, what: "a type parameter name")) }
+    let _ = p.expect(.greater)
+    return names
+}
+
+ImportDecl parseImport(ref Parser p, at i64 start) {
+    let _ = p.advance()
+    var path = List<TextSpan>()
+    path.append(expectName(ref p, what: "a module name"))
+    while p.accept(.dot) { path.append(expectName(ref p, what: "a module name")) }
+    var alias: TextSpan? = null
+    if p.accept(.asKeyword) { alias = expectName(ref p, what: "an alias") }
+    expectEnd(ref p)
+    return ImportDecl { span: p.spanFrom(start), path: move path, alias: alias }
+}
+
+/// The C# `ItName` set.
+List<string> itName() {
+    var names = List<string>()
+    names.append("it")
+    return names
+}
+
+StructDecl parseStruct(ref Parser p, at i64 start, by Modifiers modifiers) {
+    let _ = p.advance()
+    var mods = modifiers
+    if p.accept(.uniqueKeyword) { mods |= modifierUnique }
+    let name = expectName(ref p, what: "a struct name")
+    let typeParams = parseTypeParams(ref p)
+    let bases = parseBases(ref p)
+    let where = parseWhere(ref p)
+    var rules = List<RequiresRule>()
+    var states = List<UnionVariant>()
+    var hasStates = false
+    // The C# `stateLines` pairs, as two lists.
+    var stateKeywords = List<Token>()
+    var stateLines = List<UnionVariant>()
+    // The C# `ParseBody("struct", …)`, with the member callback inline.
+    let open = p.expect(.openBrace)
+    var members = List<Decl>()
+    while p.kind() != .closeBrace && !p.atEnd() {
+        let before = p.pos
+        let errors = p.syntaxErrors
+        if atContextual(ref p, as: "states") && p.peek(1) == .openBrace {
+            let keyword = p.current()
+            let block = parseStatesBlock(ref p, for: p.lexed.source.getText(name))
+            if !hasStates {
+                states = move block
+                hasStates = true
+            } else {
+                let _ = p.report(.duplicateDeclaration, at: spanOf(keyword), arg0: "states", label: "a second `states` block",
+                    help: "declare every state in the first `states` block")
+            }
+        } else if atContextual(ref p, as: "state") && isName(p.peek(1)) && (p.peek(2) == .openParen || endsBefore(ref p, at: p.pos + 2)) {
+            let keyword = p.advance()
+            let stateStart = p.current().start
+            let stateName = expectName(ref p, what: "a state name")
+            let payload = parsePayload(ref p, for: stateName)
+            let stateDoc = docOf(ref p, for: keyword)
+            stateKeywords.append(keyword)
+            stateLines.append(UnionVariant { span: p.spanFrom(stateStart), name: stateName, fields: move payload, doc: stateDoc })
+            expectEnd(ref p)
+        } else if p.kind() != .requiresKeyword {
+            let member = parseDeclaration(ref p, topLevel: false, for: name, to: ref rules)
+            unless member is .none { members.append(move member) }
+        } else {
+            rules.append(parseRequiresRule(ref p))
+            expectEnd(ref p)
+        }
+        recoverIfNeeded(ref p, from: errors)
+        if p.pos == before { let _ = p.advance() }
+    }
+    expectClose(ref p, from: open, for: "struct")
+    if stateLines.length > 0 { reportStateLines(ref p, from: in stateKeywords, for: in stateLines, by: hasStates) }
+    // O3: a field's rule that names another field, or has `at .f`, belongs to the struct; one that also reads `it` is BYN3218.
+    // O3 (Q446): parseFieldOrProperty (decls2.byn) splits the `at .f` rules into structRules.
+    var fields = List<string>()
+    for i in 0..members.length {
+        switch members[i] {
+            case .fieldDecl(let f):
+                fields.append(p.lexed.source.getText(f.value.name))
+            default:
+                continue
+        }
+    }
+    let itName = itName()
+    for i in 0..members.length {
+        switch members[i] {
+            case .fieldDecl(let f):
+                for k in 0..f.value.requiresKeyword.length {
+                    if namesAny(ref p, for: in f.value.requiresKeyword[k], from: in fields) && namesAny(ref p, for: in f.value.requiresKeyword[k], from: in itName) {
+                        let _ = p.report(.requiresMixesFields, at: f.value.requiresKeyword[k].span,
+                            help: "split it: an `it` rule under the field, and a struct-level rule with `at .field`")
+                    }
+                }
+            default:
+                continue
+        }
+    }
+    // `states` then the state lines, in order.
+    var reversed = List<UnionVariant>()
+    while stateLines.length > 0 { reversed.append(stateLines.removeLast()) }
+    while reversed.length > 0 { states.append(reversed.removeLast()) }
+    return StructDecl {
+        span: p.spanFrom(start),
+        modifiers: mods,
+        name: name,
+        members: move members,
+        typeParams: move typeParams,
+        bases: move bases,
+        where: move where,
+        rules: move rules,
+        states: move states,
+    }
+}
+
+/// `states { a  b(T x) }`: one state per line, each with an optional named payload (J58).
+List<UnionVariant> parseStatesBlock(ref Parser p, for string structName) {
+    let _ = p.advance()
+    let open = p.expect(.openBrace)
+    var states = List<UnionVariant>()
+    var commas = List<Token>()
+    while isName(p.kind()) {
+        let doc = docOf(ref p, for: p.current())
+        let stateStart = p.current().start
+        let state = expectName(ref p, what: "a state name")
+        let payload = parsePayload(ref p, for: state)
+        states.append(UnionVariant { span: p.spanFrom(stateStart), name: state, fields: move payload, doc: doc })
+        unless nextCase(ref p, to: ref commas) { break }
+    }
+    while p.kind() == .semicolon {
+        let semicolon = p.advance()
+        reportSemicolon(ref p, for: semicolon)
+    }
+    var cases = List<TextSpan>()
+    for i in 0..states.length { cases.append(states[i].span) }
+    reportCaseCommas(ref p, for: structName, from: open, through: in cases, by: in commas)
+    expectClose(ref p, from: open, for: "states block")
+    expectEnd(ref p)
+    return states
+}
+
+/// BYN1059 at each `state x` line (`keywords[i]` with `lines[i]`). Every line shares one fix: the lines
+/// leave their places and one `states` block takes the place of the last, after the members between
+/// them. No fix when the struct already has a block, or a line shares its line with other code.
+void reportStateLines(ref Parser p, from in List<Token> keywords, for in List<UnionVariant> lines, by bool hasBlock) {
+    var starts = List<i64>()
+    var ends = List<i64>()
+    var all = true
+    for i in 0..lines.length {
+        var end: i64 = -1
+        let segmentStart = segment(ref p, from: keywords[i], for: in lines[i], to: ref end)
+        if segmentStart < 0 { all = false }
+        starts.append(segmentStart)
+        ends.append(end)
+    }
+    var hasFix = false
+    var fixSpan = TextSpan { start: 0, length: 0 }
+    var block = StrBuf()
+    if !hasBlock && all {
+        let indent = indentAt(ref p, at: keywords[0].start)
+        for i in 0..starts.length - 1 { block.append(p.lexed.source.getText(TextSpan.fromBounds(ends[i], until: starts[i + 1]))) }
+        block.append(indent)
+        block.append("states {\n")
+        for i in 0..lines.length {
+            block.append(indent)
+            block.append("    ")
+            block.append(p.lexed.source.getText(lines[i].span))
+            block.append("\n")
+        }
+        block.append(indent)
+        block.append("}\n")
+        fixSpan = TextSpan.fromBounds(starts[0], until: ends[ends.length - 1])
+        hasFix = true
+    }
+    let fix = block.finish()
+    for i in 0..lines.length {
+        let span = TextSpan.fromBounds(keywords[i].start, until: lines[i].span.end)
+        let text = p.lexed.source.getText(lines[i].span)
+        if hasFix {
+            let _ = p.reportFix(.stateLineInput, at: span, through: fixSpan, by: fix, arg0: text, label: "the input form",
+                help: "move each state into the struct's `states` block")
+        } else {
+            let _ = p.report(.stateLineInput, at: span, arg0: text, label: "the input form", help: "move each state into the struct's `states` block")
+        }
+    }
+}
+
+/// The C# local `Segment`: the whole line of each `state x`, through its line break, as its start with
+/// its end in `end`; -1 when other code or a comment shares the line.
+i64 segment(ref Parser p, from Token keyword, for in UnionVariant state, to ref i64 end) {
+    end = -1
+    let start = p.lexed.source.getLineSpan(p.lexed.source.getLineIndex(keyword.start)).start
+    for i in start..keyword.start {
+        let b = p.lexed.source.bytes[i]
+        if b != ' ' && b != '\t' { return -1 }
+    }
+    for i in state.span.end..p.lexed.source.bytes.length {
+        let b = p.lexed.source.bytes[i]
+        if b == '\n' {
+            end = i + 1
+            return start
+        }
+        if b != ' ' && b != '\t' && b != '\r' { return -1 }
+    }
+    return -1
+}
+
+/// Whether `rule`'s condition names one of `fields` (not after a `.`).
+bool namesAny(ref Parser p, for in RequiresRule rule, from in List<string> fields) {
+    let span = exprSpan(in rule.condition)
+    var i = tokenAt(ref p, at: span.start)
+    while i < p.count && p.lexed.tokens[i].start < span.end {
+        let token = p.lexed.tokens[i]
+        if token.kind == .identifier && p.kindAt(i - 1) != .dot {
+            let text = p.textOf(token)
+            for k in 0..fields.length {
+                if fields[k] == text { return true }
+            }
+        }
+        i += 1
+    }
+    return false
+}
+
+/// The index of the first token starting at or after `offset`.
+i64 tokenAt(ref Parser p, at i64 offset) {
+    var lo: i64 = 0
+    var hi = p.count
+    while lo < hi {
+        let mid = (lo + hi) / 2
+        if p.lexed.tokens[mid].start < offset { lo = mid + 1 } else { hi = mid }
+    }
+    return lo
+}
+
+/// `requires condition`, or `requires condition at .field`; `it` is the value checked, and a bare
+/// `value` is the BYN1050 input form.
+RequiresRule parseRequiresRule(ref Parser p) {
+    let start = p.advance().start
+    let first = p.pos
+    let condition = parseExpression(ref p)
+    for i in first..p.pos {
+        let token = p.lexed.tokens[i]
+        if token.kind == .identifier && p.textOf(token) == "value" && p.kindAt(i - 1) != .dot {
+            let _ = p.reportFix(.requiresValue, at: spanOf(token), through: spanOf(token), by: "it", label: "the input form",
+                help: "rename `value` to `it`")
+        }
+    }
+    var field: TextSpan? = null
+    if atContextual(ref p, as: "at") && !breaksLine(ref p, at: p.pos) && p.peek(1) == .dot {
+        let _ = p.advance()
+        let _ = p.advance()
+        field = expectName(ref p, what: "a field name")
+    }
+    return RequiresRule { span: p.spanFrom(start), condition: move condition, at: field }
+}
+
+/// `: I, J` after a type's name, or nothing.
+List<TypeSyntax> parseBases(ref Parser p) {
+    var bases = List<TypeSyntax>()
+    unless p.accept(.colon) { return bases }
+    bases.append(parseNamedType(ref p))
+    while p.accept(.comma) { bases.append(parseNamedType(ref p)) }
+    return bases
+}
+
+/// `where T : IA, IB`, repeated, or nothing.
+List<WhereClause> parseWhere(ref Parser p) {
+    var clauses = List<WhereClause>()
+    while atContextual(ref p, as: "where") {
+        let start = p.advance().start
+        let param = expectName(ref p, what: "a type parameter name")
+        let _ = p.expect(.colon)
+        var bounds = List<TypeSyntax>()
+        bounds.append(parseNamedType(ref p))
+        while p.accept(.comma) { bounds.append(parseNamedType(ref p)) }
+        clauses.append(WhereClause { span: p.spanFrom(start), param: param, bounds: move bounds })
+    }
+    return clauses
+}
+
+/// A signature clause of `parseFunction`: the C# `(int Rank, Token Keyword, int End)`.
+struct SignatureClause {
+    i64 rank
+    Token keyword
+    i64 end
+}
+
+FunctionDecl parseFunction(ref Parser p, at i64 start, by Modifiers modifiers, bool allowNoBody = false) {
+    let nameFirst = !isFunctionStart(ref p)
+    var returnType: TypeSyntax = .none
+    unless nameFirst { returnType = parseType(ref p) }
+    let typeEnd = p.prevEnd
+    var shorthand = List<TypeSyntax>()
+    let bang = p.current()
+    if !nameFirst && p.accept(.bang) {
+        if p.accept(.openParen) {
+            shorthand.append(parseType(ref p))
+            while p.accept(.comma) { shorthand.append(parseType(ref p)) }
+            let _ = p.expect(.closeParen)
+        } else {
+            shorthand.append(parseType(ref p))
+        }
+    }
+    let shorthandEnd = p.prevEnd
+    let name = expectName(ref p)
+    let typeParams = parseTypeParams(ref p)
+    let paramsStart = p.current().end
+    var refThis: TextSpan? = null
+    var moveThis: TextSpan? = null
+    var receiverStates = List<TextSpan>()
+    let parameters = parseParamsWith(ref p, to: ref refThis, through: ref moveThis, for: ref receiverStates)
+    let paramsEnd = p.prevEnd
+    if nameFirst { returnType = parseNameFirstReturn(ref p, for: name, at: paramsEnd) }
+    var where = List<WhereClause>()
+    var requiresList = List<Expr>()
+    var becomes: TextSpan? = null
+    // The C# `fails` clause as its span and errors, built after the shorthand is merged in.
+    var failsSpan: TextSpan? = null
+    var failsErrors = List<TypeSyntax>()
+    var usesClause: UsesClause? = null
+    var clauses = List<SignatureClause>()
+    reportRemovedEffects(ref p)
+    while true {
+        let keyword = p.current()
+        var rank: i64 = 0
+        if atContextual(ref p, as: "where") {
+            rank = 0
+            var more = parseWhere(ref p)
+            var back = List<WhereClause>()
+            while more.length > 0 { back.append(more.removeLast()) }
+            while back.length > 0 { where.append(back.removeLast()) }
+        } else if atContextual(ref p, as: "expects") || p.kind() == .requiresKeyword {
+            rank = 1
+            let _ = p.advance()
+            if keyword.kind == .requiresKeyword {
+                let _ = p.reportFix(.requiresOnFunction, at: spanOf(keyword), through: spanOf(keyword), by: "expects", label: "the input form",
+                    help: "use `expects` for a precondition; `requires` is checked at construction")
+            }
+            // The C# `WithoutLambdas(ParseBareCondition)`.
+            let saved = p.setNoLambda(value: true)
+            let condition = parseBareCondition(ref p)
+            p.noLambda = saved
+            requiresList.append(move condition)
+        } else if atContextual(ref p, as: "becomes") && p.peek(1) == .dot {
+            rank = 2
+            let _ = p.advance()
+            let _ = p.advance()
+            becomes = expectName(ref p, what: "a state name")
+        } else if p.kind() == .failsKeyword {
+            rank = 3
+            let failsStart = p.advance().start
+            var errors = List<TypeSyntax>()
+            if p.kind() == .identifier && !atContextual(ref p, as: "where") && !atContextual(ref p, as: "expects")
+                && !(atContextual(ref p, as: "becomes") && p.peek(1) == .dot) {
+                errors.append(parseType(ref p))
+                while p.accept(.comma) { errors.append(parseType(ref p)) }
+            }
+            failsSpan = p.spanFrom(failsStart)
+            failsErrors = move errors
+        } else if p.kind() == .usesKeyword {
+            rank = 4
+            let usesStart = p.advance().start
+            var effects = List<TextSpan>()
+            effects.append(expectName(ref p, what: "an effect name"))
+            while p.accept(.comma) { effects.append(expectName(ref p, what: "an effect name")) }
+            usesClause = UsesClause { span: p.spanFrom(usesStart), effects: move effects }
+        } else {
+            break
+        }
+        clauses.append(SignatureClause { rank: rank, keyword: keyword, end: p.prevEnd })
+        reportRemovedEffects(ref p)
+    }
+    reportClauseOrder(ref p, for: in clauses)
+    if shorthand.length > 0 {
+        // `T!E f() fails F` keeps both sets; the fix rewrites the header through the explicit clause.
+        // The shorthand's types then the clause's, the first of each text kept (the C# `DistinctBy`).
+        var queue = List<TypeSyntax>()
+        while failsErrors.length > 0 { queue.append(failsErrors.removeLast()) }
+        while shorthand.length > 0 { queue.append(shorthand.removeLast()) }
+        var all = List<TypeSyntax>()
+        var texts = List<string>()
+        while queue.length > 0 {
+            let t = queue.removeLast()
+            let text = p.lexed.source.getText(typeSpan(in t))
+            var seen = false
+            for k in 0..texts.length {
+                if texts[k] == text { seen = true }
+            }
+            unless seen {
+                texts.append(text)
+                all.append(move t)
+            }
+        }
+        var joined = StrBuf()
+        for k in 0..texts.length {
+            if k > 0 { joined.append(", ") }
+            joined.append(texts[k])
+        }
+        let errors = joined.finish()
+        // `fails` takes error type names (spec §8): `E?` and `Result<E>` get no fix rather than a wrong one.
+        var plain = true
+        for k in 0..all.length {
+            switch all[k] {
+                case .namedType(let n):
+                    if n.value.args.length > 0 { plain = false }
+                default:
+                    plain = false
+            }
+        }
+        let at = TextSpan.fromBounds(bang.start, until: shorthandEnd)
+        if plain {
+            var end = paramsEnd
+            let explicit = failsSpan
+            if explicit is not null { end = explicit.end }
+            let header = p.lexed.source.getText(TextSpan.fromBounds(name.start, until: paramsEnd))
+            let _ = p.reportFix(.failsShorthand, at: at, through: TextSpan.fromBounds(typeEnd, until: end), by: $" {header} fails {errors}",
+                label: "the input form", help: $"write `fails {errors}` after the parameters")
+        } else {
+            let _ = p.report(.failsShorthand, at: at, label: "the input form",
+                help: "write the error types in a `fails` clause after the parameters")
+        }
+        if failsSpan is null { failsSpan = at }
+        failsErrors = move all
+    }
+    var failsClause: FailsClause? = null
+    let clauseSpan = failsSpan
+    if clauseSpan is not null { failsClause = FailsClause { span: clauseSpan, errors: move failsErrors } }
+    var body: Stmt = .none
+    var expressionBody: Expr = .none
+    if p.kind() == .openBrace {
+        body = parseBlock(ref p)
+    } else if p.accept(.fatArrow) {
+        expressionBody = parseExpression(ref p)
+        expectEnd(ref p)
+    } else if allowNoBody && endsBefore(ref p, at: p.pos) {
+        expectEnd(ref p)
+    } else {
+        let _ = p.expect(.openBrace)
+    }
+    return FunctionDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        returnType: move returnType,
+        name: name,
+        params: move parameters,
+        failsKeyword: move failsClause,
+        body: move body,
+        expressionBody: move expressionBody,
+        typeParams: move typeParams,
+        refThis: refThis,
+        moveThis: moveThis,
+        receiverStates: move receiverStates,
+        paramsStart: paramsStart,
+        requiresKeyword: move requiresList,
+        where: move where,
+        becomes: becomes,
+        usesKeyword: move usesClause,
+    }
+}
+
+/// BYN1065 at the first signature clause that follows one of a later rank (`where`, `expects`,
+/// `becomes`, `fails`, `uses`); the fix sorts the clauses and keeps the gaps between them.
+void reportClauseOrder(ref Parser p, for in List<SignatureClause> clauses) {
+    for i in 1..clauses.length {
+        var before: i64 = -1
+        for k in 0..i {
+            if before < 0 && clauses[k].rank > clauses[i].rank { before = k }
+        }
+        if before < 0 { continue }
+        var texts = List<string>()
+        for k in 0..clauses.length { texts.append(p.lexed.source.getText(TextSpan.fromBounds(clauses[k].keyword.start, until: clauses[k].end))) }
+        // The texts in rank order, stable (the C# `OrderBy`).
+        var sorted = List<string>()
+        for rank in 0..5 {
+            for k in 0..clauses.length {
+                if clauses[k].rank == rank { sorted.append(texts[k]) }
+            }
+        }
+        var sb = StrBuf()
+        sb.append(sorted[0])
+        for k in 1..clauses.length {
+            sb.append(p.lexed.source.getText(TextSpan.fromBounds(clauses[k - 1].end, until: clauses[k].keyword.start)))
+            sb.append(sorted[k])
+        }
+        let moved = p.textOf(clauses[i].keyword)
+        let earlier = p.textOf(clauses[before].keyword)
+        let _ = p.reportFix(.clauseOrder, at: spanOf(clauses[i].keyword),
+            through: TextSpan.fromBounds(clauses[0].keyword.start, until: clauses[clauses.length - 1].end), by: sb.finish(),
+            arg0: moved, arg1: earlier, label: "out of order", help: $"move `{moved}` before `{earlier}`")
+        return
+    }
+}
+
+/// The particle that leads a parameter (`to ref Span<u8> dst`): `for`, `as`, or a word followed by a
+/// passing mode or by a type and a name. A word that is not a particle is BYN5008.
+/// The C# `Particles` set.
+List<string> particles() {
+    var words = List<string>()
+    words.append("from")
+    words.append("to")
+    words.append("until")
+    words.append("through")
+    words.append("at")
+    words.append("by")
+    words.append("for")
+    words.append("as")
+    return words
+}
+
+TextSpan? parseParticle(ref Parser p) {
+    if p.kind() != .forKeyword && p.kind() != .asKeyword {
+        if p.kind() != .identifier || p.textOf(p.lexed.tokens[p.pos]) == "dyn" { return null }
+        let next = p.peek(1)
+        if next != .refKeyword && next != .moveKeyword && next != .outKeyword && next != .inKeyword
+            && !isTypeThenName(ref p, at: p.pos + 1) {
+            return null
+        }
+    }
+    let word = spanOf(p.advance())
+    let text = p.lexed.source.getText(word)
+    let particles = particles()
+    for k in 0..particles.length {
+        if particles[k] == text { return word }
+    }
+    let _ = p.report(.unknownParticle, at: word, arg0: text, label: "not a particle",
+        help: "choose one of `from`, `to`, `until`, `through`, `at`, `by`, `for`, `as`")
+    return null
+}
+
+/// The removed effect words `noalloc`, `nosuspend` and `suspends` after a signature (BYN6001); the fix deletes each.
+void reportRemovedEffects(ref Parser p) {
+    while p.kind() == .noallocKeyword || p.kind() == .nosuspendKeyword || p.kind() == .suspendsKeyword {
+        let word = p.advance()
+        let text = p.textOf(word)
+        let _ = p.reportFix(.noallocRemoved, at: spanOf(word), through: TextSpan.fromBounds(p.lexed.tokens[p.pos - 2].end, until: word.end),
+            by: "", arg0: text, label: "removed", help: $"remove `{text}`")
+    }
+}
+
+/// The return type of the input form `f(…) -> T`, or `void` when none is written (BYN1043); the fix
+/// moves it before the name. The `void` is a path of one empty name at the name's start (Q446).
+TypeSyntax parseNameFirstReturn(ref Parser p, for TextSpan name, at i64 paramsEnd) {
+    let header = p.lexed.source.getText(TextSpan.fromBounds(name.start, until: paramsEnd))
+    let nameText = p.lexed.source.getText(name)
+    if p.kind() == .arrow {
+        let arrow = p.advance()
+        let type = parseType(ref p)
+        let typeText = p.lexed.source.getText(typeSpan(in type))
+        let _ = p.reportFix(.typeNameOrder, at: spanOf(arrow), through: TextSpan.fromBounds(name.start, until: p.prevEnd),
+            by: $"{typeText} {header}", arg0: $"{nameText}(…) -> {typeText}", arg1: $"{typeText} {nameText}(…)",
+            label: "return type after the parameters", help: "put the return type before the name")
+        return type
+    }
+    let at = TextSpan { start: name.start, length: 0 }
+    let _ = p.reportFix(.typeNameOrder, at: name, through: at, by: "void ", arg0: $"{nameText}(…)", arg1: $"void {nameText}(…)",
+        label: "no return type", help: "put `void` before the name when the function returns nothing")
+    var path = List<TextSpan>()
+    path.append(at)
+    return TypeSyntax.namedType(Owned(NamedType { span: at, path: move path, args: List<TypeSyntax>() }))
+}
+
+List<Param> parseParams(ref Parser p) {
+    var refThis: TextSpan? = null
+    var moveThis: TextSpan? = null
+    var receiverStates = List<TextSpan>()
+    return parseParamsWith(ref p, to: ref refThis, through: ref moveThis, for: ref receiverStates, allowRefThis: false)
+}
+
+/// A member's parameters; `ref this` is accepted only first (BYN2117) and returned in `refThis`, a
+/// first `move this` in `moveThis`. A first receiver `this is .s`, `ref this is .s` or `move this is .s`
+/// returns its states in `receiverStates`; a bare `this` is BYN1061.
+List<Param> parseParamsWith(ref Parser p, to ref TextSpan? refThis, through ref TextSpan? moveThis, for ref List<TextSpan> receiverStates,
+    bool allowRefThis = true) {
+    refThis = null
+    moveThis = null
+    receiverStates = List<TextSpan>()
+    let _ = p.expect(.openParen)
+    var list = List<Param>()
+    if p.kind() != .closeParen {
+        // The C# `do … while (Accept(Comma))`; each C# `continue` ends its branch.
+        while true {
+            let start = p.current().start
+            let first = list.length == 0 && refThis is null && moveThis is null && receiverStates.length == 0
+            if allowRefThis && p.kind() == .refKeyword && p.kindAt(p.pos + 1) == .thisKeyword {
+                let _ = p.advance()
+                let _ = p.advance()
+                let span = p.spanFrom(start)
+                if list.length > 0 || refThis is not null || moveThis is not null {
+                    let _ = p.report(.refThisNotFirst, at: span, label: "after other parameters",
+                        help: "move `ref this` to the start of the parameter list")
+                }
+                if refThis is null { refThis = span }
+                if list.length == 0 && receiverStates.length == 0 { receiverStates = parseReceiverState(ref p) }
+            } else if allowRefThis && first && p.kind() == .moveKeyword && p.kindAt(p.pos + 1) == .thisKeyword {
+                let _ = p.advance()
+                let _ = p.advance()
+                moveThis = p.spanFrom(start)
+                receiverStates = parseReceiverState(ref p)
+            } else if allowRefThis && first && p.kind() == .thisKeyword && p.kindAt(p.pos + 1) == .isKeyword {
+                let _ = p.advance()
+                receiverStates = parseReceiverState(ref p)
+            } else if allowRefThis && first && p.kind() == .thisKeyword && (p.kindAt(p.pos + 1) == .comma || p.kindAt(p.pos + 1) == .closeParen) {
+                let self = p.advance()
+                // `this, a` loses `this, `; `(this)` loses `this`.
+                let to = p.kind() == .comma ? p.peekToken(1).start : self.end
+                let _ = p.reportFix(.receiverWithoutState, at: spanOf(self), through: TextSpan.fromBounds(self.start, until: to), by: "",
+                    label: "the default receiver", help: "remove `this`, or add a state: `this is .s`")
+            } else {
+                let rest = atContextual(ref p, as: "rest") && isTypeThenName(ref p, at: p.pos + 1)
+                if rest { let _ = p.advance() }
+                if !rest && atContextual(ref p, as: "params") && isVariadicArray(ref p, at: p.pos + 1) {
+                    list.append(parseParamsInput(ref p, at: start))
+                } else {
+                    var particle: TextSpan? = null
+                    unless rest { particle = parseParticle(ref p) }
+                    let modifier = p.kind() switch {
+                        .refKeyword => ParamModifier.refKeyword,
+                        .moveKeyword => ParamModifier.moveKeyword,
+                        .outKeyword => ParamModifier.outKeyword,
+                        .inKeyword => ParamModifier.inKeyword,
+                        _ => ParamModifier.none,
+                    }
+                    if modifier != .none { let _ = p.advance() }
+                    var type: TypeSyntax = .none
+                    var name = TextSpan { start: 0, length: 0 }
+                    var ellipsis = false
+                    if isNameThenType(ref p, at: p.pos) {
+                        name = parseNameThenType(ref p, to: ref type)
+                    } else {
+                        type = parseType(ref p, fatArrow: true, lists: true)
+                        if p.kind() == .dotDot && p.peek(1) == .dot && !p.peekToken(1).hasTriviaBefore && isName(p.peek(2)) {
+                            list.append(parseEllipsisInput(ref p, at: start, from: move type))
+                            type = .none
+                            ellipsis = true
+                        } else {
+                            name = expectName(ref p, what: "a parameter name")
+                        }
+                    }
+                    unless ellipsis {
+                        let refined = parseRefinement(ref p, from: move type, name: name)
+                        var defaultValue: Expr = .none
+                        let hasDefault = p.accept(.equals)
+                        if hasDefault { defaultValue = parseExpression(ref p) }
+                        let span = p.spanFrom(start)
+                        // `rest` is the last positional parameter; only named optional parameters may follow it (SPEC §10).
+                        var afterRest = false
+                        for k in 0..list.length {
+                            if list[k].rest { afterRest = true }
+                        }
+                        if afterRest && (rest || !hasDefault) {
+                            let _ = p.report(.expected, at: span, arg0: "a named optional parameter after `rest`",
+                                arg1: $"`{p.lexed.source.getText(span)}`",
+                                label: rest ? "a second `rest` parameter" : "a positional parameter after `rest`",
+                                help: rest ? "keep one `rest` parameter" : "give it a default value, or move it before the `rest` parameter")
+                        }
+                        list.append(Param {
+                            span: span,
+                            modifier: modifier,
+                            type: move refined,
+                            name: name,
+                            defaultKeyword: move defaultValue,
+                            particle: particle,
+                            rest: rest,
+                        })
+                    }
+                }
+            }
+            unless p.accept(.comma) { break }
+        }
+    }
+    let _ = p.expect(.closeParen)
+    return list
+}
+
+/// The `is .a or .b` after a receiver's `this`, if written.
+List<TextSpan> parseReceiverState(ref Parser p) {
+    if p.accept(.isKeyword) { return parseStateList(ref p) }
+    return List<TextSpan>()
+}
+
+/// `.a or .b` after `is`: the states of a receiver or a refinement.
+List<TextSpan> parseStateList(ref Parser p) {
+    var states = List<TextSpan>()
+    while true {
+        let _ = p.expect(.dot)
+        states.append(expectName(ref p, what: "a state name"))
+        unless p.accept(.orKeyword) { break }
+    }
+    return states
+}
+
+/// `is .a or .b` after a parameter or field `name`, or after the type of a local annotation or alias,
+/// where `name` is null (J57), wrapping `type`; one state is BYN7006, fixed to `T.s name` or `T.s`.
+TypeSyntax parseRefinement(ref Parser p, from move TypeSyntax type, TextSpan? name = null) {
+    if p.kind() != .isKeyword || p.peek(1) != .dot { return type }
+    let keyword = p.advance()
+    let states = parseStateList(ref p)
+    let typeSpan = typeSpan(in type)
+    if states.length == 1 {
+        let typeText = p.lexed.source.getText(typeSpan)
+        let stateText = p.lexed.source.getText(states[0])
+        let stateType = $"{typeText}.{stateText}"
+        var written = typeText
+        var rewrite = stateType
+        if name is not null {
+            let nameText = p.lexed.source.getText(name)
+            written = $"{typeText} {nameText}"
+            rewrite = $"{stateType} {nameText}"
+        }
+        let _ = p.reportFix(.singleStateInline, at: spanOf(keyword), through: TextSpan.fromBounds(typeSpan.start, until: p.prevEnd),
+            by: rewrite, arg0: written, arg1: stateText, arg2: rewrite, label: "one state", help: $"write the state type `{stateType}`")
+    }
+    return TypeSyntax.refinedType(Owned(RefinedType { span: TextSpan.fromBounds(typeSpan.start, until: p.prevEnd), inner: move type, states: move states }))
+}
+
+/// Whether `T[] name` starts at `index`: the C# `params` array.
+bool isVariadicArray(ref Parser p, at i64 index) {
+    let end = scanType(ref p, at: index)
+    return end > 0 && p.kindAt(end) == .openBracket && p.kindAt(end + 1) == .closeBracket && isName(p.kindAt(end + 2))
+}
+
+/// `params T[] xs`, the BYN1058 input form for `rest ReadOnlySpan<T> xs`.
+Param parseParamsInput(ref Parser p, at i64 start) {
+    let keyword = p.advance()
+    let element = parseType(ref p)
+    let _ = p.advance()
+    let _ = p.advance()
+    let typeEnd = p.prevEnd
+    let name = expectName(ref p, what: "a parameter name")
+    return reportRestInput(ref p, at: start, through: spanOf(keyword), from: move element, until: typeEnd, for: name)
+}
+
+/// `T... xs`, the BYN1058 input form for `rest ReadOnlySpan<T> xs`; the parser is at the `...`.
+Param parseEllipsisInput(ref Parser p, at i64 start, from move TypeSyntax element) {
+    let dots = TextSpan.fromBounds(p.current().start, until: p.peekToken(1).end)
+    let _ = p.advance()
+    let _ = p.advance()
+    let typeEnd = p.prevEnd
+    let name = expectName(ref p, what: "a parameter name")
+    return reportRestInput(ref p, at: start, through: dots, from: move element, until: typeEnd, for: name)
+}
+
+/// The rewritten type's name `ReadOnlySpan` is the span of the element and its brackets (Q446).
+Param reportRestInput(ref Parser p, at i64 start, through TextSpan span, from move TypeSyntax element, until i64 typeEnd, for TextSpan name) {
+    let elementSpan = typeSpan(in element)
+    let elementText = p.lexed.source.getText(elementSpan)
+    let _ = p.reportFix(.restInput, at: span, through: TextSpan.fromBounds(start, until: typeEnd), by: $"rest ReadOnlySpan<{elementText}>",
+        arg0: p.lexed.source.getText(TextSpan.fromBounds(start, until: name.end)), arg1: elementText, arg2: p.lexed.source.getText(name),
+        label: "the input form", help: "declare the variadic parameter with `rest`")
+    let typeSpan = TextSpan.fromBounds(elementSpan.start, until: typeEnd)
+    var path = List<TextSpan>()
+    path.append(typeSpan)
+    var args = List<TypeSyntax>()
+    args.append(move element)
+    let type = TypeSyntax.namedType(Owned(NamedType { span: typeSpan, path: move path, args: move args }))
+    return Param { span: p.spanFrom(start), modifier: .none, type: move type, name: name, defaultKeyword: .none, rest: true }
+}
+
+// ── T4 stand-ins (T15 deletes) ──
+// Stand-ins for helpers that sibling files own and that had no stub when T4 ran (Q445). Each keeps the
+// C# name in camelCase and the C# parameter order; T15 deletes this struct and drops the `` prefix
+// at every call, adjusting a call where the owner's signature differs. A short C# body is ported; a
+// long one is a conservative stub, just enough for the T4 tests' inputs.
+

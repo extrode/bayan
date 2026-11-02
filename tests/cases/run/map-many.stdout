@@ -1,0 +1,7 @@
+count after inserts: 1000
+lookups return the last value: true
+removed 334, count 666
+iterated 666, key sum 332667
+0 present: false, 1 present: true
+last key 0, count 667
+words 500, w0 4, w499 4, w500 false

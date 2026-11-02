@@ -1,0 +1,18 @@
+void show(dyn ref IShape s, dyn ref readonly ICounter c) {
+    let t: dyn ref IShape = s
+    let u: dyn ref readonly IShape = s
+    for x: dyn ref IShape in shapes {
+        print(x.area())
+    }
+    for y: dyn ref readonly IShape in shapes {
+        print(y.area())
+    }
+}
+
+dyn IShape make() => circle
+
+var dyn = 1
+dyn = dyn + 1
+for dyn in xs {
+    print(dyn)
+}

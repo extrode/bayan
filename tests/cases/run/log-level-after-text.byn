@@ -1,0 +1,14 @@
+// The text's parts are evaluated before the `as:` level, left to right as written.
+i64 val() {
+    print("val")
+    return 1
+}
+
+bool pick() {
+    print("pick")
+    return true
+}
+
+void main() {
+    log($"v={val()}", as: pick() ? .warn : .info)
+}

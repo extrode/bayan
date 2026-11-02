@@ -1,0 +1,26 @@
+// Decoding is a codec: `Utf8.decode` fails `Utf8Error` with the byte position of the first invalid sequence,
+// `Utf8.tryDecode` gives null, and `invalid: .replace` writes U+FFFD for each invalid sequence.
+string describe(ReadOnlySpan<u8> bytes) {
+    let s = Utf8.decode(bytes) catch switch {
+        .invalidSequence(let at) => $"invalid at {at}",
+    }
+    let t = Utf8.tryDecode(bytes) ?? "none"
+    let lossy = Utf8.decode(bytes, invalid: .replace)
+    return $"{s}, tryDecode {t}, lossy {lossy} ({lossy.length} bytes)"
+}
+
+void main() fails Utf8Error {
+    let hi: u8[2] = [0x68, 0x69]
+    print(describe(hi.span))
+    let overlongNul: u8[3] = [0x68, 0xC0, 0x80]
+    print(describe(overlongNul.span))
+    let truncated: u8[4] = [0x61, 0xE2, 0x82, 0x62]
+    print(describe(truncated.span))
+    let lone: u8[3] = [0x80, 0x80, 0x61]
+    print(describe(lone.span))
+    let e = Utf8.decode(lone.span) catch switch {
+        .invalidSequence e => $"whole value: at {e.at}",
+    }
+    print(e)
+    print(try Utf8.decode(hi.span))
+}

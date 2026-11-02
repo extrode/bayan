@@ -1,0 +1,8 @@
+let n: i32 = -1
+let m: i8 = -128
+let small: i64 = 255
+let u: u64 = 18446744073709551615
+print($"binary {string(m, as: .binary)} {string(small, as: .binary)}")
+print($"octal {string(small, as: .octal)} {string(n, as: .octal)}")
+print($"decimal {string(m)} {string(n, as: .decimal)} {string(u, as: .decimal)}")
+print($"hex {string(n, as: .hex)} {string(small, as: .hex)}")

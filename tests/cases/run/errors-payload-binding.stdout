@@ -1,0 +1,12 @@
+positional 5000
+positional 9
+positional -42
+positional 0
+retry gave up
+timeout e after 7000
+retry gave up
+stale s 42
+ok 1
+retry gave up
+other
+held 33 -1

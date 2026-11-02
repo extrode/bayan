@@ -1,0 +1,13 @@
+error BYN2410: `switch` does not handle every `Shape`
+
+  7 │ f32 area(Shape s) => s switch {
+    │                      ^ not covered: .circle
+    │
+  help: add the missing arms: .circle
+
+error BYN2410: `switch` does not handle every `Shape`
+
+  14 │     switch s {
+     │            ^ not covered: .circle
+     │
+  help: add the missing cases or a `default:` section

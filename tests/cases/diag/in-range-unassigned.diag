@@ -1,0 +1,6 @@
+error BYN2102: `hi` is used before it is assigned
+
+  3 │ print($"{n in 0..=hi}")
+    │                   ^^ declared without a value on line 1
+    │
+  help: assign it on every path before this, or give the declaration a value

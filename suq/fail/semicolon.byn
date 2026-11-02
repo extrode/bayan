@@ -1,0 +1,3 @@
+// expect: semicolon
+// fix-it: delete the `;` (waqf: a newline ends the statement)
+let x = 1;

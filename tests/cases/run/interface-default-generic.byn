@@ -1,0 +1,16 @@
+interface IShape {
+    i64 area()
+    string describe() => $"area {area()}"
+}
+
+struct Wrapper<T> : IShape {
+    T value
+    i64 size
+
+    i64 area() => size * 2
+}
+
+let w = Wrapper<i32> { value: 1, size: 5 }
+print(w.describe())
+let v = Wrapper<string> { value: "x", size: 7 }
+print(v.describe())

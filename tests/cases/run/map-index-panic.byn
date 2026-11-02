@@ -1,0 +1,4 @@
+var stock = Map<string, i64>()
+stock["tea"] = 3
+print($"tea {stock["tea"]}")
+print($"milk {stock["milk"]}")

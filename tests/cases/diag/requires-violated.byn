@@ -1,0 +1,10 @@
+i32 discount(i32 total, by i32 percent)
+    expects percent in 0..=100
+    => total - total * percent / 100
+
+i32 positive(i32 n) expects n > 0 && n < 1000 => n
+
+let ok = discount(200, by: 25)
+let bad = discount(200, by: 150)
+let runtime = discount(200, by: ok)
+print($"{ok} {bad} {runtime} {positive(0)} {positive(5)}")

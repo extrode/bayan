@@ -1,0 +1,576 @@
+// T2: Bayan.Syntax/Diagnostics/Diagnostic.cs and DiagnosticRenderer.cs, over ctx.byn's Diag, Related and DiagBag.
+//
+// The C# keeps the diagnostics in a `DiagnosticBag` (`Add`, `RemoveRepeats`) and the sink in
+// `Compilation` (`Report`, `ReportInto`); here both hang off `Ctx`. The renderer is the plain style
+// only: `Style.Plain`'s `│` bar, width 100 and no colours. The line and UTF-8 helpers are private
+// copies of `selfhost/lexer/source.byn` and `selfhost/lexer/diagnostics.byn` (those are not `public`).
+
+const bar: string = "│"
+
+/// Prose (message, label, help) wraps at `Style.Plain`'s width.
+const wrapWidth: i64 = 100
+
+// ── Reporting ────────────────────────────────────────────────────────────────
+
+/// Reports `code` at `span` in file `f`, formatting its template with `args` (the C#
+/// `Compilation.Report`). An empty `label`/`help` is C#'s `null`; `hasFix` carries the edit
+/// `fixSpan` → `fixReplacement`.
+void report(ref Ctx c, for SemaCode code, from FileId f, at TextSpan span, by (string a0, string a1, string a2, string a3, string a4) args, string label = "", string help = "", bool hasFix = false, TextSpan? fixSpan = null, string fixReplacement = "") {
+    addDiag(ref c, by: Diag {
+        code: codeText(code),
+        file: f,
+        span: span,
+        message: format(messageFormat(code), by: args),
+        label: label,
+        help: help,
+        isWarning: isWarning(code),
+        hasFix: hasFix,
+        fixSpan: fixSpan ?? TextSpan { start: 0, length: 0 },
+        fixReplacement: fixReplacement,
+        related: List<Related>(),
+    })
+}
+
+/// Appends an already-built diagnostic to the innermost sink (the C# `ReportHeld`/`Add`), or drops
+/// it while `c.quiet`. A `for try` synthetic name's span becomes the C# span it stands for (Q739).
+void addDiag(ref Ctx c, by move Diag d) {
+    if c.quiet { return }
+    var m = move d
+    m.span = t40RealSpan(in c, for: m.span)
+    m.fixSpan = t40RealSpan(in c, for: m.fixSpan)
+    for i in 0..m.related.length {
+        m.related[i].span = t40RealSpan(in c, for: m.related[i].span)
+    }
+    if c.sink >= 0 {
+        c.bags[c.sink].items.append(move m)
+    } else {
+        c.diagnostics.append(move m)
+    }
+}
+
+/// Opens a nested bag and makes it the sink; returns the sink to restore (the C# `ReportInto`).
+i64 pushBag(ref Ctx c) {
+    let previous = c.sink
+    c.bags.append(DiagBag { items: List<Diag>(), previous: previous })
+    c.sink = c.bags.length - 1
+    return previous
+}
+
+/// Restores the sink (the C# `ReportInto` returning the outer bag); the bag's items stay in
+/// `c.bags` for the caller to read.
+void popBag(ref Ctx c, to i64 previous) {
+    c.sink = previous
+}
+
+/// The span `span` stands for: a `for try` synthetic name's (negative start, `t28SyntheticName`) is the iterable's
+/// (Binder.cs:1110-1115); any other span is itself (Q739).
+TextSpan t40RealSpan(in Ctx c, for TextSpan span) => span.start < 0 ? c.syntheticSpans[-1 - span.start] : span
+
+/// Drops each diagnostic that repeats an earlier one's code, file, span and message, keeping the
+/// first (the C# `DiagnosticBag.RemoveRepeats`).
+void removeRepeats(ref Ctx c) {
+    var seen = List<(string, i64, i64, i64, string)>()
+    var repeat = List<bool>()
+    for d in c.diagnostics {
+        let key = (d.code, d.file, d.span.start, d.span.length, d.message)
+        var found = false
+        for k in seen {
+            if k == key { found = true }
+        }
+        if !found { seen.append(key) }
+        repeat.append(found)
+    }
+    var i = repeat.length - 1
+    while i >= 0 {
+        if repeat[i] { c.diagnostics.remove(at: i) }
+        i -= 1
+    }
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+
+/// A span to underline: its line, the span, its label and whether carets or dashes mark it.
+struct Mark {
+    i64 line
+    TextSpan span
+    string label
+    bool primary
+}
+
+/// Renders a diagnostic as plain text (the format `DiagnosticRenderer` fixes):
+///
+///     error BYN2104: `total` is immutable
+///
+///       12 │     total += line.price;
+///          │     ^^^^^ declared with `let` on line 9
+///          │
+///       help: declare it with `var` if it should change
+///          │  9 │     var total = 0;
+///          │    │     +++
+string render(in Ctx c, for in Diag d, by bool includePath) {
+    var sb = StrBuf()
+    let head = $"{severityName(d.isWarning)} {d.code}"
+    var message = List<string>()
+    wrap(d.message, to: ref message, by: Widths { first: wrapWidth - head.length - 2, rest: wrapWidth })
+    sb.append($"{head}: ")
+    appendLines(ref message, to: ref sb, by: "\n")
+    sb.append("\n")
+    let f = d.file
+    if f < 0 { return $"{sb.finish()}" }
+    if includePath {
+        let position = linePosition(c.files[f].text.span, at: d.span.start)
+        sb.append($"  --> {c.files[f].displayPath}:{position.line}:{position.column}\n")
+    }
+    sb.append("\n")
+
+    var spans = List<Mark>()
+    spans.append(Mark { line: lineIndex(c.files[f].text.span, at: d.span.start), span: d.span, label: d.label, primary: true })
+    for r in d.related {
+        spans.append(Mark { line: lineIndex(c.files[f].text.span, at: r.span.start), span: r.span, label: r.label, primary: false })
+    }
+    sortMarks(ref spans)
+
+    var fixLines = List<string>()
+    var fix = FixView { firstLine: 0, markStart: 0, markEnd: 0, marker: "+" }
+    if d.hasFix { fix = applyFix(c.files[f].text.span, from: d.fixSpan, by: d.fixReplacement, to: ref fixLines) }
+
+    var widestLine = spans[spans.length - 1].line + 1
+    if d.hasFix && fix.firstLine + fixLines.length > widestLine { widestLine = fix.firstLine + fixLines.length }
+    let width = $"{widestLine}".length
+    var blankBuf = StrBuf()
+    blankBuf.append("  ")
+    for i in 0..width { blankBuf.append(" ") }
+    blankBuf.append($" {bar}")
+    let blank = $"{blankBuf.finish()}"
+
+    var previous: i64 = -1
+    for k in 0..spans.length {
+        let s = spans[k]
+        let thisLine = lineSpanOf(c.files[f].text.span, at: s.line)
+        if previous != s.line {
+            if previous >= 0 { sb.append($"{blank}\n") }
+            sb.append($"  {lineNumber(s.line + 1, to: width)} {bar} ")
+            display(c.files[f].text.span[thisLine.start..thisLine.end], to: ref sb)
+            sb.append("\n")
+        }
+        previous = s.line
+
+        var underlineEnd = s.span.end < thisLine.end ? s.span.end : thisLine.end
+        if underlineEnd < s.span.start { underlineEnd = s.span.start }
+        let prefix = c.files[f].text.span[thisLine.start..s.span.start]
+        var carets = runeCount(c.files[f].text.span[s.span.start..underlineEnd])
+        if carets < 1 { carets = 1 }
+        sb.append($"{blank} ")
+        indent(prefix, to: ref sb)
+        for i in 0..carets { sb.append(s.primary ? "^" : "-") }
+        if s.label.isEmpty {
+            sb.append("\n")
+            continue
+        }
+        let room = wrapWidth - (2 + width + 3 + runeCount(prefix) + carets + 1)
+        var label = List<string>()
+        wrap(s.label, to: ref label, by: Widths { first: room, rest: room })
+        sb.append($" {label[0]}")
+        for i in 1..label.length {
+            sb.append($"\n{blank} ")
+            indent(prefix, to: ref sb)
+            for j in 0..carets + 1 { sb.append(" ") }
+            sb.append(label[i])
+        }
+        sb.append("\n")
+    }
+
+    if d.help.isEmpty && !d.hasFix { return $"{sb.finish()}" }
+
+    sb.append($"{blank}\n")
+    if !d.help.isEmpty {
+        var help = List<string>()
+        wrap(d.help, to: ref help, by: Widths { first: wrapWidth - 8, rest: wrapWidth - 8 })
+        sb.append("  help: ")
+        appendLines(ref help, to: ref sb, by: "\n        ")
+        sb.append("\n")
+    }
+    if d.hasFix {
+        var offset: i64 = 0
+        for i in 0..fixLines.length {
+            let line = fixLines[i]
+            sb.append($"{blank} {lineNumber(fix.firstLine + i + 1, to: width)} {bar} ")
+            display(line.bytes, to: ref sb)
+            sb.append("\n")
+            let from = fix.markStart - offset > 0 ? fix.markStart - offset : 0
+            let to = fix.markEnd - offset < line.length ? fix.markEnd - offset : line.length
+            if to > from {
+                sb.append($"{blank} ")
+                for j in 0..width { sb.append(" ") }
+                sb.append($" {bar} ")
+                indent(line[0..from].bytes, to: ref sb)
+                for j in 0..runeCount(line[from..to].bytes) { sb.append(fix.marker) }
+                sb.append("\n")
+            }
+            offset += line.length + 1
+        }
+    }
+    return $"{sb.finish()}"
+}
+
+/// Renders `diags` in source order (a stable sort by display path, then span start), separated by
+/// blank lines. Errors past `errorLimit` are skipped and counted in `omitted`; warnings never are
+/// (the C# `DiagnosticRenderer.RenderAll`).
+string renderAll(in Ctx c, from in List<Diag> diags, by bool includePath, until i64 errorLimit, to ref i64 omitted) {
+    omitted = 0
+    let order = sortOrder(in c, from: in diags)
+    var sb = StrBuf()
+    var errors: i64 = 0
+    var first = true
+    for k in 0..order.length {
+        let i = order[k]
+        if !diags[i].isWarning {
+            errors += 1
+            if errors > errorLimit {
+                omitted += 1
+                continue
+            }
+        }
+        if !first { sb.append("\n") }
+        first = false
+        sb.append(render(in c, for: in diags[i], by: includePath))
+    }
+    return $"{sb.finish()}"
+}
+
+/// Indices of `diags` in the C# `Sort` order: `displayPath` (ordinal, "" for no file), then span
+/// start. Insertion sort, so equal keys keep their order.
+List<i64> sortOrder(in Ctx c, from in List<Diag> diags) {
+    var order = List<i64>()
+    for i in 0..diags.length {
+        order.append(i)
+        var j = order.length - 1
+        while j > 0 && before(in c, from: in diags[i], to: in diags[order[j - 1]]) {
+            order[j] = order[j - 1]
+            j -= 1
+        }
+        order[j] = i
+    }
+    return order
+}
+
+/// Whether `a` sorts before `b`: its display path is ordinally smaller, or equal and its span starts
+/// earlier.
+bool before(in Ctx c, from in Diag a, to in Diag b) {
+    let pa = pathOf(in c, for: in a)
+    let pb = pathOf(in c, for: in b)
+    if pa != pb { return pathLess(pa, by: pb) }
+    return a.span.start < b.span.start
+}
+
+/// The path a diagnostic's file renders as, or "" when it has no file.
+string pathOf(in Ctx c, for in Diag d) => d.file < 0 ? "" : c.files[d.file].displayPath
+
+/// Ordinal (byte) string comparison: the C# `StringComparer.Ordinal` for the ASCII paths in use.
+bool pathLess(string a, by string b) {
+    let x = a.bytes
+    let y = b.bytes
+    let n = x.length < y.length ? x.length : y.length
+    for i in 0..n {
+        if x[i] < y[i] { return true }
+        if x[i] > y[i] { return false }
+    }
+    return x.length < y.length
+}
+
+/// "error" or "warning"; every `Diag` here is one of the two.
+string severityName(bool isWarning) => isWarning ? "warning" : "error"
+
+/// Sorts marks by line, keeping the order of marks on the same line (the C# `OrderBy`).
+void sortMarks(ref List<Mark> marks) {
+    for i in 1..marks.length {
+        var j = i
+        while j > 0 && marks[j - 1].line > marks[j].line {
+            let m = marks[j]
+            marks[j] = marks[j - 1]
+            marks[j - 1] = m
+            j -= 1
+        }
+    }
+}
+
+/// Appends `lines` to `sb`, joined by `separator`.
+void appendLines(ref List<string> lines, to ref StrBuf sb, by string separator) {
+    for i in 0..lines.length {
+        if i > 0 { sb.append(separator) }
+        sb.append(lines[i])
+    }
+}
+
+/// `number` right-aligned in `width` columns.
+string lineNumber(i64 number, to i64 width) {
+    let digits = $"{number}"
+    var sb = StrBuf()
+    for i in digits.length..width { sb.append(" ") }
+    sb.append(digits)
+    return $"{sb.finish()}"
+}
+
+/// The fix as shown: its first line, and the byte range in the shown lines to mark with `marker`.
+struct FixView {
+    i64 firstLine
+    i64 markStart
+    i64 markEnd
+    string marker
+}
+
+/// Fills `lines` with the lines touched by the fix, replacement applied, and marks the inserted
+/// text with `+`. A pure removal shows the original lines and marks the removed text with `-`.
+FixView applyFix(ReadOnlySpan<u8> text, from TextSpan fix, by string replacement, to ref List<string> lines) {
+    let firstLine = lineIndex(text, at: fix.start)
+    let lastLine = lineIndex(text, at: fix.end)
+    let before = getText(text, at: TextSpan.fromBounds(lineSpanOf(text, at: firstLine).start, until: fix.start))
+    let after = getText(text, at: TextSpan.fromBounds(fix.end, until: lineSpanOf(text, at: lastLine).end))
+    let original = getText(text, at: fix)
+    let o = original.bytes
+    let r = replacement.bytes
+
+    let common = o.length < r.length ? o.length : r.length
+    var head: i64 = 0
+    while head < common && o[head] == r[head] { head += 1 }
+    while head > 0 && ((head < o.length && (o[head] & 0xC0) == 0x80) || (head < r.length && (r[head] & 0xC0) == 0x80)) { head -= 1 }
+    var tail: i64 = 0
+    while tail < common - head && o[o.length - 1 - tail] == r[r.length - 1 - tail] { tail += 1 }
+    while tail > 0 && (o[o.length - tail] & 0xC0) == 0x80 { tail -= 1 }
+
+    let inserted = r.length - head - tail > 0
+    let shown = inserted ? replacement : original
+    let whole = $"{before}{shown}{after}"
+    var from: i64 = 0
+    for i in 0..whole.length {
+        if whole.bytes[i] == 0x0A {
+            lines.append(whole[from..i])
+            from = i + 1
+        }
+    }
+    lines.append(whole[from..])
+    return FixView {
+        firstLine: firstLine,
+        markStart: before.length + head,
+        markEnd: before.length + shown.length - tail,
+        marker: inserted ? "+" : "-",
+    }
+}
+
+/// Line widths for `wrap`: the first line gets `first` columns, the rest `rest`.
+struct Widths {
+    i64 first
+    i64 rest
+}
+
+/// Fills `lines` with `text` split into lines that fit `widths`. Words are never broken, and a
+/// backticked run counts as one word (the C# `Wrap`/`Words`).
+void wrap(string text, to ref List<string> lines, by Widths widths) {
+    let t = text.bytes
+    var paraFrom: i64 = 0
+    for i in 0..t.length + 1 {
+        if i != t.length && t[i] != 0x0A { continue }
+        let words = splitWords(text[paraFrom..i])
+        var line = ""
+        var lineRunes: i64 = 0
+        var started = false
+        for w in words {
+            let room = lines.length == 0 ? widths.first : widths.rest
+            if started && lineRunes + 1 + runeCount(w.bytes) > room {
+                lines.append(line)
+                line = ""
+                lineRunes = 0
+                started = false
+            }
+            if started {
+                line = $"{line} "
+                lineRunes += 1
+            }
+            line = $"{line}{w}"
+            lineRunes += runeCount(w.bytes)
+            started = true
+        }
+        lines.append(line)
+        paraFrom = i + 1
+    }
+}
+
+/// The space-separated words of `paragraph`, where spaces inside backticks do not separate. An
+/// unpaired backtick is not code, and the paragraph splits on every space (the C# `Words`).
+List<string> splitWords(string paragraph) {
+    let t = paragraph.bytes
+    var code = false
+    var words = List<string>()
+    var start: i64 = 0
+    for i in 0..t.length {
+        if t[i] == 0x60 {
+            code = !code
+        } else if t[i] == 0x20 && !code {
+            words.append(paragraph[start..i])
+            start = i + 1
+        }
+    }
+    words.append(paragraph[start..t.length])
+    if !code { return words }
+    var simple = List<string>()
+    var from: i64 = 0
+    for i in 0..t.length {
+        if t[i] == 0x20 {
+            simple.append(paragraph[from..i])
+            from = i + 1
+        }
+    }
+    simple.append(paragraph[from..t.length])
+    return simple
+}
+
+/// Source text as shown in a diagnostic: control and bidi characters become U+FFFD, one scalar for
+/// one, so carets still line up and the terminal cannot be made to reorder text.
+void display(ReadOnlySpan<u8> text, to ref StrBuf sb) {
+    var pos: i64 = 0
+    while pos < text.length {
+        let d = decodeAt(text, at: pos)
+        let v = d.value
+        let hidden = (v < 0x20 && v != 0x09) || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069)
+        sb.append($"{rune(hidden ? replacementCharacter : v)}")
+        pos += d.length
+    }
+}
+
+/// Whitespace that lines up with `prefix`, keeping its tabs.
+void indent(ReadOnlySpan<u8> prefix, to ref StrBuf sb) {
+    var pos: i64 = 0
+    while pos < prefix.length {
+        let d = decodeAt(prefix, at: pos)
+        sb.append(d.value == 0x09 ? "\t" : " ")
+        pos += d.length
+    }
+}
+
+/// The text of `span`, with invalid UTF-8 replaced as `Encoding.UTF8.GetString` does.
+string getText(ReadOnlySpan<u8> text, at TextSpan span) => utf8(text[span.start..span.end])
+
+/// Number of scalars `bytes` decodes to, counting each replacement as one.
+i64 runeCount(ReadOnlySpan<u8> bytes) {
+    var count: i64 = 0
+    var pos: i64 = 0
+    while pos < bytes.length {
+        pos += decodeAt(bytes, at: pos).length
+        count += 1
+    }
+    return count
+}
+
+// ── Lines ────────────────────────────────────────────────────────────────────
+
+/// Zero-based index of the line containing `offset` (the C# `SourceText.GetLineIndex`).
+i64 lineIndex(ReadOnlySpan<u8> text, at i64 offset) {
+    if offset < 0 || offset > text.length { panic("offset out of range") }
+    var line: i64 = 0
+    for i in 0..offset {
+        if text[i] == 0x0A { line += 1 }
+    }
+    return line
+}
+
+/// The byte offset where line `line` starts.
+i64 lineStart(ReadOnlySpan<u8> text, at i64 line) {
+    if line <= 0 { return 0 }
+    var seen: i64 = 0
+    for i in 0..text.length {
+        if text[i] == 0x0A {
+            seen += 1
+            if seen == line { return i + 1 }
+        }
+    }
+    return text.length
+}
+
+/// The span of line `line`, excluding its terminator (the C# `SourceText.GetLineSpan`).
+TextSpan lineSpanOf(ReadOnlySpan<u8> text, at i64 line) {
+    let start = lineStart(text, at: line)
+    var end = text.length
+    for i in start..text.length {
+        if text[i] == 0x0A {
+            end = i
+            break
+        }
+    }
+    if end > start && text[end - 1] == 0x0D { end -= 1 }
+    return TextSpan.fromBounds(start, until: end)
+}
+
+/// One-based line and column; the column counts Unicode scalars, not bytes (the C#
+/// `SourceText.GetLinePosition`).
+(i64 line, i64 column) linePosition(ReadOnlySpan<u8> text, at i64 offset) {
+    let line = lineIndex(text, at: offset)
+    let start = lineStart(text, at: line)
+    var column: i64 = 1
+    for i in start..offset {
+        if (text[i] & 0xC0) != 0x80 { column += 1 }
+    }
+    return (line: line + 1, column: column)
+}
+
+// ── UTF-8 ────────────────────────────────────────────────────────────────────
+
+const replacementCharacter: u32 = 0xFFFD
+
+/// One decoding step: a scalar and its length, or an invalid maximal subpart of `length` bytes.
+struct Decoded {
+    u32 value
+    i64 length
+    bool valid
+}
+
+bool isContinuation(ReadOnlySpan<u8> bytes, at i64 pos, from u8 lo, through u8 hi) =>
+    pos < bytes.length && bytes[pos] >= lo && bytes[pos] <= hi
+
+/// Decodes the scalar at `pos` like `Rune.DecodeFromUtf8`; an invalid or truncated sequence is
+/// reported with the length of its maximal subpart (at least 1), as `Encoding.UTF8` replaces it.
+Decoded decodeAt(ReadOnlySpan<u8> bytes, at i64 pos) {
+    let b0 = bytes[pos]
+    if b0 < 0x80 { return Decoded { value: b0, length: 1, valid: true } }
+    if b0 >= 0xC2 && b0 <= 0xDF {
+        unless isContinuation(bytes, at: pos + 1, from: 0x80, through: 0xBF) { return invalid(1) }
+        return Decoded { value: (u32(b0 & 0x1F) << 6) | u32(bytes[pos + 1] & 0x3F), length: 2, valid: true }
+    }
+    if b0 >= 0xE0 && b0 <= 0xEF {
+        let lo: u8 = b0 == 0xE0 ? 0xA0 : 0x80
+        let hi: u8 = b0 == 0xED ? 0x9F : 0xBF
+        unless isContinuation(bytes, at: pos + 1, from: lo, through: hi) { return invalid(1) }
+        unless isContinuation(bytes, at: pos + 2, from: 0x80, through: 0xBF) { return invalid(2) }
+        let value = (u32(b0 & 0x0F) << 12) | (u32(bytes[pos + 1] & 0x3F) << 6) | u32(bytes[pos + 2] & 0x3F)
+        return Decoded { value: value, length: 3, valid: true }
+    }
+    if b0 >= 0xF0 && b0 <= 0xF4 {
+        let lo: u8 = b0 == 0xF0 ? 0x90 : 0x80
+        let hi: u8 = b0 == 0xF4 ? 0x8F : 0xBF
+        unless isContinuation(bytes, at: pos + 1, from: lo, through: hi) { return invalid(1) }
+        unless isContinuation(bytes, at: pos + 2, from: 0x80, through: 0xBF) { return invalid(2) }
+        unless isContinuation(bytes, at: pos + 3, from: 0x80, through: 0xBF) { return invalid(3) }
+        let value = (u32(b0 & 0x07) << 18) | (u32(bytes[pos + 1] & 0x3F) << 12) |
+            (u32(bytes[pos + 2] & 0x3F) << 6) | u32(bytes[pos + 3] & 0x3F)
+        return Decoded { value: value, length: 4, valid: true }
+    }
+    return invalid(1)
+}
+
+Decoded invalid(i64 length) => Decoded { value: replacementCharacter, length: length, valid: false }
+
+/// Appends `bytes` decoded as `Encoding.UTF8.GetString` does: each invalid maximal subpart becomes U+FFFD.
+void appendUtf8(ReadOnlySpan<u8> bytes, to ref StrBuf sb) {
+    var pos: i64 = 0
+    while pos < bytes.length {
+        let d = decodeAt(bytes, at: pos)
+        sb.append($"{rune(d.value)}")
+        pos += d.length
+    }
+}
+
+/// `bytes` as a string, with invalid UTF-8 replaced.
+string utf8(ReadOnlySpan<u8> bytes) {
+    var sb = StrBuf()
+    appendUtf8(bytes, to: ref sb)
+    return $"{sb.finish()}"
+}

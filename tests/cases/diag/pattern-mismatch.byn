@@ -1,3 +1,3 @@
-let n = 5;
-let a = n is null;
-let b = (1, 2) is (1, 2, 3);
+let n = 5
+let a = n is null
+let b = (1, 2) is (1, 2, 3)

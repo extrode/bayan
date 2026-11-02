@@ -1,0 +1,9 @@
+struct Options {
+    bool verbose
+}
+
+i64 width(i64 n, bool verbose) => verbose ? n * 2 : n
+i64 optionsWidth(Options options) => width(3, options.verbose)
+
+let verbose = true
+print($"{width(5, verbose)}")

@@ -1,0 +1,11 @@
+interface ICounter {
+    void reset()
+}
+
+struct Counter : ICounter {
+    i64 value
+
+    void reset() {
+        value = 0
+    }
+}

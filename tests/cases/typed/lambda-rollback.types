@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "lambda-rollback.byn",
+      "name": "apply",
+      "span": {
+        "start": 4,
+        "end": 9
+      },
+      "bindings": [
+        {
+          "name": "f",
+          "kind": "param",
+          "span": {
+            "start": 23,
+            "end": 24
+          },
+          "type": "i64 -> i64"
+        },
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 33,
+            "end": 34
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-rollback.byn",
+      "name": "total",
+      "span": {
+        "start": 154,
+        "end": 159
+      },
+      "bindings": [
+        {
+          "name": "start",
+          "kind": "param",
+          "span": {
+            "start": 164,
+            "end": 169
+          },
+          "type": "i64"
+        },
+        {
+          "name": "sum",
+          "kind": "var",
+          "span": {
+            "start": 181,
+            "end": 184
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-rollback.byn",
+      "name": "total$lambda1",
+      "span": {
+        "start": 222,
+        "end": 232
+      },
+      "bindings": [
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 222,
+            "end": 223
+          },
+          "type": "i64"
+        }
+      ],
+      "captures": []
+    },
+    {
+      "path": "lambda-rollback.byn",
+      "name": "main",
+      "span": {
+        "start": 251,
+        "end": 255
+      },
+      "bindings": []
+    }
+  ]
+}

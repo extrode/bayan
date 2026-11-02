@@ -1,0 +1,107 @@
+// T26: the CLI's lines around the diagnostics (Messages.cs:128-139), `ProgramName` (CliApp.cs:528) and
+// `--diagnostics json` (DiagnosticJson.cs).
+// Each message is its `Messages.cs` format with the arguments in place; `mark` is the style's symbol
+// (`Symbols.Ellipsis`, `Cross` or `Dot`).
+
+/// Messages.cs:128 `DiagCapped`: `{0} and {1} more errors (use --all to show them)`.
+string capLine(string mark, by i64 omitted) => $"{mark} and {omitted} more errors (use --all to show them)"
+
+/// Messages.cs:134 `BuildFailed`: `{0} build failed: {1}, {2}`, the counts from `ErrorsOne`/`ErrorsMany`
+/// (`{0} error`/`{0} errors`) and `WarningsOne`/`WarningsMany` (`{0} warning`/`{0} warnings`), as
+/// CliApp.cs:519-522 picks them.
+string buildFailed(string mark, by i64 errors, as i64 warnings) {
+    let e = errors == 1 ? $"{errors} error" : $"{errors} errors"
+    let w = warnings == 1 ? $"{warnings} warning" : $"{warnings} warnings"
+    return $"{mark} build failed: {e}, {w}"
+}
+
+/// Messages.cs:139 `BuildExplain`: `  explain: bayan explain {0}`.
+string buildExplain(string code) => $"  explain: bayan explain {code}"
+
+/// Messages.cs:133 `CheckSummary`: `{0} checked {1} in {2}`; `seconds` is `Messages.Seconds` (`{0}s`).
+string checkSummary(string mark, for string program, by string seconds) => $"{mark} checked {program} in {seconds}"
+
+/// CliApp.cs:528 `ProgramName`: a project's short name, else the file's (a `main.byn` is named after its
+/// directory) or the directory's.
+string programName(ref Ctx c, for string path) {
+    if (c.manifest is { } m) { return t10ShortName(in m) }
+    let full = t11FullPath(path)
+    var name = t11DirectoryExists(full) ? t26FileName(t26TrimEndSlash(full)) : t26FileNameWithoutExtension(full)
+    if name == "main" && !t11DirectoryExists(full) { name = t26FileName(t11DirectoryName(full)) }
+    return name
+}
+
+/// The C# `Path.GetFileName` of a `/` path: everything after the last `/`.
+string t26FileName(string path) {
+    var start: i64 = 0
+    var i: i64 = 0
+    for b in path.bytes {
+        if b == 0x2F { start = i + 1 }
+        i += 1
+    }
+    return path[start..path.length]
+}
+
+/// The C# `Path.GetFileNameWithoutExtension`: the file name up to its last `.`.
+string t26FileNameWithoutExtension(string path) {
+    let name = t26FileName(path)
+    var dot: i64 = -1
+    var i: i64 = 0
+    for b in name.bytes {
+        if b == 0x2E { dot = i }
+        i += 1
+    }
+    if dot < 0 { return name }
+    return name[0..dot]
+}
+
+/// The C# `TrimEnd(Path.DirectorySeparatorChar)`: `path` without its trailing `/`s.
+string t26TrimEndSlash(string path) {
+    var end = path.length
+    while end > 0 && path.bytes[end - 1] == 0x2F { end -= 1 }
+    return path[0..end]
+}
+
+/// DiagnosticJson.cs:18 `Render`: `d` as one compact JSON object, the bytes `Utf8JsonWriter` writes with
+/// `UnsafeRelaxedJsonEscaping`. `file` is the path the renderer prints; an empty label or help is the C#
+/// `null` (Q646).
+string t26DiagnosticJson(in Ctx c, for in Diag d) {
+    var sb = StrBuf()
+    sb.append($"{{\"code\":{t26JsonString(d.code)},\"severity\":{t26JsonString(severityName(d.isWarning))}")
+    if d.file >= 0 {
+        sb.append($",\"file\":{t26JsonString(c.files[d.file].displayPath)},\"span\":")
+        t26JsonSpan(ref sb, from: in c, for: d.file, at: d.span)
+    } else {
+        sb.append(",\"file\":null,\"span\":null")
+    }
+    sb.append($",\"message\":{t26JsonString(d.message)}")
+    sb.append($",\"label\":{t26JsonOptional(d.label)},\"help\":{t26JsonOptional(d.help)},\"fixes\":[")
+    if d.hasFix && d.file >= 0 {
+        sb.append("{\"span\":")
+        t26JsonSpan(ref sb, from: in c, for: d.file, at: d.fixSpan)
+        sb.append($",\"replacement\":{t26JsonString(d.fixReplacement)}}}")
+    }
+    sb.append("]}")
+    return $"{sb.finish()}"
+}
+
+/// DiagnosticJson.cs:61 `RenderAll`: one object per line, each line ending in `\n`.
+string t26DiagnosticJsonAll(in Ctx c, from in List<Diag> diags) {
+    var sb = StrBuf()
+    for d in diags {
+        sb.append(t26DiagnosticJson(in c, for: in d))
+        sb.append("\n")
+    }
+    return $"{sb.finish()}"
+}
+
+/// DiagnosticJson.cs:68 `WriteSpan`: byte offsets and one-based line and column (diag.byn `linePosition`).
+void t26JsonSpan(ref StrBuf sb, from in Ctx c, for FileId file, at TextSpan span) {
+    let start = linePosition(c.files[file].text.span, at: span.start)
+    let end = linePosition(c.files[file].text.span, at: span.end)
+    sb.append($"{{\"start\":{span.start},\"end\":{span.end},\"line\":{start.line},\"column\":{start.column}")
+    sb.append($",\"endLine\":{end.line},\"endColumn\":{end.column}}}")
+}
+
+/// DiagnosticJson.cs:82 `WriteOptional`.
+string t26JsonOptional(string value) => value.length == 0 ? "null" : t26JsonString(value)

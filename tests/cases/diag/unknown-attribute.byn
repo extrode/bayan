@@ -1,0 +1,16 @@
+union error StepError {
+    @retry(3)
+    /// The step timed out.
+    timedOut
+}
+
+@inline
+void step() { }
+
+@exitCode(2)
+void other() { }
+
+void main() {
+    step()
+    other()
+}

@@ -1,0 +1,23 @@
+// `runes`, `utf16`, `lines` and `parts` are lazy views walked by `for`.
+void main() {
+    let s = "aé😀"
+    for r in s.runes {
+        print($"{r.value}")
+    }
+    for u in s.utf16 {
+        print($"{u}")
+    }
+    print($"{s.utf16.copy().length} [{s.runes.take(2)}] [{s.runes.take(9)}]")
+    for line in "one\r\ntwo\n\nfour\n".lines {
+        print($"line [{line}]")
+    }
+    for part in "a,,b,c".parts(by: ",") {
+        print($"part [{part}]")
+    }
+    for part in "k=v=w".parts(by: "=", limit: 2) {
+        print($"limited [{part}]")
+    }
+    for part in "".parts(by: ",") {
+        print($"empty [{part}]")
+    }
+}

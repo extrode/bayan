@@ -1,13 +1,13 @@
 error BYN1008: a postfix `if` applies only to a simple statement
 
-  2 │     { work(); } if ok;
-    │                 ^^
+  2 │     { work() } if ok
+    │                ^^
     │
-  help: put the condition first: `if (cond) { … }`
+  help: put the condition first: `if cond { … }`
 
 error BYN1008: a postfix `if` applies only to a simple statement
 
-  3 │     let x = 1 if ok;
+  3 │     let x = 1 if ok
     │               ^^
     │
-  help: a declaration cannot be conditional; declare the variable, then assign it conditionally
+  help: declare the variable, then assign it conditionally; a declaration cannot be conditional

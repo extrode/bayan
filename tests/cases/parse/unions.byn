@@ -1,0 +1,25 @@
+union Shape {
+    circle(f32 r)
+    rect(f32 w, f32 h)
+    /// Nothing at all.
+    none
+}
+
+public union Token {
+    number(i64 value)
+    word(string text)
+    end
+}
+
+f32 area(Shape s) => s switch {
+    .circle(let r) => r * r,
+    Shape.rect(var w, _) => w,
+    .none => 0,
+}
+
+union Mode {
+    read = 1
+    write = 2
+    append
+    none = -1
+}

@@ -1,0 +1,9 @@
+error BYN2202: expected `bool`, found `string`
+
+  1 │ @cases((1, "yes"), (2, true))
+    │            ^^^^^
+
+error BYN2202: expected `i32`, found `string`
+
+  3 │     let unused: i32 = "no"
+    │                       ^^^^

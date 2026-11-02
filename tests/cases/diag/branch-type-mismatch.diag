@@ -1,4 +1,4 @@
 error BYN2216: branches have different types: `i32` and `string`
 
-  2 │ let x = ok ? 1 : "no";
+  2 │ let x = ok ? 1 : "no"
     │         ^^^^^^^^^^^^^

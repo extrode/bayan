@@ -1,0 +1,4 @@
+// expect: `[Attr]` attribute
+[Derive(Json)]
+struct Line {
+}

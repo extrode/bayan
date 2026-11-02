@@ -1,0 +1,4 @@
+let limit: u64 = 5
+var m = 0
+m += 1
+if m < limit { print("less") }

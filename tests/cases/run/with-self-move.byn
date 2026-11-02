@@ -1,0 +1,14 @@
+struct Ledger {
+    string label
+    List<i64> items
+}
+
+void main() {
+    var items = List<i64>()
+    items.append(1)
+    items.append(2)
+    var ledger = Ledger { label: "daily", items: move items }
+    ledger = ledger with { label: "nightly" }
+    ledger = ledger with { label: "weekly" }
+    print($"{ledger.label} {ledger.items.length}")
+}

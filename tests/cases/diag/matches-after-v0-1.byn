@@ -1,0 +1,5 @@
+// Revision 0011: regexes arrive with `std.regex` after v0.1, so `matches` is an unknown member (BYN2003).
+void main() {
+    let s = "abc"
+    let ok = s.matches("a")
+}

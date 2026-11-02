@@ -31,11 +31,14 @@ public static class Keywords
         ("with", TokenKind.WithKeyword), ("move", TokenKind.MoveKeyword), ("ref", TokenKind.RefKeyword),
         ("out", TokenKind.OutKeyword), ("this", TokenKind.ThisKeyword), ("null", TokenKind.NullKeyword),
         ("true", TokenKind.TrueKeyword), ("false", TokenKind.FalseKeyword), ("comptime", TokenKind.ComptimeKeyword),
-        ("checked", TokenKind.CheckedKeyword), ("test", TokenKind.TestKeyword), ("property", TokenKind.PropertyKeyword),
+        ("checked", TokenKind.CheckedKeyword), ("test", TokenKind.TestKeyword), ("assert", TokenKind.AssertKeyword),
+        ("property", TokenKind.PropertyKeyword),
         ("fuzz", TokenKind.FuzzKeyword), ("model", TokenKind.ModelKeyword), ("foreach", TokenKind.ForeachKeyword),
         ("new", TokenKind.NewKeyword), ("goto", TokenKind.GotoKeyword), ("actor", TokenKind.ActorKeyword),
         ("effect", TokenKind.EffectKeyword), ("macro", TokenKind.MacroKeyword), ("select", TokenKind.SelectKeyword),
-        ("become", TokenKind.BecomeKeyword),
+        ("become", TokenKind.BecomeKeyword), ("fail", TokenKind.FailKeyword), ("law", TokenKind.LawKeyword),
+        ("requires", TokenKind.RequiresKeyword), ("because", TokenKind.BecauseKeyword), ("uses", TokenKind.UsesKeyword),
+        ("except", TokenKind.ExceptKeyword), ("provide", TokenKind.ProvideKeyword), ("ensures", TokenKind.EnsuresKeyword),
     ];
 
     // Bucketed by first letter so lookup compares a handful of byte strings and allocates nothing.
@@ -44,6 +47,13 @@ public static class Keywords
     private static readonly string[] TextByKind = BuildText();
 
     public static IEnumerable<(string Text, TokenKind Kind)> List => All;
+
+    // SPEC §2.4: reserved in every project so C# muscle memory cannot declare a name that shadows a sized type.
+    private static readonly HashSet<string> CSharpPrimitives =
+        ["sbyte", "byte", "short", "ushort", "int", "uint", "long", "ulong", "nint", "nuint", "float", "double"];
+
+    /// <summary>True for a C# primitive type name, which may not be declared as an identifier.</summary>
+    public static bool IsCSharpPrimitive(string text) => CSharpPrimitives.Contains(text);
 
     public static string TextOf(TokenKind kind) => TextByKind[(int)kind - (int)TokenKindFacts.KeywordFirst];
 

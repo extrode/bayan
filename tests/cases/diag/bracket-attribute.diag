@@ -1,0 +1,17 @@
+error BYN1045: `[Cases(1, 2)]` is an input form; write `@cases(1, 2)`
+
+  1 │ [Cases(1, 2)]
+    │ ^
+    │
+  help: write the attribute with `@` and a camelCase name
+    │ 1 │ @cases(1, 2)
+    │   │ ++++++++++++
+
+error BYN1045: `[ExitCode(3)]` is an input form; write `@exitCode(3)`
+
+  7 │     [ExitCode(3)]
+    │     ^
+    │
+  help: write the attribute with `@` and a camelCase name
+    │ 7 │     @exitCode(3)
+    │   │     ++++++++++++

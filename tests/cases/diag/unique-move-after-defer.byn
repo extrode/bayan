@@ -1,0 +1,20 @@
+// A local a `defer` uses runs at scope exit: moving it later in the scope is a use after move (BYN2781).
+void consume(move List<i64> xs) {
+    print($"{xs.length}")
+}
+
+void main() {
+    let xs = List<i64>()
+    defer print($"{xs.length}")
+    consume(move xs)
+
+    let ys = List<i64>()
+    defer print($"{ys.length}")
+    defer consume(move ys)
+}
+
+void movedFirst() {
+    let zs = List<i64>()
+    consume(move zs)
+    defer print($"{zs.length}")
+}

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "pending-peers-unconstrained.byn",
+      "name": "main",
+      "span": {
+        "start": 0,
+        "end": 9
+      },
+      "bindings": [
+        {
+          "name": "a",
+          "kind": "var",
+          "span": {
+            "start": 4,
+            "end": 5
+          },
+          "type": "i32"
+        },
+        {
+          "name": "b",
+          "kind": "var",
+          "span": {
+            "start": 14,
+            "end": 15
+          },
+          "type": "i32"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+error BYN1065: `fails` must come before `uses`; the order is `where`, `expects`, `becomes`, `fails`,
+`uses`
+
+  4 │ i64 parse(string s) uses io fails ParseError {
+    │                             ^^^^^ out of order
+    │
+  help: move `fails` before `uses`
+    │ 4 │ i64 parse(string s) fails ParseError uses io {
+    │   │                     ++++++++++++++++++++++++

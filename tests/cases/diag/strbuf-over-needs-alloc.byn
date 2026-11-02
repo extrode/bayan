@@ -1,0 +1,10 @@
+// `StrBuf.over` spills to `context.allocator`, so it allocates.
+public i64 f() {
+    var s = StrBuf.over(stackalloc u8[2])
+    s.append("abcdefghij")
+    return s.length
+}
+
+public void main() uses console {
+    print($"{f()}")
+}

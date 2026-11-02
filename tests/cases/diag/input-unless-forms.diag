@@ -1,0 +1,35 @@
+error BYN1022: `unless` with `&&`/`||` reads as a double negative
+
+  4 │     unless n > 1 && n < 5 {
+    │     ^^^^^^^^^^^^^^^^^^^^^ a compound condition
+    │
+  help: use `if` with the negated condition
+    │ 4 │     if !(n > 1 && n < 5) {
+    │   │     ++++++++++++++++++++
+
+error BYN1023: `unless x is null` is not allowed; write `if x is not null`
+
+  7 │     unless name is null {
+    │     ^^^^^^^^^^^^^^^^^^^ a negated null test
+    │
+  help: use `if` with `is not null`
+    │ 7 │     if name is not null {
+    │   │     ++++++++++++++
+
+error BYN1033: `unless` takes no likelihood word; write `if unlikely !…` or drop `unlikely`
+
+  10 │     unless unlikely n > 3 {
+     │            ^^^^^^^^ a likelihood word
+     │
+  help: remove the word, or write `if unlikely` with the negated condition
+     │ 10 │     unless unlikely n > 3 {
+     │    │            ---------
+
+error BYN1022: `unless` with `&&`/`||` reads as a double negative
+
+  13 │     print("one") unless n > 1 || n < 0
+     │                  ^^^^^^^^^^^^^^^^^^^^^ a compound condition
+     │
+  help: use `if` with the negated condition
+     │ 13 │     print("one") if !(n > 1 || n < 0)
+     │    │                  ++++++++++++++++++++

@@ -1,0 +1,28 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+    }
+    void pay(move this is .draft, i64 amount) becomes .paid {
+        become .paid(amount)
+    }
+    void settle(this is .draft, i64 amount) becomes .paid {
+        become .paid(amount)
+    }
+    void reset() becomes .draft {
+        become .draft
+    }
+    void retry(i64 amount) becomes .paid {
+        if amount > 0 {
+            return
+        }
+        become .draft
+    }
+    void close(move this) becomes .draft {
+        become .draft
+    }
+    void charge(ref this is .draft, i64 amount) becomes .paid {
+        become .paid(amount)
+    }
+}

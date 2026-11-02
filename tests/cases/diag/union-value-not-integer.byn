@@ -1,0 +1,6 @@
+union Mode {
+    read = 1.5
+    write = "w"
+    big = 3000000000
+    fine = -3
+}

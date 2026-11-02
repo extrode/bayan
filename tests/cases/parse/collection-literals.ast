@@ -1,0 +1,8 @@
+CompilationUnit
+  Let stock = (map (entry "A-1" 12) (entry "B-2" 0))
+  Var prices: Map<Sku, Money> = (list)
+  Let all = (list (spread xs) (spread more) 4)
+  Let fixed = (list 1 2 3)
+  Let nested = (map (entry "k" (list 1 2)) (entry "j" (paren (? a b c))))
+  Let prices: Map<string, Money> = (map (entry "tea" (struct Money (cents 250))) (entry "jam" (struct _ (cents 99))))
+  Let typed = (map (entry "cake" (struct Money (cents 300))))

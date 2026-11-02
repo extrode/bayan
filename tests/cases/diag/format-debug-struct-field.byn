@@ -1,0 +1,6 @@
+struct Q {
+    List<i64> xs
+}
+
+let q = Q { xs: List<i64>() }
+print($"{q, as: .debug}")

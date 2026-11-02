@@ -1,0 +1,9 @@
+union Shape {
+    circle(f32 r)
+    none
+}
+
+void main() {
+    let s = Shape.circle(1)
+    print(s.r)
+}

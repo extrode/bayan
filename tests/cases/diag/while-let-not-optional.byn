@@ -1,0 +1,5 @@
+i64 next() => 1
+
+while let n = next() {
+    print($"{n}")
+}

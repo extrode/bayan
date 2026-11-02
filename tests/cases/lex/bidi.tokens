@@ -2,7 +2,6 @@
 2:5 Identifier `x`
 2:8 Equals `=`
 2:10 IntegerLiteral `1`
-2:11 Semicolon `;`
 3:1 EndOfFile
 
 error BYN0001: bidirectional control character U+202E is not allowed outside string literals
@@ -10,13 +9,17 @@ error BYN0001: bidirectional control character U+202E is not allowed outside str
   1 │ // comment � hidden
     │            ^ invisible character that reorders how the text displays
     │
-  help: remove it; bidi controls may only appear inside string literals (Trojan Source, CVE-2021-42574)
-    │ 1 │ // comment  hidden
+  help: remove it; bidi controls may only appear inside string literals (Trojan Source,
+        CVE-2021-42574)
+    │ 1 │ // comment � hidden
+    │   │            -
 
 error BYN0001: bidirectional control character U+2067 is not allowed outside string literals
 
-  2 │ let x� = 1;
+  2 │ let x� = 1
     │      ^ invisible character that reorders how the text displays
     │
-  help: remove it; bidi controls may only appear inside string literals (Trojan Source, CVE-2021-42574)
-    │ 2 │ let x = 1;
+  help: remove it; bidi controls may only appear inside string literals (Trojan Source,
+        CVE-2021-42574)
+    │ 2 │ let x� = 1
+    │   │      -

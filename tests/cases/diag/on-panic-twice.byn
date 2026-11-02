@@ -1,0 +1,8 @@
+void onCrash(Panic p) {
+    print(p.message)
+}
+
+void main() {
+    Panic.handler = onCrash
+    Panic.handler = onCrash
+}

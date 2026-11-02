@@ -1,0 +1,26 @@
+error BYN2115: `reset` modifies `this` but is not declared `ref this`
+
+  11 │         total = 0
+     │         ^^^^^ `this` is modified here
+     │
+  help: declare it `ref this` as the first parameter
+     │ 10 │     void reset(ref this) {
+     │    │                ++++++++
+
+error BYN2115: `add` modifies `this` but is not declared `ref this`
+
+  16 │         total += by
+     │         ^^^^^ `this` is modified here
+     │
+  help: declare it `ref this` as the first parameter
+     │ 15 │     void add(ref this, i64 by) {
+     │    │              ++++++++++
+
+error BYN2115: `twice` modifies `this` but is not declared `ref this`
+
+  21 │         bump()
+     │         ^^^^ `this` is modified here
+     │
+  help: declare it `ref this` as the first parameter
+     │ 20 │     void twice(ref this) {
+     │    │                ++++++++

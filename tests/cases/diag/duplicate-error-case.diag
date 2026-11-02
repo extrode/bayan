@@ -1,0 +1,6 @@
+error BYN3202: `CarrierError` and `StockError` both have a case `rejected`
+
+  11 │ union error ShipError = CarrierError, StockError
+     │ ^^^^^^^^^^^ two cases `rejected`
+     │
+  help: rename one case, or compose fewer sets

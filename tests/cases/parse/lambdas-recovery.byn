@@ -1,0 +1,11 @@
+delegate bool F(A -> B f)
+
+delegate bool G((A, B) -> C f)
+
+void main() {
+    let r = a < b => b > (a)
+    let s = a switch { 1 when a < b => c > (a), _ => false }
+    let f = (, a) => 1
+    let g = (a] => 1
+    let h = (a,,b) => 1
+}

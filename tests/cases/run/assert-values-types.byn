@@ -1,0 +1,15 @@
+enum Color {
+    red
+    green
+}
+
+let c = Color.green
+let name = "bolts"
+let ratio: f64 = 0.5
+let done: bool = false
+assert(c == Color.green)
+assert(name != "nuts")
+assert(ratio < 1.0)
+assert(done == false)
+print("passed")
+assert(name == c.name)

@@ -1,0 +1,48 @@
+error BYN2824: `print` cannot be used as a value: it is built in
+
+  36 │     let a = say(print)
+     │                 ^^^^^
+     │
+  help: wrap it in a lambda: `text => print(text)`
+
+error BYN2824: `zeroOf` cannot be used as a value: it is generic
+
+  37 │     let b = make(zeroOf)
+     │                  ^^^^^^
+     │
+  help: wrap it in a lambda: `() => zeroOf()`
+
+error BYN2824: `Order.zero` cannot be used as a value: it is a method
+
+  38 │     let c = make(Order.zero)
+     │                  ^^^^^^^^^^
+     │
+  help: wrap it in a lambda: `() => Order.zero()`
+
+error BYN2824: `o.doubled` cannot be used as a value: it is a method
+
+  39 │     let d = make(o.doubled)
+     │                  ^^^^^^^^^
+     │
+  help: wrap it in a lambda: `() => o.doubled()`
+
+error BYN2824: `Point` cannot be used as a value: it is a constructor
+
+  40 │     let e = point(Point)
+     │                   ^^^^^
+     │
+  help: wrap it in a lambda: `x => Point(x)`
+
+error BYN2824: `Shape.circle` cannot be used as a value: it is a union variant
+
+  41 │     let f = shape(Shape.circle)
+     │                   ^^^^^^^^^^^^
+     │
+  help: wrap it in a lambda: `radius => Shape.circle(radius)`
+
+error BYN2824: `Order` cannot be used as a value: it is a constructor
+
+  42 │     let g = order(Order)
+     │                   ^^^^^
+     │
+  help: wrap it in a lambda: `cents => Order(cents)`

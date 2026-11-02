@@ -1,0 +1,18 @@
+type Pred = i32 -> bool
+type Combine = (i32, string) -> i32
+type Tick = () -> void
+type Next = () -> Token fails LexError
+type Send = Order -> void uses net
+type Read = () -> Token fails LexError uses fs
+type Curried = A -> B -> C
+type MaybeB = A -> B?
+
+bool any((Token -> bool) p, i32 n) => true
+i32 indexWhere(Span<Token> items, by (Token -> bool) p) => 0
+void pull((() -> Token fails A, B) next, i32 limit) {
+}
+
+void main() {
+    let f: Pred = isBig
+    let g: i32 -> bool = isBig
+}

@@ -1,0 +1,5 @@
+struct Line {
+    i64 qty
+}
+
+const empty = pattern Line { qty: 0 }

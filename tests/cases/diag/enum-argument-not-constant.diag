@@ -1,0 +1,6 @@
+error BYN2723: argument `bytes` of `Size.large` must be a compile-time constant
+
+  5 │     large(twice(512))
+    │           ^^^^^^^^^^ computed at run time
+    │
+  help: use literals and `const`s only; enum data is static

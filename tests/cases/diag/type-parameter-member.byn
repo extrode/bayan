@@ -1,0 +1,8 @@
+i64 size<T>(T x) => x.length
+string label<T>(T x) => x.toString()
+
+struct Box<T> {
+    T value
+
+    i64 width() => value.count
+}

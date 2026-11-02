@@ -1,10 +1,10 @@
-import ledger;
+import ledger
 
 test "the sample trip balances" {
-    let owed = ledger.balances(try sampleTrip());
-    assert(owed.length == 4);
-    assert(owed[0].name == "alice" && owed[0].cents == 15222);
-    assert(owed[1].name == "bob" && owed[1].cents == -128);
-    assert(owed[2].name == "chen" && owed[2].cents == -5912);
-    assert(owed[3].name == "dina" && owed[3].cents == -9182);
+    let owed = ledger.balances(try sampleTrip())
+    assert(owed.length == 4)
+    assert(owed[0].name == "alice" && owed[0].cents == 15222)
+    assert(owed[1].name == "bob" && owed[1].cents == -128)
+    assert(owed[2].name == "chen" && owed[2].cents == -5912)
+    assert(owed[3].name == "dina" && owed[3].cents == -9182)
 }

@@ -1,50 +1,45 @@
 1:1 CharLiteral `''`
-1:3 Semicolon `;`
 2:1 CharLiteral `'ab'`
-2:5 Semicolon `;`
 3:1 CharLiteral `'\q'`
-3:5 Semicolon `;`
 4:1 CharLiteral `'\u{D800}'`
-4:11 Semicolon `;`
 5:1 CharLiteral `'\u{110000}'`
-5:13 Semicolon `;`
 6:1 CharLiteral `'x`
 7:1 EndOfFile
 
 error BYN0007: empty char literal
 
-  1 │ '';
+  1 │ ''
     │ ^^
     │
   help: write the character between the quotes, e.g. `' '`
 
 error BYN0009: a char literal holds exactly one Unicode scalar
 
-  2 │ 'ab';
+  2 │ 'ab'
     │ ^^^^
     │
   help: use a string literal ("…") for text
 
 error BYN0006: invalid escape sequence `\q`
 
-  3 │ '\q';
+  3 │ '\q'
     │  ^^
     │
-  help: valid escapes are \n \r \t \0 \\ \" \' and \u{…}
+  help: use a valid escape: \n \r \t \0 \\ \" \' and \u{…}
 
 error BYN0013: `\u{D800}` is not a Unicode scalar value
 
-  4 │ '\u{D800}';
+  4 │ '\u{D800}'
     │  ^^^^^^^^
     │
-  help: scalar values are U+0000–U+D7FF and U+E000–U+10FFFF
+  help: use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF
 
 error BYN0013: `\u{110000}` is not a Unicode scalar value
 
-  5 │ '\u{110000}';
+  5 │ '\u{110000}'
     │  ^^^^^^^^^^
     │
-  help: scalar values are U+0000–U+D7FF and U+E000–U+10FFFF
+  help: use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF
 
 error BYN0008: unterminated char literal
 

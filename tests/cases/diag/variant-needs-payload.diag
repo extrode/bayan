@@ -1,0 +1,13 @@
+error BYN2705: variant `circle` carries a payload
+
+  7 │     let s = Shape.circle
+    │             ^^^^^^^^^^^^
+    │
+  help: pass it: `Shape.circle(r)`
+
+error BYN2705: variant `circle` carries a payload
+
+  8 │     let t: Shape = .circle
+    │                    ^^^^^^^
+    │
+  help: pass it: `Shape.circle(r)`

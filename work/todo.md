@@ -12,6 +12,22 @@ wish list; the value is in recording the ones nobody has got to yet.
 Small, clear, and could be picked up without a design decision.
 
 - CI: install zig (or set `BAYAN_CC`) on all three runners so `run/` goldens execute there.
+- `#line`: function signatures and prologues map to `main.c`, so a debugger breakpoint on a function names generated code until its first statement; mapping the signature to the declaration line would fix it.
+- `CliToolchainTests.GeneratedCTheCCompilerRejectsIsAnInternalCompilerError` uses a `/bin/sh` fake compiler and returns early on Windows.
+- `Lexer.cs:571` help still says "wrap it with a cast to the unit type"; casts are BYN1057 since 5.3f, so it should say `T(x)`.
+- Float-to-int conversion saturates in `bayan-rt.h` (`byn_f2i`) instead of trapping as SPEC §6.2 says.
+- `i64.tryFrom` of exactly -2^63 as a float gives `null`; the float range check is `(min-1, max+1)` in `f64`, which rounds at that edge.
+- `let e: u8[0] = []` is BYN4001: the C compiler rejects the emitted "initializer for aggregate with no elements".
+- A generic instantiated once and called from several places reports its instance BYN7012 (Q342) only at the first call; the instance is cached per type arguments.
+- `docs/bayan-handoff.md:250` says `--ci github` will run `bayan fmt --check` and `bayan fmt --check-prose`; the command is `bayan format`, and the CI template does not run it yet.
+- `if a == b` emits `if ((x == y))`, which clang rejects under `-Wall -Werror` (`-Wparentheses-equality`); L016's generator uses `<` to avoid it (008 T10).
+- A tuple-typed struct field (`(i8, i64) f1`) is BYN1001: the parser reads it as a function type; L016's generator nests only structs in structs (008 T10).
+- `Parser.ReportBraceless` (Parser.cs:2408) throws `ArgumentOutOfRangeException` when a braceless `if` body's span starts past `_prevEnd`, reached through a misparse such as an `is { } as` pattern binding; found in 009 T12.
+- `selfhost/lexer/diagnostics.byn:205` `wrap` splits at every space, including inside backticks, while C# `DiagnosticRenderer.Wrap` keeps backticked code one word, so a diagnostic whose prose holds multi-word code can wrap differently; L017's random corpus counts 1 such wrapping-only dump per seed and compares the other 2047 (Q505).
+- `bayan-parse` panics `slice out of range` at `selfhost/lexer/source.byn:80` on an input that makes the C# `Parser.ReportBraceless` throw (Q486); found by L017's random corpus (Q506). A bounds check in `getText` would turn the panic into the non-dump the C# reference produces.
+- 009 T18 (L018 proof): C#'s own spans break child-within-parent on 28 of 128 corrupted and 1,056 of 4,000 random inputs (the `move`/`fail`/labeled `break`/`continue`/`except`/`?.` spans and the dropped-value `ErrorExpr`); the 28 corrupted inputs are `corrupt-valid-AssignStmt.byn`, `corrupt-valid-BecauseClause.byn`, `corrupt-valid-BinaryPattern.byn`, `corrupt-valid-CatchExpr.byn`, `corrupt-valid-CollectionExpr.byn`, `corrupt-valid-ErrorExpr.byn`, `corrupt-valid-ErrorVariant.byn`, `corrupt-valid-FieldInit.byn`, `corrupt-valid-ForStmt.byn`, `corrupt-valid-ImportDecl.byn`, `corrupt-valid-IncDecStmt.byn`, `corrupt-valid-LabeledStmt.byn`, `corrupt-valid-MapEntryExpr.byn`, `corrupt-valid-PropertySubpattern.byn`, `corrupt-valid-RelationalPattern.byn`, `corrupt-valid-SwitchArm.byn`, `corrupt-valid-SwitchLabel.byn`, `corrupt-valid-TargetMemberExpr.byn`, `corrupt-valid-TypeAliasDecl.byn`, `corrupt-valid-VarPattern.byn`, `corrupt-valid-WhileLetStmt.byn`, `corrupt-valid-seed-000.byn`, `corrupt-valid-seed-001.byn`, `corrupt-valid-seed-002.byn`, `corrupt-valid-seed-003.byn`, `corrupt-valid-seed-004.byn`, `corrupt-valid-seed-005.byn`, `corrupt-valid-seed-007.byn`; the 1,056 random inputs are listed by index in `docs/laws/018-no-parser-panic.md` (*Counterexample inputs*), and two random inputs crash C#'s `ReportBraceless` with the port panicking identically — `0x9E3779B97F4A7C15 02184` and `0x9E3779B97F4A7C15 02482`. L018 stays proposed until C# is fixed.
+- Schemata.Rebinds (src/Bayan.Testing/Schemata.cs:69,132) re-binds the whole program per site via Compilation.WithFile; plan 013-plan.md:27 says per enclosing statement. Scaling cost (review c1ebcac33983..9eef3ece0013).
+- Coverage drop check: land.sh only runs quality-baseline.py update because a filtered per-task run can only raise recorded coverage; the drop check waits for a full-suite measurement.
 
 ## Later
 
@@ -33,3 +49,398 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `Scaffold.Git` trims stdout, so `test --changed` with `-z` loses leading whitespace of the first file name.
 - Test timeout detail prints "timed out after 0 s" for sub-second `BAYAN_TEST_TIMEOUT_MS`.
 - `test --changed` on macOS: git reports NFC paths, so a module directory with a non-ASCII name stored in NFD never matches and its tests are skipped. Review 1557d6fd639d..29c1d013a33e.
+- `catch { … }` with a block body does not parse; it is read as a struct literal (found in M15, spec 001).
+- `bayan run` on a single file compiles every `.byn` in that file's directory (found in M15, spec 001).
+- `Map.get` on a map whose value type is already optional returns `V??` without a diagnostic (M20, spec 001).
+- `using` on a `Map` is BYN2226 while `List` allows it (M20, spec 001).
+- A struct with a `List` field passes the formattable check but makes `CEmitter.Format` throw (M20, spec 001).
+- Generated union format helper indents `break;` one level too deep (cosmetic, M18, spec 001).
+- BYN3002 help suggests `.copy(to: alloc)` for an `Owned` value, which has no such method; `RecursiveStruct`/`RecursiveUnion` descriptors now unreferenced in `src/` (M21)
+- Generics (M19): `mod.f<T>(…)` type args on a member expression not wired; shape checks (borrowed fields, recursion) skip instances; polymorphic recursion (`f<T>` → `f<List<T>>`) unbounded; no target-type inference (`Option2.Nothing`, `Pair` without args); generic struct formats as `Pair { … }` without type args; `print(x)` with `x: T` rejected (use `$"{x}"`)
+- Misplaced doc comment above `BoundVariantGroup` in `BinderExpressions.cs` (belongs to `BoundBuiltinGroup`)
+- `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` flaky under parallel runs (seen once by the M19 writer)
+- `List<T>` copied by value (`var b = a; b.add(…)` ×N) shares and reallocs storage: heap use-after-free under the default allocator (ASan, review of spec 001); pre-existing since v0.1, needs `unique`/`move` (spec §9) or a BYN2762-style copy ban
+- `Io.readText` abandons the whole file buffer from `context.allocator` when the bytes are not UTF-8 (`bayan-rt.c` read path)
+- `Io.run` (POSIX): only the pipe fds are `FD_CLOEXEC`; `byn_io_open` uses `fopen` without `"e"`, so open files are inherited by children
+- Flow analysis: `x ??= return 3;` followed by code gives a false BYN2405 "unreachable code" warning (`x = x ?? return 3;` does not); found in the spec 002 loop-3 review
+- L005 proof never runs a real `cmd.exe`: the read-back model in `tests/Bayan.Tests/L005RunBatchTests.cs` encodes cmd rules by hand, so a quoted character cmd.exe or code page 65001 reads differently would pass; needs a Windows run of the generated cases through `cmd.exe` and a `%~1`/`shift` batch file (review of feat/laws-005-007)
+- `map[k].clear()` and `map[k].add(x)` report BYN2106: a `map[k]` receiver is a write target only for `take()` (spec 003 T1); other mutating builtins on a map element need the same `MapWriteTarget` treatment
+- Unverified (spec 003 review, finding F): `StrBuf.take()` refills the place using the current `byn_context` allocator, and RegionAnalysis does not see the `StrBufGrow` the lowering introduces; check whether a `take()` on a `ref StrBuf` from an outer region allocates the refill in the wrong region
+- `_ = move a;` reports BYN2001, while BYN1012's help (for a bare `move a;`) suggests `_ = f();`; either accept a discarded move or change the help text
+- Spec 003 review loop 3: `CEmitter` skips the after-call claim of a root moved anywhere in the statement, even on a branch that does not run (`let n = flag ? consume(move b) : b.grow();`): storage grown on the other branch stays unclaimed; no failing program found
+- xunit `Assert.Contains`/`DoesNotContain` on strings is culture-sensitive, so ICU ignores `\u001b` and `"\u001b["` matches any `[`: the older escape checks in `CliEnvironmentTests` (e.g. `ColorFollowsTheTerminalNoColorAndTheFlag`) can pass or fail for the wrong reason; pass `StringComparison.Ordinal` (found in spec 005 T3)
+- Spec 004 R4: a discarded first pass now drops the generic function instances it created, but not generic struct/union instances (`InstantiateType`), which can stay as unused `i32` instantiations
+- Spec 004 R4: a value derived from a pending `var` through a call (`n = id(n);`, generic `T` inferred from `n`) counts as a typed `i32` use and fixes `n` at `i32`
+- Spec 004 R4: an optional integer target (`i64?`) does not count as a constraining use, so a later `u8` use can still retype the local
+- `SelfhostLexerTests` (`StdinRuns`, sequential `bayan-lex` processes) did not finish within 10 minutes while several worktrees ran `dotnet test` at once (spec 004 T9); the rest of the suite took about 75 s, and running `bayan-lex --json` by hand on `tests/cases/lex/*.byn` exits right away
+- An untyped array literal used directly as a `for` source (`for (let w in ["a", "b"])`) gives BYN2218 "needs a known type here"; infer the element type (found in 004 T15).
+- Spec §21.2 CLI table lists neither `bayan check`, `lex` and `parse` nor the new `types` (spec 004 T16)
+- R4 literal inference (spec 004 review): retyping a `var` at its first constraining use can break a later use that only compiled by widening (`var n = 0; i64 big = n; takeI32(n);` → BYN2202) and silently changes overflow behaviour (`var n = 2147483647; i64 big = n; n += 1;` no longer panics). Consider a lint or requiring all constraining uses to agree.
+- R6 receiver borrows (spec 004 review): reassigning the whole receiver (`b = Buf{…}`) while a span from `b.view()` is alive is not BYN3004 (memory-safe, same as the direct `b.data.span` form).
+- `List.removeRange` on a list of unique elements does not free the removed elements (same as `clear`; spec 004 review).
+- R4 pending-var groups resolve by statement order (`var a = 0; var b = 0; i64 x = a; u8 y = b; a = b;` is BYN2202, swapped declarations compile); a widest-fitting choice would remove the order dependence (review loop 2, 004).
+- `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails when other test suites run concurrently on the machine (per-thread allocation count); passes alone. Seen 4 times during the 004/005 runs.
+- R4 pending-var groups with mixed uses: `var a = 0; var b = 0; a = b; f64 y = a; u8 x = b;` is BYN2202 (group falls back to i32). Needs a rule that picks a type converting to every member's use (u8 here); neither "first integer constraint" (breaks i64+f64) nor "fall back to i32" (breaks u8) works. Dev rejects it too (review loop 3, 004).
+- Round 2 §1: spec §3.12-3.14 still show PascalCase union cases and no case values; `flags` is still lexed (spec-only part of the plan, not done in the unions compiler task).
+- Map literals do not diagnose duplicate constant keys (`["a": 1, "a": 2]` keeps the last); spread element types must match the literal's exactly (no `i32` → `i64` widening per element) (round 2 §11 literals).
+- HANDOFF §10/§18: SPEC §19.2 manifest example and `docs/diagnostics/BYN310x.md` examples still use `field = value`; `examples/*/` have no `package.byn` to migrate (r2-colon step was code only).
+- wasm32-wasi build of `src/runtime/bayan-rt.c` fails on `sys/wait.h`, `signal.h` and `pipe` (pre-existing, seen during the round-2 defer work); `defer panicking` handlers never run there (`BYN_PANIC_CATCH` is 0 without setjmp).
+- Panic handlers (BYN2612) are not checked for allocation inside user functions they call; only direct allocations in the handler body or the `Panic.handler` function are reported.
+- BYN2613 accepts a `let` moved after the handler registers (`let xs = …; defer panicking print($"{xs.length}"); take(move xs);`); the handler would read a moved value.
+- HANDOFF §5 (r2-catch): `T!S` type syntax does not parse today, so `error set` is usable only in `fails`; `/// A type X = T alias` doc in Compilation.cs sits on `MutationCheck` instead of `AliasPlaceholder`.
+- `Messages` (005 T4) formats with the current culture to stay byte-identical; `DiagnosticDescriptor.Format` uses the invariant culture, so `{1:0.0} MB` differs by locale (decide when translations land).
+- R15 (005 T15): `HelpLanguageTests` scans help literals right after `help:`/`help =`; ternary branches and help variables built from lists (e.g. `OwnershipAnalysis` options) are only covered through the goldens, and CLI `stderr.WriteLine("  help: …")` lines in `Dist.cs`/`Scaffold.cs` are not scanned.
+- `bayan test` (005 T12): the "top three stack frames" trim is untested end to end because the runtime prints one `at file:line` frame per panic.
+- The error cap line (`… and N more errors`) follows the last diagnostic with no blank line between them (`tests/cases/style/diag-cap.*`); the guide does not say which (005 T14).
+- `bayan test -v` pass lines have no per-test timing (spec 005 R8 asked for one)
+- `bayan test -v` pending line is `  ◆ <module>: <name> (pending)`, not the planned `  pending <module>: <name>: <message>` (spec 005)
+- Diagnostics for loose files show absolute paths in `-->` (spec 005 R4: relative to the package root)
+- On a tty, .NET console setup writes the keypad escape `\e[?1h\e=` (also after each child process), so `NO_COLOR` output is not escape-free; pre-existing on dev (005 review A1)
+- The ASCII / `TERM=dumb` progress line leaves `... <phase>` in scrollback; the guide's §6 "removed when the operation finishes" and "prints `... <phase>` once" disagree (005 review A5)
+- `src/Bayan.Cli/Progress.cs:60-67` `Columns` counts emoji outside U+1F300–1F64F/U+1F900–1F9FF (🚀 U+1F680–1F6FF, U+1FA70–1FAFF, BMP emoji such as ✅ U+2705) as 1 column, so a long progress line can still wrap (005 review loop 3).
+- `src/Bayan.Cli/Messages.cs:156`: the unselectable-rerun notice says "control characters" for bidi-only names and is always singular (005 review loop 3).
+- Mixed selectable/unselectable failures in one `bayan test` run have no test (005 review loop 2).
+
+- (worktree audit 2026-10-22) clean worktrees whose work is already in a branch: chore-laws-timeout and feat-005-terminal-style (merged into `dev`); worker-r2-{cases,catch,defer,flow,naming,null,nullmove,refthis,requires,unions}, docs-design-round-2, worker-r3-plan, worker-007-docs (contained in their feature branches). The worker keys for r2-* and 007-docs are still live in `~/.claude`; worker-r3-plan has no key left.
+- BYN2211 help text still suggests the replaced `if (p is { } value)` idiom (round 2 §null narrowing).
+- Null narrowing not applied in `switch` `when` guards, `?:`, or `do`/`while` conditions (round 2 §null).
+- `error set` alias of several sets is rejected as a `catch switch` arm pattern (`BinderCalls.cs:754,982` accept only `ErrorSetSymbol`) (round 2 §5).
+- Spec §7.4 lists BYN2232 for a fallible sequence without `for try`; r2-flow reuses BYN2221 with a `try` fix-it. Decide whether BYN2232 is still wanted (round 2 §4).
+- `if unlikely` emits no branch hint to C yet (round 2 §4).
+- BYN1008's help still suggests the paren form (round 2 §4).
+- CHANGELOG still says `requires` is reserved (round 2 §7).
+- A `requires Upper` clause right before an empty `{}` body could parse as a struct literal (round 2 §7).
+- `distinct type` is not parsed, so BYN2322 has only its descriptor and page for that case (round 2 §7).
+- Redundant checks on an already-narrowed value (`p ?? 0`, `p is null`) now raise BYN2210 or a pattern-type error instead of passing; consider a dedicated "already non-null" lint (round 2 §4 null).
+- With a narrowed local, `b is null` reports BYN2411 "`null` cannot match `T`" instead of an always-false note (round 2 §4 null).
+- BYN2117 labels a duplicate `ref this` "after other parameters" even when nothing is in between (round 2 §9).
+- In-place element access is top level only: `map[k].inner.f()` with `ref this` still gives BYN2106 (round 2 §9).
+- `getOrAdd` does not exist; `Map.slot` is the closest builtin (round 2 §9/§11 naming).
+- Interfaces declaring `ref this`, with implementations required to match, wait for spec 006 (round 2 §9).
+- `switch (move d)` on a narrowed optional types the subject as `T?` (so `case null:` is accepted as dead) while `switch (d)` types it `T` (BYN2411); re-wrap the narrowing in BindSwitchSubject as BindMove does (round 2 §4 null).
+- `move` parameters are never narrowed by `if (b is not null)` (`BinderExpressions.cs` IsNonNull); `b.length` still reports BYN2211 (round 2 §4 null).
+- 006 T7: an enumerator held in a Map slot (`m[k]`, a `BoundBuiltinCall`) is spilled and copied instead of checked for writability (Binder.cs `UserElement`).
+- 006 T9: `dyn-ref-dispatch` default `describe` prints instead of returning a string, since a returned interpolated string allocates through `byn_context`.
+- 006 reviewfix: BYN2807 is cached per instantiation, so a second call site with the same failing type argument is not reported again.
+- 006 T6: a generic interface method called through a constraint or a `dyn ref` reports Unsupported.
+- 006 T9: `CEmitter` `SlotName` can collide a getter `x` (`get_x`) with a method named `get_x`; vtable pointer member uses `PrimitiveType.I64` as a placeholder dependency type (`members.Add((PrimitiveType.I64, "void* data"))`).
+- 006 T8: a struct literal cannot be the bare iterable (`for x in S { … } {` is BYN1005); goldens wrap it in parentheses.
+- 006 T7: `Binder.cs:749` treats any `BoundField` enumerator as a place regardless of receiver, so `for n in make().stream` takes the MutationCheck path instead of spilling.
+- `[Cases(1)]` on a test with no parameters gives BYN2773 with the awkward help "in order: `()`" (`Compilation.cs:289-291`) (round 2 §16).
+- Named tuple elements in a case `(a: 1, b: 2)` are accepted and the names ignored (`Compilation.cs:284`) (round 2 §16).
+- Test parameter modifiers (`ref`/`move`) and defaults parse but are ignored; reject them (round 2 §16).
+- `[Cases]` with no arguments on a test with parameters yields zero tests silently (round 2 §16).
+- A test whose single parameter is a tuple cannot take `[Cases]` (round 2 §16).
+- BYN2773 says "1 values"/"1 parameters" for counts of one (plan wording) (round 2 §16).
+- BYN5xxx: free functions and generic struct instances are not checked; BYN5102's fix-it renames only the declaration (round 2 §17).
+- BYN5003 formats `{1}` from the failing member's return type, so `void x() fails` yields "must return `void?` or `bool`" (round 2 §17).
+- `StrBuf.finish()` is a borrowed view like `view`; it does not consume the buffer (round 2 §12).
+- The `format()` fix-it, the `{x:debug}` help and `chars.take`/`graphemes` in BYN2201's help name APIs not implemented yet (round 2 §12–§13).
+- No `chars` iterator exists, so `chars.count` was not added (round 2 §12).
+- String patterns (`"/api/" + var rest`) are not implemented, so "stay legal" under BYN2209 is untested (round 2 §12).
+- BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
+- diag/renamed-member also shows a BYN2311 warning (round 2 §11).
+- 007 Q346 makes a stored function type such as `(Line -> Money uses net) pricer` BYN2822; Sūq and SPEC §3.16 use one (round 3, Sūq brief).
+- HANDOFF round 3 §11 (~`:204-210`) still says `on .field` and §13 (~`:259`) has `Order => void`; superseded by their resolved paragraphs, not rewritten.
+- SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
+- SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
+- J54: Sūq checker `type-first binding` rule only catches capitalised types (`i32 n = 3` unflagged); parameter lists spanning lines are only partly handled.
+- `if p == P { x: 1 } { … }` (unwrapped struct literal in a bare condition) gives BYN1012/BYN1005 with no hint to add parentheses (round 2 §4).
+- `ref this` on a constructor falls through to the `ref` modifier with type `this` instead of a targeted error (round 2 §9).
+- Postfix `break if (x);` parentheses are not reported as an input form; BYN1030 omits `sbyte`, `ushort`, `nint`, `nuint`; `RecoverIfNeeded` can resync into follow-on errors after an input-form error; the dangling-`else` case of BYN1017 is unchecked (round 2 §15).
+- The binder keeps `c.Binding` / `IsCatch` paths for `catch (e)` that only erroneous input reaches now (round 2 §15).
+- No golden covers the BYN1237 `NoTargetType` help (round 2 §15).
+- `tests/cases/run/condition-cast.byn` line 10 prints "parenthesized if" but is now `if flag { … }`; only the cast lines cover paren-vs-cast (round 2 §15).
+- Scaffold templates and `tests/cases/new/*.tree` still use `assert(...)`; move to `assert x;` (round 2 §16).
+- Power-assert: string values print unquoted; column math ignores tabs and wide characters; guarded pieces emit one `if` each, so C size grows with the square of the lazy-column count (round 2 §16).
+- Spec §20 examples and "assertion failed" wording in older docs and plans are not migrated to power-assert (round 2 §16).
+- `tryFirst` has a BYN2230 row in the grammar table but no `ReportRenamed` mapping; the BYN2230 help for `asString()` says "rename it `finish`" without `()` (round 2 §11).
+- `InterpolationSource` (`BinderExpressions.cs:865`) may cut `"""` raw strings wrong, giving a broken BYN2209 fix; BYN2201 help rows were misaligned (r2 stdlib gate; recheck).
+- r2-finalfix: `unless (!x) print("f"); else print("g");` leaves neither BYN1007 nor BYN1018 with a fix (BYN1006 already forces a rewrite).
+- r2-finalfix: `if ((!x)) { … }` gets no BYN1032; `ParseIf` (`Parser.cs:1302`) tests the condition without `Unwrap`.
+- `Parser.cs` `ParseDefer` (~:1585) still passes `clean = ErrorCount == errors` to ReportBraceless while ParseBody uses "no inner diagnostic has a fix": `defer let x = <expr with a fixless error>;` loses its braces fix (review of fix/review-2026-10-22-1)
+- `unless (a == null) s;` on a `bool` `a` reports BYN1017/1018/1006 but no BYN1023 (review of fix/review-2026-10-22-1, probe p12)
+- A field witnessing a getter declared with `fails` may get a vtable thunk that ignores the `fails` return convention (`CEmitter.cs` Vtable). Unprobed; flagged by the 006-fixa writer.
+- Region analysis runs on generic instances only, so a never-instantiated generic struct's methods get no BYN3004 (audit 2026-10-23 probe p7); instantiated ones match the non-generic case.
+- BYN2202 on a generic method's type parameter reads "expected `U`, found `U`" (two distinct `U`s print alike).
+- Reassigning an owner (`xs = List<i64>()`, `this.items = …` inside `for x in items`) while a span or loop borrows it records no mutation; memory-safe only because lists live in arenas and reassignment frees nothing (probes p4b/p8/p9 of the 006 final review, 2026-10-23). Becomes a hole if reassignment ever frees.
+- `RegionAnalysis.DirectChanges` (used by `ChangedFields`) does not count a `dyn ref` local that borrows a `this` field and is passed on to a writable `dyn ref` parameter (006-fixj note).
+- A `dyn ref` assigned from anything but a ToDynRef conversion, a tracked local or a `for` variable is assumed to hold borrowable storage, so passing it to a writable `dyn ref` parameter can give a false BYN3004 (006-fixj note).
+- `docs/bayan-handoff.md` Questions: numbers repeat (two 51–56 runs, lines ~463 and ~533); renumber or switch to ids.
+- `bayan format <dir>` recurses into everything (`tmp/`, `out/`, hidden dirs, and `tests/cases` fixtures that use input forms on purpose); decide on exclusions (review of 6c25f34).
+- SPEC §18 writes pointers after the type (`Sqlite3* db`); whether they go first is open (docs/bayan-handoff.md Question 120).
+- r3-51a: the BYN1053 message says "one line" even when the comma-separated cases span several lines.
+- r3-51a: a line starting with `?`, `:` or `|` is not waṣl, so a ternary or pattern split before its operator ends the statement.
+- r3-51a: a labeled statement as the first line of a `catch { ... }` brace body is ambiguous with a struct-literal field.
+- r3-51a: the C-style `for (init; cond; step)` header keeps its `;`; decide whether it is an input form too.
+- r3-51a: `if cond` with `{` on the next line reads the brace as a stranded postfix instead of reporting the brace placement.
+- r3-51a: two declarations on one line after `}` (`int f() { return 0 } void g() {`) give no BYN1005.
+- r3-51a: `return` then a call at the same indent on the next line is a bare return plus an unreachable statement (BYN2405), not BYN1042; by design, check the docs agree.
+- r3-51a: tests/cases/diag and parse `input-forms-one-line` no longer fit on one line after expand-blocks; rename or reshape.
+- Waṣl clause lines `uses`, `expects`, `except`, `becomes` (J61): no parser support yet; add a continuation test with each clause's parser step (5.1b–5.3). From r3-51a gate.
+- r3-suq-paper: 16 `suq/fail/` snippets have no allocated code (listed "none allocated" in `suq/fail/README.md`: attr-case, byte-count, dangling-blank, drop-ref-this, extern-string, in-convert, keyword-name, leading-operator, log-at, mode-particle, on-field, owned-copied, try-catch, try-literal, unit-round, using-let); allocate or map them.
+- BYN2226 (`using` not disposable) and its doc stay until the step that drops `using` per C46; then retire the code and rewrite `docs/diagnostics/BYN2226.md`.
+- r3-51b1: the BYN1043 local fix picks `let`/`var` by a syntactic scan, so a local changed only through a mutating method gets `let` and then BYN2104; move the choice to the binder (handoff Q122).
+- r3-51b1: C# test strings still holding type-first locals are found only when a test fails; a sweep of `tests/Bayan.Tests/*.cs` program strings for `T x = e` would catch any that expect errors.
+- r3-51b1: `IsWrittenLater` scans to the enclosing `}`, so a top-level script local is scanned to end of file and a same-named local in a later function counts as a write.
+- r3-51b2a: messages and docs still say `error enum`/`unique struct`: BYN2608, BYN2609, the BYN2804 "an error enum" kind, the `[ExitCode]` help in `Compilation.cs`, and `TypeFacts.WhyUnique` ("declared `unique struct`"); the pages under `docs/diagnostics/` that show `error enum` examples.
+- r3-51b2a: `ErrorEnumDecl`/`ErrorSetDecl` were kept (AST dump `ErrorEnum`/`ErrorSet`) instead of the plan's single `ErrorUnionDecl`; merge them if the binder needs one node.
+- r3-51b2a: `except` narrowing of a `union error` is rejected with BYN2022 until function error sets carry excluded cases (handoff Q124).
+- r3-51b2a gate: BYN3202 in a nested composition is reported once per composed alias that flattens it (CheckComposition runs per alias); report once at the innermost head.
+- r3-51b2a gate: `union error Name<T>` type parameters do not parse; needed for HANDOFF §11 `ValidationError<T>`.
+- r3-51b2b: test parameters already parsed type-first with `[Cases]` binding (round 2); 5.1b added no code for them beyond the BYN1043 input form from part 1.
+- r3-51b2b: J46 "no `uses`" rule for computed properties (expression or block body) waits for `uses` (5.1d).
+- r3-51b2b: `const x: T = pattern …` (a typed pattern const) parses; no pattern type exists to check `T` against.
+- r3-51b2b gate: `suq/orders/order.byn:32` and `suq/storefront/catalog.byn:29` write `public const x = pattern …`, which is BYN1001 (`public` then `const`); fix the paper app or the grammar.
+- r3-51b2b gate: `ref this is .s` after other parameters (already BYN2117) leaves `is .s` unconsumed and adds a second parse error.
+- r3-51c: BYN0007/0008/0009 messages, `TokenKind.CharLiteral` and `PrimitiveKind.Char` still say char; rename in the C# and selfhost lexers together (handoff Q133).
+- r3-51c: `unsafe because` (J6) waits for an `unsafe` block statement; none parses today.
+- r3-51c: BYN2322's help still suggests a function's `requires`, which becomes `expects` (BYN1063, 5.1e).
+- r3-51c: C17 lists `rune` as a keyword; 5.1c keeps it a type name like `bool`.
+- r3-51c: `suq/fail/{bracket-attr,block-comment,char,requires-value}.byn` keep their input forms on purpose (compile-fail corpus).
+- `tests/cases/diag/input-negated-if.byn` and `input-paren-negation.byn` keep `input-` names though BYN1032 is retired (5.1c); rename or move to a non-diag case.
+- r3-52b: SPEC §21.2 `bayan format` row still says "not in v0.1"; 5.2b ships `--check` and `style` (C16).
+- r3-q140: types printed in diagnostics are not yet rendered in the project style (`style.primitives`); SPEC §2 line 118 still says the C# primitive names are lexer-reserved in every project, which the lexer does not do.
+- r3-52b: `tests/cases/typed/rune.byn` and `parse/word-booleans.byn` use word booleans, which `bayan format` (default `.symbols`) rewrites; fine for goldens, but not in project style.
+- Revision 0001: postfix pointers (J91, BYN1066) and `#line` mapping (J93) have no plan §4 row; scheduled as steps after 5.1e (pointers, `Parser.cs`) and in parallel now (`#line`, `CEmitter.cs`). C# primitive names are not lexer-reserved yet (J92).
+- r3-51d: the `effect` keyword is still reserved.
+- r3-51d: `ref from Buf` (particle after the passing mode, `suq/fail/mode-particle.byn`) misparses with no diagnostic code.
+- r3-51d: the parser has no function types, so `uses` inside them is not handled.
+- `suq/fail/README.md:20` lists `csharp-alias.byn` under BYN1030, retired by revision 0001 (J92); move it out of the compile-fail corpus.
+- Revision 0002 item 16: the project-style type printer (with `TypeResolver.cs`) was not built in 5.2b; follow-up, after 5.2b.
+- Revision 0002 item 25: BYN1042 (built in 5.1a) does not cover `fail`; add `fail` to its scope and message in 5.1e.
+- Revision 0002 item 1: BYN1065 (clause order) does not know `expects`; order `where` → `expects` → `becomes` → `fails` → `uses` and the new message in 5.1e.
+- Revision 0002 item 27: 5.1c moves a field rule that reads `it` and another field to the struct (Q131); 5.3b rejects it under BYN3218 instead (revision 0004 item 1).
+- Revision 0002 item 8: J55 now adopts the BYN1043 syntactic scan (Q122), so the r3-51b1 entry above (move the choice to the binder) is superseded; nothing to build.
+- Revision 0002 item 9: `except .case` stays parse only with BYN2022 (Q124); 5.3b lifts it.
+- Revision 0002 item 16: the C# primitive names are reserved in `Keywords.cs` in 5.1e (the revision 0001 entry above, J92).
+- Revision 0003: the built `string.from`/`string.tryFrom`/`string.invalidUtf8At` (Q71, `Builtins.cs:47-51`) predate the codecs; `invalidUtf8At` is dropped (revision 0004 item 5); rename to `Utf8.decode`/`Utf8.tryDecode` under BYN2230 in 5.4. Named format specs and BYN1068 parse in 5.1e.
+- Revision 0005: the BYN5001 checker (`src/Bayan.Semantics`) rejects an `-ed` member with no `ref this` verb; change it in 5.4 to reject an `-ed` member that takes `ref this` and accept one with no plain verb.
+- r3-52a: `struct Point { f64 x, f64 y }` (fields on one line with `,`) is BYN1005 with a fix that leaves `, f64 y }` on the next line; no BYN1053 rewrite for fields.
+- r3-52a: BYN2787's page and `trust-reason.byn` still describe `trust(x, reason:)`; decide in 5.3e whether BYN2787 retires once `trust` is only an input form.
+- r3-52a: a user method named `trustUnchecked` with no arguments binds as the `Untrusted` unwrap (Question 143).
+- plan-strings-check: diagnostics pages for codes landed before 2026-10-24 carry no verbatim message and help lines; backfill at round-3 end so the check passes for every round-3 code.
+- r3-55: SPEC §21.2 still says `bayan format` is "not in v0.1", and a paragraph splits its CLI table (the `bayan pkg` … `bayan new test X` rows sit after the `--color` text); fix in a draft revision (SPEC is frozen).
+- r3-55: `docs/bayan-terminal-style.md` §4 has no `bayan audit` section, though `StyleTests` renders an `audit` shape (`tests/cases/style/audit.*`).
+- r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
+- r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
+- plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).
+- r3-53h: `RegionAnalysis.cs:236` and `OwnershipAnalysis` treat `BoundErrorVariant` as a leaf, so moves and borrows in an error payload are not checked.
+- r3-53h: `return .case(…)` is not BYN1056; the `return .x` check (5.3f) sees only a bare `.x`.
+- r3-53h: error-case payload fields are not dropped or moved: a `List` or other owned payload leaks, and a unique one is not tracked (Question 311).
+- r3-54a: the parser's particle list is private (`Parser.cs`), so `Lexicon.Particles` repeats it; expose one list.
+- r3-54a: the BYN5001, BYN5101 and BYN5102 page examples still end field lines with `;`.
+- r3-54a: the manifest's invalid-value help does not mention the `[key: value]` map form that `grammar.forms` now uses.
+- r3-54a: the task names `node scripts/plan-strings-check.js`, but the script uses Deno APIs; run it with `deno run -A`.
+- r3-54a: the BYN51xx exemption for rename attributes (`@json`, `@column`) and `@allow(…) because` is not built (Question 270).
+- r3-54a: plan-strings-check skips BYN5001: its message is in revision 0005, not in a plan §2 entry.
+- r3-53g: `Conformance.cs` and non-call member lookups take the first method of a name, so an overloaded method cannot satisfy an interface member by its particles (Question 306).
+- r3-53g: a generic `rest ReadOnlySpan<T>` does not infer `T` from the tail arguments (`Instantiate` in `BinderCalls.cs` matches parameters one to one).
+- r3-53g: `..xs` mixed with other tail arguments (`f(1, ..xs)`) is BYN2215; spreading into a `rest` tail beside values needs the run-time-length span path `FinishCollection` rejects (BYN2219).
+- r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
+- r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
+- r3-53c1 gate: the BYN7003 second-form and BYN7007 labels underline the state name without its leading dot; plan says "label at `.{0}`".
+- review R4/R5: `bayan audit` reuses the `format.io-error` message for its unreadable file and directory lines; a shared `io-error` id would read better.
+- review loop 3 (545965c49391..ef66c140da9f): `Restyle`'s `otherUses` counts struct field declarations and field-init labels, so a file with a field named `i8` never has `i8(x)`/`i8.max` respelled (missed rename only).
+- review loop 3 (545965c49391..ef66c140da9f): a file reached through a symlinked directory keeps its alias path; `ManifestFor` walks up from the alias, so a link into another package uses the root package's style; audit output follows stack order, unsorted.
+- review loop 3 (545965c49391..ef66c140da9f): `WriteReplacing` copies only the Unix mode: owner, group, ACLs, xattrs are lost and hard links are split by the rename.
+- review loop 4 (545965c49391..ef66c140da9f): `Format.cs:~363` with `AstDump.cs:~419`: a type-position name is always respelled, so a generic parameter spelled like a primitive (`i8 first<i8>(List<i8> xs)`) becomes `sbyte first<i8>(List<sbyte> xs)` under `primitives: .csharp`.
+- review loop 4 (545965c49391..ef66c140da9f): `RealPath` keeps a link target's letter case, so on case-insensitive APFS `alias -> SRC` beside `src/` gives two dedupe keys: audit lists a bypass twice, format visits the file twice.
+- review loop 4 (545965c49391..ef66c140da9f): The parent-link tests (`FormatTests.cs:~366-373`, `CliTests.cs:~312-316`) pin that `format <dir>` follows `dir/link -> ..` and writes files above `<dir>`; decide whether directory links leaving the named directory should be followed.
+- review loop 4 (545965c49391..ef66c140da9f): `Format.cs` `PackageNames` reads each file by its unresolved path while `within` filters by the resolved one, so a `<link>/..` path can feed names from a different file into the rename guard (missed or extra rename only).
+- review loop 4 (545965c49391..ef66c140da9f): `Format.cs` `ManifestFor` uses `Path.GetFullPath`, so `link/../a.byn` takes its package `style` from the lexical folder, not the folder of the file it reads and writes.
+- r3-53c2: an optional of a struct with states (`Order?`) keeps BYN2410 in a `switch`; `.s` arms on it are not checked per state.
+- r3-53c2: loops forget what every `var` and `ref` parameter was known to be at loop entry, also when the body never changes it.
+- r3-53c2: an `if` whose then-branch makes a `becomes` call forgets the receiver's state after the `if`, even when the else-branch would agree.
+- r3-53c2: reading a payload field from several states that hold it after different fields is BYN2022; it needs a per-state read.
+- r3-53c2: BYN7006's message (`{0} is .{1}` … write `{2}`) differs from the plan's text (`{0} {1} is .{2}` … write `{0}.{2} {1}`).
+- r3-53c2: BYN7007 in a `.s` pattern underlines the name without its dot, like the first half's labels (line above).
+- r3-53c2: payload fields are not seen by `TypeFacts`, ownership or drops: a `List` in a state's payload does not make the struct unique and leaks.
+- r3-53c2: a struct with states whose own field is named `tag` or `u` collides with the C layout's `tag` and `u` members.
+- r3-53c2: a generic struct with states relies on `Compilation.States` holding each instantiation; untested.
+- r3-53c2: BYN7009: a `become` inside a loop body does not count after the loop.
+- r3-53c2: BYN7003's third form on a `move this` or plain `this` method is followed by BYN2115 at the same call (one extra error).
+- `scripts/plan-strings-check.js` parses only `BYN####` entries, so CLI `Messages` strings copied from the plan (e.g. `FormatterHint`, plan §29 (a)) are never checked against it.
+- r3-54a-lib: comments in `src/runtime/bayan-rt.h` and `bayan-rt.c` still say `Panic.onPanic`; rename to `Panic.handler`.
+- r3-54a-lib: identifiers still named for round 2: `Compilation.OnPanic`, `BindOnPanic`, `_onPanicSet`, `BoundSetOnPanic`, `DiagnosticCodes.OnPanicPlacement`; rename for `Panic.handler`.
+- r3-54a-lib: `tests/cases/run/on-panic-order` prints the label "onPanic:" from its handler; relabel (and rename the case) for `Panic.handler`.
+- r3-54a-lib: `suq/fail/to-as-call.byn` keeps `asSpan` by design (a fail-corpus snippet for the `to…`/`as…` member rule); do not convert it.
+- r3-54a-lib: `for i in r` over a range held in a `let` crashes the Lowerer (`For` casts the iterable to `ArrayType`); `For` handles only a range literal.
+- r3-54a-lib: `mutableSpan()` is exclusive only as a loan (Question 322); a second writable view of the same list while the first lives is not rejected.
+- r3-54a-lib: `position`/`lastPosition`/`count`/`replaced` take only a string needle; a rune needle is BYN2202 (Question 319).
+- r3-54a-lib: the text views have no `length` (Question 318).
+- r3-54a-lib: `T.parse(text)` (fails `ParseError`) is 5.4b; only `T.tryParse(text, as:)` on integers is built (Question 324).
+- `string.matches(re)` (SPEC §21 assertions) is not built: no `Regex` type exists (handoff Question 326).
+- r3-54a-lib3b: list `remove(at:)`, `remove(at: range)` and `remove(from:through:)` do not free removed elements that own memory (Question 329).
+- `run/assert-fails.test` and other `run/` goldens fail intermittently under load (parallel workers); they pass on rerun. Find the timing dependency or mark them serial.
+- r3-54b: `suq/storefront/checkout.byn:202` calls `Hex.tryDecode`, which the spec does not name; only `try Hex.decode` exists.
+- r3-54b: `Utf8.decode(bytes, invalid: .replace)` allocates 3 bytes per input byte, then shrinks; a counting pass would avoid the over-allocation.
+- r3-54b: `for x in b` over a `Range` value that is not a range literal (a bound `.range(let b)`) crashes `Lowerer.cs:689` (InvalidCastException, RangeType to ArrayType); `Range<T>` also has no readers and no format, so `Rule` bounds cannot be observed.
+- rv0011: a bare `ValidationError` in a `fails` clause whose body fails reports BYN2023 and then a cascading BYN2603 (the clause resolves to no set); an unknown type there cascades the same way. Suppress BYN2603 when a `fails` member resolved to the error type.
+- rv0011: under `BAYAN_UPDATE=1` a load timeout rewrites `run/` and `out/` goldens with "timed out after 60 s" (seen: `out/results-fail.json`, `run/assert-fails.test.stdout`, `run/suq-money.test.stdout`, plus a new `run/suq-money.test.exitcode`); the update mode should not record a timeout as expected output.
+- rv11 review: other messages still print `set.DisplayName` unqualified and can show look-alike sets (BYN2604 in `FlowAnalysis.CheckPropagation`, BYN2227 `AmbiguousVariant`, the `except` BYN2603 variant text, pattern-mismatch messages); switch them to `DisplayNameAmong` when one reproduces.
+- rr6: `byn_release` (`src/runtime/bayan-rt.c:854`) frees only for `&byn_general`; a future allocator that does not free through it would bring back the `ListReplace` leak.
+- 007 T1: a function-typed parameter without parentheses (`bool any(Token -> bool p)`) is accepted silently; decide whether it gets an input-form diagnostic with a fix to `(Token -> bool) p` (Q363 d).
+- 007 T3: a function type as a `union` variant payload field gets BYN3002-style `BorrowPayload`, not BYN2822 (`CheckUnionShape` has no placement check).
+- 007 T3: an explicit type argument on a generic function call (`f<i32 -> bool>()`) and an inferred one are not checked for BYN2822; only `TypeResolver.Construct` and the builtin generics are.
+- 007 T3: `FunctionType` has no excluded cases, so `fails` naming a `union error … except .c` alias keeps the excluded cases in the function type.
+- BYN2822 help "take the function as a parameter instead" reads wrong when the rejected position is already inside a parameter (`void a(Pred? p)`); found in 007 T3 review.
+- 007 T5: `become` inside a lambda builds a `BoundThis` (`BinderStates.cs:35`) without the BYN2821 `this` check.
+- 007 T5: the caught error (`_caught`, `CaughtErrorExpr`) read inside a lambda in a `catch` body is not recorded as a capture.
+- 007 T5: `pick([], by: it > 0)` reports a cascading BYN2218 on `[]` after BYN2740 (existing recovery in `BindArgumentsForRecovery`).
+- 007 T5: a user local named `it` in a function that also uses the `it` shorthand gives BYN2007 (shadowing) at the shorthand.
+- 007 T4 review: a built-in or generic function passed to a generic function-typed parameter (`holds(print)` with `bool holds<T>((T -> bool) p)`) is BYN2740 "cannot infer" instead of BYN2824; `Instantiate` in BinderCalls.cs should run `ConvertToFunction`'s check on a non-qualifying group.
+- 007 T4 review: the overload lookup in `ConvertToFunction` (BinderExpressions.cs, `fn.Module.Functions…fs`) is dead while a second module function of the same name is BYN2006.
+- 007 T7: `-Wall -Werror` on emitted C still fails outside the lambda code: `-Wunused-label` (`continue_N` of a `for` with no `continue`, seen in a lambda body in `run/lambda-uses-provide`) and `-Wparentheses-equality` from `fail … if` (`if ((p_s.len == 0))`, `run/lambda-fails`); T9 territory.
+- 007 T6: BYN3002/BYN3003 on a lambda region keep the generic help ("copy the data with `.copy(to: alloc)`") and label ("freed at the end of its block"), which fit a lambda kept past its loop iteration poorly; a lambda-specific help needs a branch in `CheckOutlives`/`CheckReturn`.
+- 007 T8: BYN6005 messages name the synthetic lambda (`main$lambda10`, `stored$lambda1`); name it as "the lambda on line N" as region diagnostics do.
+- 007 T11: BYN2821 says 'a `out` parameter' / 'a `in` parameter'; use 'an'.
+- 007 T13: SPEC §21.5's BYN1028 row says "(help text)" though BYN1028 now offers a fix; GRAMMAR's input-form table has no `delegate` (BYN1028) row; the round-3 plan's "Total codes" row still counts 12 spec-only codes.
+- 007 T13: SPEC §1057 (`Panic.handler`) says the lambda form "needs §3.16"; 007 stores only non-capturing lambdas, so say whether `Panic.handler = p => …` is accepted now.
+- CEmitter: every `for` loop emits an unused `continue_N:` label, rejected by `-Wunused-label` under `-Wall -Werror` (008 T8, 2026-10-25).
+- CEmitter: `let _ = expr` emits an unused C local, rejected by `-Wunused-variable` (008 T8, 2026-10-25).
+- CEmitter: `if n == 0` emits `if ((p_n == INT64_C(0)))`, rejected by clang `-Wparentheses-equality` (008 T8, 2026-10-25).
+- `bayan run <file>` inside `tests/cases/run/` builds the whole directory as one program; single-file run needs a copy elsewhere (008 T6, 2026-10-25).
+- Under `as: .debug` a `string` (and so a `Symbol`) prints bare inside tuples, optionals and maps but quoted and escaped inside structs (pre-existing; found in the 008 review, 2026-10-25).
+- A repeated `case "a"` in a `switch` on a `string` or `Symbol` gets no duplicate/unreachable diagnostic; the first arm silently wins (pre-existing; 008 review, 2026-10-25).
+- `List<string>` and `List<Symbol>` cannot be formatted in an interpolation hole (BYN2225) (pre-existing; 008 review, 2026-10-25).
+- A struct literal cannot name its type through a module: `lexer.TextSpan { … }` is BYN1001 (Q431) (009 T1, 2026-10-26).
+- C# `ParseStatement` builds `WhileLetStmt` and `LabeledStmt` with `SpanFrom(start)` evaluated before `ParseBlock()`/`ParseStatement()`, so their spans end before the body; `stmts.byn` matches it (009 T7, 2026-10-26).
+- C# `IsParenthesizedCondition` reads `_tokens[next]` with `next == _count` when a `(` is unclosed (`void f() { if (x`); it does not throw today, and `stmts.byn` clamps the index like `KindAt`, with the same result (009 T7, 2026-10-26).
+- C# `ParseFunctionType` builds `FailsClause`/`UsesClause` with `SpanFrom(start)` before `ParseClauseList` runs, so in a function type the clause spans only the keyword (Parser.cs 2006/2011; declarations at 1144/1152 span the list); `types.byn` matches it (009 T6, 2026-10-26).
+- C# parser spans end early where `SpanFrom` is an argument before the parse it should cover: a block-bodied `LambdaExpr` ends at `=>`, a `MapEntryExpr` at `:`, a named format spec's `Argument` at `:`; matched in `exprs2.byn` (009 T10, 2026-10-26).
+- run cases `io-list-dir`, `io-invalid-utf8`, `io-copy-file` (tests/cases/run/) leave `a.txt b.txt C.txt bad.txt copy.bin empty.bin input.bin` in the repo root after a full suite; not gitignored (found in 009 T15 gate)
+- 010 hazard (009 review): the port's AST keeps source spans where C# rewrites node text (`int`→`i32`, rest params → `ReadOnlySpan`, missing return → `void`, lowercased attribute names, format-spec names `as`/`digits`); `dump2.byn` fakes the C# text at print time (`cSharpTypeName`, `dump2.byn:211`). Semantics must read names through the parser's rename helpers, not raw spans.
+- 009 tests spawn about 4,500 `bayan-parse` processes per suite and T3/T12 per-class parser builds are not `Lazy`, so each class rebuilds (`tests/Bayan.Tests/SelfhostParserT3Tests.cs`, `SelfhostParserT12Tests.cs`).
+- `selfhost/parser/main.byn` `parseOne`/`parseTimed` allocate without an arena, so `--many --time` over a large corpus grows memory per file (009 review).
+- C# also takes `NotPattern`, `VarPattern` and block `PropertyDecl` spans before their last child (Parser.cs 4102, 4126, 1050); the port copies it (Q511). Fix in C# and the port together.
+- `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails intermittently in full-suite runs (passes alone); 010 T2 gate saw 1–2/2629 failures, likely allocation noise from parallel tests (2026-10-26).
+- 010 T3 gate: `typeEquals` (types.byn:195) is never called by tests; equality pairs lack same-name nominal types in different modules and text-view/builtin types (2026-10-26).
+- spec 010 T28: compile.byn:1176-1177/:1180-1181 cite "generics.byn:180" for T13's drain switch (now ~generics.byn:186); ctx.byn:276 calls `quiet` "the C# `_quiet`", which does not exist (Q580). Fix at integration.
+- 010 T28: delete the dead `Map<i64, i64> conformancesChecked` at ctx.byn:356 (Q585/Q723; guard check C blocks it before then).
+- 010 T14 LOW (review 3): `t14InsertMember`'s `.trimmed().isEmpty` (conformance.byn:469) strips ASCII whitespace only; C# `IsNullOrWhiteSpace` also counts Unicode whitespace (Conformance.cs:225). Reachable only from a source with a lex error.
+- 010 T14 LOW (review 3): Q586 says `popBag` "drops" the quiet bag; it only restores the sink, and the bag stays in `c.bags` (diag.byn:53-57). Fix the wording.
+- 010 T14 owed cases now that T12's `declareMembers` is ported (Q723 (2), (5)): BYN2780 on an instance (`Box<T> : IList` with a `T items` field, instantiated with `List<i64>`) and `t14Drop`'s left-in-arena path (an interface getter typed `Box<Item>`) in SelfhostSemanticsT14Tests.cs.
+- 010 T12 review 2 LOW (open): Q579 not-compared arms (associated type declare.byn:149-154, method/ctor params in `overlap` :134/:174, BYN3202 `ValidationError<T>` :321-322) get oracle cases when T38 lands.
+- 010 T12 review 2 LOW (open): T12 test dump prints `fn` lines from `allFunctions`, not `c.modules[m].functions` (SelfhostSemanticsT12Tests.cs:589-597); dump the map keys so a key without an entry is caught.
+- 010 T12 review 2 LOW (open): C# `_constructorBodies[fn]` (Compilation.cs:1020) maps to `declIndex`/`memberIndex` (declare.byn:159, :169-170); record the mapping in Q575-Q579.
+- 010 T18 review 7 LOW → T28: express2.byn:370 `let states = statesOf(...)` is unobservable (stubs `statesOf`, `bindPayloadField`) but outside the exempt span; Q607 (j) should list it.
+- 010 T18 review 7 LOW → T28: express2.byn:495 `var callType: Type = -1` sits on the marker line, outside span 496-501; every mutation is unobservable (overwritten at :497/:499; reached only past `propertyType`/`bindCollection` stubs). Exempt it.
+- 010 T18 review 7 LOW → T28: Q609 survivor express2.byn:504 `untrustedTypes[typeIndex(targetType)]`→`[0]` is killable today: add a case declaring an `Untrusted<List<i32>>` parameter before `ui` in v42.
+- src/Bayan.Semantics/Binding/Binder.cs:565-567: `@unobservable(a, b)` reads only Args[0], extra args get no diagnostic. Deferred: fixing the C# alone breaks 010 parity (T28 writer A is porting BindUnobservable into binder2.byn); fix both after T28, needs a code per A2 (review c1ebcac33983..9eef3ece0013).
+- src/Bayan.Syntax/Parsing/Parser.cs:576-579,603-604: `@unobservable because` with no string gives BYN8001 and BYN1001 for one mistake. Deferred: the self-hosted parser (spec 009) mirrors this; fix both together (review c1ebcac33983..9eef3ece0013).
+- Flaky under load (2026-11-01, full suite with 3 writers running): `ToolchainSanitizerTests.ProbeKillsAndRejectsACandidateThatHangsAndTakesTheNextOne` (500 ms probe timeout at :49 too tight; ArgumentNullException at :56 when the working stub also times out) and `RunGolden(run/assert-fails.test.byn)` (passes alone). Spec 013 flaky-test item.
+- guard.sh `run_limited` (:72): perl setpgrp child survives INT, so an interrupted guard leaves `dotnet test` running (pre-existing; review c1ebcac33983..9eef3ece, loop 2).
+- land.sh (:28-34): the PASS review commit's shape is checked, not its origin; a writer can forge it (pre-existing; an author check would not stop it either; review c1ebcac33983..9eef3ece, loop 2).
+- CliApp.cs:801-804 `ListingName`: `../x.byn` and `_/x.byn` share a listing name (pre-existing, A7 choice; review c1ebcac33983..9eef3ece, loop 2).
+- 010 follow-up (T28 review round 2, LOW 12): `t28CloneLocalName` (binder3.byn:216-225) rebuilds the in-place `for try` receiver for `nameExpr`/`parenExpr` only and panics otherwise; C# reuses `f.Iterable` (Binder.cs:1114). Unreachable today.
+- 010 follow-up (T28 review round 2, LOW 13): synthetic names are negative-start spans read back only by `t15Text`/`t18Text`; `t11Text`, `t12Text` and `getText` would index with a negative start, and `c.syntheticNames` grows per bind (binder3.byn:210-213; Q679).
+- 010 T16 review 3 LOW: ctx.byn Binder comments stale: `nonNull` says "span start" but holds scope ids; `pending` says keyed by span start but keyed by LocalId (T28).
+- 010 guard / spec 013: the guard tries one mutant per line (first matching operator), so a line can be covered (an `if true` mutant is killed) while the guard's own mutant is equivalent (binder2.byn:748, :753 `==`→`!=` survive until T36; stride sampling skips them today). 013's mutant set should carry several operators per site and report equivalence.
+- 010 T16 review 5 LOW: t16BindAssertOperand walks parenExpr itself (binder2.byn:285-298); Q703 still Open. When T20 settles stripParens (returns a TextSpan today, calls.byn:30), make it call that.
+- Windows (ssh wp1): 61 run/ goldens fail before any 010 chore because the test harness decodes child stdout as CP437 (UTF-8 bytes C3 A9 shown as ├⌐); set StandardOutputEncoding = UTF-8 in the run harness → spec 013 T19.
+- 010 T28: Q616 still cites checkBecomesCall (states.byn:18), forgetState (:27), knownState (:30) as stubs; T22 ported them, citations stale.
+- 013 UTF-8 harness fix (chore/worker-w-013-utf8, 43fe4f2): gate criteria 1, 3, 4 met (macOS 3550/3550; Latin1 break test fails 29/268); criterion 2 (wp1 before/after run/ golden counts) blocked: wp1 192.168.1.32 "No route to host" 2026-11-01. Not merged. Next: when wp1 is up, run RunTests there before/after, then gate --rounds 1 and merge into feat/013. Also: Doctor.cs:106, Scaffold.cs:176 redirect child output without UTF-8 (gate note, unchecked whether user-visible).
+- 010 T21 review LOW 10 (T28): diag.unhandled-failure / T20 diag.missing-because panic in errorSetDisplayName (symbols.byn:605), bad ErrorSetId source untraced (bindFail stub or harness Signatures() fails sets); see reviews/T21.md.
+- 010 (T28 or parser follow-up): C# parser prints a missing name as `<missing>`, Bayan selfhost parser prints "" (found by T38; two T38 cases dropped for it).
+- 010 T28: T23 review LOW 3 — Q631 'become' keyword source-text test stands in for BoundErrorStmt{Syntax: BecomeStmt} (flow.byn:263); confirm or port when T36 lands.
+- 010 T28: T23 review LOW 4 — effects.byn:401 extra 'c.entryModule >= 0' guard (C# EffectAnalysis.cs:188 has none); drop once entryModule is always set.
+- 010 T28/T36: T23 review LOW 6 — t23DeclOf (effects.byn:594) treats any symbol whose declIndex names a FunctionDecl as having that Decl; C# lambdas have Decl null. T36's lambda symbols must keep declIndex -1.
+- 010 T28: T38 review LOW 4 — stale stub citations: express2.byn:336,:363 cite 'statesOf, declare2.byn:27' (now :184); compile.byn:404 says BYN2771 for every main until T38 (no longer true, Q693); compile.byn:1167 calls declareInterfaceMembers a stub (Q720); Q734 says statesOf is a stub.
+- 010 T28: T38 review LOW 5 — no oracle case for the ', ' join in t38ModifierText (declare2.byn:393-405); parser rejects 'static const' with BYN1004.
+- 010 T28: T38 review LOW 7 — Q689 cites TypeResolver.cs:294 for 'ResolveNamed keeps n.Args'; the right line is TypeResolver.cs:274.
+- 010 T28: SelfhostSemanticsT17Tests.cs:28 header comment still lists declareInterfaceMembers as a T38 stub (T38 landed).
+- 010 T28: T36 review LOW 11 — contextBody default arm returns -1 (binder3.byn:612), not in the C#; unreachable per Q679.
+- T34 LOW 5 (T28): reportTryCoversMore slices source by bytes (calls3.byn:77-78); C# slices UTF-16 string at byte offset (BinderCalls.cs:1058-1059) — fix text differs after non-ASCII; no case.
+- T34 LOW 7 (T28): catch temp local's kind .temp and id b.nextLocalId (calls3.byn:135-136) never printed by Local/tcLocal dumps; unobserved.
+- T34 LOW 8 (T28): handoff progress entry (bayan-handoff.md:1206) says :683/:798 break-tests "fail all 93"; now 95 cases.
+- T36 LOW 11 (T28): contextBody's default arm returns -1 (binder3.byn:614), not in C# (Binder.cs:1423, :1429); parser cannot reach it.
+- T39 Q697 cross-task findings to verify in T28: bindForBody stub; T19 struct literal typed with wrong state; @sealed struct attributes never filled; binary + BYN2209 not reported; `H { …, items: [] }` binds to the error type; panic at symbols.byn:605 (likely the compile.byn:965 script-main return type, see T11 fix line).
+- After T39/T24/T22-stub ports: restore T36 cases listed in Q681 (guardBindings BYN2791, states-exhaustive path, panic-handler-restricted).
+- T35 LOW 5 (T28): bindFormatSpec looks up Radix for every spec (express4.byn:553-555); C# only inside `case "as" when` (BinderExpressions.cs:2047). Pure lookups, order differs.
+- T35 LOW 6 (T28): bindLambda leaves lambdaBody = -1 when block and body are both null (express4.byn:389-396); C# dereferences body! and throws (:1929). Unreachable.
+- T35 LOW 7 (T28): lambda FunctionSymbol nameSpan left 0:0 (express4.byn:341-351); matches compile.byn:689/:965; no reader found.
+- T35 LOW 8 (T28): untested: b.fn == -1 lambda-outside-function report (express4.byn:328-331), capture modifiers move/out/in (:436-442).
+- T39 LOW 8 (T28): this-write recorded as file only and reported via report(), not the binder's held bag (calls4.byn:467, :535 — BinderCalls.cs:1847-1853, Binder.cs:112-116); likely unobservable after binding.
+- Confirmed sibling gaps (T39 review): bindStructLiteral types `Order.paid {…}` as Order (extra BYN7012); `H { n: 0, items: [] }` binds to the error type (BYN2109); Bayan binds `ks[0] = 9` on a const static array to errorExpr; string-concatenation misses `$"{name}!" + name` 4:13 BYN2209.
+- T36 LOW 19 (T28): SelfhostSemanticsT36Tests.cs Codes doc says 'codes only T36 reports'; BYN2612 also from PanicHandlerCheck.cs:82, BYN2603 from FlowAnalysis.cs:362/:367 — becomes a live failure once T24/flow runs in the harness.
+- T39 Q697 (T28): exh.* cases call checkExhaustive directly because bindSwitchStatement was a stub; now real (binder3.byn:620) — switch them to binding whole switches.
+- T21 stale note (T28): SelfhostSemanticsT21Tests.cs:157 and :281 still say T39 checkWritable is stubbed (Q696).
+- T24 LOW 4 (review r2): unreached ownership.byn arms listed in Q639 (.temp read :963, t24IsSelfWith .tryExpr, t24IsPlace arms, ownedNew/untrustedNew/trust store :503, assert…fails, checkPanicHandler bindings) — T28
+- T27 LOW 3: OneMegabyteWithinTenTimes should time the binary's own --time like 009 (plan :144), Q650 — T28
+- T37 LOW 3 (review r2): owner order is insertion vs C# ImmutableHashSet hash order (Q685) — T28 note only
+- T37 LOW 5: region2.byn:520 thisFieldSymbol index arm untested (add root case on this.arr[0] / span field) — T28
+- T37 LOW 7: mutation-exempt spans incomplete (:121 needs through 123; :128-134, :145, :155-163, :190, :195-198, :201-208, :212 unmarked) — after T25 lands, drop markers that no longer apply — T28
+- T26 LOW 6 (review r1): `renderAll` takes no style, so `bayan-check --ascii` draws the Unicode gutter (diag.byn:209 vs CliApp.cs:296); T2's renderer, fix in T28.
+- T26 LOW 8 (review r1): `--time` prints parse+check, not parse/declare/bind/analysis ns (plan :144, :158; Q648); T28.
+- T25 LOW 8 (review r2): computeBorrow/builtinBorrow arms checked only via DiagMatches (conversion, move, slice, index, spread, stackalloc, array literal, switchExpr, catch, lambda, default; region.byn:526, :533-534, :545-575); pin in ComputeCases now that T37 is real (Q641) — T28
+- T26 LOW 11 (review r3): SelfhostSemanticsTests.cs:320 (CliApp.cs:172 → :174), :342 (:304 → :315), :357 (:274/:351 → :285/:362) stale after the dev merge — T28
+- 013 flaky under load (full suite 14 min, nice, 2026-11-01): ExternalModeTests.TestMutateRunRunsTheCommandThroughTheRealCli, RunTests run/assert-fails.test.byn, MutationRunnerTests StatusesAreKilled… and AMutantRunsOnlyTheTests… failed in the full run, all 274 pass alone; likely fixed timeouts — make them scale or not time-bound (013 follow-up)
+- 010 T31 LOW 9 (review rows, docs/specs/010-self-hosted-semantics/reviews/T31.md): L023's 'exits 0 or 1' is observed through the real `bayan-check <path>` exit only for the 891 goldens; for seeds and random mutations `--many`'s `golden` returns `exitOk` (selfhost/semantics/main.byn:336), so the exit check there is vacuous. Fixing task: an 011/self-host follow-up (run the CLI path over seeds/mutations, or return the check's exit from `golden`).
+- 010 follow-up (T22 review rows 2-4, reviews/T22.md): Q627 (bayan-handoff.md) still says `statesOf` returns -1 and its lines are unreachable, but `statesOf` is real (declare2.byn:184); five `mutation-exempt: Q627` markers remain (states.byn:194, :434, :483, :491, :552) and need removing or re-citing; no oracle case for `built` (errorcases.byn:52-55, BinderErrors.cs:59-63).
+- 010 final review (2026-11-01, consequence lens; MEDIUM judged LOW: ratio 1.42 vs limit 10): `SelfhostSemanticsGeneratorTests.OneMegabyteWithinTenTimes` (tests/Bayan.Tests/SelfhostSemanticsGeneratorTests.cs:217) runs in parallel with the L022/L023 law classes under the T28 `SelfhostSemantics` filter; under heavy load the 10x check could fail without a regression (and count a guard mutant killed). Put it in a `DisableParallelization` collection or set `BAYAN_SKIP_TIMING` in the guard.
+- 010 final review LOW: SelfhostSemanticsEquivalenceLawTests.cs:218,262 and SelfhostSemanticsNoPanicLawTests.cs:463,504,534 delete and rewrite fixed dirs under tmp/l022/ and tmp/semantics-nopanic/; two `dotnet test` runs in one worktree at once break each other (missing `.exit`, "stopped before"). Use a per-run directory.
+- run/ goldens leave a.txt b.txt C.txt copy.bin empty.bin input.bin in the checkout root after a full `dotnet test` (seen 2026-11-01 17:18 on the 010 base; earlier 1759232): a run/ case writes to the cwd; give run cases a per-case working dir.
+- 013 T18: `Schemata.Rebinds` (src/Bayan.Testing/Schemata.cs) calls `Compilation.WithFile` once per site, a full recompile, ~1.3 s per site on selfhost/semantics (249 fold.byn sites → 337 s schemata build, T14 writer 2026-11-01); an unscoped parser+lexer schemata build ran >10 min. Replay per mutant is 0.2 s. Fix in src/ (one recompile per file or a type-check-only rebind) or take the per-file fallback in the plan risks.
+- [ ] `SelfhostSnapshotTests` runs nested `dotnet test` recordings, ~80 s per full suite run; consider a trait to keep them out of the default run (T14 gate note, T18/T19).
+- [ ] T14 review LOW: the site map sits beside the binary in shared `tmp/cache`, so evicting the cache breaks a recording (`SelfhostSemanticsHarness.cs:81,89`); copy it into the snapshot dir (rv-013-t14).
+- [ ] T14 review LOW: only `SelfhostParserTests.Run/RunBytes` record; Lexer, ParserT3/T10/T11/T12, Generator, EquivalenceLaw still spawn their own non-schemata builds, so a broad recording filter records none of them (rv-013-t14).
+- [ ] T14 review LOW: `scripts/selfhost/replay.py:36` has no per-run timeout; a looping mutant hangs a hand-run replay (rv-013-t14).
+- 013 T15: replay.py exit 2 (unreadable recording) is counted as killed by bayan mutate (src/Bayan.Testing/MutationRunner.cs:124); it should stop the run.
+- 013 T15 review LOW: guard.sh:77,83 deletes/reads bayan-quality.json beside the binary in the shared program cache (Toolchain.cs:220); parallel guards across worktrees can take each other's report. Pass an output path or copy under a per-run lock. (rv-013-t15)
+- 013 T15 review LOW: land.sh:59-63 runs quality-baseline.py update after merge and tick edit but before commit; a failure leaves the base dirty. Run it before the merge or roll back. (rv-013-t15)
+- 013 T15 review LOW: quality-baseline.py:18 keys report paths with relpath and no inside-root check; an outside path becomes a ../ key. (rv-013-t15, unverified)
+- 013 T26: switch statements get no branch counters (CoverageInstrumenter, T9), short of R9 "each outcome of each condition"; e.g. selfhost/semantics/ctx.byn:582.
+- 013 T26: a changed .byn with no functions (struct-only) gets no coverage line from the guard; print an info line.
+- 013 T26 gate: guard.sh:34 COVER takes every changed selfhost/*.byn; a filter whose builds don't compile one throws "matches no compiled source", reported as a test failure, not a coverage message.
+- 013 T26 review LOW: the coverage report is written only at ProcessExit; a test host killed mid-run leaves no report. (rv-013-t26, unverified)
+- 013 T26 review LOW: with BAYAN_COVERAGE set the guard runs only the instrumented build, never the plain one, so a counter that changes behaviour goes unnoticed. (rv-013-t26, unverified)
+- 013 T26 review LOW: coverage counter files are keyed by pid; a reused pid in one run overwrites an earlier file. (rv-013-t26, unverified)
+- 013 T26 fix gate: guard.sh:121 a non-zero `quality-baseline.py check` exit after partial output is recorded without saying the script failed.
+- 013 T26 fix gate: guard.sh:80 the exit-status check on guard-checks.py has no test.
+- 013 T26 fix gate: coverage-gate.py:45 lines outside any function (top-level code) are never gated even when the diff changes them.
+- Unsorted `Directory.GetFiles` builds corpora in `SelfhostParserT*Tests` and `SelfhostSemanticsHarness.cs:39`; sort them ordinally as `SelfhostSemanticsNoPanicLawTests.FlatGoldens` now does (file-system order differs on Linux).
+- After the next Windows CI run, recheck the `Assert.Equal` "Values differ" cases and `OwnershipCheckerTests.Debug*`, which were judged from their error text only (abort exit code 3 vs 0xC0000409 depends on zig being the compiler).
+- `L005RunBatchTests.cs:276` already sets `Skip` on Windows (`Io.runBatch` runs cmd.exe there); an existing skip, not added by the CI fix.
+- review 13ec1ad..c9cf24d MEDIUM (unverified, Windows): CliApp.cs:436 ReadShared only stops the C# reader blocking the rename of bayan-rt.h/out files; zig cc holding the header or other Toolchain.ReplaceFile users (Toolchain.cs:230) can still hit a sharing violation under concurrent builds. Recheck after the Windows CI rerun.
+- review 13ec1ad..c9cf24d LOW (unverified): TestSetup.cs SetConsoleCodePage swallows IOException; with no console the 437 check in CliEnvironmentTests.cs:155 fails with a misleading message. Report the failed setter instead.
+- review 13ec1ad..c9cf24d LOW: ci.yml mlugg/setup-zig@v2 is a third-party action on a moving tag; pin to a verified commit SHA.
+- CI 2026-11-01 round 2: SelfhostSemanticsCorpusParityTests.OneMegabyteWithinTenTimes exceeds its 10x bound on CI/Linux Docker (25.8x macOS runner, 10.6–14.3x Docker; 3.0x local macOS). User decision 2026-11-01: keep 10x, leave red, until the self-hosted checker is faster.
+- CI 2026-11-01 round 2: the lexer and parser 1 MB timing tests share the parallel-suite timing hazard fixed for the semantics one (serial collection); they passed on CI, untouched.
+- review 9da9c6d..29ef0b1 LOW: SelfhostSemanticsGeneratorTests.cs:194 the serial ToolchainEnvironment collection also serialises GeneratedSeedsAgree (suite wall time); the comment at :197 ("they run in parallel") is stale for this class.
+- review 9da9c6d..29ef0b1 LOW: TestSetup.cs:68 PanicExit.Portable maps only 0xC0000409; a Windows build on legacy msvcrt abort() (exit 3) would fail RunTests/CoverageTests/MutantSchemataTests/L008. (unverified on Windows)
+- Full-suite runs under heavy machine load fail 2-3 tests intermittently (names not logged; 2026-11-01/02, CI fix branches); clean re-runs pass 6032/6032. Run with --logger "console;verbosity=normal" to name them next time. 2026-11-02 (review 95a0276..91dc882 suite, laws running alongside): ScaffoldTests.AFreshAppRunsAndPassesItsTests failed once, passed alone.
+- ctx.byn mutation score 0.2627 (57/217) on the T28 trial run (2026-11-02); builds 1, 5, 7 kill 0 of 31: check whether any test in its filter reaches them (spec 013 T28, owner: 010 coverage work)
+- mutate-batch.sh:89: a group whose manifest lists zero builds passes the unexpanded `quality-*.json` glob to quality-baseline.py and fails with a generic message instead of naming the group (T28 gate, LOW)
+- mutate-batch.sh: only ctx.byn was run for real; other parser/lexer files may hit "matches no compiled source" with a family class that does not compile them (T28)
+- 013 perf: `src/Bayan.Testing/Schemata.cs:132` `Rebinds` re-binds the whole package per site (`Compilation.WithFile`), ~1.5 s/site over selfhost/semantics: 10 T27 files = 8087 sites = 2 h 50 min (measured) before any C compile or test. Blocks a practical nightly batch (mutation.yml shards by file group, each still pays this). Fix needs a user call (re-bind only the module and dependents, or reuse binding across sites); see 013-results.md.
+- review dev...cabca7d LOW (unverified): tests/Bayan.Tests/SelfhostSnapshotTests.cs:172-175 the nested `dotnet test` in `Record` overrides BAYAN_SNAPSHOT but inherits BAYAN_COVERAGE/BAYAN_COVERAGE_FILES; a guard run with a changed .byn (coverage on) and a filter matching SelfhostSnapshotTests fails with "BAYAN_SNAPSHOT and BAYAN_COVERAGE are both set".
+- review dev...cabca7d LOW (unverified): scripts/selfhost/coverage-gate.py:44-48 `touched` includes every function whose span holds a changed line, so a change in a nested function/lambda gates all of the enclosing function's missed lines.
+- 013 T19 Windows (wp1, tree fbecfff): 82 test failures. 76 SelfhostSemantics* are the Q743 path-join issue (self-host prints full C:\ path); CacheTests.ParallelBuildsNeverCorruptTheCache is Toolchain.ReplaceFile (Toolchain.cs:236) access denied under parallel builds; 5 SelfhostSnapshotTests use /bin/echo and /usr/bin/false fixtures; shell tests guard/land/quality-baseline/mutate-batch fail on mixed C:/ and /c/ paths. Detail: docs/specs/013-test-tooling/013-results.md T19.
+- LOW (review d63bec8..95a0276 re-review, fix/review-2026-11-02-2) tests/Bayan.Tests/SelfhostLexerTests.cs `BuildAndRunsAreRecordedUnderASnapshotDirectory` only checks manifest.json exists, not that it lists the binary BuildLex returned; an empty `builds` array would pass. Fix in T28.
+- LOW (same review) tests/Bayan.Tests/SelfhostLexerTests.cs the recording test uses a fixed tmp/selfhost-lexer-snap and deletes it first; two concurrent test hosts would delete each other's recording and flake the runs.jsonl count. Fix in T28 (per-process dir).
+- Q743: tests/windows-known-failures.txt lists 76 Windows-only failures; spec 014 removes entries as they pass (the CI step fails on a listed test that passes).
+- Q743 review LOW: scripts/ci/known-failures.py:44-45 a listed test with an outcome other than Passed/Failed (e.g. NotExecuted) prints nothing; report it as "not run". (gate w-q743kf)
+- 013 T27: markers converted / sites marked `@unobservable` per file (site map tmp/c4/sitemap.json, 8087 sites, 310 marked): binder 1/0, binder2 3/0, calls 14/24, calls3 1/0, express 6/33, express2 25/169, express3 8/64, generics 1/0, region2 13/15, states 5/5; 77 markers in all. A file with 0 marked sites had only rejected markers (listed below).
+- 013 T27: scripts/selfhost/mutation-exempt.py and mutation-exempt.test.sh have no reader once no `// mutation-exempt:` marker remains (cleanup candidate).
+- 013 T27: lost exemptions (line numbers on feat/013-test-tooling, before conversion). The old `// mutation-exempt:` span covered these lines but a header line cannot take `@unobservable` without marking its whole statement, so their sites are unmarked until the stub lands. Each is a statement header or continuation only partly exempt:
+- 013 T27: calls.byn:319-320 (Q732 t20IsLambda header and `switch e {`), 860 (Q732 `if b.itDepth > 0 {`), 375, 377, 379 (Q616 `if` / `else if` headers of the becomes block; their bodies are marked).
+- 013 T27: express.byn:156 (Q600 `if kind == .toDynRef …` header), 825 (Q600 `if b.thisType != -1 …` header; 826 and 829-845 are marked).
+- 013 T27: express2.byn:368, 381 (Q607 `else if` headers), 614 (Q607 `if isList && name == "removeRange" {`; marker 614 trails it, so the script never skipped it), 396, 398, 400 (Q607 `for`/`for`/`if` headers of the union-field loop), 532 (returnTypeThrough header), 559 (reportRenamed header), 666, 667 (memberSuggestion header and its first `if`).
+- 013 T27: express3.byn:617 (Q613 `if state == -1 {` header; 618 and 619-629 are marked).
+- 013 T27: region2.byn:121 (Q684 `let fresh = …` is a 3-line statement, only its first line was exempt).
+- 013 T27: markers the script rejected exempted nothing and were removed with no attribute: binder.byn:295, binder2.byn:421, 653, 837, calls.byn:335, 386, 402, 409, 415, 798, 816, 839, calls3.byn:941, generics.byn:190, express2.byn:363, 364 (its through-373 span is marked), 443, 473, states.byn:194, 483, 491, 552. express2.byn:97, 107, 336, 447 were also rejected; their bodies (98, 108, 337, 448) are marked as the dispatcher approved.
+- 013 T27: some T27 reasons may be stale: calls.byn has ported bindCall (Q616), so check the Q607 bindCall and Q616 reasons when T20 closes.
+- wp1 upgraded to zig 0.17.0 on 2026-11-02 (old 0.16.0-dev kept at C:/home/lang/zig-0.16.0-dev.2682, cleanup 016). wlt1 dropped as a T19 host.
+- review 95a0276..91dc882 LOW (confirmed by audit): scripts/ci/known-failures.py a test host crash that leaves only the tests run so far in the trx still exits 0; listed tests that did not run print "not run" only. Decide whether a run-level check (ResultSummary/Counters) should fail it once a real crashed-run trx is in hand.
+- LOW tests/Bayan.Tests/TestSetup.cs WarmUp (review 9bc60735..3bc80e96): on Windows the warm-ups still build `// os: unix` cases the theories skip, spending gate slots; and `Lazy` ExecutionAndPublication caches a transient zig spawn failure as a permanent theory failure (no retry).
+- `scripts/pinned-bayan.sh:24-31`: `.cache/bayan/` is never pruned: one full clone + build per dev sha, and each failed build leaves its `.build-<sha>-<pid>/` for the log (review a9e5ffdc..2243547d, LOW); add pruning of all but the last N shas.
+- `scripts/selfhost/mutation-step.sh:14,32`: dev's pinned `bayan mutate` drives the branch's working-tree schemata builds and `replay.py`; no check that both speak the same mutant protocol, so a branch changing `BAYAN_MUTANT`/site ids/report format is gated by the old one (review a9e5ffdc..2243547d, LOW); decide in spec 015 how gates treat changes to the mutation tool itself.
+- `tests/parity/wave-brief/*/expected/stdout`: `scripts/selfhost/wave-brief.py:14-15` embeds `writer-protocol.md` and `bayan-cheatsheet.md` in every prompt, so any edit to either doc breaks the wave-brief baselines; re-record them with `bash scripts/parity/run.sh wave-brief --record` on such an edit, or give the cases their own copies. Found 2026-11-02, spec 015 parity baselines.
+- [ ] Parity baselines `tests/parity/{review-brief,wave-brief}/unknown-task` and `guard-checks/wrong-usage` record Python 3.11+ traceback carets; under python3 < 3.11 (macOS /usr/bin/python3 3.9) run.test.sh fails them. Pin a minimum python3 or strip caret lines when normalising stderr (review ef4f0d3e9f1e..c8a4b327, LOW).
+- LOW scripts/cleanup/merged-worktree-backlog.test.sh: no fixture for a detached worktree with an unreadable HEAD or a worktree path with spaces (review 719f9d4cee72..2dacb80fd2bd).
+- `src/Bayan.Backend.C/Toolchain.cs:33`: after `v0.1.0` is tagged on main, set `CompilerVersion` on dev to `0.2.0-dev` so dev builds stop reporting 0.1.0 (release 2026-11-02).
+- Repo has no `LICENSE` while public; `scripts/release/package.sh` ships one in each archive only when it exists. License choice is the user's.
+- `bayan dist --target wasm32` once left a 0-byte `a.o` in the project directory (tmp/demo/wordcount, 2026-11-02, not reproduced in 3 runs); look for a zig/clang `-o` falling back to the cwd on a failed compile.
+- `List.sort(by:)` for non-primitive elements (spec line 1776 defers it): the wordcount demo needed a hand-written insertion sort (2026-11-02).
+- LOW scripts/release/package.sh:38-42: the Windows zip branch (System32 tar.exe / bsdtar / Info-ZIP) is only exercised on whichever tar the test host has; first real check is the v0.1.0 windows runners (review of chore/release-0.1.0).

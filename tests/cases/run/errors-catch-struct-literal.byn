@@ -1,0 +1,15 @@
+union error MkError { bad }
+
+struct P {
+    i64 x = 0
+}
+
+P mk(bool ok) fails MkError {
+    fail .bad if !ok
+    return { x: 7 }
+}
+
+let a: P = mk(ok: false) catch { x: 1 }
+let b: P = mk(ok: true) catch { x: 1 }
+let c: P = mk(ok: false) catch P{}
+print($"{a.x} {b.x} {c.x}")

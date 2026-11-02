@@ -1,0 +1,1 @@
+- (c) BYN1053 `OneLineDeclarations` "`{0}` declares its cases on one line; write one per line" (O1; label at the first `,`; help "write each case on its own line"; fix yes).

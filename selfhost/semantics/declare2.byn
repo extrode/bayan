@@ -1,0 +1,631 @@
+// T38: Compilation.cs ~1038-1362 (interface members, signatures, parameters, shapes, states, recursion).
+//
+// C# `_interfaceGetters[getter]` is the getter's own member of the interface: its `declIndex` and
+// `memberIndex`, as conformance.byn reads it. `ParameterSymbol.Syntax` is the parameter at the same
+// position in its function's declaration, as `t20Param` reads it. `_inReportedCycle` is T38 state.
+
+import parser
+
+// The C# `Fix` `refReceiverFix` returns: the span to replace and its replacement.
+struct Fix {
+    TextSpan span
+    string replacement
+}
+
+// ── Compilation.cs:1038 ValidationErrorOf ───────────────────────────────────────
+
+ErrorSetId validationErrorOf(ref Ctx c, for Type t) {
+    if (c.validationErrors.tryGet(at: t) is { } found) { return found }
+    let template = typeIndex(t9Type(ref c, for: "ValidationError"))
+    let source = c.errorSets[template].file
+    let dIdx = c.errorSets[template].declIndex
+    let set = newErrorSet(ref c, by: ErrorSetSymbol {
+        name: c.errorSets[template].name,
+        nameSpan: c.errorSets[template].nameSpan,
+        span: c.errorSets[template].span,
+        module: c.errorSets[template].module,
+        file: source,
+        declIndex: dIdx,
+        memberIndex: c.errorSets[template].memberIndex,
+        access: c.errorSets[template].access,
+        of: t,
+    })
+    var vName = TextSpan { start: 0, length: 0 }
+    var vDoc: string? = null
+    switch c.files[source].unit.members[dIdx] {
+        case .errorEnumDecl(let d):
+            vName = d.value.variants[0].name
+            vDoc = d.value.variants[0].doc
+        default:
+            panic("`ValidationError` is declared by a `union error`")
+    }
+    let invalid = newErrorVariant(ref c, by: ErrorVariantSymbol {
+        name: t12Text(in c, from: source, at: vName),
+        nameSpan: vName,
+        span: vName,
+        set: set,
+        file: source,
+        declIndex: dIdx,
+        memberIndex: 0,
+        code: c.errorVariants.length + 1,
+        doc: vDoc,
+    })
+    if kindOf(t) == .structType && c.structs[typeIndex(t)].fieldEnum >= 0 {
+        let s = typeIndex(t)
+        let rule = t9Type(ref c, for: "Rule")
+        let ruleFile = c.unions[typeIndex(rule)].file
+        let module = t9Module(ref c)
+        switch c.files[ruleFile].unit.members[1] {
+            case .structDecl(let decl):
+                var typeArgs = List<Type>()
+                typeArgs.append(t)
+                let violation = newStruct(ref c, by: StructSymbol {
+                    name: "Violation",
+                    nameSpan: decl.value.name,
+                    span: decl.value.name,
+                    module: module,
+                    file: ruleFile,
+                    declIndex: 1,
+                    access: .publicKeyword,
+                    typeArgs: move typeArgs,
+                })
+                var types = List<Type>()
+                types.append(enumTypeOf(c.structs[s].fieldEnum))
+                types.append(rule)
+                var k: i64 = 0
+                for mIdx in 0..decl.value.members.length {
+                    switch decl.value.members[mIdx] {
+                        case .fieldDecl(let f):
+                            if k < types.length {
+                                let field = newField(ref c, by: FieldSymbol {
+                                    name: t12Text(in c, from: ruleFile, at: f.value.name),
+                                    nameSpan: f.value.name,
+                                    span: f.value.name,
+                                    owner: violation,
+                                    file: ruleFile,
+                                    declIndex: 1,
+                                    memberIndex: mIdx,
+                                    access: .publicKeyword,
+                                    type: types[k],
+                                })
+                                c.structs[violation].fields.append(field)
+                                k += 1
+                            }
+                        default:
+                            continue
+                    }
+                }
+                let p = newLocal(ref c, by: LocalSymbol {
+                    name: "violations",
+                    nameSpan: vName,
+                    span: vName,
+                    type: internList(ref c, by: structTypeOf(violation)),
+                    kind: .parameter,
+                    isParameter: true,
+                    modifier: .none,
+                    ordinal: 0,
+                })
+                c.errorVariants[invalid].fields.append(p)
+            default:
+                panic("member 1 of the `Rule` file is `struct Violation`")
+        }
+    }
+    c.errorSets[set].variants.append(invalid)
+    c.validationErrors[t] = set
+    return set
+}
+
+// ── Compilation.cs:1060 DeclareCheck ────────────────────────────────────────────
+
+void declareCheck(ref Ctx c, for StructId s) {
+    let file = c.structs[s].file
+    // `MinBy(r => r.Span.Start)` over the fields' rules, then the struct's: the first of the smallest.
+    var hasFirst = false
+    var first = TextSpan { start: 0, length: 0 }
+    switch c.files[file].unit.members[c.structs[s].declIndex] {
+        case .structDecl(let node):
+            for m in node.value.members {
+                switch m {
+                    case .fieldDecl(let f):
+                        for r in f.value.requiresKeyword {
+                            if !hasFirst || r.span.start < first.start {
+                                first = r.span
+                                hasFirst = true
+                            }
+                        }
+                    default:
+                        continue
+                }
+            }
+            for r in node.value.rules {
+                if !hasFirst || r.span.start < first.start {
+                    first = r.span
+                    hasFirst = true
+                }
+            }
+        case .typeAliasDecl(let a):
+            for r in a.value.requiresKeyword {
+                if !hasFirst || r.span.start < first.start {
+                    first = r.span
+                    hasFirst = true
+                }
+            }
+        default:
+            panic("a struct is declared by a `StructDecl` or a `type distinct`")
+    }
+    if !hasFirst || c.structs[s].template >= 0 { return }
+    if structIsGeneric(ref c, by: s) {
+        report(ref c, for: .unsupported, from: file, at: first, by: ("`requires` on a generic struct", "", "", "", ""))
+        return
+    }
+    let module = c.structs[s].module
+    let check = newFunction(ref c, by: FunctionSymbol {
+        name: "requires",
+        nameSpan: c.structs[s].nameSpan,
+        span: c.structs[s].span,
+        module: module,
+        kind: .method,
+        owner: s,
+        file: file,
+        access: c.structs[s].access,
+        // C# `FunctionSymbol.ReturnType` starts as `void`; Bayan's `returnType` starts as -1.
+        returnType: prim(.void),
+        hasFails: true,
+    })
+    let validation = validationErrorOf(ref c, for: structTypeOf(s))
+    c.functions[check].errorSets.append(validation)
+    c.modules[module].allFunctions.append(check)
+    c.checks.append(StructChecks { check: check })
+    c.checksOf[s] = c.checks.length - 1
+}
+
+// ── Compilation.cs:1082 StatesOf ────────────────────────────────────────────────
+
+UnionId statesOf(ref Ctx c, for StructId s) {
+    let file = c.structs[s].file
+    let dIdx = c.structs[s].declIndex
+    // `s.Decl.States`: a `type distinct` has none.
+    var count: i64 = 0
+    switch c.files[file].unit.members[dIdx] {
+        case .structDecl(let node):
+            count = node.value.states.length
+        default:
+            count = 0
+    }
+    if count == 0 { return -1 }
+    if (c.states.tryGet(at: s) is { } existing) { return existing }
+    // The synthesized `UnionDecl` is the struct's own declaration, its `states` the cases (Q689).
+    let u = newUnion(ref c, by: UnionSymbol {
+        name: c.structs[s].name,
+        nameSpan: c.structs[s].nameSpan,
+        span: c.structs[s].span,
+        module: c.structs[s].module,
+        file: file,
+        declIndex: dIdx,
+        memberIndex: c.structs[s].memberIndex,
+        access: c.structs[s].access,
+        typeMap: t11CopyMap(in c.structs[s].typeMap),
+    })
+    c.states[s] = u
+    // An instance's states were checked on the template.
+    if c.structs[s].template >= 0 {
+        let outer = pushBag(ref c)
+        declareUnionVariants(ref c, for: u)
+        popBag(ref c, to: outer)
+        return u
+    }
+    declareUnionVariants(ref c, for: u)
+    switch c.files[file].unit.members[dIdx] {
+        case .structDecl(let node):
+            for member in node.value.members {
+                var name: string? = null
+                switch member {
+                    case .functionDecl(let f):
+                        if (f.value.modifiers & 4) != 0 { name = t12Text(in c, from: file, at: f.value.name) }
+                    case .propertyDecl(let p):
+                        if (p.value.modifiers & 4) != 0 { name = t12Text(in c, from: file, at: p.value.name) }
+                    default:
+                        name = null
+                }
+                if (name is { } n) {
+                    for state in node.value.states {
+                        if t12Text(in c, from: file, at: state.name) == n {
+                            report(ref c, for: .stateShadowsStatic, from: file, at: state.name, by: (n, c.structs[s].name, "", "", ""), help: "rename the state or the static member")
+                            break
+                        }
+                    }
+                }
+            }
+        default:
+            panic("a struct with states is declared by a `StructDecl`")
+    }
+    return u
+}
+
+// ── Compilation.cs:1110 CheckStateNames ─────────────────────────────────────────
+
+void checkStateNames(ref Ctx c, for StructId s) {
+    let states = statesOf(ref c, for: s)
+    let file = c.structs[s].file
+    switch c.files[file].unit.members[c.structs[s].declIndex] {
+        case .structDecl(let node):
+            for m in node.value.members {
+                switch m {
+                    case .functionDecl(let f):
+                        var names = List<TextSpan>()
+                        for n in f.value.receiverStates { names.append(n) }
+                        if (f.value.becomes is { } b) { names.append(b) }
+                        for n in names {
+                            let text = t12Text(in c, from: file, at: n)
+                            if states < 0 || findUnionVariant(ref c, by: states, for: text) < 0 {
+                                report(ref c, for: .unknownState, from: file, at: n, by: (c.structs[s].name, text, "", "", ""), help: $"check the states declared in `{c.structs[s].name}`")
+                            }
+                        }
+                    default:
+                        continue
+                }
+            }
+        default:
+            return
+    }
+}
+
+// ── Compilation.cs:1131 DeclareInterfaceMembers ─────────────────────────────────
+
+void declareInterfaceMembers(ref Ctx c, for InterfaceId i) {
+    let file = c.interfaces[i].file
+    let dIdx = c.interfaces[i].declIndex
+    let module = c.interfaces[i].module
+    // The `Unique` local is T12's `t12Unique`, the same function.
+    var names = Map<string, Location>()
+    var typeMap = t11CopyMap(in c.interfaces[i].typeMap)
+    switch c.files[file].unit.members[dIdx] {
+        case .interfaceDecl(let node):
+            for member in node.value.members {
+                switch member {
+                    case .associatedTypeDecl(let a):
+                        checkType(ref c, from: file, at: a.value.name)
+                        if !t12Unique(ref c, from: file, at: a.value.name, to: ref names) { continue }
+                        let text = t12Text(in c, from: file, at: a.value.name)
+                        let t = newTypeParam(ref c, by: TypeParam { name: text })
+                        c.interfaces[i].associatedTypes.append(t)
+                        typeMap[text] = typeParamTypeOf(t)
+                    default:
+                        continue
+                }
+            }
+            // C#'s `map` is null when `typeMap` is empty; an empty map stands for it.
+            let types = TypeResolver { file: file, typeArgs: t11CopyMap(in typeMap) }
+            for mIdx in 0..node.value.members.length {
+                switch node.value.members[mIdx] {
+                    case .associatedTypeDecl(let _):
+                        continue
+                    case .functionDecl(let m):
+                        checkValue(ref c, from: file, at: m.value.name)
+                        rejectStatic(ref c, from: file, by: m.value.modifiers, at: m.value.name)
+                        // C# `Decl = m`: the symbol keeps its `becomes`, `ref this` and `move this` scalars (Q656 (e)).
+                        var becomes: string? = null
+                        if (m.value.becomes is { } becomesAt) { becomes = t12Text(in c, from: file, at: becomesAt) }
+                        let fn = newFunction(ref c, by: FunctionSymbol {
+                            name: t12Text(in c, from: file, at: m.value.name),
+                            nameSpan: m.value.name,
+                            span: m.value.name,
+                            module: module,
+                            kind: .method,
+                            access: c.interfaces[i].access,
+                            modifiers: i64(m.value.modifiers),
+                            file: file,
+                            declIndex: dIdx,
+                            memberIndex: mIdx,
+                            iface: i,
+                            isAbstract: m.value.body is .none && m.value.expressionBody is .none,
+                            isStatic: (m.value.modifiers & 4) != 0,
+                            typeMap: t11CopyMap(in typeMap),
+                            becomes: becomes,
+                            refThis: m.value.refThis,
+                            moveThis: m.value.moveThis,
+                        })
+                        var ownParameters = List<TypeParamId>()
+                        if (declareTypeParameters(ref c, from: file, for: in m.value.typeParams, to: ref ownParameters) is { } own) {
+                            var merged = t11CopyMap(in typeMap)
+                            for (k, v) in own {
+                                if !typeMap.contains(k) { merged[k] = v }
+                            }
+                            c.functions[fn].typeMap = move merged
+                        }
+                        c.functions[fn].typeParams = copyIds(in ownParameters)
+                        let fnName = t12Text(in c, from: file, at: m.value.name)
+                        if c.functions[fn].typeMap.length == 0 {
+                            declareWhere(ref c, from: file, for: in m.value.where, to: in ownParameters, by: null, as: fnName)
+                        } else {
+                            declareWhere(ref c, from: file, for: in m.value.where, to: in ownParameters, by: t11CopyMap(in c.functions[fn].typeMap), as: fnName)
+                        }
+                        declareSignature(ref c, for: fn, from: in m.value, by: file)
+                        if t12Unique(ref c, from: file, at: m.value.name, to: ref names) { c.interfaces[i].methods.append(fn) }
+                    case .getterDecl(let g):
+                        t38DeclareGetter(ref c, for: i, at: mIdx, by: g.value.modifiers, from: in g.value.type, as: g.value.name, isAbstract: true, through: in types, to: ref names)
+                    case .propertyDecl(let p):
+                        t38DeclareGetter(ref c, for: i, at: mIdx, by: p.value.modifiers, from: in p.value.type, as: p.value.name, isAbstract: false, through: in types, to: ref names)
+                    default:
+                        report(ref c, for: .unsupported, from: file, at: t11DeclSpan(in node.value.members[mIdx]), by: ("this kind of interface member", "", "", "", ""))
+                }
+            }
+        default:
+            panic("an interface is declared by an `InterfaceDecl`")
+    }
+}
+
+/// The `DeclareGetter` local of `DeclareInterfaceMembers`; member `mIdx` of the interface is its `decl`.
+void t38DeclareGetter(ref Ctx c, for InterfaceId i, at i64 mIdx, by parser.Modifiers modifiers, from in parser.TypeSyntax type, as TextSpan name, bool isAbstract, through in TypeResolver types, to ref Map<string, Location> names) {
+    let file = c.interfaces[i].file
+    checkValue(ref c, from: file, at: name)
+    rejectStatic(ref c, from: file, by: modifiers, at: name)
+    let returnType = resolve(ref c, through: in types, for: in type)
+    let getter = newFunction(ref c, by: FunctionSymbol {
+        name: t12Text(in c, from: file, at: name),
+        nameSpan: name,
+        span: name,
+        module: c.interfaces[i].module,
+        kind: .getter,
+        access: c.interfaces[i].access,
+        file: file,
+        declIndex: c.interfaces[i].declIndex,
+        memberIndex: mIdx,
+        iface: i,
+        isAbstract: isAbstract,
+        returnType: returnType,
+        typeMap: t11CopyMap(in types.typeArgs),
+    })
+    if t12Unique(ref c, from: file, at: name, to: ref names) { c.interfaces[i].properties.append(getter) }
+}
+
+// ── Compilation.cs:1203 RejectStatic ────────────────────────────────────────────
+
+void rejectStatic(ref Ctx c, from FileId file, by parser.Modifiers modifiers, at TextSpan name) {
+    if (modifiers & 4) != 0 {
+        report(ref c, for: .staticAbstract, from: file, at: name, by: ("", "", "", "", ""), label: "declared `static`", help: "remove `static` or make it a free function")
+    }
+}
+
+// ── Compilation.cs:1210 RejectModifiers ─────────────────────────────────────────
+
+void rejectModifiers(ref Ctx c, from FileId file, at TextSpan span, by parser.Modifiers actual, for parser.Modifiers rejected, as string what) {
+    if (actual & rejected) != 0 {
+        report(ref c, for: .unsupported, from: file, at: span, by: ($"`{t38ModifierText(actual & rejected)}` on {what}", "", "", "", ""))
+    }
+}
+
+/// C#'s `Modifiers.ToString().ToLowerInvariant()`: each set flag's name, lowest first, joined by ", ".
+string t38ModifierText(parser.Modifiers m) {
+    let flagNames = ["public", "private", "static", "readonly", "required", "const", "unique", "extern", "unsafe"]
+    var sb = StrBuf()
+    var any = false
+    for k in 0..flagNames.length {
+        if (i64(m) & (1 << k)) != 0 {
+            if any { sb.append(", ") }
+            sb.append(flagNames[k])
+            any = true
+        }
+    }
+    return $"{sb.finish()}"
+}
+
+// ── Compilation.cs:1217 RefReceiverFix ──────────────────────────────────────────
+
+Fix refReceiverFix(in parser.FunctionDecl decl) {
+    if (decl.moveThis is { } moveSpan) { return Fix { span: TextSpan { start: moveSpan.start, length: 4 }, replacement: "ref" } }
+    let text = decl.receiverStates.length > 0 ? "ref " : decl.params.length > 0 ? "ref this, " : "ref this"
+    return Fix { span: TextSpan { start: decl.paramsStart, length: 0 }, replacement: text }
+}
+
+// ── Compilation.cs:1221 DeclareSignature ────────────────────────────────────────
+
+void declareSignature(ref Ctx c, for FuncId fn, from in parser.FunctionDecl decl, by FileId file, StructId owner = -1) {
+    let types = TypeResolver { file: file, container: owner, typeArgs: t11CopyMap(in c.functions[fn].typeMap) }
+    c.functions[fn].returnType = resolve(ref c, through: in types, for: in decl.returnType, allowVoid: true)
+    if functionTypeNotHere(ref c, for: c.functions[fn].returnType, from: file, at: t8TypeSpan(in decl.returnType), as: "a return type") { c.functions[fn].returnType = errorType() }
+    c.functions[fn].isMutating = decl.refThis is not null
+    let instanceMethod = c.functions[fn].kind == .method && !c.functions[fn].isStatic
+    if (decl.refThis is { } refThis) && !instanceMethod {
+        report(ref c, for: .unsupported, from: file, at: refThis, by: (c.functions[fn].isStatic ? "`ref this` on a static method" : "`ref this` outside a struct", "", "", "", ""), help: "remove `ref this`; only an instance method has a `this` to change")
+    }
+    // Only a `ref this` caller still holds the value whose state changed (revision 0010); a static `becomes` is BYN2022 at its `become`.
+    if (decl.becomes is { } becomes) && decl.refThis is null && instanceMethod {
+        // `move this is .s` and `this is .s` are written; a method with neither takes `this` unwritten.
+        var start = decl.paramsStart
+        if (decl.moveThis is { } mt) { start = mt.start }
+        var receiver: TextSpan? = decl.moveThis
+        if decl.receiverStates.length > 0 { receiver = TextSpan.fromBounds(start, until: decl.receiverStates[decl.receiverStates.length - 1].end) }
+        var at = decl.name
+        var receiverText = "this"
+        if (receiver is { } r) {
+            at = r
+            receiverText = t12Text(in c, from: file, at: r)
+        }
+        let fix = refReceiverFix(in decl)
+        let fnName = c.functions[fn].name
+        report(ref c, for: .becomesNeedsRef, from: file, at: at, by: (fnName, t12Text(in c, from: file, at: becomes), receiverText, "", ""), help: $"change the receiver of `{fnName}` to `ref this`, or return the new state as a value", hasFix: true, fixSpan: fix.span, fixReplacement: fix.replacement)
+    }
+    declareParameters(ref c, for: fn, from: in decl.params, by: file, through: in types)
+    if (decl.failsKeyword is { } clause) {
+        c.functions[fn].hasFails = true
+        if clause.errors.length == 0 {
+            c.functions[fn].infersErrors = true
+            if c.functions[fn].access == .publicKeyword {
+                report(ref c, for: .publicInferredFails, from: file, at: clause.span, by: (c.functions[fn].name, "", "", "", ""))
+            }
+        }
+        for e in clause.errors {
+            let t = resolve(ref c, through: in types, for: in e)
+            if kindOf(t) == .errorSet || kindOf(t) == .errorUnion {
+                // A case stays excluded only while every name that brings in its set excludes it.
+                var excluded = List<VariantId>()
+                var sets = List<ErrorSetId>()
+                if kindOf(t) == .errorUnion {
+                    excluded = copyIds(in c.errorUnionTypes[typeIndex(t)].excluded)
+                    sets = copyIds(in c.errorUnionTypes[typeIndex(t)].sets)
+                } else {
+                    sets.append(typeIndex(t))
+                }
+                for set in sets {
+                    if listContains(in c.functions[fn].errorSets, by: set) {
+                        var kept = List<VariantId>()
+                        for v in c.functions[fn].excludedErrors {
+                            if !(c.errorVariants[v].set == set && !listContains(in excluded, by: v)) { kept.append(v) }
+                        }
+                        c.functions[fn].excludedErrors = move kept
+                        continue
+                    }
+                    c.functions[fn].errorSets.append(set)
+                    for v in excluded {
+                        if c.errorVariants[v].set == set { c.functions[fn].excludedErrors.append(v) }
+                    }
+                }
+            } else if !isError(t) {
+                report(ref c, for: .notAnErrorSet, from: file, at: t8TypeSpan(in e), by: (typeDisplay(ref c, by: t), "", "", "", ""))
+            }
+        }
+    }
+}
+
+// ── Compilation.cs:1276 DeclareParameters ───────────────────────────────────────
+
+void declareParameters(ref Ctx c, for FuncId fn, from in List<parser.Param> parameters, by FileId file, through in TypeResolver types) {
+    for p in parameters {
+        checkValue(ref c, from: file, at: p.name)
+        let name = t12Text(in c, from: file, at: p.name)
+        let sym = newLocal(ref c, by: LocalSymbol {
+            name: name,
+            nameSpan: p.name,
+            span: p.name,
+            type: resolve(ref c, through: in types, for: in p.type),
+            kind: .parameter,
+            isParameter: true,
+            modifier: p.modifier,
+            ordinal: c.functions[fn].parameters.length,
+        })
+        for q in copyIds(in c.functions[fn].parameters) {
+            if c.locals[q].name == name {
+                reportDuplicate(ref c, from: file, at: p.name, as: loc(file, at: c.locals[q].span))
+                break
+            }
+        }
+        c.functions[fn].parameters.append(sym)
+    }
+    checkParticles(ref c, from: file, for: fn)
+}
+
+// ── Compilation.cs:1290 CheckStructShape ────────────────────────────────────────
+
+void checkStructShape(ref Ctx c, for StructId s) {
+    let file = c.structs[s].file
+    for f in copyIds(in c.structs[s].fields) {
+        // `f.Decl.Type.Span`: a `type distinct`'s field `value` is the alias's target.
+        var span = TextSpan { start: 0, length: 0 }
+        switch c.files[c.fields[f].file].unit.members[c.fields[f].declIndex] {
+            case .structDecl(let node):
+                switch node.value.members[c.fields[f].memberIndex] {
+                    case .fieldDecl(let d):
+                        span = t8TypeSpan(in d.value.type)
+                    default:
+                        panic("a field is declared by a `FieldDecl`")
+                }
+            case .typeAliasDecl(let a):
+                span = t8TypeSpan(in a.value.target)
+            default:
+                panic("a field is declared by a `StructDecl` or a `type distinct`")
+        }
+        let type = c.fields[f].type
+        if functionTypeNotHere(ref c, for: type, from: file, at: span, as: "a field") { continue }
+        if isBorrow(ref c, by: type) {
+            let help = isString(type) ? "store an index or an owned copy instead; storing borrows in structs arrives in a later version" : "store a `List` copied with `.copy(to: alloc)` instead; storing borrows in structs arrives in a later version"
+            report(ref c, for: .borrowField, from: file, at: span, by: (typeDisplay(ref c, by: type), "", "", "", ""), help: help)
+        }
+    }
+    let name = $"{c.structs[s].name}"
+    checkRecursion(ref c, for: structTypeOf(s), by: name, from: file, at: c.structs[s].nameSpan)
+}
+
+// ── Compilation.cs:1307 FunctionTypeNotHere ─────────────────────────────────────
+
+bool functionTypeNotHere(ref Ctx c, for Type t, from FileId source, at TextSpan span, as string position) {
+    if kindOf(t) != .function { return false }
+    report(ref c, for: .functionTypeNotHere, from: source, at: span, by: (position, "", "", "", ""), help: "take the function as a parameter instead")
+    return true
+}
+
+// ── Compilation.cs:1314 CheckUnionShape ─────────────────────────────────────────
+
+void checkUnionShape(ref Ctx c, for UnionId u) {
+    let file = c.unions[u].file
+    for v in copyIds(in c.unions[u].variants) {
+        for f in copyIds(in c.unionVariants[v].fields) {
+            let type = c.locals[f].type
+            if isBorrow(ref c, by: type) {
+                report(ref c, for: .borrowPayload, from: file, at: c.locals[f].span, by: (typeDisplay(ref c, by: type), "", "", "", ""), help: "store a `List` copied with `.copy(to: alloc)` instead")
+            }
+        }
+    }
+    let name = $"{c.unions[u].name}"
+    checkRecursion(ref c, for: unionTypeOf(u), by: name, from: file, at: c.unions[u].nameSpan)
+}
+
+// ── Compilation.cs:1332 CheckRecursion ──────────────────────────────────────────
+
+void checkRecursion(ref Ctx c, for Type t, by string name, from FileId source, at TextSpan span) {
+    if listContains(in c.inReportedCycle, by: t) { return }
+    var seen = List<Type>()
+    if (cycle(ref c, for: t, as: t, to: ref seen) is { } path) {
+        for p in path {
+            if !listContains(in c.inReportedCycle, by: p) { c.inReportedCycle.append(p) }
+        }
+        var sb = StrBuf()
+        sb.append(typeDisplay(ref c, by: t))
+        for p in path {
+            sb.append(" → ")
+            sb.append(typeDisplay(ref c, by: p))
+        }
+        let chain = sb.finish()
+        report(ref c, for: .recursiveByValue, from: source, at: span, by: (name, chain, "", "", ""), help: $"store the inner one as `Owned<{name}>` (or in a `List<{name}>`); a value cannot contain itself")
+    }
+}
+
+// ── Compilation.cs:1341 Cycle ───────────────────────────────────────────────────
+
+/// The structs and unions on a by-value path from `t` back to `target`, ending with it; null if there is none.
+List<Type>? cycle(ref Ctx c, for Type t, as Type target, to ref List<Type> seen) {
+    var parts = List<Type>()
+    let idx = typeIndex(t)
+    switch kindOf(t) {
+        case .structType:
+            for f in c.structs[idx].fields { parts.append(c.fields[f].type) }
+        case .unionType:
+            for v in c.unions[idx].variants {
+                for f in c.unionVariants[v].fields { parts.append(c.locals[f].type) }
+            }
+        case .optional:
+            parts.append(c.optionalTypes[idx])
+        case .array:
+            parts.append(c.arrayTypes[idx].element)
+        case .tuple:
+            for f in c.tupleTypes[idx] { parts.append(f.type) }
+        default:
+            parts = List<Type>()
+    }
+    for p in parts {
+        if p == target {
+            var one = List<Type>()
+            one.append(p)
+            return one
+        }
+        if listContains(in seen, by: p) { continue }
+        seen.append(p)
+        if (cycle(ref c, for: p, as: target, to: ref seen) is { } rest) {
+            var path = List<Type>()
+            if kindOf(p) == .structType || kindOf(p) == .unionType { path.append(p) }
+            for x in rest { path.append(x) }
+            return path
+        }
+    }
+    return null
+}

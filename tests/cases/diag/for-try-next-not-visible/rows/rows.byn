@@ -1,0 +1,12 @@
+public union error ReadError { broken }
+
+public struct Rows {
+    public i64 at
+
+    i64? next(ref this) fails ReadError {
+        at += 1
+        return at > 2 ? null : at
+    }
+}
+
+public Rows start() => Rows { at: 0 }

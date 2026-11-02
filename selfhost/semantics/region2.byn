@@ -1,0 +1,841 @@
+// T37: RegionAnalysis.cs 418-881 (calls, stores, mutations, last-use, reporting).
+
+// ── Borrow and set helpers (C# `ImmutableHashSet` / `HashSet` operations) ─────────
+
+Borrow t37CopyBorrow(in Borrow b) {
+    var regions = List<Region>()
+    for x in b.regions { regions.append(Region { depth: x.depth, name: x.name }) }
+    let owners = copyIds(in b.owners)
+    if (b.lends is { } lends) {
+        var copied: Map<LocalId, i64> = []
+        for (k, v) in lends { copied[k] = v }
+        return Borrow { regions: move regions, owners: move owners, lends: move copied }
+    }
+    return Borrow { regions: move regions, owners: move owners }
+}
+
+bool t37HasRegion(in List<Region> regions, for in Region region) {
+    for x in regions {
+        if x.depth == region.depth && x.name == region.name { return true }
+    }
+    return false
+}
+
+bool t37HasId(in List<i64> xs, for i64 x) {
+    for y in xs {
+        if y == x { return true }
+    }
+    return false
+}
+
+/// C# `HashSet.UnionWith`: appends each of `xs` not yet in `into`.
+void t37UnionIds(ref List<i64> into, by in List<i64> xs) {
+    for x in xs {
+        if !t37HasId(in into, for: x) { into.append(x) }
+    }
+}
+
+bool t37WritableDynRef(in Ctx c, for Type t) => kindOf(t) == .dynRef && !c.dynRefTypes[typeIndex(t)].readOnly
+
+bool t37RefOrOut(in Ctx c, for LocalId p) => c.locals[p].modifier == .refKeyword || c.locals[p].modifier == .outKeyword
+
+bool t37SpanOrDynRef(Type t) => kindOf(t) == .span || kindOf(t) == .dynRef
+
+// ── Calls ──────────────────────────────────────────────────────────────────────
+
+Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
+    let ci = boundIndex(call)
+    let fn = c.bCalls[ci].function
+    let recv = c.bCalls[ci].receiver
+    let span = c.bCalls[ci].span
+    let callType = c.bCalls[ci].type
+    let arguments = copyIds(in c.bCalls[ci].arguments)
+    let parameters = copyIds(in c.functions[fn].parameters)
+    var receiver = Borrow { regions: [], owners: [] }
+    if recv != -1 { receiver = exprRegions(ref r, through: ref c, for: recv) }
+    var args = List<Borrow>()
+    for a in arguments { args.append(exprRegions(ref r, through: ref c, for: a)) }
+    let mutating = c.functions[fn].isMutating
+    // A method that writes `this` modifies its receiver, like a write to one of its fields (Q78).
+    if recv != -1 && mutating { mutateBorrow(ref r, through: ref c, for: recv, at: span) }
+    // Through a writable `dyn ref` it modifies every owner the `dyn ref` borrows.
+    if recv != -1 && t37WritableDynRef(in c, for: exprType(in c, for: recv)) && mutating { mutateOwners(ref r, through: ref c, for: recv, by: in receiver, at: span) }
+    // A `ref this` call on `this` changes the fields its body changes structurally.
+    if recv != -1 && boundKind(recv) == .thisRef && mutating && r.reporting {
+        let fields = changedFields(ref r, through: ref c, for: fn)
+        for field in fields {
+            let local = fieldLocal(ref r, through: ref c, for: field)
+            r.mutations.append(Mutation { target: local, span: span })
+        }
+    }
+    var i: i64 = 0
+    while i < arguments.length && i < parameters.length {
+        let argument = arguments[i]
+        let argSpan = nodeSpan(in c, for: argument)
+        // An existing writable `dyn ref` passed on lets the callee modify every owner it borrows.
+        let toDynRef = boundKind(argument) == .conversion && c.bConversions[boundIndex(argument)].kind == .toDynRef
+        if t37WritableDynRef(in c, for: c.locals[parameters[i]].type) && t37WritableDynRef(in c, for: exprType(in c, for: argument)) && !toDynRef {
+            mutateOwners(ref r, through: ref c, for: argument, by: in args[i], at: argSpan)
+        }
+        let written = writtenArgument(in c, for: parameters[i], by: argument)
+        if written == -1 {
+            i += 1
+            continue
+        }
+        // Writing an element through `ref xs[i]` does not reallocate `xs`; only what the callee can reach may change.
+        var seen = List<Type>()
+        if mayBorrow(ref c, for: exprType(in c, for: written), by: ref seen) { mutateBorrow(ref r, through: ref c, for: written, at: argSpan) }
+        // `ref this` hands over the whole receiver: the callee may change any of its fields.
+        var seenThis = List<Type>()
+        if boundKind(written) == .thisRef && mayBorrow(ref c, for: exprType(in c, for: written), by: ref seenThis) && r.reporting && c.functions[r.fn].owner != -1 {
+            let ownerFields = copyIds(in c.structs[c.functions[r.fn].owner].fields)
+            for field in ownerFields {
+                let local = fieldLocal(ref r, through: ref c, for: field)
+                r.mutations.append(Mutation { target: local, span: argSpan })
+            }
+        }
+        // Only a `ref` or `out` argument is passed by `ref` (BYN3005).
+        let root = written != argument ? -1 : rootLocal(ref c, for: written)
+        if root == -1 {
+            i += 1
+            continue
+        }
+        for j in 0..arguments.length {
+            // A by-value copy of an element (`xs[0]` as an `i64`) cannot alias what the callee changes.
+            let byRef = j < parameters.length && t37RefOrOut(in c, for: parameters[j])
+            var seenJ = List<Type>()
+            if j == i || !(rootLocal(ref c, for: arguments[j]) == root && (byRef || mayBorrow(ref c, for: exprType(in c, for: arguments[j]), by: ref seenJ)) || t37HasId(in args[j].owners, for: root)) { continue }
+            let name = c.locals[root].name
+            regionReport(ref r, through: ref c, for: .refAndValue, at: nodeSpan(in c, for: arguments[j]), by: (name, "", "", "", ""),
+                label: $"`{name}` is also passed by `ref`",
+                help: "copy the value into a local first, or make two calls")
+            break
+        }
+        i += 1
+    }
+    // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none, and an interned `Symbol` lives until exit.
+    // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
+    let builtin = c.functions[fn].builtin
+    var result = Borrow { regions: [], owners: [] }
+    let fresh = builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
+        || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .stringInvalidUtf8At || builtin == .hexEncode || builtin == .hexDecode
+        || builtin == .symbolIntern
+    if !fresh {
+        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+        result = t37CopyBorrow(in receiver)
+        for k in 0..args.length {
+            if k < parameters.length && kindOf(c.locals[parameters[k]].type) == .function {
+                var a = t37CopyBorrow(in args[k])
+                var kept = List<Region>()
+                for x in args[k].regions {
+                    if !t37HasRegion(in r.environments, for: in x) { kept.append(Region { depth: x.depth, name: x.name }) }
+                }
+                a.regions = move kept
+                @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+                result = unionBorrow(in result, by: in a)
+            } else {
+                @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+                result = unionBorrow(in result, by: in args[k])
+            }
+        }
+    }
+    // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
+    if recv != -1 && t37SpanOrDynRef(callType) {
+        let lentReceiver = lendBorrow(ref r, through: ref c, for: recv, by: in receiver, at: span.end)
+        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+        result = unionBorrow(in result, by: in lentReceiver)
+    }
+    // So may a function returning one: the result lives no longer than any argument passed by `ref` (`in` is by value),
+    // and borrows the storage of those with storage to lend.
+    if t37SpanOrDynRef(callType) {
+        var k: i64 = 0
+        while k < arguments.length && k < parameters.length {
+            if t37RefOrOut(in c, for: parameters[k]) {
+                let lentArg = lendBorrow(ref r, through: ref c, for: arguments[k], by: in args[k], at: span.end)
+                var seen = List<Type>()
+                if mayLend(ref c, for: exprType(in c, for: arguments[k]), by: ref seen) {
+                    @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+                    result = unionBorrow(in result, by: in lentArg)
+                } else {
+                    var regions = List<Region>()
+                    for x in lentArg.regions { regions.append(Region { depth: x.depth, name: x.name }) }
+                    let bare = Borrow { regions: move regions, owners: [] }
+                    @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+                    result = unionBorrow(in result, by: in bare)
+                }
+            }
+            k += 1
+        }
+    }
+    // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `Utf8.decode` return (Q29).
+    var seenList = List<Type>()
+    if r.contexts.length > 0 && (containsList(ref c, for: callType, by: ref seenList) || builtin == .ioReadText || builtin == .ioRun || builtin == .ioRunBatch || builtin == .strBufGrow || builtin == .strBufOver
+            || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .hexEncode) {
+        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+        result = unionBorrow(in result, by: in r.contexts[r.contexts.length - 1])
+    }
+    return result
+}
+
+/// A borrow of `source`'s own storage (a span of an array or list, a `StrBuf`'s text), taken at `at`.
+Borrow lendBorrow(ref Regions r, through ref Ctx c, for BExpr source, by in Borrow sourceBorrow, at i64 at) {
+    if boundKind(source) == .staticArray { return t37CopyBorrow(in sourceBorrow) }
+    var b = t37CopyBorrow(in sourceBorrow)
+    // Inside a method returning a span or `dyn ref`, its own fields are the caller's data; the call site lends the receiver (Q75).
+    // Either way it is a loan on that field: changing it structurally invalidates the borrow.
+    let field = thisField(ref r, through: ref c, for: source)
+    @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+    if field != -1 { b = lent(in b, for: field, at: at) }
+    if t37SpanOrDynRef(c.functions[r.fn].returnType) && isThisRooted(in c, for: source) {
+        let caller = Borrow { regions: [Region { depth: 0, name: "the caller's data" }], owners: [] }
+        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+        return unionBorrow(in b, by: in caller)
+    }
+    // In any other method they outlive the whole body, but cannot be returned.
+    if isThisRooted(in c, for: source) {
+        let temporary = Borrow { regions: [Region { depth: 1, name: $"the temporary on line {lineOf(ref r, through: ref c, at: nodeSpan(in c, for: source))}" }], owners: [] }
+        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+        return unionBorrow(in b, by: in temporary)
+    }
+    let root = rootLocal(ref c, for: source)
+    if root != -1 {
+        let depth = r.depthOf.tryGet(at: root) ?? 0
+        if depth > 0 {
+            let region = Region { depth: depth, name: $"`{c.locals[root].name}`" }
+            if !t37HasRegion(in b.regions, for: in region) { b.regions.append(region) }
+        }
+        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+        return lent(in b, for: root, at: at)
+    }
+    let temporary = Borrow { regions: [Region { depth: r.depth, name: $"the temporary on line {lineOf(ref r, through: ref c, at: nodeSpan(in c, for: source))}" }], owners: [] }
+    @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+    return unionBorrow(in b, by: in temporary)
+}
+
+/// Memory from the arena (or other allocator) `allocator`.
+Borrow allocatedFrom(ref Regions r, through ref Ctx c, for BExpr allocator) {
+    let borrow = exprRegions(ref r, through: ref c, for: allocator)
+    let root = rootLocal(ref c, for: allocator)
+    if root == -1 { return borrow }
+    let depth = r.depthOf.tryGet(at: root) ?? 0
+    var regions = List<Region>()
+    for x in borrow.regions { regions.append(Region { depth: x.depth, name: x.name }) }
+    if depth > 0 {
+        let region = Region { depth: depth, name: $"arena `{c.locals[root].name}`" }
+        if !t37HasRegion(in regions, for: in region) { regions.append(region) }
+    }
+    var owners = copyIds(in borrow.owners)
+    if !t37HasId(in owners, for: root) { owners.append(root) }
+    return Borrow { regions: move regions, owners: move owners }
+}
+
+/// C# `BindPattern` (RegionAnalysis.cs:512).
+void t37BindPattern(ref Regions r, through ref Ctx c, for BPattern pattern, by in Borrow value) {
+    let nodes = descendants(in c, for: pattern)
+    for node in nodes {
+        let ni = boundIndex(node)
+        var local: LocalId = -1
+        switch boundKind(node) {
+            case .bindPattern:
+                local = c.bBindPatterns[ni].local
+            case .propertyPattern:
+                local = c.bPropertyPatterns[ni].designation
+            case .unionPattern:
+                local = c.bUnionPatterns[ni].designation
+            default: {}
+        }
+        if local == -1 { continue }
+        let span = nodeSpan(in c, for: node)
+        declareBorrow(ref r, through: ref c, for: local, at: span.start)
+        storeBorrow(ref r, through: ref c, for: local, by: in value, at: span)
+    }
+}
+
+// ── Stores and escapes ─────────────────────────────────────────────────────────
+
+void storeBorrow(ref Regions r, through ref Ctx c, for LocalId local, by in Borrow value, at TextSpan span) {
+    if value.regions.length == 0 && value.owners.length == 0 { return }
+    var merged = Borrow { regions: [], owners: [] }
+    if r.locals.contains(local) {
+        merged = unionBorrow(in r.locals[local], by: in value)
+    } else {
+        let none = Borrow { regions: [], owners: [] }
+        merged = unionBorrow(in none, by: in value)
+    }
+    r.locals[local] = move merged
+    if !r.reporting { return }
+    // The loan starts where the stored value's borrow of the owner was lent (`first(w.items.asSpan(), w.grow())`
+    // conflicts), or once the value is stored: a mutating call that produces it (`b.pick()` on `ref this`) is not a conflict.
+    for owner in value.owners {
+        if owner == local { continue }
+        var created = span.end
+        if (value.lends is { } lends) {
+            if lends.contains(owner) {
+                let at = lends[owner]
+                if span.start <= at && at < created { created = at }
+            }
+        }
+        r.loans.append(Loan { owner: owner, holder: local, created: created, loopEnd: 0 })
+    }
+    let holder = c.locals[local].name
+    checkOutlives(ref r, through: ref c, for: in value, by: r.depthOf.tryGet(at: local) ?? 0, as: holder, at: span)
+}
+
+/// A store into a local or a part of one; through `this` or a `ref` parameter it outlives the function.
+void storeIntoBorrow(ref Regions r, through ref Ctx c, for BExpr target, by in Borrow value, at TextSpan span) {
+    let root = storeRoot(in c, for: target)
+    if root != -1 {
+        storeBorrow(ref r, through: ref c, for: root, by: in value, at: span)
+        return
+    }
+    if !r.reporting { return }
+    // A store through a span lands where the span points: it must live as long as the
+    // longest-lived storage the span may point into (the caller's, when that is unknown).
+    if boundKind(target) == .index && kindOf(exprType(in c, for: c.bIndexes[boundIndex(target)].target)) == .span {
+        let view = rootLocal(ref c, for: c.bIndexes[boundIndex(target)].target)
+        if view != -1 {
+            var depth: i64 = 0
+            if r.locals.contains(view) {
+                var first = true
+                for x in r.locals[view].regions {
+                    if first || x.depth < depth { depth = x.depth }
+                    first = false
+                }
+            }
+            let holder = c.locals[view].name
+            checkOutlives(ref r, through: ref c, for: in value, by: depth, as: holder, at: span)
+            return
+        }
+    }
+    checkOutlives(ref r, through: ref c, for: in value, by: 0, as: "this", at: span)
+}
+
+void checkOutlives(ref Regions r, through ref Ctx c, for in Borrow value, by i64 depth, as string holder, at TextSpan span) {
+    let ordered = t37Ordered(in value.regions)
+    for region in ordered {
+        if region.depth <= depth { continue }
+        if restEscapes(ref r, through: ref c, for: in region, at: span) { return }
+        regionReport(ref r, through: ref c, for: .borrowOutlivesSource, at: span, by: (region.name, holder, "", "", ""),
+            label: $"{region.name} is freed at the end of its block",
+            help: "copy the data with `.copy(to: alloc)` into an allocator that lives long enough")
+        return
+    }
+}
+
+void checkReturn(ref Regions r, through ref Ctx c, for in Borrow value, at TextSpan span) {
+    if !r.reporting { return }
+    let ordered = t37Ordered(in value.regions)
+    for region in ordered {
+        if region.depth <= 0 { continue }
+        if restEscapes(ref r, through: ref c, for: in region, at: span) { return }
+        regionReport(ref r, through: ref c, for: .borrowReturned, at: span, by: (region.name, c.functions[r.fn].name, "", "", ""),
+            help: "let the caller pass the buffer or allocator in, and borrow or allocate from that")
+        return
+    }
+}
+
+bool restEscapes(ref Regions r, through ref Ctx c, for in Region region, at TextSpan span) {
+    var found = false
+    var name = ""
+    for t in r.restTails {
+        if t.region.depth == region.depth && t.region.name == region.name {
+            found = true
+            name = t.tail
+            break
+        }
+    }
+    if !found { return false }
+    regionReport(ref r, through: ref c, for: .restEscapes, at: span, by: (name, "", "", "", ""), help: $"copy it first: `{name}.copy()`")
+    return true
+}
+
+// ── Structural modification while borrowed ─────────────────────────────────────
+
+void mutateBorrow(ref Regions r, through ref Ctx c, for BExpr target, at TextSpan span, bool moved = false) {
+    if !r.reporting { return }
+    let root = rootLocal(ref c, for: target)
+    if root != -1 {
+        r.mutations.append(Mutation { target: root, span: span, moved: moved })
+        return
+    }
+    let field = thisField(ref r, through: ref c, for: target)
+    if field != -1 { r.mutations.append(Mutation { target: field, span: span, moved: moved }) }
+}
+
+void mutateOwners(ref Regions r, through ref Ctx c, for BExpr via, by in Borrow borrow, at TextSpan span) {
+    // As for a `ref` argument: a write through it reallocates nothing unless the value it points to may hold such storage.
+    if !r.reporting { return }
+    let isLocal = boundKind(via) == .local
+    let viaLocal = isLocal ? c.bLocals[boundIndex(via)].local : -1
+    if isLocal && !(r.referentMayBorrow.tryGet(at: viaLocal) ?? true) { return }
+    for owner in borrow.owners { r.mutations.append(Mutation { target: owner, span: span, through: viaLocal }) }
+}
+
+void referBorrow(ref Regions r, through ref Ctx c, for LocalId local, by BExpr value) {
+    if kindOf(c.locals[local].type) != .dynRef { return }
+    var may = true
+    switch boundKind(value) {
+        case .conversion:
+            let ci = boundIndex(value)
+            if c.bConversions[ci].kind == .toDynRef {
+                var seen = List<Type>()
+                may = mayBorrow(ref c, for: exprType(in c, for: c.bConversions[ci].operand), by: ref seen)
+            }
+        case .local:
+            may = r.referentMayBorrow.tryGet(at: c.bLocals[boundIndex(value)].local) ?? true
+        default: {}
+    }
+    r.referentMayBorrow[local] = (r.referentMayBorrow.tryGet(at: local) ?? false) || may
+}
+
+/// C# `LastUse`, the local function of `CheckMutations`: `useLists` holds each local's use positions at `useOf[local]`.
+i64 lastUse(in Regions r, for LocalId holder, by in Map<LocalId, i64> useOf, as in List<List<i64>> useLists, at in List<TextSpan> loops) {
+    let declared = r.declaredAt.tryGet(at: holder) ?? -1
+    var end: i64 = -1
+    if !useOf.contains(holder) { return end }
+    for use in useLists[useOf[holder]] {
+        if use > end { end = use }
+        for loop in loops {
+            if loop.start <= use && use < loop.end && !(loop.start <= declared && declared < loop.end) {
+                if loop.end > end { end = loop.end }
+            }
+        }
+    }
+    return end
+}
+
+void checkMutations(ref Regions r, through ref Ctx c) {
+    if r.mutations.length == 0 || r.loans.length == 0 { return }
+    var useOf: Map<LocalId, i64> = []
+    var useLists = List<List<i64>>()
+    var loops = List<TextSpan>()
+    let nodes = descendants(in c, for: c.functions[r.fn].body)
+    for node in nodes {
+        let k = boundKind(node)
+        if k == .local {
+            let l = c.bLocals[boundIndex(node)].local
+            if !useOf.contains(l) {
+                useOf[l] = useLists.length
+                useLists.append(List<i64>())
+            }
+            useLists[useOf[l]].append(nodeSpan(in c, for: node).start)
+        } else if k == .whileStmt || k == .doWhile || k == .forStmt {
+            loops.append(nodeSpan(in c, for: node))
+        }
+    }
+    for mi in 0..r.mutations.length {
+        let target = r.mutations[mi].target
+        let mSpan = r.mutations[mi].span
+        let moved = r.mutations[mi].moved
+        let through = r.mutations[mi].through
+        for li in 0..r.loans.length {
+            let holder = r.loans[li].holder
+            let created = r.loans[li].created
+            if r.loans[li].owner != target || created >= mSpan.end { continue }
+            // Writing an element in place through the loop's own `dyn ref` variable leaves the loop's collection as it is.
+            if holder == -1 && through != -1 && (r.declaredAt.tryGet(at: through) ?? -1) == created { continue }
+            let end = holder == -1 ? r.loans[li].loopEnd : lastUse(in r, for: holder, by: in useOf, as: in useLists, at: in loops)
+            if end <= mSpan.end { continue }
+            let targetName = c.locals[target].name
+            let who = holder == -1 ? "the `for` loop" : $"`{c.locals[holder].name}`"
+            var label = $"the loop over `{targetName}` is still running"
+            if holder != -1 { label = $"`{c.locals[holder].name}` is used again on line {lineOf(ref r, through: ref c, at: TextSpan { start: end, length: 0 })}" }
+            var help = $"finish using {who} first, or copy what it needs before changing `{targetName}`"
+            if moved {
+                help = $"finish using {who} first, or copy what it needs before moving `{targetName}`"
+            } else if holder == -1 {
+                help = $"collect the changes in another list and apply them to `{targetName}` after the loop"
+            }
+            regionReport(ref r, through: ref c, for: moved ? .movedWhileBorrowed : .modifiedWhileBorrowed, at: mSpan, by: (targetName, who, "", "", ""), label: label, help: help)
+            break
+        }
+    }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/// The local whose storage `e` names (`x`, `x.f`, `x[i]` of an array or list, `x.item1`), or -1.
+LocalId rootLocal(ref Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local:
+            return c.bLocals[i].local
+        case .field:
+            return rootLocal(ref c, for: c.bFields[i].receiver)
+        case .tupleElement:
+            return rootLocal(ref c, for: c.bTupleElements[i].receiver)
+        case .index:
+            let k = kindOf(exprType(in c, for: c.bIndexes[i].target))
+            if k == .array || k == .list { return rootLocal(ref c, for: c.bIndexes[i].target) }
+            return -1
+        default:
+            return -1
+    }
+}
+
+/// Whether `e` names storage of `this` (`this`, `f`, `f[i]` of an array or list field).
+bool isThisRooted(in Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .thisRef:
+            return true
+        case .field:
+            return isThisRooted(in c, for: c.bFields[i].receiver)
+        case .tupleElement:
+            return isThisRooted(in c, for: c.bTupleElements[i].receiver)
+        case .index:
+            let k = kindOf(exprType(in c, for: c.bIndexes[i].target))
+            if k == .array || k == .list { return isThisRooted(in c, for: c.bIndexes[i].target) }
+            return false
+        default:
+            return false
+    }
+}
+
+/// The stand-in for the field of `this` whose storage `e` names (`f`, `f.g`, `f[i]`), or -1.
+LocalId thisField(ref Regions r, through ref Ctx c, for BExpr e) {
+    let field = thisFieldSymbol(in c, for: e)
+    return field != -1 ? fieldLocal(ref r, through: ref c, for: field) : -1
+}
+
+LocalId fieldLocal(ref Regions r, through ref Ctx c, for FieldId field) {
+    if r.thisFields.contains(field) { return r.thisFields[field] }
+    c.locals.append(LocalSymbol { name: c.fields[field].name, type: c.fields[field].type, kind: .parameter })
+    let local = c.locals.length - 1
+    r.thisFields[field] = local
+    return local
+}
+
+FieldId thisFieldSymbol(in Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .field:
+            if boundKind(c.bFields[i].receiver) == .thisRef { return c.bFields[i].field }
+            return thisFieldSymbol(in c, for: c.bFields[i].receiver)
+        case .tupleElement:
+            return thisFieldSymbol(in c, for: c.bTupleElements[i].receiver)
+        case .index:
+            let k = kindOf(exprType(in c, for: c.bIndexes[i].target))
+            if k == .array || k == .list { return thisFieldSymbol(in c, for: c.bIndexes[i].target) }
+            return -1
+        default:
+            return -1
+    }
+}
+
+/// C# `ChangedFields`' Tarjan state: `Visit`'s `index`, `low`, `own` and `stack`.
+struct T37Tarjan {
+    Map<FuncId, i64> index = []
+    Map<FuncId, i64> low = []
+    Map<FuncId, List<FieldId>> own = []
+    List<FuncId> stack = List<FuncId>()
+}
+
+/// The fields of `this` that the `ref this` method `fn` changes structurally, as `mutateBorrow`
+/// sees it. Computed once per method; methods that call each other on `this` share one set.
+List<FieldId> changedFields(ref Regions r, through ref Ctx c, for FuncId fn) {
+    if c.changedFields.contains(fn) { return copyIds(in c.changedFields[fn]) }
+    // Tarjan's strongly connected components over `ref this` calls on `this`.
+    var t = T37Tarjan {}
+    changedFieldsVisit(ref t, through: ref c, for: fn)
+    return copyIds(in c.changedFields[fn])
+}
+
+/// C# `Visit`, the local function of `ChangedFields`.
+void changedFieldsVisit(ref T37Tarjan t, through ref Ctx c, for FuncId f) {
+    let n = t.index.length
+    t.index[f] = n
+    t.low[f] = n
+    t.stack.append(f)
+    let direct = directChanges(ref c, for: f)
+    var fields = copyIds(in direct.fields)
+    for callee in direct.callees {
+        if c.changedFields.contains(callee) {
+            t37UnionIds(ref fields, by: in c.changedFields[callee])
+            continue
+        }
+        if !t.index.contains(callee) {
+            changedFieldsVisit(ref t, through: ref c, for: callee)
+            if t.low[callee] < t.low[f] { t.low[f] = t.low[callee] }
+            if c.changedFields.contains(callee) { t37UnionIds(ref fields, by: in c.changedFields[callee]) }
+        } else if t37HasId(in t.stack, for: callee) {
+            if t.index[callee] < t.low[f] { t.low[f] = t.index[callee] }
+        }
+    }
+    t.own[f] = move fields
+    if t.low[f] != t.index[f] { return }
+    var component = List<FuncId>()
+    var all = List<FieldId>()
+    while true {
+        let member = t.stack.removeLast()
+        component.append(member)
+        t37UnionIds(ref all, by: in t.own[member])
+        if member == f { break }
+    }
+    for m in component { c.changedFields[m] = copyIds(in all) }
+}
+
+/// C# `DirectChanges`' result.
+struct T37Changes {
+    List<FieldId> fields
+    List<FuncId> callees
+}
+
+/// The fields `fn`'s own body changes, and the `ref this` methods it calls on `this`.
+T37Changes directChanges(ref Ctx c, for FuncId fn) {
+    var fields = List<FieldId>()
+    var callees = List<FuncId>()
+    let owner = c.functions[fn].owner
+    if c.functions[fn].body == -1 {
+        // Unknown: it may change any of them.
+        if owner != -1 { t37UnionIds(ref fields, by: in c.structs[owner].fields) }
+        return T37Changes { fields: move fields, callees: move callees }
+    }
+    let nodes = descendants(in c, for: c.functions[fn].body)
+    for node in nodes {
+        let i = boundIndex(node)
+        switch boundKind(node) {
+            case .builtinCall:
+                let m = c.bBuiltinCalls[i].member
+                let changes = m == .listAdd || m == .mapIndexSet || m == .mapSlot || m == .listRemoveLast
+                    || m == .mapRemove || m == .mapClear || m == .listRemoveRange || m == .listRemoveThrough || m == .listRemoveAt || m == .listRemoveAtRange
+                    || m == .listReplace || m == .listSort || m == .listClear || m == .strBufClear || m == .strBufInsert || m == .arenaReset
+                    || m == .listTake || m == .mapTake || m == .strBufTake || m == .optionalTake
+                if changes {
+                    let field = thisFieldSymbol(in c, for: c.bBuiltinCalls[i].receiver)
+                    if field != -1 && !t37HasId(in fields, for: field) { fields.append(field) }
+                }
+            case .call:
+                let callee = c.bCalls[i].function
+                let recv = c.bCalls[i].receiver
+                let mutating = c.functions[callee].isMutating
+                if mutating && recv != -1 && boundKind(recv) == .thisRef {
+                    callees.append(callee)
+                } else if mutating && recv != -1 {
+                    let receiver = thisFieldSymbol(in c, for: recv)
+                    if receiver != -1 && !t37HasId(in fields, for: receiver) { fields.append(receiver) }
+                }
+                let arguments = copyIds(in c.bCalls[i].arguments)
+                let parameters = copyIds(in c.functions[callee].parameters)
+                var k: i64 = 0
+                while k < arguments.length && k < parameters.length {
+                    let written = writtenArgument(in c, for: parameters[k], by: arguments[k])
+                    k += 1
+                    if written == -1 { continue }
+                    var seen = List<Type>()
+                    if !mayBorrow(ref c, for: exprType(in c, for: written), by: ref seen) { continue }
+                    let argument = thisFieldSymbol(in c, for: written)
+                    if argument != -1 {
+                        if !t37HasId(in fields, for: argument) { fields.append(argument) }
+                    } else if boundKind(written) == .thisRef && owner != -1 {
+                        t37UnionIds(ref fields, by: in c.structs[owner].fields)
+                    }
+                }
+            default: {}
+        }
+    }
+    return T37Changes { fields: move fields, callees: move callees }
+}
+
+/// The place the callee may write through `parameter`: a `ref` or `out` argument, or the value a writable `dyn ref` parameter borrows; -1 for none.
+BExpr writtenArgument(in Ctx c, for LocalId parameter, by BExpr argument) {
+    if t37RefOrOut(in c, for: parameter) { return argument }
+    if t37WritableDynRef(in c, for: c.locals[parameter].type) && boundKind(argument) == .conversion && c.bConversions[boundIndex(argument)].kind == .toDynRef {
+        return c.bConversions[boundIndex(argument)].operand
+    }
+    return -1
+}
+
+/// The local a store into `e` lands in, including through a span or list element; -1 for none.
+LocalId storeRoot(in Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local:
+            return c.bLocals[i].local
+        case .field:
+            return storeRoot(in c, for: c.bFields[i].receiver)
+        case .tupleElement:
+            return storeRoot(in c, for: c.bTupleElements[i].receiver)
+        case .index:
+            // A span's elements live wherever it points (often the caller's frame): not in the span local.
+            if kindOf(exprType(in c, for: c.bIndexes[i].target)) == .span { return -1 }
+            return storeRoot(in c, for: c.bIndexes[i].target)
+        case .builtinCall:
+            let m = c.bBuiltinCalls[i].member
+            if m == .mapIndexSet || m == .mapSlot { return storeRoot(in c, for: c.bBuiltinCalls[i].receiver) }
+            return -1
+        default:
+            return -1
+    }
+}
+
+/// Whether a value of type `t` can point into memory it doesn't own.
+bool mayBorrow(ref Ctx c, for Type t, by ref List<Type> seen) {
+    let i = typeIndex(t)
+    switch kindOf(t) {
+        case .primitive:
+            return isString(t)
+        case .span or .list or .map or .owned or .dynRef or .textView or .function:
+            return true
+        case .builtin:
+            return t == builtinType(.strBuf) || t == builtinType(.processResult)
+        case .untrusted:
+            return mayBorrow(ref c, for: c.untrustedTypes[i], by: ref seen)
+        case .optional:
+            return mayBorrow(ref c, for: c.optionalTypes[i], by: ref seen)
+        case .result:
+            return mayBorrow(ref c, for: c.resultTypes[i].value, by: ref seen)
+        case .array:
+            return mayBorrow(ref c, for: c.arrayTypes[i].element, by: ref seen)
+        case .tuple:
+            var types = List<Type>()
+            for f in c.tupleTypes[i] { types.append(f.type) }
+            for ft in types {
+                if mayBorrow(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        case .structType:
+            if t37HasId(in seen, for: t) { return false }
+            seen.append(t)
+            var types = List<Type>()
+            for f in c.structs[i].fields { types.append(c.fields[f].type) }
+            for ft in types {
+                if mayBorrow(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        case .unionType:
+            if t37HasId(in seen, for: t) { return false }
+            seen.append(t)
+            var types = List<Type>()
+            for v in c.unions[i].variants {
+                for f in c.unionVariants[v].fields { types.append(c.locals[f].type) }
+            }
+            for ft in types {
+                if mayBorrow(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        default:
+            return false
+    }
+}
+
+/// Whether a `ref` to a `t` reaches storage a span or `dyn ref` can point into.
+bool mayLend(ref Ctx c, for Type t, by ref List<Type> seen) {
+    let i = typeIndex(t)
+    let k = kindOf(t)
+    if k == .array || k == .typeParam { return true }
+    if isUnique(ref c, for: t) { return true }
+    switch k {
+        case .optional:
+            return mayLend(ref c, for: c.optionalTypes[i], by: ref seen)
+        case .tuple:
+            var types = List<Type>()
+            for f in c.tupleTypes[i] { types.append(f.type) }
+            for ft in types {
+                if mayLend(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        case .structType:
+            if t37HasId(in seen, for: t) { return false }
+            seen.append(t)
+            var types = List<Type>()
+            for f in c.structs[i].fields { types.append(c.fields[f].type) }
+            for ft in types {
+                if mayLend(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        case .unionType:
+            if t37HasId(in seen, for: t) { return false }
+            seen.append(t)
+            var types = List<Type>()
+            for v in c.unions[i].variants {
+                for f in c.unionVariants[v].fields { types.append(c.locals[f].type) }
+            }
+            for ft in types {
+                if mayLend(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        default:
+            return mayBorrow(ref c, for: t, by: ref seen)
+    }
+}
+
+bool containsList(ref Ctx c, for Type t, by ref List<Type> seen) {
+    let i = typeIndex(t)
+    switch kindOf(t) {
+        case .list or .map or .owned:
+            return true
+        case .untrusted:
+            return containsList(ref c, for: c.untrustedTypes[i], by: ref seen)
+        case .optional:
+            return containsList(ref c, for: c.optionalTypes[i], by: ref seen)
+        case .result:
+            return containsList(ref c, for: c.resultTypes[i].value, by: ref seen)
+        case .array:
+            return containsList(ref c, for: c.arrayTypes[i].element, by: ref seen)
+        case .tuple:
+            var types = List<Type>()
+            for f in c.tupleTypes[i] { types.append(f.type) }
+            for ft in types {
+                if containsList(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        case .structType:
+            if t37HasId(in seen, for: t) { return false }
+            seen.append(t)
+            var types = List<Type>()
+            for f in c.structs[i].fields { types.append(c.fields[f].type) }
+            for ft in types {
+                if containsList(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        case .unionType:
+            if t37HasId(in seen, for: t) { return false }
+            seen.append(t)
+            var types = List<Type>()
+            for v in c.unions[i].variants {
+                for f in c.unionVariants[v].fields { types.append(c.locals[f].type) }
+            }
+            for ft in types {
+                if containsList(ref c, for: ft, by: ref seen) { return true }
+            }
+            return false
+        default:
+            return false
+    }
+}
+
+/// Shortest-lived first, so diagnostics name the same region on every run.
+List<Region> t37Ordered(in List<Region> regions) {
+    var result = List<Region>()
+    for x in regions {
+        var at = result.length
+        for j in 0..result.length {
+            if x.depth > result[j].depth || (x.depth == result[j].depth && x.name < result[j].name) {
+                at = j
+                break
+            }
+        }
+        // `List` has no `insert`: append, then shift the tail up by one.
+        result.append(Region { depth: x.depth, name: x.name })
+        var j = result.length - 1
+        while j > at {
+            result[j] = Region { depth: result[j - 1].depth, name: result[j - 1].name }
+            j -= 1
+        }
+        result[at] = Region { depth: x.depth, name: x.name }
+    }
+    return result
+}
+
+i64 lineOf(ref Regions r, through ref Ctx c, at TextSpan span) => linePosition(c.files[r.source].text.span, at: span.start).line
+
+/// C# `Report` (RegionAnalysis.cs:877): once per span, and only on the reporting pass.
+void regionReport(ref Regions r, through ref Ctx c, for SemaCode code, at TextSpan span, by (string a0, string a1, string a2, string a3, string a4) args, string label = "", string help = "") {
+    if !r.reporting { return }
+    for p in r.reported {
+        if p == (span.start, span.end) { return }
+    }
+    r.reported.append((span.start, span.end))
+    report(ref c, for: code, from: r.source, at: span, by: args, label: label, help: help)
+}

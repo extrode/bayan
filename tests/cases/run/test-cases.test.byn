@@ -1,0 +1,22 @@
+bool inRange(i32 n) {
+    return n >= 1 && n <= 100
+}
+
+@cases((0, false), (1, true), (100, true), (101, true))
+test "quantity bounds" (i32 input, bool valid) {
+    assert(inRange(input) == valid)
+}
+
+@cases("a", "bc", "def")
+test "short words" (string word) {
+    assert(word.length < 3)
+}
+
+@cases((-1, 'x', null), (2.5, 'y', "z"))
+test "literal kinds" (f64 amount, rune letter, string? note) {
+    assert(amount != 0.0)
+}
+
+test "plain" {
+    assert(true)
+}

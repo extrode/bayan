@@ -1,0 +1,17 @@
+CompilationUnit
+  Function pick<T>(bool first, T a, T b) -> T => (? first a b)
+  Function single<K, V>(K key, V value) -> Map<K, V>
+    Block
+      Var m = (call Map<K, V>)
+      Expr (call (. m set) key value)
+      Return m
+  Struct Pair<A, B>
+    Field A a
+    Field B b
+    Function swap() -> Pair<B, A> => (struct Pair<B, A> (a b) (b a))
+  Union Option2<T>
+    Variant some(T v)
+    Variant nothing
+  Let x = (call pick<i64> (first: true) (a: 1) (b: 2))
+  Let p = (struct Pair<i64, string> (a 1) (b "x"))
+  Let o = (call (. Option2<i64> some) 5)

@@ -1,0 +1,12 @@
+i64 apply((i64 -> i64) f, to i64 x) => f(x)
+
+// `sum` first meets an `i64`, so the body binds twice; the lambda is lifted once, from the second pass.
+i64 total(i64 start) {
+    var sum = 0
+    sum = start
+    return apply(x => x + 1, to: sum)
+}
+
+void main() {
+    print($"{total(1)}")
+}

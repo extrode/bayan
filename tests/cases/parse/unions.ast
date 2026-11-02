@@ -1,0 +1,15 @@
+CompilationUnit
+  Union Shape
+    Variant circle(f32 r)
+    Variant rect(f32 w, f32 h)
+    Variant none doc `Nothing at all.`
+  Union public Token
+    Variant number(i64 value)
+    Variant word(string text)
+    Variant end
+  Function area(Shape s) -> f32 => (switch s ((variant .circle (let r)) => (* r r)) ((pos Shape.rect (var w) _) => w) (.none => 0))
+  Union Mode
+    Variant read = 1
+    Variant write = 2
+    Variant append
+    Variant none = (- 1)

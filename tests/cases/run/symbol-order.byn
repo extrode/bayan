@@ -1,0 +1,23 @@
+// Symbols order by text, whatever order they were interned in (spec 008 R1).
+Symbol read(string text) uses alloc {
+    var buf = StrBuf(capacity: 4)
+    buf.append(text)
+    return Symbol.intern(buf.view)
+}
+
+void main() {
+    // Literals, then the same texts interned at run time `b` first.
+    let x: Symbol = "b"
+    let y: Symbol = "a"
+    print($"{y < x}")
+    print($"{x}{y}")
+    let rx = read("b")
+    let ry = read("a")
+    print($"{ry < rx}")
+    print($"{rx}{ry}")
+    // Texts no literal holds, interned `d` first, so their IDs run against their order.
+    let d = read("d")
+    let c = read("c")
+    print($"{c < d} {c <= d} {d > c} {d >= c} {d < c}")
+    print($"{d}{c}")
+}

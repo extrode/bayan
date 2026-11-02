@@ -1,0 +1,127 @@
+# bayan check <dir>/tally/main.byn
+exit: 1
+--- stdout ---
+--- stderr ---
+error BYN2001: `x1` is not defined
+  --> <dir>/tally/main.byn:3:9
+
+  3 │     y = x1
+    │         ^^
+
+error BYN2001: `x2` is not defined
+  --> <dir>/tally/main.byn:4:9
+
+  4 │     y = x2
+    │         ^^
+
+error BYN2001: `x3` is not defined
+  --> <dir>/tally/main.byn:5:9
+
+  5 │     y = x3
+    │         ^^
+
+error BYN2001: `x4` is not defined
+  --> <dir>/tally/main.byn:6:9
+
+  6 │     y = x4
+    │         ^^
+
+error BYN2001: `x5` is not defined
+  --> <dir>/tally/main.byn:7:9
+
+  7 │     y = x5
+    │         ^^
+
+error BYN2001: `x6` is not defined
+  --> <dir>/tally/main.byn:8:9
+
+  8 │     y = x6
+    │         ^^
+
+error BYN2001: `x7` is not defined
+  --> <dir>/tally/main.byn:9:9
+
+  9 │     y = x7
+    │         ^^
+
+error BYN2001: `x8` is not defined
+  --> <dir>/tally/main.byn:10:9
+
+  10 │     y = x8
+     │         ^^
+
+error BYN2001: `x9` is not defined
+  --> <dir>/tally/main.byn:11:9
+
+  11 │     y = x9
+     │         ^^
+
+error BYN2001: `x10` is not defined
+  --> <dir>/tally/main.byn:12:9
+
+  12 │     y = x10
+     │         ^^^
+
+error BYN2001: `x11` is not defined
+  --> <dir>/tally/main.byn:13:9
+
+  13 │     y = x11
+     │         ^^^
+
+error BYN2001: `x12` is not defined
+  --> <dir>/tally/main.byn:14:9
+
+  14 │     y = x12
+     │         ^^^
+
+error BYN2001: `x13` is not defined
+  --> <dir>/tally/main.byn:15:9
+
+  15 │     y = x13
+     │         ^^^
+
+error BYN2001: `x14` is not defined
+  --> <dir>/tally/main.byn:16:9
+
+  16 │     y = x14
+     │         ^^^
+
+error BYN2001: `x15` is not defined
+  --> <dir>/tally/main.byn:17:9
+
+  17 │     y = x15
+     │         ^^^
+
+error BYN2001: `x16` is not defined
+  --> <dir>/tally/main.byn:18:9
+
+  18 │     y = x16
+     │         ^^^
+
+error BYN2001: `x17` is not defined
+  --> <dir>/tally/main.byn:19:9
+
+  19 │     y = x17
+     │         ^^^
+
+error BYN2001: `x18` is not defined
+  --> <dir>/tally/main.byn:20:9
+
+  20 │     y = x18
+     │         ^^^
+
+error BYN2001: `x19` is not defined
+  --> <dir>/tally/main.byn:21:9
+
+  21 │     y = x19
+     │         ^^^
+
+error BYN2001: `x20` is not defined
+  --> <dir>/tally/main.byn:22:9
+
+  22 │     y = x20
+     │         ^^^
+… and 5 more errors (use --all to show them)
+
+✗ build failed: 25 errors, 0 warnings
+  explain: bayan explain BYN2001

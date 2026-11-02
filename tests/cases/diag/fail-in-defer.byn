@@ -1,0 +1,11 @@
+union error ParseError {
+    empty
+}
+
+void f() fails ParseError {
+    defer {
+        fail ParseError.empty
+    }
+}
+
+f()

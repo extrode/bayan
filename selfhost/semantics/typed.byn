@@ -1,0 +1,215 @@
+// T26: TypedDump.cs (`bayan types`): every bound function with the resolved type of each parameter and
+// local, as the indented JSON `Utf8JsonWriter` writes with `UnsafeRelaxedJsonEscaping` (format in
+// `docs/typed-dump.md`). Functions go in module, file and source order; bindings in bind order,
+// parameters first. Generic templates only, never instances. The writer's output is built by hand:
+// two-space indent, `"key": value`, an empty array as `[]` (Q645).
+
+/// TypedDump.cs:15 `Version`.
+const typedDumpVersion: i64 = 1
+
+/// TypedDump.cs:17 `ToJson`.
+string typedDump(ref Ctx c) {
+    var sb = StrBuf()
+    sb.append("{\n")
+    sb.append($"  \"version\": {typedDumpVersion},\n")
+    sb.append("  \"functions\": [")
+    var any = false
+    for module in 0..c.modules.length {
+        // `File is not null && Location is not null && !IsInstance`: a symbol with a file has a location (Q645).
+        var functions = List<FuncId>()
+        for k in 0..c.modules[module].allFunctions.length {
+            let f = c.modules[module].allFunctions[k]
+            if c.functions[f].file >= 0 && !functionIsInstance(ref c, by: f) { functions.append(f) }
+        }
+        t26OrderFunctions(ref c, by: module, to: ref functions)
+        for fn in functions {
+            sb.append(any ? ",\n    {\n" : "\n    {\n")
+            any = true
+            let path = c.files[c.functions[fn].file].path
+            sb.append($"      \"path\": {t26JsonString(t26PathOf(ref c, for: path))},\n")
+            var owner = c.functions[fn].owner
+            if owner < 0 { owner = c.functions[t26Outermost(ref c, for: fn)].owner }
+            let name = owner < 0 ? c.functions[fn].name : $"{c.structs[owner].name}.{c.functions[fn].name}"
+            sb.append($"      \"name\": {t26JsonString(name)},\n")
+            t26WriteSpan(ref sb, by: c.functions[fn].span, at: "      ")
+            sb.append(",\n      \"bindings\": [")
+            var anyLocal = false
+            for k in 0..c.functions[fn].locals.length {
+                let local = c.functions[fn].locals[k]
+                // `l.Location is not null`: a Bayan local always has one (Q645).
+                if c.locals[local].kind == .temp { continue }
+                sb.append(anyLocal ? ",\n        {\n" : "\n        {\n")
+                anyLocal = true
+                sb.append($"          \"name\": {t26JsonString(c.locals[local].name)},\n")
+                sb.append($"          \"kind\": {t26JsonString(t26KindOf(ref c, for: local))},\n")
+                t26WriteSpan(ref sb, by: c.locals[local].span, at: "          ")
+                sb.append($",\n          \"type\": {t26JsonString(typeDisplay(ref c, by: c.locals[local].type))}\n")
+                sb.append("        }")
+            }
+            sb.append(anyLocal ? "\n      ]" : "]")
+            if c.functions[fn].kind == .lambda { t26WriteCaptures(ref c, for: fn, to: ref sb) }
+            sb.append("\n    }")
+        }
+    }
+    sb.append(any ? "\n  ]\n" : "]\n")
+    sb.append("}\n")
+    return $"{sb.finish()}"
+}
+
+/// TypedDump.cs:29-31: `OrderBy(module.Files.IndexOf(f.File)).ThenBy(span start).ThenBy(span end)`, a stable
+/// sort (insertion, so equal keys keep `AllFunctions` order).
+void t26OrderFunctions(ref Ctx c, by ModId module, to ref List<FuncId> functions) {
+    for i in 1..functions.length {
+        var j = i
+        while j > 0 && t26FunctionBefore(ref c, by: module, from: functions[j], to: functions[j - 1]) {
+            let t = functions[j]
+            functions[j] = functions[j - 1]
+            functions[j - 1] = t
+            j -= 1
+        }
+    }
+}
+
+/// Whether `a` sorts strictly before `b` by file index in `module`, span start, then span end.
+bool t26FunctionBefore(ref Ctx c, by ModId module, from FuncId a, to FuncId b) {
+    let fa = t26FileIndex(ref c, by: module, for: c.functions[a].file)
+    let fb = t26FileIndex(ref c, by: module, for: c.functions[b].file)
+    if fa != fb { return fa < fb }
+    let sa = c.functions[a].span
+    let sb = c.functions[b].span
+    if sa.start != sb.start { return sa.start < sb.start }
+    return sa.end < sb.end
+}
+
+/// The C# `module.Files.IndexOf(file)`: -1 when `file` is not one of the module's.
+i64 t26FileIndex(ref Ctx c, by ModId module, for FileId file) {
+    for i in 0..c.modules[module].files.length {
+        if c.modules[module].files[i] == file { return i }
+    }
+    return -1
+}
+
+/// TypedDump.cs:61 `WriteCaptures`: a lambda's captures, each as the type the lambda reads it as (a
+/// narrowed optional is its inner type).
+void t26WriteCaptures(ref Ctx c, for FuncId lambda, to ref StrBuf sb) {
+    var bound: BExpr = -1
+    let enclosing = c.functions[lambda].enclosing
+    if enclosing >= 0 && c.functions[enclosing].body != -1 {
+        for n in descendants(in c, for: c.functions[enclosing].body) {
+            if boundKind(n) == .lambda && c.bLambdas[boundIndex(n)].lambda == lambda {
+                bound = n
+                break
+            }
+        }
+    }
+    sb.append(",\n      \"captures\": [")
+    var any = false
+    if bound != -1 {
+        for k in 0..c.bLambdas[boundIndex(bound)].captures.length {
+            let capture = c.bLambdas[boundIndex(bound)].captures[k]
+            sb.append(any ? ",\n        {\n" : "\n        {\n")
+            any = true
+            sb.append($"          \"name\": {t26JsonString(c.locals[c.bLocals[boundIndex(capture)].local].name)},\n")
+            sb.append($"          \"type\": {t26JsonString(typeDisplay(ref c, by: exprType(in c, for: capture)))}\n")
+            sb.append("        }")
+        }
+    }
+    sb.append(any ? "\n      ]" : "]")
+}
+
+/// TypedDump.cs:75 `Outermost`.
+FuncId t26Outermost(ref Ctx c, for FuncId fn) {
+    var f = fn
+    while c.functions[f].enclosing >= 0 { f = c.functions[f].enclosing }
+    return f
+}
+
+/// TypedDump.cs:81 `WriteSpan`: `"span": { "start": …, "end": … }` at `indent`.
+void t26WriteSpan(ref StrBuf sb, by TextSpan span, at string indent) {
+    sb.append($"{indent}\"span\": {{\n")
+    sb.append($"{indent}  \"start\": {span.start},\n")
+    sb.append($"{indent}  \"end\": {span.end}\n")
+    sb.append($"{indent}}}")
+}
+
+/// TypedDump.cs:89 `PathOf`: a rooted path relative to `DisplayRoot`, with forward slashes.
+string t26PathOf(ref Ctx c, for string path) {
+    let shown = path.startsWith("/") ? t11RelativePath(c.displayRoot, to: path) : path
+    var sb = StrBuf()
+    var start: i64 = 0
+    var k: i64 = 0
+    for b in shown.bytes {
+        if b == 0x5C {
+            sb.append(shown[start..k])
+            sb.append("/")
+            start = k + 1
+        }
+        k += 1
+    }
+    sb.append(shown[start..shown.length])
+    return $"{sb.finish()}"
+}
+
+/// TypedDump.cs:92 `KindOf`.
+string t26KindOf(ref Ctx c, for LocalId local) {
+    switch c.locals[local].kind {
+        case .parameter: return "param"
+        case .varKeyword: return "var"
+        case .constKeyword: return "const"
+        case .forVariable: return "for"
+        case .patternVariable: return "pattern"
+        default: return c.locals[local].isCatch ? "catch" : "let"
+    }
+}
+
+/// A JSON string literal as `JavaScriptEncoder.UnsafeRelaxedJsonEscaping` writes it: `"` and `\`, the
+/// short escapes `\b \t \n \f \r`, `\u00XX` for other C0 controls, DEL and C1 controls, ` `/` `,
+/// and a code point above U+FFFF as its UTF-16 surrogate pair; everything else as is (Q645).
+string t26JsonString(string s) {
+    var sb = StrBuf()
+    sb.append("\"")
+    let bytes = s.bytes
+    var i: i64 = 0
+    while i < bytes.length {
+        let d = decodeAt(bytes, at: i)
+        let v = i64(d.value)
+        if v == 0x22 {
+            sb.append("\\\"")
+        } else if v == 0x5C {
+            sb.append("\\\\")
+        } else if v == 0x08 {
+            sb.append("\\b")
+        } else if v == 0x09 {
+            sb.append("\\t")
+        } else if v == 0x0A {
+            sb.append("\\n")
+        } else if v == 0x0C {
+            sb.append("\\f")
+        } else if v == 0x0D {
+            sb.append("\\r")
+        } else if v < 0x20 || (v >= 0x7F && v <= 0x9F) || v == 0x2028 || v == 0x2029 {
+            sb.append($"\\u{t26Hex4(v)}")
+        } else if v > 0xFFFF {
+            let u = v - 0x10000
+            sb.append($"\\u{t26Hex4(0xD800 + (u >> 10))}\\u{t26Hex4(0xDC00 + (u & 0x3FF))}")
+        } else {
+            sb.append(s[i..i + d.length])
+        }
+        i += d.length
+    }
+    sb.append("\"")
+    return $"{sb.finish()}"
+}
+
+/// `v` (below 0x10000) as four upper-case hex digits.
+string t26Hex4(i64 v) {
+    let digits = "0123456789ABCDEF"
+    var sb = StrBuf()
+    var shift: i64 = 12
+    while shift >= 0 {
+        let d = (v >> shift) & 0xF
+        sb.append(digits[d..d + 1])
+        shift -= 4
+    }
+    return $"{sb.finish()}"
+}

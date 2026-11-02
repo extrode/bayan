@@ -1,0 +1,5 @@
+# bayan build -o <dir>/tally/tally <dir>/tally/main.byn
+exit: 0
+--- stdout ---
+[38;2;143;214;148m◆ built tally (safe, <host>) in 0.00s · from cache[0m
+--- stderr ---

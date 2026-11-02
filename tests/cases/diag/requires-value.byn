@@ -1,0 +1,6 @@
+type distinct Percent = i32 requires value in 0..=100
+
+struct Form {
+    i32 count
+        requires value > 0
+}

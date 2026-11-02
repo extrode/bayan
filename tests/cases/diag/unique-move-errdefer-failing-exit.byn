@@ -1,0 +1,41 @@
+// An `errdefer` runs at a failing exit: a `try` reached with `xs` moved is a use after move (BYN2781).
+union error E {
+    bad
+}
+
+void step() fails E { }
+
+void consume(move List<i64> xs) {
+    print($"{xs.length}")
+}
+
+List<i64> build() fails E {
+    let xs = List<i64>()
+    defer failing print($"{xs.length}")
+    consume(move xs)
+    try step()
+    return List<i64>()
+}
+
+// `fail .bad` is a failing exit too.
+void failing(bool shouldFail) fails E {
+    let ys = List<i64>()
+    defer failing print($"{ys.length}")
+    consume(move ys)
+    fail .bad if shouldFail
+}
+
+union error F {
+    a
+    b
+}
+
+i64 pick() fails F => 1
+
+// A `catch` naming one variant propagates the rest: a failing exit.
+i64 partial() fails F {
+    let zs = List<i64>()
+    defer failing print($"{zs.length}")
+    consume(move zs)
+    return pick() catch (F.a) 0
+}

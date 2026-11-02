@@ -1,0 +1,27 @@
+error BYN3004: `m` is modified while the `for` loop still borrows it
+
+  5 │         m[e.key] = e.value + 1
+    │         ^^^^^^^^ the loop over `m` is still running
+    │
+  help: collect the changes in another list and apply them to `m` after the loop
+
+error BYN3004: `m` is modified while the `for` loop still borrows it
+
+  6 │         let _ = m.remove(e.key)
+    │                 ^^^^^^^^^^^^^^^ the loop over `m` is still running
+    │
+  help: collect the changes in another list and apply them to `m` after the loop
+
+error BYN3004: `m` is modified while the `for` loop still borrows it
+
+  8 │     for e in m { m.clear() }
+    │                  ^^^^^^^^^ the loop over `m` is still running
+    │
+  help: collect the changes in another list and apply them to `m` after the loop
+
+error BYN3002: arena `a` does not live as long as `outer`, which borrows it
+
+  18 │             outer = Map<i64, string>()
+     │                     ^^^^^^^^^^^^^^^^^^ arena `a` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

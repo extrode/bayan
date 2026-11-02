@@ -1,7 +1,7 @@
 void f() {
     defer {
-        return;
+        return
     }
 }
 
-f();
+f()

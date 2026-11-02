@@ -17,7 +17,7 @@
       "line": 1,
       "status": "panic",
       "durationMs": 0,
-      "output": "panic: assertion failed: 1 == 2\n  at tests/broken.test.byn:2"
+      "output": "panic: assert(1 == 2)\n                │\n                false\n  at tests/broken.test.byn:2"
     },
     {
       "name": "boom",
@@ -34,6 +34,7 @@
     "failed": 0,
     "panicked": 2,
     "timedOut": 0,
+    "pending": 0,
     "skipped": 0,
     "durationMs": 0
   }

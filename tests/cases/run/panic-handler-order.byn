@@ -1,0 +1,11 @@
+void inner() {
+    defer panicking print("inner handler")
+    panic("boom")
+}
+
+void outer() {
+    defer panicking print("outer handler")
+    inner()
+}
+
+outer()

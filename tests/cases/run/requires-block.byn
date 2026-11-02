@@ -1,0 +1,8 @@
+i32 firstDigit(i32 value) expects value in 0..10 {
+    return value
+}
+
+let digits = [3, 12]
+for d in digits {
+    print($"{firstDigit(d)}")
+}

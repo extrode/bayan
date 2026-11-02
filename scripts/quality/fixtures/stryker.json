@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1",
+  "files": {
+    "/repo/src/A.cs": {
+      "language": "cs",
+      "source": "int f(int a) {\n  return a + 1;\n}\n",
+      "mutants": [
+        {"id": "1", "mutatorName": "Arithmetic", "replacement": "a - 1", "location": {"start": {"line": 2, "column": 10}, "end": {"line": 2, "column": 15}}, "status": "Killed"},
+        {"id": "2", "mutatorName": "Arithmetic", "replacement": "a * 1", "location": {"start": {"line": 2, "column": 10}, "end": {"line": 2, "column": 15}}, "status": "Survived"},
+        {"id": "3", "mutatorName": "Statement", "replacement": ";", "location": {"start": {"line": 2, "column": 3}, "end": {"line": 2, "column": 16}}, "status": "Timeout"},
+        {"id": "4", "mutatorName": "Statement", "replacement": ";", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 3, "column": 2}}, "status": "NoCoverage"},
+        {"id": "5", "mutatorName": "Arithmetic", "replacement": "a / 1", "location": {"start": {"line": 2, "column": 10}, "end": {"line": 2, "column": 15}}, "status": "Ignored"},
+        {"id": "6", "mutatorName": "Arithmetic", "replacement": "a %% 1", "location": {"start": {"line": 2, "column": 10}, "end": {"line": 2, "column": 15}}, "status": "CompileError"}
+      ]
+    },
+    "/repo/src/Other.cs": {
+      "language": "cs",
+      "source": "x\n",
+      "mutants": [
+        {"id": "7", "mutatorName": "Arithmetic", "replacement": "y", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "Ignored", "statusReason": "Removed by mutate filter"},
+        {"id": "8", "mutatorName": "Arithmetic", "replacement": "z", "location": {"start": {"line": 1, "column": 1}, "end": {"line": 1, "column": 2}}, "status": "CompileError"}
+      ]
+    }
+  }
+}

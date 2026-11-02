@@ -1,0 +1,13 @@
+token number 2
+token plus 0
+token number 3
+token star 0
+token number 4
+3 numbers
+sum 9, stream at 5
+static: num 2 = 2
+static: add 2 3 = 5
+static: product of 5 and 4 is 20
+dyn: num 2 = 2
+dyn: add 2 3 = 5
+dyn: product of 5 and 4 is 20

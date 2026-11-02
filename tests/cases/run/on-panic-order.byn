@@ -1,0 +1,13 @@
+void onCrash(Panic p) {
+    print($"onPanic: {p.message}")
+}
+
+void work() {
+    defer panicking (p) print($"handler: {p.message}")
+    panic("broken")
+}
+
+void main() {
+    Panic.handler = onCrash
+    work()
+}

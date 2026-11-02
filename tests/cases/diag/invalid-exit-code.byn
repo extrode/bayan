@@ -1,0 +1,25 @@
+union error ConfigError {
+    @exitCode(0)
+    /// Zero means success.
+    zero
+    @exitCode(300)
+    /// Too large.
+    large
+    @exitCode
+    /// No argument.
+    missing
+    @exitCode("x")
+    /// Not an integer.
+    text
+    @exitCode(1, 2)
+    /// Two arguments.
+    two
+    @exitCode(4)
+    @exitCode(5)
+    /// Repeated.
+    repeated
+}
+
+void main() fails ConfigError {
+    fail .zero
+}

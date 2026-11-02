@@ -1,6 +1,6 @@
 error BYN2105: field `value` is readonly
 
-  6 │ id.value = 2;
+  6 │ id.value = 2
     │ ^^^^^^^^
     │
-  help: `readonly` fields are set only in a constructor or a struct literal
+  help: set `readonly` fields only in a constructor or a struct literal

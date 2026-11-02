@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "pending-peers-accumulator.byn",
+      "name": "main",
+      "span": {
+        "start": 0,
+        "end": 20
+      },
+      "bindings": [
+        {
+          "name": "xs",
+          "kind": "let",
+          "span": {
+            "start": 4,
+            "end": 6
+          },
+          "type": "List<i32>"
+        },
+        {
+          "name": "i",
+          "kind": "var",
+          "span": {
+            "start": 25,
+            "end": 26
+          },
+          "type": "i64"
+        },
+        {
+          "name": "total",
+          "kind": "var",
+          "span": {
+            "start": 35,
+            "end": 40
+          },
+          "type": "i64"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+var a = 0
+var b = 0
+a = b
+let y: f64 = a
+let x: i64 = b
+print($"{x} {y}")

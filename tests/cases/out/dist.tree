@@ -2,7 +2,7 @@
 {
   "package": "local/tally",
   "version": "0.1.0",
-  "compiler": "bayan 0.1.0-dev",
+  "compiler": "bayan 0.1.0",
   "mode": "safe",
   "targets": [
     "linux-x64",
@@ -10,7 +10,7 @@
     "windows-x64"
   ],
   "source": null,
-  "inputs": "sha256:195d11710b8aac9b9fa596a6a352849b5d6b1accd922e8bea003b5e514643ad6"
+  "inputs": "sha256:37e52da8103dc97c800e9214897277b1a7e4108c068f2b0cebdba68a75baa2cc"
 }
 === 0.1.0/SHA256SUMS
 <sha256>  linux-x64/tally
@@ -23,7 +23,7 @@
 {
   "package": "local/tally",
   "version": "0.1.0",
-  "compiler": "bayan 0.1.0-dev",
+  "compiler": "bayan 0.1.0",
   "mode": "safe",
   "targets": [
     "linux-x64",
@@ -31,7 +31,7 @@
     "windows-x64"
   ],
   "source": null,
-  "inputs": "sha256:195d11710b8aac9b9fa596a6a352849b5d6b1accd922e8bea003b5e514643ad6"
+  "inputs": "sha256:37e52da8103dc97c800e9214897277b1a7e4108c068f2b0cebdba68a75baa2cc"
 }
 === latest/SHA256SUMS
 <sha256>  linux-x64/tally

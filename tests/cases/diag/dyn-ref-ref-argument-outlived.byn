@@ -1,0 +1,26 @@
+// A `dyn ref` returned from a `ref` argument lives no longer than the argument, even when the argument lends no storage of its own (BYN3002).
+interface IThing {
+    i64 get()
+}
+
+struct S : IThing {
+    i64 n
+
+    i64 get() => n
+}
+
+struct Box {
+    S inner
+}
+
+dyn ref IThing pick(ref Box b) => b.inner
+
+void main() {
+    var kept = S { n: 1 }
+    var late: dyn ref IThing = kept
+    {
+        var b = Box { inner: S { n: 2 } }
+        late = pick(ref b)
+    }
+    print($"{late.get()}")
+}

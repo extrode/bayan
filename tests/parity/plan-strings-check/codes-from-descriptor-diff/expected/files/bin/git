@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Stub for git: a recorded descriptor diff against dev (the tool reads the codes from its added lines) and the file lists.
+case "$*" in
+  "diff dev...HEAD -- src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs")
+    cat <<'D'
++    public static readonly DiagnosticDescriptor KeywordOrder = Error("BYN1044", "`{0}` is an input form; write `{1}`");
++    public static readonly DiagnosticDescriptor TypeNameOrder = Error("BYN1043", "`{0}` is an input form; write `{1}`");
++    public static readonly DiagnosticDescriptor OneLine = Error("BYN1053", "`{0}` declares its cases on one line");
++    public static readonly DiagnosticDescriptor ContextInput = Error("BYN6006", "`context (…) {{ }}` is now `provide … {{ }}`");
+D
+    ;;
+  "ls-files src") printf '%s\n' src/Bayan.Semantics/Lexicon.cs src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs src/Bayan.Syntax/Parsing/Parser.cs ;;
+  "ls-files tests/cases") printf '%s\n' tests/cases/diag/field.diag ;;
+  *) echo "git stub: unexpected $*" >&2; exit 1 ;;
+esac

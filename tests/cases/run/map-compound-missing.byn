@@ -1,0 +1,9 @@
+// `map[k] op= v` and `map[k]++` read `map[k]` first: a missing key panics. `slot` inserts.
+var m = Map<string, i64>()
+m.slot("x") += 5
+m["x"]++
+m["y"] = 1
+m["y"] *= 3
+print($"{m}")
+m["z"] += 5
+print("unreachable")

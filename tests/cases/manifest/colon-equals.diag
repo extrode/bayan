@@ -1,0 +1,8 @@
+error BYN3104: `package.byn` uses `field: value`
+
+  2 │     name: = "local/shop",
+    │           ^ the input form
+    │
+  help: remove the `=`
+    │ 2 │     name: = "local/shop",
+    │   │          --

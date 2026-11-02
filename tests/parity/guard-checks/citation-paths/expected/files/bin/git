@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+case "$*" in
+  "diff --name-only base...HEAD"|"diff --name-only")
+    printf 'docs/bayan-handoff.md\nselfhost/semantics/ctx.byn\n' ;;
+  "ls-files --others --exclude-standard")
+    ;;
+  "merge-base base HEAD")
+    echo "base-sha" ;;
+  "diff -U0 base-sha -- selfhost/semantics/ctx.byn")
+    ;;
+  "diff base-sha -- docs/bayan-handoff.md")
+    cat <<'EOF'
+diff --git a/docs/bayan-handoff.md b/docs/bayan-handoff.md
+--- a/docs/bayan-handoff.md
++++ b/docs/bayan-handoff.md
+@@ -1 +1,3 @@
+ # Handoff
++901. T99 cites `selfhost/parser/e.byn:2` `let y = 2`, a.byn:2 `let x = 1`, selfhost/parser/nope.byn:3.
++- **T99** landed.
+EOF
+    ;;
+  *)
+    echo "unexpected git args: $*" >&2
+    exit 1 ;;
+esac

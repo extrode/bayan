@@ -1,0 +1,12 @@
+// `span` is a read-only view; `mutableSpan()` writes through to the list or array.
+void main() {
+    var xs = List<i64>()
+    xs.append(1)
+    xs.append(2)
+    let view = xs.mutableSpan()
+    view[0] = 10
+    var arr: i64[2] = [3, 4]
+    let a = arr.mutableSpan()
+    a[1] = 40
+    print($"{xs[0]} {xs.span[1]} {arr[1]} {arr.span.length}")
+}

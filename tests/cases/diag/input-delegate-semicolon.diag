@@ -1,0 +1,8 @@
+error BYN1028: `delegate` is not Bayan; write a function type `type F = Order -> bool`
+
+  3 │ delegate bool F(Order o);
+    │ ^^^^^^^^^^^^^^^^^^^^^^^^^ a C# delegate
+    │
+  help: declare it as `type F = Order -> bool`
+    │ 3 │ type F = Order -> bool
+    │   │ ++++++++++++++++++++++

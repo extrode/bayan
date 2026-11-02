@@ -1,0 +1,22 @@
+union error ParseError {
+    bad
+}
+
+i64 parse(string s) fails ParseError {
+    fail .bad if s.isEmpty
+    return s.length
+}
+
+i64 one() => 1
+
+i64 total(string s) fails ParseError {
+    return try parse(s) + 1
+}
+
+i64 wrapped(string s) fails ParseError {
+    return try one() + parse(s)
+}
+
+i64 fine(string s) fails ParseError {
+    return (try parse(s)) + try parse(s)
+}

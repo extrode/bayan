@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+case "$*" in
+  "diff --name-only base...HEAD"|"diff --name-only")
+    printf 'docs/bayan-handoff.md\nselfhost/semantics/a.byn\nselfhost/semantics/ctx.byn\ntests/Bayan.Tests/SelfhostSemanticsT99Tests.cs\n' ;;
+  "ls-files --others --exclude-standard")
+    ;;
+  "merge-base base HEAD")
+    echo "base-sha" ;;
+  "diff -U0 base-sha -- selfhost/semantics/ctx.byn")
+    cat <<'EOF'
+diff --git a/selfhost/semantics/ctx.byn b/selfhost/semantics/ctx.byn
+--- a/selfhost/semantics/ctx.byn
++++ b/selfhost/semantics/ctx.byn
+@@ -2,1 +2,0 @@ struct Ctx {
+-    old: int
+@@ -5,0 +6,1 @@ struct Ctx {
++    stray: int
+EOF
+    ;;
+  "diff base-sha -- docs/bayan-handoff.md")
+    cat <<'EOF'
+diff --git a/docs/bayan-handoff.md b/docs/bayan-handoff.md
+--- a/docs/bayan-handoff.md
++++ b/docs/bayan-handoff.md
+@@ -1 +1,3 @@
+ # Handoff
++901. T99 cites a.byn:7 and a.byn:6 `let wrong = 0`. Open.
++902. Decide this before T99. Open.
+EOF
+    ;;
+  *)
+    echo "unexpected git args: $*" >&2
+    exit 1 ;;
+esac

@@ -1,0 +1,18 @@
+const limit: i32 = 3
+
+i32 next() {
+    return 4
+}
+
+@cases(limit, next(), 1 + 1, 2)
+test "positive" (i32 n) {
+    assert(n > 0)
+}
+
+@cases(discountCases)
+test "discount" (i32 total, i32 percent) {
+    assert(total > percent)
+}
+
+void main() {
+}

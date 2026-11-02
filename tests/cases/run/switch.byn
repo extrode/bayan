@@ -4,33 +4,33 @@ string describe(i64 n) => n switch {
     1 or 2 => "small",
     >= 3 and < 10 => "medium",
     _ => "large",
-};
+}
 
-for (let n in -1..12) {
-    print($"{n} {describe(n)}");
+for n in -1..12 {
+    print($"{n} {describe(n)}")
 }
 
 void category(string s) {
-    switch (s) {
+    switch s {
         case "a" or "b":
-            print("early");
-        case var other when other.length > 3:
-            print($"long {other}");
+            print("early")
+        case let other when other.length > 3:
+            print($"long {other}")
         default:
-            print("other");
+            print("other")
     }
 }
 
-category("a");
-category("b");
-category("hello");
-category("z");
+category("a")
+category("b")
+category("hello")
+category("z")
 
-i64? maybe = 4;
-i64? missing = null;
-print(maybe switch { null => "none", var v => "some" });
+let maybe: i64? = 4
+let missing: i64? = null
+print(maybe switch { null => "none", let v => "some" })
 let label = missing switch {
     null => "none",
     _ => "some",
-};
-print(label);
+}
+print(label)

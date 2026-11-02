@@ -1,0 +1,8 @@
+var xs = List<i64>()
+xs.append(10)
+xs.append(20)
+print($"{xs.tryGet(at: 0) ?? -1} {xs.tryGet(at: 1) ?? -1}")
+print($"{xs.tryGet(at: 2) ?? -1} {xs.tryGet(at: -1) ?? -1}")
+var names = List<string>()
+names.append("ada")
+print($"{names.tryGet(at: 0) ?? "none"} {names.tryGet(at: 1) ?? "none"}")

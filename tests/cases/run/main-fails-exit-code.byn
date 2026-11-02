@@ -1,0 +1,19 @@
+// A failing `main` exits with the variant's `[ExitCode(n)]`, or 1 without one.
+union error ConfigError {
+    /// The configuration file is missing.
+    missing
+    /// The configuration is malformed.
+    @exitCode(3)
+    malformed
+}
+
+void load(bool broken) fails ConfigError {
+    fail .malformed if broken
+}
+
+void main() fails ConfigError {
+    try load(broken: false)
+    print("loaded once")
+    try load(broken: true)
+    print("not reached")
+}

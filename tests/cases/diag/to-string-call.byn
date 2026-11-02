@@ -1,0 +1,8 @@
+struct Point { i64 x }
+
+void main() {
+    let n = 42
+    let p = Point { x: 1 }
+    print(n.toString())
+    print(p.ToString())
+}

@@ -19,7 +19,7 @@ public sealed partial class OutputTests
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "output", name);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         var project = Path.Combine(dir, "tally");
         var (exit, _, err) = Run(["new", project, "--vcs", "none", .. options]);
@@ -30,7 +30,7 @@ public sealed partial class OutputTests
     private static void SetVersion(string project, string version)
     {
         var path = Path.Combine(project, "package.byn");
-        File.WriteAllText(path, VersionField().Replace(File.ReadAllText(path), $"version = \"{version}\""));
+        File.WriteAllText(path, VersionField().Replace(File.ReadAllText(path), $"version: \"{version}\""));
     }
 
     private static void Ok((int Exit, string Out, string Err) r) => Assert.True(r.Exit == CliApp.ExitOk, r.Out + r.Err);
@@ -41,6 +41,7 @@ public sealed partial class OutputTests
         var sb = new System.Text.StringBuilder();
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
                                       .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
+                                      .Select(f => maskHost && OperatingSystem.IsWindows() && ("/" + f).Contains("/" + Targets.Host! + "/", StringComparison.Ordinal) && f.EndsWith(".exe", StringComparison.Ordinal) ? f[..^4] : f) // the <host> golden trees name the host's executables bare; dist trees keep .exe
                                       .Order(StringComparer.Ordinal))
         {
             sb.Append("=== ").Append(maskHost ? file.Replace(Targets.Host!, "<host>") : file).Append('\n');
@@ -50,8 +51,11 @@ public sealed partial class OutputTests
         return sb.ToString();
     }
 
-    private static string Mask(string text, bool maskHost = true) =>
-        Sha().Replace(Duration().Replace(maskHost ? text.Replace(Targets.Host!, "<host>") : text, "\"durationMs\": 0"), "<sha256>  ");
+    /// <summary>Masks the host, durations and hashes. The masked files (results.json, SHA256SUMS, BUILDINFO.json, VERSION) hold LF only: captured test output is LF since the runtime writes stdout/stderr in binary mode (Q742).</summary>
+    private static string Mask(string text, bool maskHost = true)
+    {
+        return Sha().Replace(Duration().Replace(maskHost ? text.Replace(Targets.Host!, "<host>") : text, "\"durationMs\": 0"), "<sha256>  ");
+    }
 
     private static void Compare(string name, string actual)
     {
@@ -77,9 +81,9 @@ public sealed partial class OutputTests
         Ok(Run("build", p, "--mode", "debug"));
         Ok(Run("build", p, "--target", "linux-x64"));
         Ok(Run("build", p, "--target", "windows-x64"));
-        Assert.True(File.Exists(Path.Combine(p, "out", "debug", Targets.Host!, "tally")));
-        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "linux-x64", "tally")));
-        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "windows-x64", "tally.exe")));
+        Assert.True(File.Exists(Path.Combine(p, "out", "debug", Targets.Host!, Targets.ExecutableName("tally", CliApp.HostTarget))));
+        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "linux-x64", Targets.ExecutableName("tally", "linux-x64"))));
+        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "windows-x64", Targets.ExecutableName("tally", "windows-x64"))));
     }
 
     [Fact]
@@ -106,7 +110,7 @@ public sealed partial class OutputTests
     public void FailingTestsAreReportedInTheResultsFile()
     {
         var p = NewProject("out-test-fail");
-        File.WriteAllText(Path.Combine(p, "tests", "broken.test.byn"), "test \"wrong\" {\n    assert(1 == 2);\n}\n\ntest \"boom\" {\n    panic(\"boom\");\n}\n");
+        File.WriteAllText(Path.Combine(p, "tests", "broken.test.byn"), "test \"wrong\" {\n    assert(1 == 2)\n}\n\ntest \"boom\" {\n    panic(\"boom\")\n}\n");
         Assert.Equal(CliApp.ExitTestFailure, Run("test", p).Exit);
         Compare("results-fail.json", Mask(File.ReadAllText(Path.Combine(p, "out", "test", "results.json"))));
     }
@@ -223,7 +227,7 @@ public sealed partial class OutputTests
         Assert.Equal(CliApp.ExitUsage, Run("clean", Path.Combine(p, "src")).Exit);
     }
 
-    [GeneratedRegex("version = \"[^\"]*\"")]
+    [GeneratedRegex("version: \"[^\"]*\"")]
     private static partial Regex VersionField();
 
     [GeneratedRegex("\"durationMs\": [0-9.]+")]

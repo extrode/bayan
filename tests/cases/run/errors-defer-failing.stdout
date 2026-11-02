@@ -1,0 +1,7 @@
+defer
+result 1
+---
+defer failing saw The step was told to fail.
+defer failing
+defer
+result -1

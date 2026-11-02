@@ -1,0 +1,13 @@
+union Token {
+    word(string text)
+    end
+}
+
+void main() {
+    var kept = Token.end
+    {
+        using let arena = Arena()
+        kept = Token.word("copied".copy(to: arena))
+    }
+    print($"{kept}")
+}

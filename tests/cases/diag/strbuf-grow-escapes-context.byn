@@ -1,0 +1,17 @@
+void main() {
+    var text = ""
+    var outer = StrBuf()
+    {
+        using let arena = Arena()
+        provide allocator: arena {
+            var sb = StrBuf()
+            sb.append("abc")
+            print(sb.finish())
+            text = sb.finish()
+            outer = StrBuf()
+        }
+    }
+    outer.append("ok")
+    text = outer.finish()
+    print(text)
+}

@@ -1,6 +1,7 @@
 error BYN2221: `i32` cannot be iterated
 
-  1 │ for (let x in 5) {
-    │               ^
+  1 │ for x in 5 {
+    │          ^
     │
-  help: `for` iterates over ranges (`0..n`), spans, lists, arrays and strings
+  help: use `for` over ranges (`0..n`), spans, lists, arrays, strings, or a type conforming to
+        `IIndexable` or `IEnumerator`

@@ -1,0 +1,6 @@
+error BYN2710: `circle` carries data and cannot have a value
+
+  2 │     circle(f32 r) = 1
+    │                     ^ only a case without data can have a value
+    │
+  help: remove the value

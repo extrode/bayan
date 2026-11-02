@@ -1,0 +1,6 @@
+error BYN2703: variant `rect` has 2 payload field(s), but the pattern lists 1
+
+  8 │     .rect(let w) => w,
+    │     ^^^^^^^^^^^^
+    │
+  help: list every field: `.rect(let w, let h)`, or `_` to skip one

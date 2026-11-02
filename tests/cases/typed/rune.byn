@@ -1,0 +1,4 @@
+bool isVowel(rune c) => c == 'a' or c == 'e'
+
+let first: rune = 'x'
+print($"{isVowel(first)}")

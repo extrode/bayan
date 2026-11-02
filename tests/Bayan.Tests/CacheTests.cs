@@ -10,7 +10,7 @@ public sealed class CacheTests
     private static string Root(string name)
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "cache-tests", name);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -50,14 +50,14 @@ public sealed class CacheTests
 
     private static string Output(string executable)
     {
-        var psi = new System.Diagnostics.ProcessStartInfo(executable) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new System.Diagnostics.ProcessStartInfo(executable) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = System.Diagnostics.Process.Start(psi)!;
-        var text = p.StandardOutput.ReadToEnd();
+        var text = p.StandardOutput.ReadToEndLf();
         p.WaitForExit();
         return text;
     }
 
-    private static string Exe(string project, string mode = "safe") => Path.Combine(project, "out", mode, Targets.Host!, "tally");
+    private static string Exe(string project, string mode = "safe") => Path.Combine(project, "out", mode, Targets.Host!, Targets.ExecutableName("tally", CliApp.HostTarget));
 
     private static (int Code, string Out) Git(string dir, params string[] args) =>
         Scaffold.Git(Toolchain.FindOnPath("git")!, dir, ["-c", "core.hooksPath=" + Path.Combine(dir, ".no-hooks"), "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", .. args]);
@@ -174,6 +174,37 @@ public sealed class CacheTests
         });
     }
 
+    /// <summary>
+    /// On Windows, ReplaceFile retries when another process holds the destination open with FileShare.Read|Delete.
+    /// The reproduction runs on Windows; on non-Windows, the test runs ReplaceFile and asserts the content is replaced.
+    /// </summary>
+    [Fact]
+    public void ReplaceFileRetriesWhileDestinationIsOpen()
+    {
+        var root = Root("replace-open");
+        var path = Path.Combine(root, "target.txt");
+        File.WriteAllText(path, "before");
+        if (OperatingSystem.IsWindows())
+        {
+            using var open = new ManualResetEventSlim();
+            var thread = new Thread(() =>
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+                open.Set();
+                Thread.Sleep(200);
+            });
+            thread.Start();
+            open.Wait();
+            Toolchain.ReplaceFile(path, temp => File.WriteAllText(temp, "after"));
+            thread.Join();
+        }
+        else
+        {
+            Toolchain.ReplaceFile(path, temp => File.WriteAllText(temp, "after"));
+        }
+        Assert.Equal("after", File.ReadAllText(path));
+    }
+
     [Fact]
     public void ADamagedEntryIsRebuilt()
     {
@@ -196,7 +227,7 @@ public sealed class CacheTests
     {
         var root = Root("script");
         var script = Path.Combine(root, "hello.byn");
-        File.WriteAllText(script, "#!/usr/bin/env bayan\n#:io threaded\n\nprint(\"hi\");\n");
+        File.WriteAllText(script, "#!/usr/bin/env bayan\n#:io threaded\n\nprint(\"hi\")\n");
         WithCache(root, () =>
         {
             Ok(Run(script));
@@ -204,7 +235,7 @@ public sealed class CacheTests
         });
         var noCompiler = ("BAYAN_CC", Path.Combine(root, "no-such-cc"));
         WithCache(root, () => Ok(Run(script)), noCompiler);
-        File.AppendAllText(script, "print(\"changed\");\n");
+        File.AppendAllText(script, "print(\"changed\")\n");
         WithCache(root, () => Assert.Equal(CliApp.ExitToolchain, Run(script).Exit), noCompiler);
     }
 
@@ -257,7 +288,7 @@ public sealed class CacheTests
     [Fact]
     public void ScriptKeysDependOnTheCompilerBuild()
     {
-        byte[] script = "print(\"hi\");\n"u8.ToArray();
+        byte[] script = "print(\"hi\")\n"u8.ToArray();
         Assert.NotEqual(Toolchain.ScriptKey(script, BuildMode.Safe, "a"), Toolchain.ScriptKey(script, BuildMode.Safe, "b"));
         Assert.Equal(Toolchain.ScriptKey(script, BuildMode.Safe, "a"), Toolchain.ScriptKey(script, BuildMode.Safe, "a"));
         Assert.NotEmpty(Toolchain.CompilerBuild);

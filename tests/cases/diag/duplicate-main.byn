@@ -1,4 +1,4 @@
-print("a");
+print("a")
 void main() {
-    print("b");
+    print("b")
 }

@@ -1,0 +1,13 @@
+// `HashMap` is one diagnostic with a fix to `Map`, wherever a type is written (BYN2830).
+struct Counter {
+    HashMap<string, i32> counts
+}
+
+i64 total(HashMap<string, i32> counts) => counts.length
+
+void main() {
+    var local: HashMap<string, i32> = []
+    local["a"] = 1
+    let nested: List<HashMap<string, i32>> = []
+    print($"{total(local)} {nested.length}")
+}

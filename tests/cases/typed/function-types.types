@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "function-types.byn",
+      "name": "Order.requires",
+      "span": {
+        "start": 7,
+        "end": 12
+      },
+      "bindings": []
+    },
+    {
+      "path": "function-types.byn",
+      "name": "keep",
+      "span": {
+        "start": 86,
+        "end": 90
+      },
+      "bindings": [
+        {
+          "name": "p",
+          "kind": "param",
+          "span": {
+            "start": 96,
+            "end": 97
+          },
+          "type": "i32 -> bool"
+        },
+        {
+          "name": "f",
+          "kind": "let",
+          "span": {
+            "start": 109,
+            "end": 110
+          },
+          "type": "i32 -> bool"
+        },
+        {
+          "name": "g",
+          "kind": "let",
+          "span": {
+            "start": 129,
+            "end": 130
+          },
+          "type": "i32 -> bool"
+        }
+      ]
+    },
+    {
+      "path": "function-types.byn",
+      "name": "check",
+      "span": {
+        "start": 172,
+        "end": 177
+      },
+      "bindings": [
+        {
+          "name": "q",
+          "kind": "param",
+          "span": {
+            "start": 192,
+            "end": 193
+          },
+          "type": "i32 -> bool"
+        }
+      ]
+    },
+    {
+      "path": "function-types.byn",
+      "name": "save",
+      "span": {
+        "start": 209,
+        "end": 213
+      },
+      "bindings": [
+        {
+          "name": "store",
+          "kind": "param",
+          "span": {
+            "start": 259,
+            "end": 264
+          },
+          "type": "Order -> void fails ValidationError<Order>"
+        }
+      ]
+    },
+    {
+      "path": "function-types.byn",
+      "name": "fetch",
+      "span": {
+        "start": 280,
+        "end": 285
+      },
+      "bindings": [
+        {
+          "name": "get",
+          "kind": "param",
+          "span": {
+            "start": 310,
+            "end": 313
+          },
+          "type": "() -> string uses net"
+        }
+      ]
+    },
+    {
+      "path": "function-types.byn",
+      "name": "pair",
+      "span": {
+        "start": 329,
+        "end": 333
+      },
+      "bindings": [
+        {
+          "name": "add",
+          "kind": "param",
+          "span": {
+            "start": 354,
+            "end": 357
+          },
+          "type": "(i32, i32) -> i32"
+        }
+      ]
+    },
+    {
+      "path": "function-types.byn",
+      "name": "main",
+      "span": {
+        "start": 373,
+        "end": 377
+      },
+      "bindings": []
+    }
+  ]
+}

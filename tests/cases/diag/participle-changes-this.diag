@@ -1,0 +1,20 @@
+error BYN5001: `sorted` changes `this`; name it `sort`
+
+  5 │     void sorted(ref this) {
+    │          ^^^^^^
+    │
+  help: name the member that changes `this` with the plain verb, and keep `-ed` for the copy or view
+
+error BYN7005: `Words` has states; a literal must name one: `Words.drafted { … }`
+
+  12 │     Words reversed => Words { text: text }
+     │                       ^^^^^
+     │
+  help: name the state the value starts in
+
+error BYN5001: `trimmed` changes `this`; name it `trim`
+
+  15 │     void trimmed(ref this, i64 times) {
+     │          ^^^^^^^
+     │
+  help: name the member that changes `this` with the plain verb, and keep `-ed` for the copy or view

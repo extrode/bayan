@@ -1,0 +1,44 @@
+error BYN2832: a `string` value is not a `Symbol`; only a string literal converts
+
+  7 │     let local: Symbol = name
+    │                         ^^^^
+    │
+  help: convert it with `Symbol.intern(name)`
+    │ 7 │     let local: Symbol = Symbol.intern(name)
+    │   │                         +++++++++++++++++++
+
+error BYN2832: a `string` value is not a `Symbol`; only a string literal converts
+
+  8 │     let interpolated: Symbol = $"{name}x"
+    │                                ^^^^^^^^^^
+    │
+  help: convert it with `Symbol.intern($"{name}x")`
+    │ 8 │     let interpolated: Symbol = Symbol.intern($"{name}x")
+    │   │                                +++++++++++++++++++++++++
+
+error BYN2832: a `string` value is not a `Symbol`; only a string literal converts
+
+  9 │     let slice: Symbol = name[0..2]
+    │                         ^^^^^^^^^^
+    │
+  help: convert it with `Symbol.intern(name[0..2])`
+    │ 9 │     let slice: Symbol = Symbol.intern(name[0..2])
+    │   │                         +++++++++++++++++++++++++
+
+error BYN2832: a `string` value is not a `Symbol`; only a string literal converts
+
+  10 │     let optional: Symbol? = name
+     │                             ^^^^
+     │
+  help: convert it with `Symbol.intern(name)`
+     │ 10 │     let optional: Symbol? = Symbol.intern(name)
+     │    │                             +++++++++++++++++++
+
+error BYN2832: a `string` value is not a `Symbol`; only a string literal converts
+
+  11 │     keep<Symbol>(name)
+     │                  ^^^^
+     │
+  help: convert it with `Symbol.intern(name)`
+     │ 11 │     keep<Symbol>(Symbol.intern(name))
+     │    │                  +++++++++++++++++++

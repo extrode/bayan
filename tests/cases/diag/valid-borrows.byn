@@ -1,60 +1,77 @@
-Span<i64> tail(Span<i64> values) => values[1..];
+ReadOnlySpan<i64> tail(ReadOnlySpan<i64> values) => values[1..]
 
-List<i64> keep(ReadOnlySpan<i64> values, Arena arena) => values.copy(to: arena);
+List<i64> keep(ReadOnlySpan<i64> values, to Arena arena) => values.copy(to: arena)
 
-string pick(string a, string b) => a.length > b.length ? a : b;
+string pick(string a, by string b) => a.length > b.length ? a : b
 
 i64 total(ReadOnlySpan<i64> values) {
-    i64 sum = 0;
-    for (let v in values) {
-        sum += v;
+    var sum: i64 = 0
+    for v in values {
+        sum += v
     }
-    return sum;
+    return sum
 }
 
 void main() {
-    using var arena = Arena();
-    var names = List<string>();
-    names.add("ann");
-    names.add("bob");
-    let first = names[0];
-    names.add("cy");
-    print(first);
-    var xs = List<i64>();
-    xs.add(1);
-    xs.add(2);
-    print($"{total(xs)}");
-    let view = xs.asSpan();
-    print($"{view[0]}");
-    xs.add(3);
-    let longer = pick(a: names[0], b: names[1]);
-    print(longer);
-    context (allocator: arena) {
-        var local = List<i64>();
-        local.add(5);
-        let copy = tail(local.asSpan()).copy(to: arena);
-        print($"{copy.length}");
+    using var arena = Arena()
+    var names = List<string>()
+    names.append("ann")
+    names.append("bob")
+    let first = names[0]
+    names.append("cy")
+    print(first)
+    var xs = List<i64>()
+    xs.append(1)
+    xs.append(2)
+    print($"{total(xs)}")
+    let view = xs.span
+    print($"{view[0]}")
+    xs.append(3)
+    let longer = pick(names[0], by: names[1])
+    print(longer)
+    provide allocator: arena {
+        var local = List<i64>()
+        local.append(5)
+        let copy = tail(local.span).copy(to: arena)
+        print($"{copy.length}")
     }
-    var kept = "";
+    var kept = ""
     {
-        kept = "static";
+        kept = "static"
     }
-    print(kept);
-    i64[3] fixed = [1, 2, 3];
-    let part = fixed.asSpan()[1..];
-    print($"{part[0]}");
-    fixed[0] = 9;
-    let kept2 = keep(fixed.asSpan(), arena: arena);
-    print($"{kept2.length}");
-    arena.reset();
+    print(kept)
+    var fixed: i64[3] = [1, 2, 3]
+    let part = fixed.span[1..]
+    print($"{part[0]}")
+    fixed[0] = 9
+    let kept2 = keep(fixed.span, to: arena)
+    print($"{kept2.length}")
+    arena.reset()
 }
 
 void fillLocal() {
-    let buf = stackalloc u8[16];
-    var sb = StrBuf(buf);
-    sb.append("hi");
-    string[1] names = ["x"];
-    let view = names.asSpan();
-    view[0] = sb.asString();
-    print(names[0]);
+    let buf = stackalloc u8[16]
+    var sb = StrBuf(buf)
+    sb.append("hi")
+    var names: string[1] = ["x"]
+    let view = names.mutableSpan()
+    view[0] = sb.finish()
+    print(names[0])
+}
+
+struct Stack {
+    List<i64> items
+    i64[2] pair
+
+    ReadOnlySpan<i64> view() => items.span
+
+    ReadOnlySpan<i64> top() => pair.span[1..]
+
+    i64 sum() {
+        var s: i64 = 0
+        for v in view() {
+            s += v
+        }
+        return s
+    }
 }

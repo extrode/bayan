@@ -1,0 +1,5 @@
+// expect: `extern "lib"` block
+// fix-it: `@link("sodium")` then `extern c {`
+extern "sodium" {
+    c_int sodium_init()
+}

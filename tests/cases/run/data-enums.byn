@@ -1,0 +1,57 @@
+const gravitational: f64 = 6.67300e-11
+
+enum Planet(f64 mass, f64 radius, string label) {
+    mercury(3.303e23, 2.4397e6, "the swift")
+    venus(4.869e24, 6.0518e6, "the bright")
+    earth(5.976e24, 6.37814e6, "home")
+}
+
+enum Kind {
+    word
+    symbol
+}
+
+enum Token(string text, i32 precedence, rune first, bool keyword, Kind kind) {
+    ifKeyword("if", 0, 'i', true, .word)
+    plus("+", 2 * 3, '+', false, Kind.symbol)
+    star("*", -(1 - 8), '*', false, .symbol)
+}
+
+f64 surfaceGravity(Planet p) => gravitational * p.mass / (p.radius * p.radius)
+
+string climate(Planet p) => p switch {
+    .mercury or .venus => "hot",
+    .earth => "mild",
+}
+
+print($"count {Planet.count}")
+for p in Planet.values {
+    print($"{p.ordinal} {p.name} {p} {p.label} {p.mass} {p.radius} {climate(p)}")
+    print($"  gravity {surfaceGravity(p)}")
+}
+print(Planet.earth)
+
+let home = Planet.earth
+let near: Planet = .venus
+print($"{home == Planet.earth} {home != near} {home.label.length}")
+
+print($"{Planet.fromOrdinal(1)} {Planet.fromOrdinal(3)} {Planet.fromOrdinal(-1)}")
+if (Planet.fromOrdinal(0) is { } first) {
+    print($"first {first.label} {first.mass}")
+}
+
+print($"{Planet.parse("earth")} {Planet.parse("Earth")} {Planet.parse("pluto")}")
+let parsed = Planet.parse("mercury") ?? .earth
+print($"parsed {parsed.name} {parsed.ordinal} {parsed.radius}")
+
+for t in Token.values {
+    print($"{t} '{t.text}' {t.precedence} {t.first} {t.keyword} {t.kind}")
+}
+var ops = List<Token>()
+ops.append(.plus)
+ops.append(Token.star)
+var total = 0
+for t in ops {
+    total += t.precedence
+}
+print($"total {total}")

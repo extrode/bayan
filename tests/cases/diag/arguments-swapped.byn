@@ -1,0 +1,7 @@
+// A swapped pair is a particle mismatch (BYN5005); BYN2307 is retired.
+i64 width(i64 start, until i64 end) => end - start
+
+let start: i64 = 2
+let end: i64 = 5
+print($"{width(end, start)}")
+print($"{width(start, until: end)}")

@@ -1,6 +1,7 @@
 error BYN2306: argument for `total` must be passed as `ref`
 
-  6 │ bump(t);
+  6 │ bump(t)
     │      ^
     │
-    │ 6 │ bump(ref t);
+    │ 6 │ bump(ref t)
+    │   │      ++++

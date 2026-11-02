@@ -1,0 +1,206 @@
+// Parser state, token access and diagnostics. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 20–163
+// (fields, the constructor's `_inGroup` precompute, the cursor, `Report`, `ErrorCount`, `Describe`,
+// `Expect`) and gives the flags C# restores in `finally` a save helper each. Owner: 
+//
+// Parsing is free functions over `ref Parser p`, one file per C# line range; the cursor and diagnostics
+// are methods, so a C# `Report(…)` is `p.report(…)` and a C# `Expect(…)` is `p.expect(…)`.
+
+import lexer
+
+// The lexer's types under their own names: a struct literal cannot name its type through a module
+// (`lexer.TextSpan { … }` does not parse, Q431).
+public type TextSpan = lexer.TextSpan
+public type Token = lexer.Token
+public type TokenKind = lexer.TokenKind
+public type Diagnostic = lexer.Diagnostic
+public type LexResult = lexer.LexResult
+public type SourceText = lexer.SourceText
+public type Keywords = lexer.Keywords
+
+/// The parser's state over one lexed source. The lexer's diagnostics come first in `lexed.diagnostics`
+/// and the parser appends to them, as C# copies them into its bag.
+public struct Parser {
+    /// Tokens (the last is `endOfFile`), diagnostics and source.
+    public LexResult lexed
+    public i64 count
+    public i64 pos
+    public i64 prevEnd
+    public i64 lastErrorAt
+    /// Reports other than input forms (`isInputForm`); only these make `recoverIfNeeded` resynchronize.
+    public i64 syntaxErrors
+    /// Token index where the bare condition being parsed starts, or -1 (see `braceLiteralAllowed`).
+    public i64 conditionStart
+    /// Per token: whether its innermost bracket is `(`, `[` or an interpolation hole, where a line break never ends a statement.
+    public List<bool> inGroup
+    /// Whether the declaration being parsed carries `extern`, where pointer types are allowed (BYN1067).
+    public bool inExtern
+    /// Whether a name or `( … )` before `=>` is not a lambda: in a pattern, an arm's guard or an `expects` condition.
+    public bool noLambda
+    /// Set while type arguments are scanned inside an expression, where `=>` is never a type's arrow (`a < b => c > (x)`).
+    public bool exprTypeArgs
+    /// Statement attributes not yet on a node, innermost last: a statement node is read-only once built, so
+    /// `parseStatement` leaves them here with the statement's first token start and the first attribute's start.
+    public List<List<AttributeSyntax>> statementAttributes = List<List<AttributeSyntax>>()
+    public List<i64> statementAttributeKeys = List<i64>()
+    public List<i64> statementAttributeStarts = List<i64>()
+
+    public static Parser create(move LexResult lexed) uses alloc {
+        let count = lexed.tokens.length
+        var inGroup = List<bool>()
+        var groups = List<bool>()
+        for i in 0..count {
+            inGroup.append(groups.length > 0 && groups[groups.length - 1])
+            switch lexed.tokens[i].kind {
+                case .openParen or .openBracket or .interpolationStart:
+                    groups.append(true)
+                case .openBrace:
+                    groups.append(false)
+                case .closeParen or .closeBracket or .interpolationEnd or .closeBrace:
+                    if groups.length > 0 { let _ = groups.removeLast() }
+                default:
+                    continue
+            }
+        }
+        return Parser {
+            lexed: move lexed,
+            count: count,
+            pos: 0,
+            prevEnd: 0,
+            lastErrorAt: -1,
+            syntaxErrors: 0,
+            conditionStart: -1,
+            inGroup: move inGroup,
+            inExtern: false,
+            noLambda: false,
+            exprTypeArgs: false,
+        }
+    }
+
+    // ── Token access ──────────────────────────────────────────────────────────────
+
+    Token current(ref this) => lexed.tokens[pos]
+    TokenKind kind(ref this) => lexed.tokens[pos].kind
+
+    Token peekToken(ref this, i64 n) => lexed.tokens[pos + n < count - 1 ? pos + n : count - 1]
+    TokenKind peek(ref this, i64 n) => peekToken(n).kind
+    TokenKind kindAt(ref this, i64 index) => lexed.tokens[index < count - 1 ? index : count - 1].kind
+
+    bool atEnd(ref this) => kind() == .endOfFile
+
+    Token advance(ref this) {
+        let token = lexed.tokens[pos]
+        if token.kind != .endOfFile {
+            pos += 1
+            prevEnd = token.end
+        }
+        return token
+    }
+
+    bool accept(ref this, TokenKind kind) {
+        if this.kind() != kind { return false }
+        let _ = advance()
+        return true
+    }
+
+    /// The source bytes of `token`; `textOf` is the C# `Text`, as a string.
+    ReadOnlySpan<u8> text(ref this, Token token) => lexed.source.bytes.span[token.start..token.end]
+
+    string textOf(ref this, Token token) => lexed.source.getText(spanOf(token))
+
+    TextSpan spanFrom(ref this, i64 start) => TextSpan.fromBounds(start, until: prevEnd > start ? prevEnd : start)
+
+    /// Whether the current and next token are both `>` with nothing between (a shift).
+    bool atShiftRight(ref this, i64 offset = 0) =>
+        peek(offset) == .greater && peek(offset + 1) == .greater && !peekToken(offset + 1).hasTriviaBefore
+
+    // ── Flags ─────────────────────────────────────────────────────────────────────
+    // C# restores these in `finally`; Bayan has no exceptions, so a site saves the old value with
+    // the setter, makes one call, and assigns the old value back.
+
+    bool setNoLambda(ref this, bool value) {
+        let saved = noLambda
+        noLambda = value
+        return saved
+    }
+
+    bool setExprTypeArgs(ref this, bool value) {
+        let saved = exprTypeArgs
+        exprTypeArgs = value
+        return saved
+    }
+
+    bool setInExtern(ref this, bool value) {
+        let saved = inExtern
+        inExtern = value
+        return saved
+    }
+
+    i64 setConditionStart(ref this, i64 value) {
+        let saved = conditionStart
+        conditionStart = value
+        return saved
+    }
+
+    // ── Diagnostics ───────────────────────────────────────────────────────────────
+
+    /// Reports `code` at `span` unless an error was already reported at `span.start`; returns the
+    /// diagnostic's index in `lexed.diagnostics`, or -1 when suppressed (the C# `null`). An empty
+    /// `label` or `help` is the C# `null`.
+    i64 report(ref this, ParseCode code, at TextSpan span, string arg0 = "", string arg1 = "", string arg2 = "",
+        string label = "", string help = "") =>
+        add(code, at: span, by: (a0: arg0, a1: arg1, a2: arg2), label: label, help: help, hasFix: false, for: span)
+
+    /// `report` with the C# `Fix`: replace `fixSpan` with `replacement`.
+    i64 reportFix(ref this, ParseCode code, at TextSpan span, through TextSpan fixSpan, by string replacement,
+        string arg0 = "", string arg1 = "", string arg2 = "", string label = "", string help = "") =>
+        add(code, at: span, by: (a0: arg0, a1: arg1, a2: arg2), label: label, help: help, hasFix: true, for: fixSpan,
+            fixReplacement: replacement)
+
+    i64 add(ref this, ParseCode code, at TextSpan span, by (string a0, string a1, string a2) args, string label = "",
+        string help = "", bool hasFix, for TextSpan fixSpan, string fixReplacement = "") {
+        if span.start == lastErrorAt { return -1 }
+        lastErrorAt = span.start
+        unless isInputForm(code) { syntaxErrors += 1 }
+        lexed.diagnostics.append(Diagnostic {
+            code: codeText(code),
+            span: span,
+            message: format(messageFormat(code), by: args),
+            label: label,
+            help: help,
+            hasFix: hasFix,
+            fixSpan: fixSpan,
+            fixReplacement: fixReplacement,
+        })
+        return lexed.diagnostics.length - 1
+    }
+
+    /// The C# `ErrorCount`: diagnostics still reported, so a tombstone (code `""`, see `unreport`) does not count.
+    i64 errorCount(ref this) {
+        var n: i64 = 0
+        for d in lexed.diagnostics {
+            unless d.code.isEmpty { n += 1 }
+        }
+        return n
+    }
+
+    string describe(ref this, Token token) {
+        let kind = token.kind
+        if kind == .endOfFile { return "end of file" }
+        if kind == .identifier { return $"`{textOf(token)}`" }
+        if kind == .integerLiteral || kind == .floatLiteral { return $"`{textOf(token)}`" }
+        if lexer.isKeyword(kind) { return $"keyword `{textOf(token)}`" }
+        if kind == .charLiteral { return "a rune literal" }
+        if kind == .interpolatedStringStart { return "a string literal" }
+        if lexer.isStringLiteral(kind) { return "a string literal" }
+        return $"`{lexer.kindText(kind)}`"
+    }
+
+    Token expect(ref this, TokenKind kind, string label = "") {
+        if this.kind() == kind { return advance() }
+        let _ = report(.expected, at: spanOf(current()), arg0: $"`{lexer.kindText(kind)}`", arg1: describe(current()), label: label)
+        return Token { kind: kind, tokenFlags: 0, start: current().start, length: 0, docStart: 0, docLength: 0 }
+    }
+}
+
+/// The C# `Token.Span`.
+TextSpan spanOf(Token token) => TextSpan { start: token.start, length: token.length }

@@ -1,0 +1,16 @@
+# bayan test <dir>/tally
+exit: 3
+--- stdout ---
+running 1 test in 1 module
+
+  ✗ tally: leftover cents
+      assert(net == cents(2))
+             │   │  │
+             │   │  200
+             │   false
+             199
+      main.test.byn:7
+
+◆ 0 passed · ✗ 1 failed · 0 pending · 0.00s
+  rerun the failure: bayan test --only "leftover cents"
+--- stderr ---

@@ -1,0 +1,22 @@
+circle(r: 1) rect(w: 2, h: 2) none
+rect(w: 2, h: 3)
+3 4 0
+circle 1
+big circle
+rect of width 2
+nothing
+true false true true true
+is rect 2x2
+c is not a rect
+true true
+list circle(r: 1)
+list rect(w: 1, h: 2)
+list none
+total 5
+Slot { label: first, shape: circle(r: 3) }
+true
+rect(w: 1, h: 2) null
+rect 1
+number 42 number(value: 42)
+word hi word(text: hi)
+end end

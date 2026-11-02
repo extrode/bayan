@@ -1,0 +1,3 @@
+interface Sized {
+    i64 length { get }
+}

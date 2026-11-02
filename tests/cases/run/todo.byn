@@ -1,0 +1,6 @@
+print("start")
+let ready: bool = true
+let n: i64 = ready ? 41 : todo("not ready")
+print($"{n + 1}")
+let label: string = todo($"label for {n}")
+print(label)

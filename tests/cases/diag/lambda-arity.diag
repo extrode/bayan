@@ -1,0 +1,20 @@
+error BYN2820: this lambda takes 1 parameter(s) but `(i64, i64) -> i64` takes 2
+
+  4 │     let sum = apply(x => x)
+    │                     ^^^^^^
+    │
+  help: write 2 parameter name(s): `(a, b) => …`
+
+error BYN2820: this lambda takes 1 parameter(s) but `() -> i64` takes 0
+
+  5 │     let zero: () -> i64 = n => n
+    │                           ^^^^^^
+    │
+  help: write 0 parameter name(s): `() => …`
+
+error BYN2820: this lambda takes 2 parameter(s) but `i64 -> i64` takes 1
+
+  6 │     let one: i64 -> i64 = (a, b) => a
+    │                           ^^^^^^^^^^^
+    │
+  help: write 1 parameter name(s): `x => …`

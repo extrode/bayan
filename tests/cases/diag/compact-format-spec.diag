@@ -1,0 +1,17 @@
+error BYN1068: `:hex` is an input form; write `, as: .hex`
+
+  2 │     print($"{n:hex} {x:.2}")
+    │               ^^^^ the input form
+    │
+  help: write the spec as named arguments: `, as: .hex`
+    │ 2 │     print($"{n, as: .hex} {x:.2}")
+    │   │               +++++++
+
+error BYN1068: `:.2` is an input form; write `, digits: 2`
+
+  2 │     print($"{n:hex} {x:.2}")
+    │                       ^^^ the input form
+    │
+  help: write the spec as named arguments: `, digits: 2`
+    │ 2 │     print($"{n:hex} {x, digits: 2}")
+    │   │                       ++++++++++

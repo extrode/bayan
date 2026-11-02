@@ -1,0 +1,5 @@
+@cases((1, "yes"), (2, true))
+test "flags" (i32 n, bool ok) {
+    let unused: i32 = "no"
+    assert(ok)
+}

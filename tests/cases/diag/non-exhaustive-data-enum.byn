@@ -1,0 +1,9 @@
+enum Planet(f64 mass) {
+    mercury(3.3e23)
+    venus(4.9e24)
+    earth(6e24)
+}
+
+string climate(Planet p) => p switch {
+    .mercury => "hot",
+}

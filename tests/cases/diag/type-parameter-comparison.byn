@@ -1,0 +1,3 @@
+T max<T>(move T a, by move T b) => a < b ? move b : move a
+bool atLeast<T>(T? a, as T b) => a >= b
+bool same<T>(T a, as T b) => a == b && !(a != b)

@@ -1,0 +1,632 @@
+// T39: BinderCalls.cs ~1578-1956 (exhaustiveness, assignment, inc/dec, writability).
+
+import parser
+
+// ── Exhaustiveness ───────────────────────────────────────────────────────────
+
+/// Reports a non-exhaustive `switch`. Expressions must always be exhaustive; statements only over finite types
+/// (`bool`, error sets, enums, their optionals). Returns whether every value is covered. A null pattern or guard is -1.
+bool checkExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type type, by in List<(BPattern, BExpr)> arms, bool statement) {
+    if isError(type) { return true }
+    let domain = t39Domain(ref c, for: type)
+    var covered = List<string>()
+    for arm in arms {
+        let pattern = arm.item1
+        let guard = arm.item2
+        if pattern == -1 { return true }
+        if guard != -1 { continue }
+        if irrefutable(ref c, for: pattern) {
+            // Every union is declared in the package being compiled: there are no dependencies yet.
+            if hasSyntax(in c, for: pattern, by: syntaxDiscard) && kindOf(type) == .unionType {
+                var rest = List<string>()
+                if (domain is { } all) {
+                    for k in all {
+                        if !listContainsString(in covered, by: k) { rest.append(k) }
+                    }
+                }
+                report(ref b, through: ref c, for: .wildcardOnLocalUnion, at: nodeSpan(in c, for: pattern), by: (typeDisplay(ref c, by: type), "", "", "", ""),
+                    label: "matches every case added later",
+                    help: rest.length > 0 ? $"list the cases instead: {t39Join(in rest)}" : "remove the `_` arm")
+            }
+            return true
+        }
+        collect(ref c, for: pattern, as: type, to: ref covered)
+    }
+    var hasDomain = false
+    var all = true
+    var hasSome = false
+    var missing = List<string>()
+    if (domain is { } dom) {
+        hasDomain = true
+        for k in dom {
+            if !listContainsString(in covered, by: k) {
+                all = false
+                missing.append(k == t39Some ? "a value" : k)
+            }
+            if k == t39Some { hasSome = true }
+        }
+    }
+    if hasDomain && all { return true }
+    if statement && (!hasDomain || hasSome) { return false }
+    // A set none of whose variants is handled is named once, as the `catch switch` arm that would cover it.
+    let unwrapped = unwrap(ref c, for: type)
+    if kindOf(unwrapped) == .errorUnion && c.errorUnionTypes[typeIndex(unwrapped)].sets.length > 1 && hasDomain {
+        var sets = List<ErrorSetId>()
+        for s in c.errorUnionTypes[typeIndex(unwrapped)].sets { sets.append(s) }
+        for set in sets {
+            var keys = List<string>()
+            for v in copyIds(in c.errorSets[set].variants) { keys.append(t39VariantKey(ref c, for: v, as: type)) }
+            var every = true
+            for k in keys {
+                if !listContainsString(in missing, by: k) { every = false }
+            }
+            if keys.length == 0 || !every { continue }
+            var at: i64 = 0
+            for i in 0..missing.length {
+                if missing[i] == keys[0] {
+                    at = i
+                    break
+                }
+            }
+            var next = List<string>()
+            for i in 0..missing.length {
+                if i == at { next.append(displayNameAmong(ref c, by: set, for: in sets)) }
+                if !listContainsString(in keys, by: missing[i]) { next.append(missing[i]) }
+            }
+            missing = move next
+        }
+    }
+    if kindOf(unwrapped) == .errorUnion && c.errorUnionTypes[typeIndex(unwrapped)].sets.length > 1 && hasDomain {
+        var sets = List<ErrorSetId>()
+        for s in c.errorUnionTypes[typeIndex(unwrapped)].sets { sets.append(s) }
+        var names: Map<string, string> = []
+        for s in sets {
+            for v in copyIds(in c.errorSets[s].variants) {
+                let key = t39VariantKey(ref c, for: v, as: type)
+                names[key] = $"{displayNameAmong(ref c, by: c.errorVariants[v].set, for: in sets)}.{c.errorVariants[v].name}"
+            }
+        }
+        var shown = List<string>()
+        for k in missing { shown.append(names.tryGet(at: k) ?? k) }
+        missing = move shown
+    }
+    let listed = hasDomain && missing.length > 0
+    report(ref b, through: ref c, for: .nonExhaustive, at: span, by: (typeDisplay(ref c, by: type), "", "", "", ""),
+        label: listed ? $"not covered: {t39Join(in missing)}" : "",
+        help: statement ? "add the missing cases or a `default:` section"
+            // A `_` arm on a union of this package is BYN2712, so name the arms instead.
+            : kindOf(type) == .unionType && listed ? $"add the missing arms: {t39Join(in missing)}"
+            : "add the missing arms, or `_ => …` for the rest")
+    return false
+}
+
+const t39Some: string = "\0some"
+
+/// `string.Join(", ", xs)`.
+string t39Join(in List<string> xs) {
+    var sb = StrBuf()
+    for i in 0..xs.length {
+        if i > 0 { sb.append(", ") }
+        sb.append(xs[i])
+    }
+    return $"{sb.finish()}"
+}
+
+/// C# `HashSet.Add`.
+void t39Add(ref List<string> set, by string k) {
+    if !listContainsString(in set, by: k) { set.append(k) }
+}
+
+/// Every value of a finite type as a key; null for types with too many values to list.
+List<string>? t39Domain(ref Ctx c, for Type type) {
+    let i = typeIndex(type)
+    var keys = List<string>()
+    if type == prim(.bool) {
+        keys.append("true")
+        keys.append("false")
+        return keys
+    }
+    switch kindOf(type) {
+        case .errorSet:
+            for v in copyIds(in c.errorSets[i].variants) { keys.append(t39VariantKey(ref c, for: v, as: type)) }
+            return keys
+        case .enumType:
+            for m in c.enums[i].members { keys.append($".{c.enumMembers[m].name}") }
+            return keys
+        case .unionType:
+            for v in c.unions[i].variants { keys.append($".{c.unionVariants[v].name}") }
+            return keys
+        case .errorUnion:
+            if c.errorUnionTypes[i].sets.length == 0 { return null }
+            var seen = List<i64>()
+            for s in c.errorUnionTypes[i].sets {
+                for v in copyIds(in c.errorSets[s].variants) {
+                    if listContains(in c.errorUnionTypes[i].excluded, by: v) || listContains(in seen, by: v) { continue }
+                    seen.append(v)
+                }
+            }
+            for v in seen { keys.append(t39VariantKey(ref c, for: v, as: type)) }
+            return keys
+        case .optional:
+            if (t39Domain(ref c, for: c.optionalTypes[i]) is { } inner) {
+                for k in inner { keys.append(k) }
+                keys.append("null")
+                return keys
+            }
+            keys.append("null")
+            keys.append(t39Some)
+            return keys
+        default:
+            return null
+    }
+}
+
+// Across sets a case is keyed by its program-wide code, not its text: `ValidationError<Point>` from two modules reads alike.
+string t39VariantKey(ref Ctx c, for VariantId v, as Type type) {
+    let u = unwrap(ref c, for: type)
+    if kindOf(u) == .errorUnion && c.errorUnionTypes[typeIndex(u)].sets.length > 1 { return $"\0code{c.errorVariants[v].code}" }
+    return $".{c.errorVariants[v].name}"
+}
+
+bool irrefutable(ref Ctx c, for BPattern p) {
+    let i = boundIndex(p)
+    switch boundKind(p) {
+        case .bindPattern:
+            return true
+        case .propertyPattern:
+            if kindOf(c.bPropertyPatterns[i].inputType) == .optional { return false }
+            let n = c.bPropertyPatterns[i].subpatterns.length
+            for k in 0..n {
+                if !irrefutable(ref c, for: c.bPropertyPatterns[i].subpatterns[k].pattern) { return false }
+            }
+            return true
+        case .binaryPattern:
+            let left = c.bBinaryPatterns[i].left
+            let right = c.bBinaryPatterns[i].right
+            if !c.bBinaryPatterns[i].isAnd { return irrefutable(ref c, for: left) || irrefutable(ref c, for: right) }
+            return irrefutable(ref c, for: left) && irrefutable(ref c, for: right)
+        default:
+            return false
+    }
+}
+
+/// `Subpatterns.All(Irrefutable)` over a list of patterns.
+bool t39AllIrrefutable(ref Ctx c, for in List<BPattern> ps) {
+    for p in ps {
+        if !irrefutable(ref c, for: p) { return false }
+    }
+    return true
+}
+
+void collect(ref Ctx c, for BPattern p, as Type type, to ref List<string> covered) {
+    let i = boundIndex(p)
+    switch boundKind(p) {
+        case .constantPattern:
+            let value = c.bConstantPatterns[i].value
+            let vi = boundIndex(value)
+            switch boundKind(value) {
+                case .defaultValue:
+                    t39Add(ref covered, by: "null")
+                    return
+                case .errorVariant:
+                    t39Add(ref covered, by: t39VariantKey(ref c, for: c.bErrorVariants[vi].variant, as: type))
+                    return
+                case .enumMember:
+                    t39Add(ref covered, by: $".{c.enumMembers[c.bEnumMembers[vi].member].name}")
+                    return
+                default: {}
+            }
+            if (exprConstant(in c, for: value) is { } k) && k.kind == .flag {
+                t39Add(ref covered, by: k.flag ? "true" : "false")
+            }
+        case .unionPattern:
+            let subs = copyIds(in c.bUnionPatterns[i].subpatterns)
+            if t39AllIrrefutable(ref c, for: in subs) { t39Add(ref covered, by: $".{c.unionVariants[c.bUnionPatterns[i].variant].name}") }
+        case .errorPattern:
+            let subs = copyIds(in c.bErrorPatterns[i].subpatterns)
+            if t39AllIrrefutable(ref c, for: in subs) { t39Add(ref covered, by: t39VariantKey(ref c, for: c.bErrorPatterns[i].variant, as: type)) }
+        case .binaryPattern:
+            let left = c.bBinaryPatterns[i].left
+            let right = c.bBinaryPatterns[i].right
+            if !c.bBinaryPatterns[i].isAnd {
+                collect(ref c, for: left, as: type, to: ref covered)
+                collect(ref c, for: right, as: type, to: ref covered)
+            } else if irrefutable(ref c, for: right) {
+                collect(ref c, for: left, as: type, to: ref covered)
+            }
+        case .propertyPattern:
+            let input = c.bPropertyPatterns[i].inputType
+            if kindOf(input) != .optional { return }
+            let n = c.bPropertyPatterns[i].subpatterns.length
+            for k in 0..n {
+                if !irrefutable(ref c, for: c.bPropertyPatterns[i].subpatterns[k].pattern) { return }
+            }
+            t39Add(ref covered, by: t39Some)
+            if (t39Domain(ref c, for: c.optionalTypes[typeIndex(input)]) is { } all) {
+                for k in all { t39Add(ref covered, by: k) }
+            }
+        case .notPattern:
+            let operand = c.bNotPatterns[i].operand
+            if boundKind(operand) != .constantPattern || boundKind(c.bConstantPatterns[boundIndex(operand)].value) != .defaultValue { return }
+            if kindOf(type) != .optional { return }
+            t39Add(ref covered, by: t39Some)
+            if (t39Domain(ref c, for: c.optionalTypes[typeIndex(type)]) is { } rest) {
+                for k in rest { t39Add(ref covered, by: k) }
+            }
+        default: {}
+    }
+}
+
+// ── Assignment and mutability ────────────────────────────────────────────────
+
+parser.BinaryOp? compoundOperator(parser.AssignOp op) {
+    switch op {
+        case .add: return .add
+        case .sub: return .sub
+        case .mul: return .mul
+        case .div: return .div
+        case .rem: return .rem
+        case .andKeyword: return .bitAnd
+        case .orKeyword: return .bitOr
+        case .xor: return .bitXor
+        case .shl: return .shl
+        case .shr: return .shr
+        case .coalesce: return .coalesce
+        default: return null
+    }
+}
+
+BStmt bindAssign(ref Binder b, through ref Ctx c, for in parser.AssignStmt a) {
+    var target = bindExpr(ref b, through: ref c, for: in a.target)
+    // A local whose state is known is written as its declared type; the value's state is what it is known to be after.
+    if boundKind(target) == .local && knownState(ref b, for: c.bLocals[boundIndex(target)].local) != -1 {
+        target = addLocalNode(ref c, at: c.bLocals[boundIndex(target)].span, for: c.bLocals[boundIndex(target)].local)
+    }
+    let op = compoundOperator(a.op)
+    let targetSpan = parser.exprSpan(in a.target)
+    let valueSpan = parser.exprSpan(in a.value)
+    if isError(exprType(in c, for: target)) {
+        let _ = bindExpr(ref b, through: ref c, for: in a.value)
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    target = mapWriteTarget(ref c, for: target)
+    if !t39CheckFieldWrite(ref b, through: ref c, for: target, at: a.span) {
+        let _ = bindExpr(ref b, through: ref c, for: in a.value)
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    let _ = checkWritable(ref b, through: ref c, for: target, at: targetSpan, by: "")
+    let targetType = exprType(in c, for: target)
+    if op is null {
+        let assigned = bindExpr(ref b, through: ref c, for: in a.value, to: targetType)
+        constrain(ref b, through: ref c, for: target, as: assigned, from: in a.value)
+        // A `ref` parameter or `this` keeps its state: only a value in the one state its type names may replace it (BYN7012).
+        let tk = boundKind(target)
+        var refOrThis = tk == .thisRef
+        if tk == .local {
+            let l = c.bLocals[boundIndex(target)].local
+            refOrThis = c.locals[l].isParameter && c.locals[l].modifier == .refKeyword
+        }
+        let hasStates = kindOf(targetType) == .state || kindOf(targetType) == .structType && statesOf(ref c, for: typeIndex(targetType)) != -1
+        if refOrThis && hasStates {
+            var same = false
+            if kindOf(targetType) == .state && c.stateTypes[typeIndex(targetType)].states.length == 1 {
+                let one = c.stateTypes[typeIndex(targetType)].states[0]
+                var givenType = exprType(in c, for: assigned)
+                if (subject(ref b, through: ref c, for: assigned) is { } subj) { givenType = subj.type }
+                if kindOf(givenType) == .state && c.stateTypes[typeIndex(givenType)].states.length == 1 {
+                    same = c.stateTypes[typeIndex(givenType)].states[0] == one
+                }
+            }
+            if !same {
+                let name = tk == .local ? c.locals[c.bLocals[boundIndex(target)].local].name : "this"
+                report(ref b, through: ref c, for: .assignmentChangesState, at: a.span, by: (name, "", "", "", ""),
+                    help: "assign a value in the same state, or move the transition into a `becomes` method")
+                return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+            }
+        }
+        if tk == .local {
+            let written = c.bLocals[boundIndex(target)].local
+            forgetState(ref b, for: written)
+            let at = exprType(in c, for: assigned)
+            if kindOf(at) == .state { learnState(ref b, for: written, as: at) }
+        } else if tk == .thisRef {
+            forgetState(ref b, for: t15ThisFacts(ref b, through: ref c))
+        }
+        let pending = isPending(ref b, through: ref c, for: target)
+        let converted = convert(ref b, through: ref c, for: assigned, to: targetType, at: valueSpan, constrains: !pending)
+        return addAssign(ref c, from: BAssign { span: a.span, target: target, value: converted })
+    }
+    let bop = op
+    if bop == .coalesce {
+        if kindOf(targetType) != .optional {
+            report(ref b, through: ref c, for: .coalesceNotOptional, at: targetSpan, by: (typeDisplay(ref c, by: targetType), "", "", "", ""))
+            return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+        }
+        let converted = bindConverted(ref b, through: ref c, for: in a.value, to: c.optionalTypes[typeIndex(targetType)])
+        return addAssign(ref c, from: BAssign { span: a.span, target: target, value: converted, op: bop })
+    }
+    let value = bindExpr(ref b, through: ref c, for: in a.value, to: bop == .shl || bop == .shr ? prim(.i32) : targetType)
+    let valueType = exprType(in c, for: value)
+    if isError(valueType) { return addErrorStmt(ref c, from: BErrorStmt { span: a.span }) }
+    if bop == .shl || bop == .shr {
+        if !isInteger(targetType) || !isInteger(valueType) {
+            report(ref b, through: ref c, for: .badBinaryOperands, at: a.span, by: (binaryText(bop), typeDisplay(ref c, by: targetType), typeDisplay(ref c, by: valueType), "", ""))
+            return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+        }
+        return addAssign(ref c, from: BAssign { span: a.span, target: target, value: value, op: bop })
+    }
+    constrain(ref b, through: ref c, for: target, as: value, from: in a.value)
+    if isString(targetType) && bop == .add {
+        let text = getText(c.files[b.file].text.span, at: targetSpan)
+        var fix = StrBuf()
+        fix.append($"{text} = $\"")
+        fix.append("{")
+        fix.append(text)
+        fix.append("}")
+        fix.append(interpolationSource(ref b, through: ref c, for: in a.value))
+        fix.append("\"")
+        report(ref b, through: ref c, for: .stringConcatenation, at: a.span, by: ("", "", "", "", ""),
+            help: "write the parts as one interpolation: `s = $\"{s}{x}\"`, or build text in a `StrBuf`: `buf.append($\"{a}{b}\")`",
+            hasFix: true, fixSpan: a.span, fixReplacement: $"{fix.finish()}")
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    if !operatorApplies(ref c, for: bop, as: targetType) {
+        report(ref b, through: ref c, for: .badBinaryOperands, at: a.span, by: (binaryText(bop), typeDisplay(ref c, by: targetType), typeDisplay(ref c, by: valueType), "", ""))
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    let pending = isPending(ref b, through: ref c, for: target)
+    let converted = convert(ref b, through: ref c, for: value, to: targetType, at: valueSpan, constrains: !pending)
+    return addAssign(ref c, from: BAssign { span: a.span, target: target, value: converted, op: bop })
+}
+
+BStmt bindIncDec(ref Binder b, through ref Ctx c, for in parser.IncDecStmt i) {
+    var target = bindExpr(ref b, through: ref c, for: in i.target)
+    let targetType = exprType(in c, for: target)
+    if isError(targetType) { return addErrorStmt(ref c, from: BErrorStmt { span: i.span }) }
+    if !isInteger(targetType) {
+        report(ref b, through: ref c, for: .badUnaryOperand, at: i.span, by: (i.increment ? "++" : "--", typeDisplay(ref c, by: targetType), "", "", ""))
+        return addErrorStmt(ref c, from: BErrorStmt { span: i.span })
+    }
+    target = mapWriteTarget(ref c, for: target)
+    if !t39CheckFieldWrite(ref b, through: ref c, for: target, at: i.span) { return addErrorStmt(ref c, from: BErrorStmt { span: i.span }) }
+    let _ = checkWritable(ref b, through: ref c, for: target, at: parser.exprSpan(in i.target), by: "")
+    let one = literal(ref c, at: i.span, as: exprType(in c, for: target), by: in Constant { kind: .integer, integer: bigFromI64(1) })
+    let op: parser.BinaryOp = i.increment ? .add : .sub
+    return addAssign(ref c, from: BAssign { span: i.span, target: target, value: one, op: op })
+}
+
+/// J78 (O11, revision 0007): a field of a struct with `requires`, states or `@sealed` is written only by its own
+/// methods (BYN3216 elsewhere); there, a field of a struct with `requires` is BYN3208, since the rules are checked at
+/// construction. A constructor sets fields freely, and plain data is written anywhere.
+bool t39CheckFieldWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span) {
+    if boundKind(target) != .field { return true }
+    let field = c.bFields[boundIndex(target)].field
+    let owner = c.fields[field].owner
+    // Still a write for BYN2311, whichever way it is reported.
+    let written = writtenLocal(ref c, for: target)
+    if written != -1 { c.locals[written].written = true }
+    let ownerDecl = c.structs[owner].template != -1 ? c.structs[owner].template : owner
+    var own = false
+    if b.owner != -1 {
+        let s = b.owner
+        own = s == owner || (c.structs[s].template != -1 ? c.structs[s].template : s) == ownerDecl
+    }
+    if !own {
+        let reason = t39Invariant(ref c, for: ownerDecl) ?? return true
+        let ownerName = c.structs[owner].name
+        report(ref b, through: ref c, for: .fieldWriteOutside, at: span, by: (ownerName, c.fields[field].name, reason, "", ""),
+            help: $"add a `ref this` method to `{ownerName}`, or build a new value with `with`")
+        return false
+    }
+    if (b.fn != -1 && c.functions[b.fn].kind == .constructor) || !c.checksOf.contains(ownerDecl) { return true }
+    report(ref b, through: ref c, for: .checkedFieldAssignment, at: span, by: (c.structs[owner].name, "", "", "", ""), help: "build a new value with `with`: `try x with { f: v }`")
+    return false
+}
+
+/// Why BYN3216 protects `s`'s fields, the first of `requires`, states and `@sealed`; null for plain data.
+string? t39Invariant(ref Ctx c, for StructId s) {
+    let file = c.structs[s].file
+    let d = c.structs[s].declIndex
+    switch c.files[file].unit.members[d] {
+        case .structDecl(let n):
+            var hasRequires = n.value.rules.length > 0
+            for m in n.value.members {
+                switch m {
+                    case .fieldDecl(let f):
+                        if f.value.requiresKeyword.length > 0 { hasRequires = true }
+                    default: {}
+                }
+            }
+            if hasRequires { return "has `requires`" }
+            if n.value.states.length > 0 { return "has states" }
+            for a in n.value.attributes {
+                if t11Text(in c, from: file, at: a.name) == "sealed" { return "is `@sealed`" }
+            }
+            return null
+        default:
+            panic("internal error: a struct without a struct declaration")
+    }
+}
+
+/// `map[k]` as an assignment target: `=` inserts `k` when missing; `op=`, `++` and `--` read it first and panic (lowering).
+BExpr mapWriteTarget(ref Ctx c, for BExpr target) {
+    if boundKind(target) != .builtinCall || c.bBuiltinCalls[boundIndex(target)].member != .mapIndex { return target }
+    let i = boundIndex(target)
+    return addBuiltinCall(ref c, from: BBuiltinCall {
+        span: c.bBuiltinCalls[i].span,
+        member: .mapIndexSet,
+        receiver: c.bBuiltinCalls[i].receiver,
+        arguments: copyIds(in c.bBuiltinCalls[i].arguments),
+        type: c.bBuiltinCalls[i].type,
+    })
+}
+
+/// BYN2115 for a method that writes `this` at `span` first, with a fix inserting `ref this`. C# reports through the
+/// binder that saw the write; its file is kept in `c.thisWrites` (Q694).
+void reportMutatesWithoutRefThis(ref Ctx c, for FuncId fn, at TextSpan span) {
+    let d = t39DeclFacts(ref c, for: fn)
+    let file = c.thisWrites[fn].file
+    report(ref c, for: .mutatesWithoutRefThis, from: file, at: span, by: (c.functions[fn].name, "", "", "", ""), label: "`this` is modified here",
+        help: "declare it `ref this` as the first parameter",
+        // A receiver written as `this is .s` gains only `ref`.
+        hasFix: true, fixSpan: TextSpan { start: d.paramsStart, length: 0 },
+        fixReplacement: d.receiverStates > 0 ? "ref " : d.params > 0 ? "ref this, " : "ref this")
+}
+
+/// The first write to `this` in a method not declared `ref this` (C# `Compilation.ThisWrites`' value): the file of the
+/// binder that saw it, and where (Q694).
+struct T39ThisWrite {
+    FileId file
+    TextSpan span
+}
+
+/// C# `fn.Decl!`'s `ParamsStart`, `ReceiverStates.Length` and `Params.Length`.
+(i64 paramsStart, i64 receiverStates, i64 params) t39DeclFacts(ref Ctx c, for FuncId fn) {
+    let f = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    switch c.files[f].unit.members[d] {
+        case .functionDecl(let n): return (paramsStart: n.value.paramsStart, receiverStates: n.value.receiverStates.length, params: n.value.params.length)
+        case .structDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return (paramsStart: x.value.paramsStart, receiverStates: x.value.receiverStates.length, params: x.value.params.length)
+                default: {}
+            }
+        case .interfaceDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return (paramsStart: x.value.paramsStart, receiverStates: x.value.receiverStates.length, params: x.value.params.length)
+                default: {}
+            }
+        case .extensionDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return (paramsStart: x.value.paramsStart, receiverStates: x.value.receiverStates.length, params: x.value.params.length)
+                default: {}
+            }
+        default: {}
+    }
+    panic("internal error: a method without a function declaration")
+}
+
+/// Reports when `target` may not be written. A write through `this` in a method not declared `ref this` is noted
+/// for BYN2115; getters may not write. `why` is "" where C# has null.
+bool checkWritable(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) {
+    let written = writtenLocal(ref c, for: target)
+    if written != -1 { c.locals[written].written = true }
+    if checkGuardWrite(ref b, through: ref c, for: target, at: span, by: why) { return false }
+    let i = boundIndex(target)
+    switch boundKind(target) {
+        case .errorExpr:
+            return false
+        case .local:
+            let l = c.bLocals[i].local
+            if c.locals[l].borrowsSubject && isUnique(ref c, for: c.locals[l].type) {
+                report(ref b, through: ref c, for: .mutateBorrow, at: span, by: (c.locals[l].name, "", "", "", ""), label: why,
+                    help: "change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a unique type borrows from its subject")
+                return false
+            }
+            let kind = c.locals[l].kind
+            let byRef = c.locals[l].isParameter && (c.locals[l].modifier == .refKeyword || c.locals[l].modifier == .outKeyword)
+            if kind == .varKeyword || kind == .temp || byRef { return true }
+            t39ReportImmutable(ref b, through: ref c, for: l, at: span, by: why)
+            return false
+        case .thisRef:
+            if b.fn != -1 && c.functions[b.fn].kind == .constructor { return true }
+            if b.fn != -1 && c.functions[b.fn].kind == .method && !c.functions[b.fn].isStatic {
+                let fn = b.fn
+                if !c.functions[fn].isMutating && !functionIsInstance(ref c, by: fn) && (!c.thisWrites.contains(fn) || span.start < c.thisWrites[fn].span.start) {
+                    c.thisWrites[fn] = T39ThisWrite { file: b.file, span: span }
+                }
+                return true
+            }
+            if b.fn != -1 && c.functions[b.fn].kind == .getter {
+                report(ref b, through: ref c, for: .getterMutates, at: span, by: (c.functions[b.fn].name, "", "", "", ""), help: "make it a method if it needs to change the value")
+            } else {
+                report(ref b, through: ref c, for: .mutateTemporary, at: span, by: ("", "", "", "", ""), label: why)
+            }
+            return false
+        case .field:
+            let field = c.bFields[i].field
+            let receiver = c.bFields[i].receiver
+            if fieldIsReadonly(ref c, by: field) && !(b.fn != -1 && c.functions[b.fn].kind == .constructor && c.functions[b.fn].owner == c.fields[field].owner && boundKind(receiver) == .thisRef) {
+                report(ref b, through: ref c, for: .readonlyField, at: span, by: (c.fields[field].name, "", "", "", ""), help: "set `readonly` fields only in a constructor or a struct literal")
+                return false
+            }
+            return checkWritable(ref b, through: ref c, for: receiver, at: span, by: why)
+        case .tupleElement:
+            return checkWritable(ref b, through: ref c, for: c.bTupleElements[i].receiver, at: span, by: why)
+        case .index:
+            let indexed = c.bIndexes[i].target
+            let tt = exprType(in c, for: indexed)
+            if kindOf(tt) == .span {
+                if c.spanTypes[typeIndex(tt)].readOnly {
+                    report(ref b, through: ref c, for: .mutateTemporary, at: span, by: ("", "", "", "", ""), label: "a `ReadOnlySpan` cannot be written through")
+                    return false
+                }
+                return true
+            }
+            return checkWritable(ref b, through: ref c, for: indexed, at: span, by: why)
+        case .builtinCall:
+            let member = c.bBuiltinCalls[i].member
+            if member == .mapIndexSet || member == .mapSlot { return checkWritable(ref b, through: ref c, for: c.bBuiltinCalls[i].receiver, at: span, by: why) }
+            if member == .ownedValue {
+                report(ref b, through: ref c, for: .mutateTemporary, at: span, by: ("", "", "", "", ""), label: why == "" ? "an `Owned` value is read-only" : $"{why}; an `Owned` value is read-only",
+                    help: "build a new value and wrap it with `Owned(…)`")
+                return false
+            }
+            report(ref b, through: ref c, for: .mutateTemporary, at: span, by: ("", "", "", "", ""), label: why)
+            return false
+        case .staticArray:
+            report(ref b, through: ref c, for: .mutateTemporary, at: span, by: ("", "", "", "", ""), label: why == "" ? "a `const` never changes" : $"{why}; a `const` never changes")
+            return false
+        default:
+            report(ref b, through: ref c, for: .mutateTemporary, at: span, by: ("", "", "", "", ""), label: why)
+            return false
+    }
+}
+
+/// The local a write lands in, even when the write is rejected (`x.f`, `x[i]`, a tuple element of `x`); -1 for none.
+LocalId writtenLocal(ref Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local: return c.bLocals[i].local
+        case .field: return writtenLocal(ref c, for: c.bFields[i].receiver)
+        case .tupleElement: return writtenLocal(ref c, for: c.bTupleElements[i].receiver)
+        case .index:
+            if kindOf(exprType(in c, for: c.bIndexes[i].target)) == .span { return -1 }
+            return writtenLocal(ref c, for: c.bIndexes[i].target)
+        case .builtinCall:
+            let member = c.bBuiltinCalls[i].member
+            if member == .mapIndexSet || member == .mapSlot { return writtenLocal(ref c, for: c.bBuiltinCalls[i].receiver) }
+            return -1
+        default: return -1
+    }
+}
+
+void t39ReportImmutable(ref Binder b, through ref Ctx c, for LocalId l, at TextSpan span, by string why) {
+    var label = ""
+    var help = ""
+    var hasFix = false
+    var fixSpan: TextSpan? = null
+    switch c.locals[l].kind {
+        case .letKeyword:
+            label = $"declared with `let` on line {linePosition(c.files[b.file].text.span, at: c.locals[l].nameSpan.start).line}"
+            help = "declare it with `var` if it should change"
+            if (c.locals[l].keywordSpan is { } k) {
+                hasFix = true
+                fixSpan = k
+            }
+        case .constKeyword:
+            label = "a `const` never changes"
+        case .parameter:
+            label = "parameters are immutable"
+            help = "copy it into a local `var`, or take it by `ref` if the caller's value should change"
+        case .forVariable:
+            label = "loop variables are immutable"
+            help = "copy it into a local `var` to change it"
+        case .patternVariable:
+            label = "pattern variables are immutable"
+        default: {}
+    }
+    if why != "" { label = label == "" ? why : $"{why}; {label}" }
+    report(ref b, through: ref c, for: .immutableAssignment, at: span, by: (c.locals[l].name, "", "", "", ""), label: label, help: help, hasFix: hasFix, fixSpan: fixSpan, fixReplacement: hasFix ? "var" : "")
+}

@@ -1,0 +1,8 @@
+error BYN5005: `end` is passed without its particle `until:`
+
+  6 │ print($"{width(end, start)}")
+    │                     ^^^^^ needs `until:`
+    │
+  help: add `until:` before the argument
+    │ 6 │ print($"{width(end, until: start)}")
+    │   │                     +++++++

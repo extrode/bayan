@@ -1,0 +1,16 @@
+// Moving a narrowed optional consumes the local; reading it afterwards is use-after-move (BYN2781).
+List<i64>? make(i64 n) {
+    if n < 1 { return null }
+    var a = List<i64>()
+    a.append(n)
+    return move a
+}
+
+void main() {
+    let b = make(n: 1)
+    if b is not null {
+        let c = move b
+        print($"{c.length}")
+        print($"{b.length}")
+    }
+}

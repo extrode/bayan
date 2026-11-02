@@ -1,0 +1,26 @@
+// After `switch move r`, `r` is moved on every path (BYN2781); without `move`, bindings still borrow (BYN2783).
+union Slot {
+    empty
+    full(List<i64> items)
+}
+
+i64 keep(move List<i64> xs) => xs.length
+
+void main() {
+    let r = Slot.full(List<i64>())
+    switch move r {
+        case .full(let items):
+            print($"{keep(move items)}")
+        case .empty:
+            print("empty")
+    }
+    switch r {
+        default:
+    }
+    let s = Slot.full(List<i64>())
+    switch s {
+        case .full(let items):
+            print($"{keep(move items)}")
+        default:
+    }
+}

@@ -1,0 +1,241 @@
+using System.Globalization;
+
+namespace Bayan.Cli;
+
+/// <summary>A human-facing CLI string; codes, paths, symbols and counts are <c>{n}</c> arguments.</summary>
+public sealed record Message(string Id, string Format)
+{
+    // Current culture, as the interpolated strings these replaced used.
+    public string Text(params object?[] args) => string.Format(CultureInfo.CurrentCulture, Format, args);
+}
+
+/// <summary>
+/// The CLI's message table, keyed by dotted id. Diagnostic messages stay in
+/// <c>DiagnosticCodes</c>; <c>MessagesTests</c> keeps prose out of the CLI sources.
+/// </summary>
+public static class Messages
+{
+    private static readonly List<Message> Registry = new();
+
+    private static Message Register(string id, string format)
+    {
+        var m = new Message(id, format);
+        Registry.Add(m);
+        return m;
+    }
+
+    public static IReadOnlyList<Message> All => Registry;
+
+    public static Message Get(string id) => Registry.Find(m => m.Id == id) ?? throw new KeyNotFoundException(id);
+
+    // ── usage ────────────────────────────────────────────────────────────────────────
+    public static readonly Message Usage = Register("usage.help", """
+        usage: bayan <command> [args]
+
+        commands:
+          new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]
+          init [<dir>]         add a project's missing files to a directory (same options as new)
+          lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)
+          parse [--ast] <file> check syntax; with --ast print the syntax tree
+          types <path>         print each function's parameter and local types as JSON
+          check <path>         report diagnostics for a program (a file or directory)
+          build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]
+                               [-v: print each phase's time and the output path]
+          run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
+          test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
+                               [--json: print the results as JSON instead]
+                               [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]
+                               [--only <text>: only tests whose name contains <text>; repeatable]
+                               [-v: also list the passing and pending tests]
+                               [--mutate: run every mutant against the tests that reach it; with --run <cmd>, run <cmd> once
+                               per mutant instead, with BAYAN_MUTANT set (exit 0 survived, non-zero killed)]
+          mutate --binary <exe> --sites <map.json> -- <cmd>
+                               run <cmd> once per mutant site of a prebuilt --mutate binary, as test --mutate --run does
+          dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
+                               [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
+          clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
+          cache stats          show the shared build cache's location and size
+          format <path>        rewrite input forms (those with a fix-it) in a `.byn` file or a directory of them,
+                               and booleans and primitives to `style` in `package.byn` [--check: list, don't write]
+          audit <path>         list every `because` bypass and `unsafe` or `extern` declaration, with its reason
+          features --used <path>
+                               print the syntax node kinds, builtins and diagnostics a build touched, as JSON
+          explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
+          <script>.byn         run a script, so `#!/usr/bin/env bayan` works
+          doctor               check the C compiler, zig, git and the build cache, with fixes
+          --version            print the compiler version and the commit it was built from
+          --help               print this message
+
+        check, types, build, run, test and features take a project directory (one with `package.byn`; the
+        default inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
+
+        options for every command:
+          --color auto|always|never
+                               color for terminals (auto: on unless piped or NO_COLOR is set;
+                               FORCE_COLOR turns it on, TERM=dumb off)
+          --ascii              use ASCII symbols instead of ◆ ✗ │ (also with TERM=dumb or a non-UTF-8 locale)
+
+        options for check, types, build, run and test:
+          --all                show every error instead of the first 20 (JSON is never capped)
+          --diagnostics json   print each diagnostic to stderr as one JSON object per line
+                               (code, severity, file, span, message, label, help, fixes)
+
+        exit codes:
+          0  success
+          1  compile errors
+          2  usage errors (unknown command or option, missing path)
+          3  test failures, or a coverage or mutation score below its minimum
+          4  toolchain problems (no C compiler, unwritable cache, C compiler failure)
+
+        `bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code
+        through unchanged, so it cannot tell a build failure from a program that exits 1. When that
+        matters, run `bayan build` first or read `--diagnostics json`.
+        """);
+    public static readonly Message UnknownCommand = Register("usage.unknown-command", "bayan: unknown command `{0}`");
+    public static readonly Message FormatterHint = Register("usage.formatter-hint", "the formatter is `bayan format`");
+    public static readonly Message UnknownMode = Register("usage.unknown-mode", "bayan: unknown mode `{0}` (expected debug, safe or fast)");
+    public static readonly Message UnknownDiagnosticsFormat = Register("usage.unknown-diagnostics-format", "bayan: unknown diagnostics format `{0}` (expected json or text)");
+    public static readonly Message UnknownTarget = Register("usage.unknown-target", "bayan: unknown target `{0}` (expected host, {1})");
+    public static readonly Message UnknownDistTarget = Register("usage.unknown-dist-target", "bayan: unknown target `{0}` (expected host, all, {1})");
+    public static readonly Message UnknownColor = Register("usage.unknown-color", "bayan: unknown color setting `{0}` (expected auto, always or never)");
+    public static readonly Message UnexpectedArgument = Register("usage.unexpected-argument", "bayan: unexpected argument `{0}`");
+    public static readonly Message ExpectedPath = Register("usage.expected-path", "bayan: expected a file or directory (or run inside a project with a `{0}`)");
+    public static readonly Message NotFound = Register("usage.not-found", "bayan: not found: {0}");
+    public static readonly Message ExpectedOneFile = Register("usage.expected-one-file", "bayan: expected exactly one file");
+    public static readonly Message FileNotFound = Register("usage.file-not-found", "bayan: file not found: {0}");
+    public static readonly Message ExplainExpected = Register("usage.explain-expected", "bayan: expected one diagnostic code, e.g. `{0}`");
+    public static readonly Message ExplainUnknown = Register("usage.explain-unknown", "bayan: no explanation for `{0}`");
+    public static readonly Message CacheUsage = Register("usage.cache", "usage: {0}   (`{1}` empties it)");
+    public static readonly Message FormatFormatted = Register("format.formatted", "formatted {0}");
+    public static readonly Message FormatWouldFormat = Register("format.would-format", "would format {0}");
+    public static readonly Message FormatNotConverged = Register("format.not-converged", "bayan: {0}: still changing after {1} passes; left unfixed");
+    public static readonly Message FormatRewriteAbandoned = Register("format.rewrite-abandoned", "bayan: {0}: rewriting it made it unparsable, so the rewrite was abandoned and the file left unchanged");
+    public static readonly Message FormatIoError = Register("format.io-error", "bayan: {0}: {1}");
+    public static readonly Message CommandUsage = Register("usage.command", "usage: {0}");
+
+    // ── audit ────────────────────────────────────────────────────────────────────────
+    public static readonly Message AuditLine = Register("audit.line", "{0}  {1}  {2}");
+    public static readonly Message AuditBecause = Register("audit.because", "because {0}");
+    public static readonly Message AuditNoReason = Register("audit.no-reason", "no reason given");
+    public static readonly Message AuditCountOne = Register("audit.count.one", "{0} bypass");
+    public static readonly Message AuditCountMany = Register("audit.count.many", "{0} bypasses");
+    public static readonly Message AuditSummary = Register("audit.summary", "{0} {1} in {2}");
+
+    // ── version ──────────────────────────────────────────────────────────────────────
+    public static readonly Message VersionLine = Register("version.line", "{0} {1} (commit {2})");
+
+    // ── build ────────────────────────────────────────────────────────────────────────
+    public static readonly Message NoEntryApp = Register("build.no-entry.app", "bayan: `{0}` is an app, so its code goes in `{1}`, which doesn't exist");
+    public static readonly Message NoEntryLib = Register("build.no-entry.lib", "bayan: `{0}` is a library, so its code goes in `{1}`, which doesn't exist");
+    public static readonly Message LibraryNoProgram = Register("build.library", "bayan: `{0}` is a library, so there is no program to {1}; `{2}` runs its tests");
+    public static readonly Message ToolchainError = Register("build.toolchain", "bayan: {0}");
+    public static readonly Message DiagCapped = Register("diag.capped", "{0} and {1} more errors (use --all to show them)");
+    public static readonly Message CompileProgress = Register("build.progress.compiling", "compiling");
+    public static readonly Message BuildProgress = Register("build.progress.building", "building");
+    public static readonly Message BuildSummary = Register("build.summary", "{0} built {1} ({2}, {3}) in {4}");
+    public static readonly Message BuildFromCache = Register("build.summary.cached", " {0} from cache");
+    public static readonly Message CheckSummary = Register("check.summary", "{0} checked {1} in {2}");
+    public static readonly Message BuildFailed = Register("build.failed", "{0} build failed: {1}, {2}");
+    public static readonly Message ErrorsOne = Register("build.failed.errors.one", "{0} error");
+    public static readonly Message ErrorsMany = Register("build.failed.errors.many", "{0} errors");
+    public static readonly Message WarningsOne = Register("build.failed.warnings.one", "{0} warning");
+    public static readonly Message WarningsMany = Register("build.failed.warnings.many", "{0} warnings");
+    public static readonly Message BuildExplain = Register("build.failed.explain", "  explain: bayan explain {0}");
+    public static readonly Message PhaseParse = Register("build.phase.parse", "parse");
+    public static readonly Message PhaseCheck = Register("build.phase.check", "check");
+    public static readonly Message PhaseEmit = Register("build.phase.emit", "emit");
+    public static readonly Message PhaseCompile = Register("build.phase.compile", "compile");
+    public static readonly Message PhaseLine = Register("build.phase.line", "  {0,-11}{1}");
+    public static readonly Message PhaseFromCache = Register("build.phase.cached", "from cache");
+    public static readonly Message PhaseOutput = Register("build.phase.output", "  {0}");
+    public static readonly Message Seconds = Register("build.seconds", "{0}s");
+
+    // ── cache ────────────────────────────────────────────────────────────────────────
+    public static readonly Message CacheDirectory = Register("cache.directory", "cache:    {0}");
+    public static readonly Message CachePrograms = Register("cache.programs", "programs: {0} ({1:0.0} MB)");
+    public static readonly Message CacheScripts = Register("cache.scripts", "scripts:  {0}");
+
+    // ── test ─────────────────────────────────────────────────────────────────────────
+    public static readonly Message TestRunning = Register("test.running", "running {0} in {1}{2}");
+    public static readonly Message TestCountOne = Register("test.count.one", "{0} test");
+    public static readonly Message TestCountMany = Register("test.count.many", "{0} tests");
+    public static readonly Message TestModuleCountOne = Register("test.module-count.one", "{0} module");
+    public static readonly Message TestModuleCountMany = Register("test.module-count.many", "{0} modules");
+    public static readonly Message TestSkipped = Register("test.skipped", " ({0} in unchanged modules skipped)");
+    public static readonly Message MutateLine = Register("mutate.line", "{0}:{1}:{2} {3} `{4}` -> `{5}`: {6}");
+    public static readonly Message MutateTimeoutNote = Register("mutate.timeout-note", " (counted as killed)");
+    public static readonly Message MutateTotals = Register("mutate.totals", "{0} killed, {1} survived, {2} timeout, {3} not reached, {4} marked, {5} not emitted");
+    public static readonly Message MutateExcluded = Register("mutate.excluded", "test {0} does not pass unmutated; left out");
+    public static readonly Message MutateBinaryUsage = Register("mutate.binary-usage", "bayan: usage: bayan mutate --binary <exe> --sites <map.json> -- <command>");
+    public static readonly Message MutateBadSites = Register("mutate.bad-sites", "bayan: `{0}` is not a version 1 site map");
+    public static readonly Message MutateBaselineFailed = Register("mutate.baseline-failed", "bayan: the command does not exit 0 on the unmutated binary");
+    public static readonly Message GateBelow = Register("gate.below", "bayan: {0} {1}% < {2}%");
+    public static readonly Message MutateKilled = Register("mutate.killed", "killed");
+    public static readonly Message MutateSurvived = Register("mutate.survived", "survived");
+    public static readonly Message MutateTimeout = Register("mutate.timeout", "timeout");
+    public static readonly Message MutateNotReached = Register("mutate.not-reached", "not reached");
+    public static readonly Message MutateMarked = Register("mutate.marked", "marked");
+    public static readonly Message MutateNotEmitted = Register("mutate.not-emitted", "not emitted");
+    public static readonly Message TestOnlyNoMatch = Register("test.only.no-match", "bayan: no test name contains {0}");
+    public static readonly Message TestProgress = Register("test.progress", "testing {0}");
+    public static readonly Message TestTimedOut = Register("test.timed-out", "timed out after {0:0} s");
+    public static readonly Message TestPassLine = Register("test.line.pass", "  {0} {1}: {2}");
+    public static readonly Message TestPendingLine = Register("test.line.pending", "  {0} {1}: {2} (pending)");
+    public static readonly Message TestFailureLine = Register("test.line.failure", "  {0} {1}: {2}");
+    public static readonly Message TestDetail = Register("test.detail", "      {0}");
+    public static readonly Message TestSummaryPassed = Register("test.summary.passed", "{0} {1} passed {2} {3}");
+    public static readonly Message TestSummaryPending = Register("test.summary.pending", "{0} {1} passed {2} {3} pending {2} {4}");
+    public static readonly Message TestCoverageSummary = Register("test.summary.coverage", "coverage: lines {0}, branches {1}, error paths {2}");
+    public static readonly Message TestSummaryFailed = Register("test.summary.failed", "{0} {1} passed {2} {3} {4} failed {2} {5} pending {2} {6}");
+    public static readonly Message TestSeconds = Register("test.seconds", "{0}s");
+    public static readonly Message TestRerunOne = Register("test.rerun.one", "  rerun the failure: {0}");
+    public static readonly Message TestRerunMany = Register("test.rerun.many", "  rerun the failures: {0}");
+    public static readonly Message TestRerunOnly = Register("test.rerun.only", " --only {0}");
+    public static readonly Message TestRerunUnselectable = Register("test.rerun.unselectable", "  a failing test's name contains control characters and cannot be selected from a shell");
+    public static readonly Message ChangedNoGit = Register("test.changed.no-git", "bayan: `{0}` needs git, which isn't installed");
+    public static readonly Message ChangedNoRepository = Register("test.changed.no-repository", "bayan: `{0}` needs a git repository, and `{1}` isn't in one");
+    public static readonly Message ChangedNoCompare = Register("test.changed.no-compare", "bayan: git can't compare the working tree with `{0}`");
+
+    // ── doctor ───────────────────────────────────────────────────────────────────────
+    public static readonly Message DoctorLine = Register("doctor.line", "{0} {1}  {2}");
+    public static readonly Message DoctorFailLine = Register("doctor.fail", "{0} {1}: {2}");
+    public static readonly Message DoctorHelp = Register("doctor.help", "  help: {0}");
+    public static readonly Message DoctorBayan = Register("doctor.bayan", "bayan");
+    public static readonly Message DoctorVersion = Register("doctor.bayan.version", "{0} (commit {1})");
+    public static readonly Message DoctorHost = Register("doctor.host", "host");
+    public static readonly Message DoctorNoHost = Register("doctor.host.none", "this machine has no Bayan target");
+    public static readonly Message DoctorNoHostFix = Register("doctor.host.none.fix", "build on linux, macos or windows, x64 or arm64");
+    public static readonly Message DoctorCCompiler = Register("doctor.cc", "C compiler");
+    public static readonly Message DoctorNoCCompiler = Register("doctor.cc.none", "none found");
+    public static readonly Message DoctorNoCCompilerFix = Register("doctor.cc.none.fix", "install zig ({0}), or set {1} to a C compiler");
+    public static readonly Message DoctorCCompilerEnvBroken = Register("doctor.cc.env-broken", "{0} is `{1}`, which can't be run");
+    public static readonly Message DoctorCCompilerEnvBrokenFix = Register("doctor.cc.env-broken.fix", "point {0} at a C compiler, or unset it to use zig");
+    public static readonly Message DoctorCCompilerBroken = Register("doctor.cc.broken", "`{0}` can't be run");
+    public static readonly Message DoctorCCompilerBrokenFix = Register("doctor.cc.broken.fix", "reinstall it, or set {0} to a working C compiler");
+    public static readonly Message DoctorTool = Register("doctor.tool", "{0} ({1})");
+    public static readonly Message DoctorToolBroken = Register("doctor.tool.broken", "{0} can't be run");
+    public static readonly Message DoctorZig = Register("doctor.zig", "zig");
+    public static readonly Message DoctorNoZig = Register("doctor.zig.none", "not found; building for other targets needs it");
+    public static readonly Message DoctorInstallZig = Register("doctor.zig.install", "install zig ({0})");
+    public static readonly Message DoctorReinstallZig = Register("doctor.zig.reinstall", "reinstall zig ({0})");
+    public static readonly Message DoctorGit = Register("doctor.git", "git");
+    public static readonly Message DoctorNoGit = Register("doctor.git.none", "not found; `{0}` skips `{1}`, `{2}` records no commit, `{3}` is unavailable");
+    public static readonly Message DoctorInstallGit = Register("doctor.git.install", "install git");
+    public static readonly Message DoctorReinstallGit = Register("doctor.git.reinstall", "reinstall git");
+    public static readonly Message DoctorCache = Register("doctor.cache", "cache");
+    public static readonly Message DoctorCacheOk = Register("doctor.cache.ok", "{0} (writable, {1} programs, {2:0.0} MB)");
+    public static readonly Message DoctorCacheBroken = Register("doctor.cache.broken", "{0} isn't writable: {1}");
+    public static readonly Message DoctorCacheBrokenFix = Register("doctor.cache.broken.fix", "set {0} to a writable directory");
+
+    // ── dist and clean ───────────────────────────────────────────────────────────────
+    public static readonly Message DistNotProject = Register("dist.not-project", "bayan: `{0}` isn't a project (no `{1}`); scripts and loose files have no dist");
+    public static readonly Message DistLibrary = Register("dist.library", "bayan: `{0}` is a library; library distribution arrives later, with FFI export");
+    public static readonly Message DistDirty = Register("dist.dirty", "bayan: the git tree has uncommitted changes, so this build couldn't be traced to a commit");
+    public static readonly Message DistDirtyHelp = Register("dist.dirty.help", "  help: commit first, or pass `{0}` (recorded in {1})");
+    public static readonly Message DistExists = Register("dist.exists", "bayan: `{0}` already exists, and a released version never changes");
+    public static readonly Message DistExistsHelp = Register("dist.exists.help", "  help: bump `{0}` in {1}, or pass `{2}` to rebuild this one");
+    public static readonly Message DistBuilt = Register("dist.built", "built {0} {1} ({2}) for {3} in {4}");
+    public static readonly Message DistLatest = Register("dist.latest", "{0} is {1}");
+    public static readonly Message CleanNotProject = Register("clean.not-project", "bayan: `{0}` isn't a project (no `{1}`), so it has no {2} to clean");
+    public static readonly Message CleanRemoved = Register("clean.removed", "removed {0}");
+}

@@ -1,0 +1,17 @@
+// A set whose case holds a `List` does not stop `==` on another set (Q344).
+union error ListError {
+    bad(List<i64> items)
+}
+
+union error ParseError {
+    badDigit(i64 at)
+    empty
+}
+
+let a: ParseError = .badDigit(at: 1)
+let b: ParseError = .badDigit(at: 5)
+let c: ParseError = .badDigit(at: 1)
+let e: ParseError = .empty
+print($"{a == b} {a == c} {a != b} {a == e}")
+let l: ListError = .bad(items: List<i64>())
+print($"{l == .bad}")

@@ -1,0 +1,22 @@
+error BYN5004: `holds` has 2 unlabeled parameters; give each but one a particle
+
+  1 │ bool holds(List<i64> xs, (i64 -> bool) p) => true
+    │      ^^^^^ 2 unlabeled parameters
+    │
+  help: keep one unlabeled parameter, the object
+
+error BYN5006: `p` is a required parameter besides the object and needs a particle
+
+  1 │ bool holds(List<i64> xs, (i64 -> bool) p) => true
+    │                                        ^ needs a particle
+    │
+  help: label it with `from`, `to`, `until`, `through`, `at`, `by`, `for` or `as`
+
+error BYN5005: `p` is passed without its particle `by:`
+
+  8 │     let a = keep(3, isBig)
+    │                     ^^^^^ needs `by:`
+    │
+  help: add `by:` before the argument
+    │ 8 │     let a = keep(3, by: isBig)
+    │   │                     ++++

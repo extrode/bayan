@@ -1,0 +1,28 @@
+error BYN2786: `Untrusted<string>` cannot be passed to `Io.runBatch`: it is `Untrusted`
+
+  7 │     let _ = try Io.runBatch(path, none.span)
+    │                             ^^^^
+    │
+  help: check the value, then clear the mark with `x.trustUnchecked() because "…"`
+
+error BYN2786: `Untrusted<string>` cannot be passed to `Io.runBatch`: it is `Untrusted`
+
+  8 │     let _ = try Io.runBatch("./build.cmd", ["a", name])
+    │                                                  ^^^^
+    │
+  help: check the value, then clear the mark with `x.trustUnchecked() because "…"`
+
+error BYN2786: `List<Untrusted<string>>` cannot be passed to `Io.runBatch`: it is `Untrusted`
+
+  9 │     let _ = try Io.runBatch("./build.cmd", many)
+    │                                            ^^^^
+    │
+  help: check the value, then clear the mark with `x.trustUnchecked() because "…"`
+
+error BYN2786: `ReadOnlySpan<Untrusted<string>>` cannot be passed to `Io.runBatch`: it is
+`Untrusted`
+
+  10 │     let _ = try Io.runBatch("./build.cmd", span)
+     │                                            ^^^^
+     │
+  help: check the value, then clear the mark with `x.trustUnchecked() because "…"`

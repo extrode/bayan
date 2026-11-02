@@ -1,0 +1,14 @@
+void main() {
+    let n = 2
+    var text = ""
+    {
+        using let arena = Arena()
+        provide allocator: arena {
+            let inside = $"n = {n}"
+            print(inside)
+            text = $"n = {n + 1}"
+        }
+    }
+    text = $"n = {n + 2}"
+    print(text)
+}

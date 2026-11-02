@@ -1,0 +1,6 @@
+error BYN2761: `Expr` contains itself by value: Expr → Expr
+
+  1 │ union Expr {
+    │       ^^^^
+    │
+  help: store the inner one as `Owned<Expr>` (or in a `List<Expr>`); a value cannot contain itself

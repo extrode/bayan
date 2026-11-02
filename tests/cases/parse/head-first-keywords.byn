@@ -1,0 +1,4 @@
+struct unique File {
+    i64 fd
+}
+type distinct Sku = string

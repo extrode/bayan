@@ -1,0 +1,776 @@
+// T8: TypeResolver.cs.
+//
+// Each C# method is a function taking the resolver as `through in TypeResolver r`. Lambdas and local
+// functions became private helpers (`t8…`): C#'s deferred `CheckKey` closure is a `.keyCheck` `Work`
+// item plus `t8CheckKey` (Q556), and `Effects`'s local `Add` is `t8AddEffect`. An alias is a `Type`
+// of kind word 25, one past `TypeKind` (Q555), so `Mod.types` can hold it as C# holds `AliasPlaceholder`.
+
+import parser
+
+// The C# `TypeResolver` instance: the file whose imports resolve names, the struct whose type
+// parameters are in scope (-1 none) and the substitutions in force.
+struct TypeResolver {
+    FileId file
+    StructId container = -1
+    Map<string, Type> typeArgs = []
+}
+
+// ── Aliases as types (Q555) ─────────────────────────────────────────────────────
+
+const t8AliasKind: i64 = 25
+
+/// The `Type` an `AliasPlaceholder` stands for in `Mod.types` until `expand` follows it.
+Type t8AliasType(AliasId alias) => (t8AliasKind << 32) | alias
+
+bool t8IsAlias(Type t) => (t >> 32) == t8AliasKind
+
+// ── Syntax helpers ─────────────────────────────────────────────────────────────
+
+string t8Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
+
+/// The span of a type syntax node (the C# `TypeSyntax.Span`; the parser's `typeSpan` is private).
+TextSpan t8TypeSpan(in parser.TypeSyntax t) {
+    switch t {
+        case .namedType(let n): return n.value.span
+        case .optionalType(let n): return n.value.span
+        case .arrayType(let n): return n.value.span
+        case .tupleType(let n): return n.value.span
+        case .functionTypeSyntax(let n): return n.value.span
+        case .dynType(let n): return n.value.span
+        case .refinedType(let n): return n.value.span
+        case .pointerType(let n): return n.value.span
+        case .none: return TextSpan { start: 0, length: 0 }
+    }
+}
+
+/// Swaps `put` into `c.files[f].unit.members[i]` and returns what was there, so a declaration can be
+/// read while `c` is passed by `ref` (BYN3005); a nested alias of the same file still finds its own.
+parser.Decl t8TakeDecl(ref Ctx c, from FileId f, at i64 i, by move parser.Decl put) {
+    var members = c.files[f].unit.members.take()
+    var tail = List<parser.Decl>()
+    while members.length > i + 1 { tail.append(members.removeLast()) }
+    let old = members.removeLast()
+    members.append(move put)
+    while tail.length > 0 { members.append(tail.removeLast()) }
+    c.files[f].unit.members = move members
+    return old
+}
+
+/// The sets of an error set or an error union.
+List<ErrorSetId> t8SetsOf(ref Ctx c, for Type t) {
+    if kindOf(t) == .errorUnion { return copyIds(in c.errorUnionTypes[typeIndex(t)].sets) }
+    var sets = List<ErrorSetId>()
+    sets.append(typeIndex(t))
+    return sets
+}
+
+/// A `Binder` for `BindArraySize`, in the resolver's file and struct (the C# `new Binder(…)`).
+Binder t8Binder(in TypeResolver r) => Binder {
+    file: r.file,
+    owner: r.container,
+    scopes: [],
+    targets: [],
+    lambdas: [],
+    lambdaCount: [],
+    seeds: [],
+    pending: [],
+    constraints: [],
+    peers: [],
+    nonNull: [],
+    stateFacts: [],
+    errorNarrowed: [],
+}
+
+/// The C# `Compilation.MembersDeclared`.
+bool t8MembersDeclared(in Ctx c) => c.membersDeclared
+
+/// The C# `Builtins.IoError`/`Utf8Error`/`ParseError`: the set of that name from a `<builtin>` file (Q557).
+Type t8BuiltinSet(in Ctx c, for string name) {
+    for i in 0..c.errorSets.length {
+        if c.errorSets[i].name == name && t8IsBuiltinFile(in c, for: c.errorSets[i].file) { return errorSetTypeOf(i) }
+    }
+    return errorType()
+}
+
+/// The C# `Builtins.Rule`: the union of that name from a `<builtin>` file (Q557).
+Type t8BuiltinUnion(in Ctx c, for string name) {
+    for i in 0..c.unions.length {
+        if c.unions[i].name == name && t8IsBuiltinFile(in c, for: c.unions[i].file) { return unionTypeOf(i) }
+    }
+    return errorType()
+}
+
+bool t8IsBuiltinFile(in Ctx c, for FileId f) => f < 0 || c.files[f].path == "<builtin>"
+
+// ── TypeResolver ───────────────────────────────────────────────────────────────
+
+Type resolve(ref Ctx c, through in TypeResolver r, for in parser.TypeSyntax syntax, bool allowVoid = false) {
+    let t = resolveCore(ref c, through: in r, for: in syntax)
+    if isVoid(t) && !allowVoid {
+        report(ref c, for: .voidValue, from: r.file, at: t8TypeSpan(in syntax), by: ("", "", "", "", ""))
+        return errorType()
+    }
+    if kindOf(t) == .interfaceType {
+        let name = interfaceDisplayName(ref c, by: typeIndex(t))
+        report(ref c, for: .interfaceAsType, from: r.file, at: t8TypeSpan(in syntax), by: (name, "", "", "", ""), label: "an interface",
+            help: $"write `dyn ref {name}` or add a `where` constraint")
+        return errorType()
+    }
+    return t
+}
+
+/// A base or a `where` bound, where an interface is allowed.
+Type resolveBound(ref Ctx c, through in TypeResolver r, for in parser.NamedType syntax) => resolveNamed(ref c, through: in r, for: in syntax)
+
+Type resolveCore(ref Ctx c, through in TypeResolver r, for in parser.TypeSyntax syntax) {
+    switch syntax {
+        case .optionalType(let o):
+            let inner = resolve(ref c, through: in r, for: in o.value.inner)
+            if functionTypeNotHere(ref c, for: inner, from: r.file, at: t8TypeSpan(in o.value.inner), as: "the value of an optional") { return errorType() }
+            if kindOf(inner) == .optional {
+                let shown = typeDisplay(ref c, by: inner)
+                report(ref c, for: .nestedOptional, from: r.file, at: o.value.span, by: (shown, "", "", "", ""))
+                return inner
+            }
+            return isError(inner) ? inner : internOptional(ref c, by: inner)
+        case .arrayType(let a):
+            let element = resolve(ref c, through: in r, for: in a.value.element)
+            if functionTypeNotHere(ref c, for: element, from: r.file, at: t8TypeSpan(in a.value.element), as: "an array element") { return errorType() }
+            var b = t8Binder(in r)
+            let size = bindArraySize(ref b, through: ref c, for: in a.value.size)
+            return isError(element) || size < 0 ? errorType() : internArray(ref c, by: element, at: size)
+        case .tupleType(let t):
+            var fields = List<TupleField>()
+            for e in t.value.elements {
+                var name: string? = null
+                if (e.name is { } n) { name = t8Text(in c, from: r.file, at: n) }
+                let type = resolve(ref c, through: in r, for: in e.type)
+                fields.append(TupleField { name: name, type: type })
+            }
+            var placed = 0
+            var failed = false
+            for i in 0..fields.length {
+                if functionTypeNotHere(ref c, for: fields[i].type, from: r.file, at: t8TypeSpan(in t.value.elements[i].type), as: "a tuple element") { placed += 1 }
+                if isError(fields[i].type) { failed = true }
+            }
+            return placed > 0 || failed ? errorType() : internTuple(ref c, for: in fields)
+        case .functionTypeSyntax(let f):
+            var parameters = List<Type>()
+            for p in f.value.params { parameters.append(resolve(ref c, through: in r, for: in p)) }
+            let result = resolve(ref c, through: in r, for: in f.value.returnKeyword, allowVoid: true)
+            var failed = false
+            var failSets = List<ErrorSetId>()
+            if (f.value.failsKeyword is { } clause) {
+                for e in clause.errors {
+                    let t = resolve(ref c, through: in r, for: in e)
+                    if kindOf(t) == .errorSet || kindOf(t) == .errorUnion {
+                        let sets = t8SetsOf(ref c, for: t)
+                        for set in sets {
+                            if !listContains(in failSets, by: set) { failSets.append(set) }
+                        }
+                    } else {
+                        if !isError(t) {
+                            let shown = typeDisplay(ref c, by: t)
+                            report(ref c, for: .notAnErrorSet, from: r.file, at: t8TypeSpan(in e), by: (shown, "", "", "", ""))
+                        }
+                        failed = true
+                    }
+                }
+            }
+            var effects = List<string>()
+            if (f.value.usesKeyword is { } usesClause) { effects = effectsOf(ref c, through: in r, for: in usesClause) }
+            var badParameter = false
+            for p in parameters {
+                if isError(p) { badParameter = true }
+            }
+            return failed || isError(result) || badParameter ? errorType() : internFunction(ref c, for: in parameters, to: result, by: in failSets, as: in effects)
+        case .namedType(let n):
+            return resolveNamed(ref c, through: in r, for: in n.value)
+        case .dynType(let d):
+            return resolveDyn(ref c, through: in r, for: in d.value)
+        case .refinedType(let rt):
+            let inner = resolve(ref c, through: in r, for: in rt.value.inner)
+            return resolveStates(ref c, through: in r, for: inner, by: in rt.value.states)
+        default:
+            return errorType()
+    }
+}
+
+Type resolveNamed(ref Ctx c, through in TypeResolver r, for in parser.NamedType n) {
+    let name = n.path[n.path.length - 1]
+    let module = c.files[r.file].module
+    if n.path.length == 1 {
+        let text = t8Text(in c, from: r.file, at: name)
+        let parameter = r.typeArgs.tryGet(at: text)
+        if (parameter is { } p) {
+            noTypeArgs(ref c, through: in r, for: in n, at: name)
+            return p
+        }
+        let primitive = primitiveByName(text)
+        if (primitive is { } pt) {
+            noTypeArgs(ref c, through: in r, for: in n, at: name)
+            return pt
+        }
+        if text == "Span" || text == "ReadOnlySpan" || text == "List" || text == "Owned" || text == "Untrusted" {
+            if n.args.length != 1 {
+                report(ref c, for: .wrongTypeArgumentCount, from: r.file, at: n.span, by: (text, "1", string(n.args.length), "", ""))
+                return errorType()
+            }
+            let element = resolve(ref c, through: in r, for: in n.args[0])
+            if isError(element) { return element }
+            var position = "a type argument"
+            if text == "List" { position = "a list element" }
+            if text == "Span" || text == "ReadOnlySpan" { position = "a span element" }
+            if functionTypeNotHere(ref c, for: element, from: r.file, at: t8TypeSpan(in n.args[0]), as: position) { return errorType() }
+            if text == "Span" { return internSpan(ref c, by: element, readOnly: false) }
+            if text == "ReadOnlySpan" { return internSpan(ref c, by: element, readOnly: true) }
+            if text == "Owned" { return internOwned(ref c, by: element) }
+            if text == "Untrusted" { return internUntrusted(ref c, by: element) }
+            return internList(ref c, by: element)
+        }
+        if text == "Result" {
+            if n.args.length != 2 {
+                report(ref c, for: .wrongTypeArgumentCount, from: r.file, at: n.span, by: (text, "2", string(n.args.length), "", ""))
+                return errorType()
+            }
+            let value = resolve(ref c, through: in r, for: in n.args[0])
+            let error = resolve(ref c, through: in r, for: in n.args[1])
+            if isError(value) || isError(error) { return errorType() }
+            if functionTypeNotHere(ref c, for: value, from: r.file, at: t8TypeSpan(in n.args[0]), as: "a type argument") { return errorType() }
+            if kindOf(error) != .errorSet {
+                let shown = typeDisplay(ref c, by: error)
+                report(ref c, for: .notAnErrorSet, from: r.file, at: t8TypeSpan(in n.args[1]), by: (shown, "", "", "", ""))
+                return errorType()
+            }
+            if value == prim(.void) || value == prim(.neverKind) {
+                let shown = typeDisplay(ref c, by: value)
+                report(ref c, for: .unsupported, from: r.file, at: t8TypeSpan(in n.args[0]), by: ($"`Result<{shown}, …>`", "", "", "", ""))
+                return errorType()
+            }
+            return internResult(ref c, by: value, to: error)
+        }
+        // One map serves both (Q371): `HashMap` is reported once and then resolves as `Map`, so nothing cascades.
+        if text == "HashMap" {
+            let rest = t8Text(in c, from: r.file, at: TextSpan { start: n.span.start + name.length, length: n.span.length - name.length })
+            let written = $"Map{rest}"
+            report(ref c, for: .hashMapNotSupported, from: r.file, at: name, by: ("", "", "", "", ""), help: $"write `{written}`",
+                hasFix: true, fixSpan: n.span, fixReplacement: written)
+            return resolveMap(ref c, through: in r, for: in n)
+        }
+        if text == "Map" { return resolveMap(ref c, through: in r, for: in n) }
+        if text == "Arena" || text == "StrBuf" || text == "ProcessResult" || text == "Panic" || text == "FormatSpec" || text == "Symbol" {
+            noTypeArgs(ref c, through: in r, for: in n, at: name)
+            if text == "Arena" { return builtinType(.arena) }
+            if text == "StrBuf" { return builtinType(.strBuf) }
+            if text == "ProcessResult" { return builtinType(.processResult) }
+            if text == "Panic" { return builtinType(.panic) }
+            if text == "FormatSpec" { return builtinType(.formatSpec) }
+            return builtinType(.symbol)
+        }
+        if text == "dec" || text == "decimal" {
+            report(ref c, for: .unsupported, from: r.file, at: n.span, by: ("the `dec` type", "", "", "", ""))
+            return errorType()
+        }
+        let found = lookup(in c, for: module, by: text)
+        if (found is { } local) {
+            let t = expand(ref c, through: in r, for: local)
+            return construct(ref c, through: in r, for: in n, by: t, at: name)
+        }
+        if text == "IoError" || text == "Utf8Error" || text == "ParseError" {
+            noTypeArgs(ref c, through: in r, for: in n, at: name)
+            return t8BuiltinSet(in c, for: text)
+        }
+        // `ValidationError<T>`: a set per `T`, whose `invalid` carries the violations of a struct with `requires` (J23).
+        // Without `T` there is no `T.Field`, so the bare name is BYN2023 (revision 0011).
+        if text == "ValidationError" {
+            if n.args.length != 1 {
+                report(ref c, for: .wrongTypeArgumentCount, from: r.file, at: n.span, by: (text, "1", string(n.args.length), "", ""))
+                return errorType()
+            }
+            let arg = resolve(ref c, through: in r, for: in n.args[0])
+            return isError(arg) ? errorType() : errorSetTypeOf(validationErrorOf(ref c, for: arg))
+        }
+        if text == "Rule" {
+            noTypeArgs(ref c, through: in r, for: in n, at: name)
+            return t8BuiltinUnion(in c, for: "Rule")
+        }
+        // `Violation<T>` only for a struct with `requires`; any other `T` falls through to BYN2002.
+        if text == "Violation" && n.args.length == 1 {
+            let of = resolve(ref c, through: in r, for: in n.args[0])
+            if kindOf(of) == .structType && c.structs[typeIndex(of)].fieldEnum >= 0 {
+                let validation = validationErrorOf(ref c, for: of)
+                let invalid = c.errorVariants[c.errorSets[validation].variants[0]].fields[0]
+                return c.listTypes[typeIndex(c.locals[invalid].type)]
+            }
+        }
+        let builtin = findInterface(ref c, for: text)
+        if builtin >= 0 {
+            noTypeArgs(ref c, through: in r, for: in n, at: name)
+            return interfaceTypeOf(builtin)
+        }
+        let suggestion = suggestType(ref c, through: in r, for: text)
+        var help = ""
+        if (suggestion is { } s) { help = $"did you mean `{s}`?" }
+        report(ref c, for: .unknownType, from: r.file, at: name, by: (text, "", "", "", ""), help: help)
+        return errorType()
+    }
+    let head = t8Text(in c, from: r.file, at: n.path[0])
+    let last = t8Text(in c, from: r.file, at: name)
+    if n.path.length == 2 {
+        let owner = r.typeArgs.tryGet(at: head)
+        if (owner is { } o) {
+            noTypeArgs(ref c, through: in r, for: in n, at: name)
+            return resolveAssociated(ref c, through: in r, for: in n, by: o)
+        }
+    }
+    let headType = lookup(in c, for: module, by: head) ?? errorType()
+    let headStruct = kindOf(headType) == .structType
+    if n.path.length == 2 && last == "Field" && headStruct && c.structs[typeIndex(headType)].fieldEnum >= 0 {
+        noTypeArgs(ref c, through: in r, for: in n, at: name)
+        return enumTypeOf(c.structs[typeIndex(headType)].fieldEnum)
+    }
+    // `Order.paid`: a camelCase last segment names a state of the struct; derived shapes are PascalCase (J56).
+    // ASCII only (Q558): C# `char.IsLower` is Unicode.
+    let first = last.length > 0 ? last.bytes[0] : 0
+    if n.path.length == 2 && first >= 0x61 && first <= 0x7A && headStruct {
+        // The C# `ResolveNamed(n with { Path = [n.Path[0]] })`: the head names a struct, so that is `Construct` on it.
+        let t = expand(ref c, through: in r, for: headType)
+        let owner = construct(ref c, through: in r, for: in n, by: t, at: n.path[0])
+        var names = List<TextSpan>()
+        names.append(name)
+        return resolveStates(ref c, through: in r, for: owner, by: in names)
+    }
+    if n.path.length == 2 {
+        let imported = c.files[r.file].imports.tryGet(at: head)
+        if (imported is { } m) {
+            let found = lookup(in c, for: m, by: last)
+            if (found is { } t) {
+                checkVisible(ref c, through: in r, for: t, at: name)
+                let expanded = expand(ref c, through: in r, for: t)
+                return construct(ref c, through: in r, for: in n, by: expanded, at: name)
+            }
+            let joined = t8JoinPath(in c, from: r.file, for: in n.path)
+            report(ref c, for: .unknownType, from: r.file, at: name, by: (joined, "", "", "", ""))
+            return errorType()
+        }
+    }
+    let joined = t8JoinPath(in c, from: r.file, for: in n.path)
+    var help = ""
+    if n.path.length == 2 { help = $"add `import {head}`; `{head}` is not an imported module" }
+    report(ref c, for: .unknownType, from: r.file, at: n.span, by: (joined, "", "", "", ""), help: help)
+    return errorType()
+}
+
+/// The `Map`/`HashMap` arm of `ResolveNamed` (C# reaches it by `goto case "Map"`).
+Type resolveMap(ref Ctx c, through in TypeResolver r, for in parser.NamedType n) {
+    if n.args.length != 2 {
+        report(ref c, for: .wrongTypeArgumentCount, from: r.file, at: n.span, by: ("Map", "2", string(n.args.length), "", ""))
+        return errorType()
+    }
+    let key = resolve(ref c, through: in r, for: in n.args[0])
+    let value = resolve(ref c, through: in r, for: in n.args[1])
+    if isError(key) || isError(value) { return errorType() }
+    let badKey = functionTypeNotHere(ref c, for: key, from: r.file, at: t8TypeSpan(in n.args[0]), as: "a map key")
+    let badValue = functionTypeNotHere(ref c, for: value, from: r.file, at: t8TypeSpan(in n.args[1]), as: "a map value")
+    if badKey || badValue { return errorType() }
+    if kindOf(key) == .typeParam { return internMap(ref c, by: key, to: value) }
+    let span = t8TypeSpan(in n.args[0])
+    // The fields of a struct key, or of one inside a tuple key, may not be declared yet; the check waits until they are.
+    if !t8MembersDeclared(in c) && (kindOf(key) == .structType || kindOf(key) == .tuple) {
+        afterMembersDeclared(ref c, for: in Work { kind: .keyCheck, subject: key, args: List<Type>(), file: r.file, span: span })
+    } else if !t8CheckKey(ref c, for: key, from: r.file, at: span) {
+        return errorType()
+    }
+    return internMap(ref c, by: key, to: value)
+}
+
+/// The C# `CheckKey` closure of `ResolveNamed` (Q556): BYN2814/BYN2209-style key diagnostics; false when `key` is not a key.
+bool t8CheckKey(ref Ctx c, for Type key, from FileId f, at TextSpan span) {
+    if isValidKey(ref c, by: key) { return true }
+    let shown = typeDisplay(ref c, by: key)
+    let part = invalidKeyPart(ref c, by: key)
+    if (part is { } p) {
+        let partShown = typeDisplay(ref c, by: p.type)
+        let what = kindOf(key) == .tuple ? "element" : "field"
+        report(ref c, for: .keyPartNotHashable, from: f, at: span, by: (shown, what, p.part, partShown, ""),
+            help: "use a field that identifies the value as the key, such as an id or a `Symbol`")
+    } else {
+        report(ref c, for: .invalidMapKey, from: f, at: span, by: (shown, "", "", "", ""),
+            help: "use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct of those as the key")
+    }
+    return false
+}
+
+string t8JoinPath(in Ctx c, from FileId f, for in List<TextSpan> path) {
+    var sb = StrBuf()
+    for i in 0..path.length {
+        if i > 0 { sb.append(".") }
+        sb.append(t8Text(in c, from: f, at: path[i]))
+    }
+    return $"{sb.finish()}"
+}
+
+/// The state type `T.s` or `T is .a or .b` of `owner`; a state it does not declare is BYN7007.
+Type resolveStates(ref Ctx c, through in TypeResolver r, for Type owner, by in List<TextSpan> names) {
+    if isError(owner) { return owner }
+    var states: UnionId = -1
+    if kindOf(owner) == .structType { states = statesOf(ref c, for: typeIndex(owner)) }
+    var found = List<VariantId>()
+    for n in names {
+        let text = t8Text(in c, from: r.file, at: n)
+        var state: VariantId = -1
+        if states >= 0 { state = findUnionVariant(ref c, by: states, for: text) }
+        if state < 0 {
+            let shown = typeDisplay(ref c, by: owner)
+            report(ref c, for: .unknownState, from: r.file, at: n, by: (shown, text, "", "", ""), help: $"check the states declared in `{shown}`")
+            return errorType()
+        }
+        found.append(state)
+    }
+    return internState(ref c, by: typeIndex(owner), for: in found)
+}
+
+/// `dyn ref I` and `dyn ref readonly I`; `dyn I` and interfaces that are not dyn-safe are diagnostics.
+Type resolveDyn(ref Ctx c, through in TypeResolver r, for in parser.DynType d) {
+    var inner = errorType()
+    switch d.inner {
+        case .namedType(let n): inner = resolveNamed(ref c, through: in r, for: in n.value)
+        default: inner = errorType()
+    }
+    if isError(inner) { return inner }
+    if kindOf(inner) != .interfaceType {
+        let shown = typeDisplay(ref c, by: inner)
+        report(ref c, for: .notAnInterface, from: r.file, at: t8TypeSpan(in d.inner), by: (shown, "", "", "", ""), label: "after `dyn`",
+            help: "name an `interface` after `dyn ref`")
+        return errorType()
+    }
+    let i = typeIndex(inner)
+    let shown = interfaceDisplayName(ref c, by: i)
+    if !d.isRef {
+        report(ref c, for: .dynByValue, from: r.file, at: d.span, by: (shown, "", "", "", ""), label: "an owned dynamic value",
+            help: $"write `dyn ref {shown}`")
+        return errorType()
+    }
+    // Checked on the declaration, so it holds before the interface's members are declared.
+    var member = ""
+    var reason = ""
+    let f = c.interfaces[i].file
+    let declIndex = c.interfaces[i].declIndex
+    if f >= 0 && declIndex >= 0 {
+        switch c.files[f].unit.members[declIndex] {
+            case .interfaceDecl(let decl):
+                for m in decl.value.members {
+                    if member != "" { break }
+                    switch m {
+                        case .functionDecl(let fd):
+                            if fd.value.typeParams.length > 0 {
+                                member = t8Text(in c, from: f, at: fd.value.name)
+                                reason = "is generic"
+                            }
+                        case .associatedTypeDecl(let a):
+                            member = t8Text(in c, from: f, at: a.value.name)
+                            reason = "is an associated type"
+                        default:
+                            continue
+                    }
+                }
+            default:
+                reason = ""
+        }
+    }
+    if member != "" {
+        report(ref c, for: .notDynSafe, from: r.file, at: d.span, by: (shown, member, reason, "", ""), label: "used with `dyn` here",
+            help: "use a `where` constraint instead")
+        return errorType()
+    }
+    return internDynRef(ref c, by: i, readOnly: d.isReadOnly)
+}
+
+/// Whether interface `i`'s declaration has `type <name>` (the C# `c.Decl.Members.Any(m => m is AssociatedTypeDecl …)`).
+bool t8DeclaresType(in Ctx c, for InterfaceId i, by string name) {
+    let f = c.interfaces[i].file
+    let declIndex = c.interfaces[i].declIndex
+    if f < 0 || declIndex < 0 { return false }
+    switch c.files[f].unit.members[declIndex] {
+        case .interfaceDecl(let decl):
+            for m in decl.value.members {
+                switch m {
+                    case .associatedTypeDecl(let a):
+                        if t8Text(in c, from: f, at: a.value.name) == name { return true }
+                    default:
+                        continue
+                }
+            }
+            return false
+        default:
+            return false
+    }
+}
+
+/// `T.Item`: an associated type of `T`'s constraints in a template, the conformer's binding in an
+/// instance (the C# `AssociatedType`; renamed because T11 owns `associatedType`).
+Type resolveAssociated(ref Ctx c, through in TypeResolver r, for in parser.NamedType n, by Type owner) {
+    let name = t8Text(in c, from: r.file, at: n.path[1])
+    if kindOf(owner) == .typeParam {
+        let p = typeIndex(owner)
+        var declared = false
+        for i in c.typeParams[p].constraints {
+            if t8DeclaresType(in c, for: i, by: name) { declared = true }
+        }
+        if declared { return typeParamTypeOf(associatedType(ref c, for: p, by: name)) }
+    }
+    if kindOf(owner) == .structType {
+        let bound = associatedBinding(ref c, for: typeIndex(owner), by: name)
+        if bound != -1 { return bound }
+    }
+    let shown = typeDisplay(ref c, by: owner)
+    var help = ""
+    if kindOf(owner) == .typeParam { help = $"add a `where {shown} : …` bound on an interface declaring `type {name}`" }
+    report(ref c, for: .unknownType, from: r.file, at: n.span, by: ($"{shown}.{name}", "", "", "", ""), help: help)
+    return errorType()
+}
+
+Type? lookup(in Ctx c, for ModId module, by string name) => c.modules[module].types.tryGet(at: name)
+
+void checkVisible(ref Ctx c, through in TypeResolver r, for Type t, at TextSpan name) {
+    var access: Accessibility = .publicKeyword
+    if t8IsAlias(t) {
+        access = accessOf(u16(c.aliases[typeIndex(t)].modifiers))
+    } else {
+        switch kindOf(t) {
+            case .structType: access = c.structs[typeIndex(t)].access
+            case .errorSet: access = c.errorSets[typeIndex(t)].access
+            case .enumType: access = c.enums[typeIndex(t)].access
+            case .unionType: access = c.unions[typeIndex(t)].access
+            case .interfaceType: access = c.interfaces[typeIndex(t)].access
+            default: access = .publicKeyword
+        }
+    }
+    if access != .publicKeyword {
+        let text = t8Text(in c, from: r.file, at: name)
+        report(ref c, for: .notVisible, from: r.file, at: name, by: (text, "", "", "", ""), label: "not `public`",
+            help: $"mark `{text}` `public` to use it from another module")
+    }
+}
+
+/// The type an alias or `union error` composition names, resolved once.
+Type expandAlias(ref Ctx c, through in TypeResolver r, for AliasId alias) => expand(ref c, through: in r, for: t8AliasType(alias))
+
+/// Follows aliases to their targets.
+Type expand(ref Ctx c, through in TypeResolver r, for Type t) {
+    if !t8IsAlias(t) { return t }
+    let a = typeIndex(t)
+    if c.aliases[a].target != -1 { return c.aliases[a].target }
+    if c.aliases[a].resolving {
+        let name = c.aliases[a].name
+        report(ref c, for: .circularAlias, from: c.aliases[a].file, at: c.aliases[a].nameSpan, by: (name, "", "", "", ""))
+        c.aliases[a].target = errorType()
+        return errorType()
+    }
+    c.aliases[a].resolving = true
+    let file = c.aliases[a].file
+    let declIndex = c.aliases[a].declIndex
+    let resolver = TypeResolver { file: file }
+    let decl = t8TakeDecl(ref c, from: file, at: declIndex, by: .none)
+    var target = errorType()
+    switch decl {
+        case .errorSetDecl(let s): target = errorSet(ref c, through: in resolver, for: in s.value)
+        case .typeAliasDecl(let ta): target = resolve(ref c, through: in resolver, for: in ta.value.target)
+        default: target = errorType()
+    }
+    let placeholder = t8TakeDecl(ref c, from: file, at: declIndex, by: move decl)
+    c.aliases[a].resolving = false
+    if c.aliases[a].target == -1 { c.aliases[a].target = target }
+    return c.aliases[a].target
+}
+
+/// The sets named by `union error S = A, B except .c`, one set or an error union less its excluded cases.
+Type errorSet(ref Ctx c, through in TypeResolver r, for in parser.ErrorSetDecl decl) {
+    var sets = List<ErrorSetId>()
+    var excluded = List<VariantId>()
+    for member in decl.members {
+        let t = resolve(ref c, through: in r, for: in member)
+        if kindOf(t) == .errorSet || kindOf(t) == .errorUnion {
+            // A case stays excluded only while every member that brings in its set excludes it.
+            var dropped = List<VariantId>()
+            if kindOf(t) == .errorUnion { dropped = copyIds(in c.errorUnionTypes[typeIndex(t)].excluded) }
+            let memberSets = t8SetsOf(ref c, for: t)
+            for set in memberSets {
+                if listContains(in sets, by: set) {
+                    var kept = List<VariantId>()
+                    for v in excluded {
+                        if c.errorVariants[v].set != set || listContains(in dropped, by: v) { kept.append(v) }
+                    }
+                    excluded = move kept
+                    continue
+                }
+                sets.append(set)
+                for v in dropped {
+                    if c.errorVariants[v].set == set { excluded.append(v) }
+                }
+            }
+        } else if !isError(t) {
+            let shown = typeDisplay(ref c, by: t)
+            report(ref c, for: .notAnErrorSet, from: r.file, at: t8TypeSpan(in member), by: (shown, "", "", "", ""))
+        }
+    }
+    if sets.length == 0 { return errorType() }
+    for name in decl.exceptKeyword {
+        let text = t8Text(in c, from: r.file, at: name)
+        var matched = false
+        for set in sets {
+            let v = findErrorVariant(ref c, by: set, for: text)
+            if v >= 0 {
+                matched = true
+                if !listContains(in excluded, by: v) { excluded.append(v) }
+            }
+        }
+        if !matched {
+            let joined = errorUnionOf(ref c, for: in sets, as: in List<VariantId>())
+            let shown = typeDisplay(ref c, by: joined)
+            report(ref c, for: .unknownVariant, from: r.file, at: name, by: (text, shown, "", "", ""))
+        }
+    }
+    var empty = true
+    for set in sets {
+        for v in c.errorSets[set].variants {
+            if !listContains(in excluded, by: v) { empty = false }
+        }
+    }
+    if empty {
+        let text = t8Text(in c, from: r.file, at: decl.name)
+        report(ref c, for: .emptyErrorSet, from: r.file, at: decl.name, by: (text, "", "", "", ""))
+    }
+    return errorUnionOf(ref c, for: in sets, as: in excluded)
+}
+
+/// One `effect` alias of the module: its name and the names it lists.
+struct T8EffectAlias {
+    string name
+    List<string> effects
+}
+
+bool t8IsEffectPrimitive(string name) {
+    return name == "alloc" || name == "suspend" || name == "net" || name == "fs" || name == "clock" || name == "random"
+        || name == "env" || name == "process" || name == "console"
+}
+
+/// The C# local `Add` of `Effects` for a name inside an alias (never reported); `seen` stops alias cycles.
+void t8AddEffect(in List<T8EffectAlias> aliases, for string name, to ref List<string> result, by ref List<string> seen) {
+    if t8IsEffectPrimitive(name) {
+        result.append(name)
+        return
+    }
+    for a in aliases {
+        if a.name == name {
+            if listContainsString(in seen, by: name) { return }
+            seen.append(name)
+            for e in a.effects { t8AddEffect(in aliases, for: e, to: ref result, by: ref seen) }
+            return
+        }
+    }
+}
+
+/// The effects a function type's `uses` names, the module's `effect` aliases expanded; BYN6003 for an
+/// unknown name (one inside an alias is reported by the effect analysis).
+List<string> effectsOf(ref Ctx c, through in TypeResolver r, for in parser.UsesClause clause) {
+    var aliases = List<T8EffectAlias>()
+    let module = c.files[r.file].module
+    for f in c.modules[module].files {
+        for m in c.files[f].unit.members {
+            switch m {
+                case .effectDecl(let e):
+                    var names = List<string>()
+                    for x in e.value.effects { names.append(t8Text(in c, from: f, at: x)) }
+                    aliases.append(T8EffectAlias { name: t8Text(in c, from: f, at: e.value.name), effects: move names })
+                default:
+                    continue
+            }
+        }
+    }
+    var result = List<string>()
+    var seen = List<string>()
+    for name in clause.effects {
+        let text = t8Text(in c, from: r.file, at: name)
+        var known = t8IsEffectPrimitive(text)
+        for a in aliases {
+            if a.name == text { known = true }
+        }
+        if known {
+            t8AddEffect(in aliases, for: text, to: ref result, by: ref seen)
+        } else {
+            reportUnknown(ref c, from: r.file, at: name)
+        }
+    }
+    var distinct = List<string>()
+    for e in result {
+        if !listContainsString(in distinct, by: e) { distinct.append(e) }
+    }
+    return distinct
+}
+
+/// Applies the type arguments of `n` to a generic struct, union or interface (instantiating it), or checks
+/// there are none; `last` is the segment the diagnostics name (Q559).
+Type construct(ref Ctx c, through in TypeResolver r, for in parser.NamedType n, by Type t, at TextSpan last) {
+    var parameters = List<TypeParamId>()
+    if kindOf(t) == .structType { parameters = copyIds(in c.structs[typeIndex(t)].typeParams) }
+    if kindOf(t) == .unionType { parameters = copyIds(in c.unions[typeIndex(t)].typeParams) }
+    if kindOf(t) == .interfaceType { parameters = copyIds(in c.interfaces[typeIndex(t)].typeParams) }
+    if parameters.length == 0 {
+        noTypeArgs(ref c, through: in r, for: in n, at: last)
+        return t
+    }
+    if n.args.length != parameters.length {
+        let text = t8Text(in c, from: r.file, at: last)
+        report(ref c, for: .wrongTypeArgumentCount, from: r.file, at: n.span, by: (text, string(parameters.length), string(n.args.length), "", ""))
+        return errorType()
+    }
+    var args = List<Type>()
+    for a in n.args { args.append(resolve(ref c, through: in r, for: in a)) }
+    for a in args {
+        if isError(a) { return errorType() }
+    }
+    var notHere = 0
+    for i in 0..args.length {
+        if functionTypeNotHere(ref c, for: args[i], from: r.file, at: t8TypeSpan(in n.args[i]), as: "a type argument") { notHere += 1 }
+    }
+    if notHere > 0 { return errorType() }
+    var same = true
+    for i in 0..args.length {
+        if args[i] != typeParamTypeOf(parameters[i]) { same = false }
+    }
+    if same { return t }
+    return instantiateType(ref c, for: t, by: in args, from: r.file, at: n.span)
+}
+
+void noTypeArgs(ref Ctx c, through in TypeResolver r, for in parser.NamedType n, at TextSpan last) {
+    if n.args.length > 0 {
+        let text = t8Text(in c, from: r.file, at: last)
+        report(ref c, for: .wrongTypeArgumentCount, from: r.file, at: n.span, by: (text, "0", string(n.args.length), "", ""))
+    }
+}
+
+/// ASCII lowercase (Q558): the C# `ToLowerInvariant` is Unicode.
+string t8Lower(string s) {
+    var bytes = List<u8>()
+    for b in s.bytes { bytes.append(b >= 0x41 && b <= 0x5A ? b + 0x20 : b) }
+    return $"{utf8(bytes.span)}"
+}
+
+/// A type name differing from `text` only in (ASCII) case, or a common misspelling (`boolean`, `str`).
+string? suggestType(ref Ctx c, through in TypeResolver r, for string text) {
+    let lower = t8Lower(text)
+    let module = c.files[r.file].module
+    for e in c.modules[module].types {
+        if t8Lower(e.key) == lower { return $"{e.key}" }
+    }
+    let builtins = ["Span", "ReadOnlySpan", "List", "Map", "HashMap", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error",
+        "ParseError", "ValidationError", "Violation", "Rule", "ProcessResult", "Panic", "FormatSpec", "Symbol"]
+    for name in builtins {
+        if t8Lower(name) == lower { return name }
+    }
+    if primitiveByName(lower) is not null { return lower }
+    if lower == "boolean" { return "bool" }
+    if lower == "str" { return "string" }
+    return null
+}

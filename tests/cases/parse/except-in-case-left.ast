@@ -1,0 +1,15 @@
+CompilationUnit
+  Function pick(Shape s) -> Shape
+    Block
+      Switch s
+        Case (and .square (not .circle))
+          Return s
+        Default
+          Return s
+
+error BYN1051: `except` is not allowed in a `case` pattern
+
+  3 │         case .square except .circle: return s
+    │                      ^^^^^^ not allowed here
+    │
+  help: write the arm as `case not .circle`

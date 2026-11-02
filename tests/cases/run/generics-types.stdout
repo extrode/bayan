@@ -1,0 +1,11 @@
+Pair { a: 1, b: x } Pair { a: x, b: 1 } x 1
+true false
+Pair { a: hearts, b: true }
+some 5 nothing some hi some(v: 5)
+true true
+matched hi
+big 5
+node 1 2
+c 2
+5 10
+null s 0

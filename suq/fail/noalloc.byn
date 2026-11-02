@@ -1,0 +1,4 @@
+// expect: removed effect keyword
+// fix-it: delete it; no `uses` clause already means pure
+public u32 crc(Span<u8> data) noalloc {
+}

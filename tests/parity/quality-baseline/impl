@@ -1,0 +1,1 @@
+python3 -I $ROOT/scripts/selfhost/quality-baseline.py

@@ -1,0 +1,185 @@
+// Patterns. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 4058–4248 (`ParsePattern` onward):
+// `ParsePattern` with `WithoutLambdas` inlined as save/restore, `ParseAndPattern`, `ParseNotPattern`,
+// `ParsePrimaryPattern`, `ParsePropertyPattern`, `ParseListPattern`. Owner: 
+
+import lexer
+
+Pattern parsePattern(ref Parser p) {
+    let saved = p.setNoLambda(value: true)
+    let pattern = parseOrPattern(ref p)
+    p.noLambda = saved
+    return pattern
+}
+
+/// The body of `ParsePattern`, run with `noLambda` set.
+Pattern parseOrPattern(ref Parser p) {
+    let start = p.current().start
+    var left = parseAndPattern(ref p)
+    while p.kind() == .orKeyword {
+        let _ = p.advance()
+        let right = parseAndPattern(ref p)
+        left = Pattern.binaryPattern(Owned(BinaryPattern { span: p.spanFrom(start), isAnd: false, left: move left, right: move right }))
+    }
+    return left
+}
+
+Pattern parseAndPattern(ref Parser p) {
+    let start = p.current().start
+    var left = parseNotPattern(ref p)
+    while p.kind() == .andKeyword {
+        let _ = p.advance()
+        let right = parseNotPattern(ref p)
+        left = Pattern.binaryPattern(Owned(BinaryPattern { span: p.spanFrom(start), isAnd: true, left: move left, right: move right }))
+    }
+    return left
+}
+
+Pattern parseNotPattern(ref Parser p) {
+    let start = p.current().start
+    if p.accept(.notKeyword) {
+        // C# takes the span before it parses the operand, so it covers `not` alone (Q511).
+        let span = p.spanFrom(start)
+        let operand = parseNotPattern(ref p)
+        return Pattern.notPattern(Owned(NotPattern { span: span, operand: move operand }))
+    }
+    return parsePrimaryPattern(ref p)
+}
+
+Pattern parsePrimaryPattern(ref Parser p) {
+    let start = p.current().start
+    let kind = p.kind()
+    if kind == .less || kind == .lessEquals || kind == .greater || kind == .greaterEquals {
+        let op: BinaryOp = p.advance().kind switch {
+            .less => .lt,
+            .lessEquals => .le,
+            .greater => .gt,
+            _ => .ge,
+        }
+        let value = parseBinary(ref p, at: precShift)
+        return Pattern.relationalPattern(Owned(RelationalPattern { span: p.spanFrom(start), op: op, value: move value }))
+    }
+    if kind == .varKeyword || kind == .letKeyword {
+        let isLet = p.advance().kind == .letKeyword
+        // C# takes the span before it reads the name, so it covers the keyword alone (Q511).
+        let span = p.spanFrom(start)
+        let name = expectName(ref p, "a variable name")
+        return Pattern.varPattern(Owned(VarPattern { span: span, name: name, isLet: isLet }))
+    }
+    if kind == .dot && isName(p.peek(1)) && p.peek(2) == .openParen {
+        let _ = p.advance()
+        let name = nameOf(p.advance())
+        let variant = Expr.targetMemberExpr(Owned(TargetMemberExpr { span: p.spanFrom(start), member: name }))
+        let _ = p.advance()
+        var elements = List<Pattern>()
+        if p.kind() != .closeParen {
+            elements.append(parsePattern(ref p))
+            while p.accept(.comma) { elements.append(parsePattern(ref p)) }
+        }
+        let _ = p.expect(.closeParen)
+        return Pattern.variantPattern(Owned(VariantPattern { span: p.spanFrom(start), variant: move variant, elements: move elements }))
+    }
+    // `.percentOff p`: binds the whole value, narrowed to the case; `when` starts a guard.
+    if kind == .dot && isName(p.peek(1)) && p.peek(2) == .identifier && !p.peekToken(2).hasNewlineBefore
+        && !lexer.sameBytes(p.text(p.peekToken(2)), as: "when".bytes) {
+        let _ = p.advance()
+        let variant = Expr.targetMemberExpr(Owned(TargetMemberExpr { span: p.spanFrom(start), member: nameOf(p.advance()) }))
+        let binding = nameOf(p.advance())
+        return Pattern.variantPattern(Owned(VariantPattern {
+            span: p.spanFrom(start), variant: move variant, elements: List<Pattern>(), binding: binding,
+        }))
+    }
+    if kind == .identifier && lexer.sameBytes(p.text(p.current()), as: "_".bytes) && p.peek(1) != .dot && p.peek(1) != .openParen {
+        let _ = p.advance()
+        return Pattern.discardPattern(Owned(DiscardPattern { span: p.spanFrom(start) }))
+    }
+    if kind == .openBrace && braceLiteralAllowed(ref p) { return parsePropertyPattern(ref p, at: start, by: .none) }
+    if kind == .openBracket { return parseListPattern(ref p, at: start) }
+    if kind == .openParen {
+        let _ = p.advance()
+        var elements = List<Pattern>()
+        elements.append(parsePattern(ref p))
+        if p.accept(.closeParen) { return elements.removeLast() }
+        while p.accept(.comma) { elements.append(parsePattern(ref p)) }
+        let _ = p.expect(.closeParen)
+        return Pattern.positionalPattern(Owned(PositionalPattern { span: p.spanFrom(start), type: .none, elements: move elements }))
+    }
+    if kind == .identifier && startsUpper(p.text(p.current())) {
+        let after = scanType(ref p, at: p.pos)
+        if after > 0 && p.kindAt(after) == .openBrace && braceLiteralAllowed(ref p) {
+            let type = parseType(ref p)
+            return parsePropertyPattern(ref p, at: start, by: move type)
+        }
+        if after > 0 && p.kindAt(after) == .openParen {
+            let type = parseType(ref p)
+            let _ = p.advance()
+            var elements = List<Pattern>()
+            if p.kind() != .closeParen {
+                elements.append(parsePattern(ref p))
+                while p.accept(.comma) { elements.append(parsePattern(ref p)) }
+            }
+            let _ = p.expect(.closeParen)
+            return Pattern.positionalPattern(Owned(PositionalPattern { span: p.spanFrom(start), type: move type, elements: move elements }))
+        }
+        if after > 0 && p.kindAt(after) == .identifier && !lexer.sameBytes(p.text(p.lexed.tokens[after]), as: "when".bytes) {
+            // `DbError e`: a declaration pattern binding the matched value at the written type.
+            let type = parseType(ref p)
+            let name = nameOf(p.advance())
+            return Pattern.declarationPattern(Owned(DeclarationPattern { span: p.spanFrom(start), type: move type, name: name }))
+        }
+    }
+    let constant = parseBinary(ref p, at: precRange)
+    return Pattern.constantPattern(Owned(ConstantPattern { span: p.spanFrom(start), value: move constant }))
+}
+
+Pattern parsePropertyPattern(ref Parser p, at i64 start, by move TypeSyntax type) {
+    let open = p.expect(.openBrace)
+    var properties = List<PropertySubpattern>()
+    while p.kind() != .closeBrace && !p.atEnd() {
+        let before = p.pos
+        let subStart = p.current().start
+        var path = List<TextSpan>()
+        path.append(expectName(ref p, "a property name"))
+        while p.accept(.dot) { path.append(expectName(ref p, "a property name")) }
+        let _ = p.expect(.colon)
+        let pattern = parsePattern(ref p)
+        properties.append(PropertySubpattern { span: p.spanFrom(subStart), path: move path, pattern: move pattern })
+        unless p.accept(.comma) { break }
+        if p.pos == before { break }
+    }
+    expectClose(ref p, from: open, for: "property pattern")
+    var designation: TextSpan? = null
+    if isName(p.kind()) && !(p.kind() == .identifier && lexer.sameBytes(p.text(p.current()), as: "when".bytes))
+        && !p.current().hasNewlineBefore {
+        designation = nameOf(p.advance())
+    }
+    return Pattern.propertyPattern(Owned(PropertyPattern {
+        span: p.spanFrom(start), type: move type, properties: move properties, designation: designation,
+    }))
+}
+
+Pattern parseListPattern(ref Parser p, at i64 start) {
+    let _ = p.advance()
+    var elements = List<Pattern>()
+    while p.kind() != .closeBracket && !p.atEnd() {
+        let before = p.pos
+        let elementStart = p.current().start
+        if p.accept(.dotDot) {
+            let inner = p.kind() == .comma || p.kind() == .closeBracket ? Pattern.none : parsePattern(ref p)
+            elements.append(Pattern.slicePattern(Owned(SlicePattern { span: p.spanFrom(elementStart), inner: move inner })))
+        } else {
+            elements.append(parsePattern(ref p))
+        }
+        unless p.accept(.comma) { break }
+        if p.pos == before { break }
+    }
+    let _ = p.expect(.closeBracket)
+    return Pattern.listPattern(Owned(ListPattern { span: p.spanFrom(start), elements: move elements }))
+}
+
+/// C# `char.IsUpper(Text(Current)[0])`, for ASCII only (Q442).
+bool startsUpper(ReadOnlySpan<u8> text) => text.length > 0 && text[0] >= 'A' && text[0] <= 'Z'
+
+// ── Cross-file stand-ins (T3) ────────────────────────────────────────────────────
+// Each stands for a C# helper another task ports in its own file (Q441). T15 replaces each `` call
+// with the sibling's function and deletes this struct; until then the two parse stand-ins are placeholders.
+

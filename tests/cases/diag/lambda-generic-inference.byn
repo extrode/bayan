@@ -1,0 +1,5 @@
+bool pick<T>(List<T> xs, by (T -> bool) keep) => false
+
+void main() {
+    let none = pick([], by: it > 0)
+}

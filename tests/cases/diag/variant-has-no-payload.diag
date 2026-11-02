@@ -1,0 +1,13 @@
+error BYN2706: variant `none` has no payload
+
+  7 │     let s = Shape.none()
+    │             ^^^^^^^^^^^^
+    │
+  help: write `Shape.none` without parentheses
+
+error BYN2706: variant `none` has no payload
+
+  9 │     if t is .none() {
+    │             ^^^^^^^
+    │
+  help: match it with `.none`

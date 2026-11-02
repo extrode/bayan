@@ -1,0 +1,4 @@
+error BYN3102: `test` must be a `Tests { … }`
+
+  4 │     test: 80,
+    │           ^^

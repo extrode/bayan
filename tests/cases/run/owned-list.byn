@@ -1,0 +1,56 @@
+struct Node {
+    i64 item
+    Owned<Node>? next
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Node {{ item: {item}, next: {next} }}")
+    }
+
+    i64 total() {
+        if (next is { } n) { return item + n.total() }
+        return item
+    }
+}
+
+struct Tree {
+    string name
+    List<Tree> children
+}
+
+Owned<Node>? push(i64 item, to move Owned<Node>? head) => Owned(Node { item: item, next: move head })
+
+string show(Owned<Node>? head) {
+    if (head is { } n) { return $"{n.item} {show(n.next)}" }
+    return ""
+}
+
+i64 count(Tree t) {
+    var n: i64 = 1
+    for c in t.children {
+        n += count(c)
+    }
+    return n
+}
+
+void main() {
+    using let arena = Arena()
+    provide allocator: arena {
+        var head: Owned<Node>? = null
+        for i in 1..6 {
+            head = push(i, to: move head)
+        }
+        print(show(head))
+        if (head is not { } h) { return }
+        print($"{h.total()} {h.item} {h.value.item}")
+        let two = Owned(Node { item: 2, next: Owned(Node { item: 1, next: null }) })
+        print($"{two}")
+        print($"{two == Owned(Node { item: 2, next: Owned(Node { item: 1, next: null }) })} {two == h}")
+
+        var root = Tree { name: "root", children: List<Tree>() }
+        var leaf = Tree { name: "leaf", children: List<Tree>() }
+        leaf.children.append(Tree { name: "deep", children: List<Tree>() })
+        root.children.append(move leaf)
+        root.children.append(Tree { name: "other", children: List<Tree>() })
+        print($"{count(root)}")
+    }
+}

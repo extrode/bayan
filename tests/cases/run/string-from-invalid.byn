@@ -1,0 +1,25 @@
+// Invalid UTF-8 fails, and `string.invalidUtf8At` gives the offset of the first bad sequence.
+string describe(ReadOnlySpan<u8> bytes) {
+    let s = Utf8.decode(bytes) catch switch {
+        .invalidSequence => "invalidSequence",
+    }
+    let at = string.invalidUtf8At(bytes) ?? -1
+    let t = Utf8.tryDecode(bytes) ?? "none"
+    return $"{s} at {at}, tryDecode {t}"
+}
+
+void main() fails Utf8Error {
+    let overlongNul: u8[3] = [0x68, 0xC0, 0x80]
+    print($"overlong NUL: {describe(overlongNul.span)}")
+    let overlong: u8[5] = [0x61, 0x62, 0xE0, 0x80, 0x80]
+    print($"overlong 3-byte: {describe(overlong.span)}")
+    let surrogate: u8[4] = [0x61, 0xED, 0xA0, 0x80]
+    print($"surrogate: {describe(surrogate.span)}")
+    let tooLarge: u8[4] = [0xF4, 0x90, 0x80, 0x80]
+    print($"above U+10FFFF: {describe(tooLarge.span)}")
+    let truncated: u8[3] = [0x61, 0x62, 0xE2]
+    print($"truncated: {describe(truncated.span)}")
+    let lone: u8[2] = [0x80, 0x61]
+    print($"lone continuation: {describe(lone.span)}")
+    let _ = try Utf8.decode(overlongNul.span)
+}

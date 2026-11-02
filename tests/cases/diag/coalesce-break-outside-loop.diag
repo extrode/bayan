@@ -1,0 +1,4 @@
+error BYN2406: `break` outside a loop
+
+  3 │ let v = find(1) ?? break
+    │                    ^^^^^

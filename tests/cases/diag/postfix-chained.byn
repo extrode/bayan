@@ -1,3 +1,3 @@
 void f(bool a, bool b) {
-    work() if a if b;
+    work() if a if b
 }

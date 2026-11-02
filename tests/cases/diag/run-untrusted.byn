@@ -1,0 +1,7 @@
+void main() fails IoError {
+    let program: Untrusted<string> = Untrusted("git")
+    let name: Untrusted<string> = Untrusted("x")
+    let _ = try Io.run(program, ["status"])
+    let _ = try Io.run("git", ["log", name])
+    let _ = try Io.run("git", ["log", name.trustUnchecked() because "checked against the branch list"])
+}

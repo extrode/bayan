@@ -1,0 +1,8 @@
+error BYN1005: expected a line break after the statement
+
+  1 │ let a = 1 let b = 2
+    │          ^ found keyword `let`
+    │
+  help: put the next statement on its own line
+    │ 1 │ let a = 1
+    │ 2 │ let b = 2

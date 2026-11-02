@@ -1,0 +1,6 @@
+error BYN2612: allocation is not allowed in a panic handler
+
+  3 │     let s = Symbol.intern(p.message)
+    │             ^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: remove it; panic handlers can't recover

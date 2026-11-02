@@ -28,6 +28,19 @@ public sealed class LexerTests
     }
 
     [Fact]
+    public void SyntaxTakesUnicodeDataOnlyFromGeneratedTables()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "src", "Bayan.Syntax");
+        string[] banned = ["Normalize(", "IsNormalized(", "GetUnicodeCategory"];
+        var offenders = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Where(f => banned.Any(File.ReadAllText(f).Contains))
+            .Select(f => Path.GetRelativePath(Golden.RepoRoot, f));
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void KeywordPrefixIsIdentifier()
     {
         Assert.Equal([TokenKind.Identifier, TokenKind.EndOfFile], Kinds("letter"));
@@ -67,8 +80,8 @@ public sealed class LexerTests
             Assert.Equal(TokenKind.EndOfFile, Lexer.Lex(SourceText.FromString("t.byn", text)).Tokens[^1].Kind);
     }
 
-    [Fact]
-    public void OneMegabyteAllocatesOnlyTheTokenArray()
+    /// <summary>About 1 MB of ordinary Bayan code: a repeated unit padded with spaces.</summary>
+    internal static SourceText OneMegabyte()
     {
         var unit = """
             /// A ledger line.
@@ -84,8 +97,13 @@ public sealed class LexerTests
         var bytes = new byte[1024 * 1024];
         for (var i = 0; i + unit.Length <= bytes.Length; i += unit.Length) unit.CopyTo(bytes, i);
         for (var i = bytes.Length - bytes.Length % unit.Length; i < bytes.Length; i++) bytes[i] = (byte)' ';
-        var source = new SourceText("big.byn", bytes);
+        return new SourceText("big.byn", bytes);
+    }
 
+    [Fact]
+    public void OneMegabyteAllocatesOnlyTheTokenArray()
+    {
+        var source = OneMegabyte();
         Lexer.Lex(source); // warm up statics and JIT
         var before = GC.GetAllocatedBytesForCurrentThread();
         var result = Lexer.Lex(source);

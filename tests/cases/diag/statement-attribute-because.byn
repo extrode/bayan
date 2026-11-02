@@ -1,0 +1,14 @@
+i32 f(i32 x) {
+    @unobservable
+    return x
+}
+
+i32 g(i32 x) {
+    @unobservable(boundary) because ""
+    return x
+}
+
+i32 h(i32 x) {
+    @unobservable(boundary) because "x is clamped by the caller"
+    return x
+}

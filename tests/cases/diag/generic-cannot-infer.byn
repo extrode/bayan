@@ -1,0 +1,6 @@
+T? none<T>() => null
+T orDefault<T>(move T? x, by move T fallback) => move x ?? move fallback
+
+let a = none()
+let b = orDefault(null, by: null)
+let c = none<i64>()

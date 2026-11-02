@@ -1,0 +1,16 @@
+union error ConfigError {
+    @exitCode(3)
+    /// The configuration is malformed.
+    malformed
+    /// Something else.
+    other
+}
+
+/// Runs the tool.
+@experimental
+@tag(level: 2)
+public void run() { }
+
+@experimental
+/// Stops the tool.
+void stop() { }

@@ -1,0 +1,31 @@
+error BYN2784: a `List<List<i64>>` holding `List<i64>` cannot be copied: the copy would share its
+storage
+
+  7 │     let l = lists.copy(to: a)
+    │             ^^^^^^^^^^^^^^^^^
+    │
+  help: build the copy with a loop that copies each element, or share the original by `ref`
+
+error BYN2784: a `Map<string, StrBuf>` holding `StrBuf` cannot be copied: the copy would share its
+storage
+
+  9 │     let m = maps.copy(to: a)
+    │             ^^^^^^^^^^^^^^^^
+    │
+  help: build the copy with a loop that copies each element, or share the original by `ref`
+
+error BYN2784: a `Map<i64, Holder>` holding `List<i64>` cannot be copied: the copy would share its
+storage
+
+  11 │     let k = keyed.copy(to: a)
+     │             ^^^^^^^^^^^^^^^^^
+     │
+  help: build the copy with a loop that copies each element, or share the original by `ref`
+
+error BYN2784: a `List<Owned<i64>?>` holding `Owned<i64>` cannot be copied: the copy would share its
+storage
+
+  13 │     let o = owned.copy(to: a)
+     │             ^^^^^^^^^^^^^^^^^
+     │
+  help: build the copy with a loop that copies each element, or share the original by `ref`

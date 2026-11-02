@@ -1,0 +1,28 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+    }
+    void pay(ref this is .draft, i64 amount) becomes .paid {
+        become .paid(amount)
+    }
+    void note(ref this) {
+        id += 1
+    }
+    void merge(ref this, ref Order.draft other) {
+        other.pay(1)
+    }
+}
+
+void charge(ref Order.draft order) {
+    order.note()
+    order.pay(2)
+}
+
+void chargeLocal(Order order) {
+    var o = order
+    if o is .draft {
+        o.pay(3)
+    }
+}

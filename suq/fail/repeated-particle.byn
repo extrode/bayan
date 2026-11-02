@@ -1,0 +1,4 @@
+// expect: repeated particle
+// fix-it: group the values in a struct
+void move(from Point a, from Point b) {
+}

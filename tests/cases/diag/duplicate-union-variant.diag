@@ -1,0 +1,4 @@
+error BYN2701: union `Shape` already has a variant `circle`
+
+  4 │     circle(f32 radius)
+    │     ^^^^^^ already declared on line 2

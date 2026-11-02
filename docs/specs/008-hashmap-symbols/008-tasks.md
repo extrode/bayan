@@ -1,0 +1,58 @@
+# 008 — Tasks
+Plan: ./008-plan.md
+Depends on: feat/007-lambdas at 4a746de (dev, round 3, spec 006 and 007 merged); merges into dev after 007. Round 3 is complete there (5.1a–5.1e syntax, 5.2 `bayan format`, 5.3d effect pass, 5.4a/5.4b stdlib and particles), so no task waits on a round-3 step. Nothing from 006 or 007 is used; 007's deferred parts that 008's users would want are in the plan's Risks. Each 008 task rebases over the ones merged before it and re-runs the suite. Line numbers are dropped; locate by method name.
+
+- [x] T1 `Symbol` type — files: `src/Bayan.Semantics/Symbols/Types.cs` (`BuiltinKind.Symbol`, `BuiltinType`), `src/Bayan.Semantics/TypeResolver.cs` (name switch, `Suggest`), `src/Bayan.Semantics/Binding/BinderExpressions.cs` (`IsEquatable`, ordering in `BindBinary`), `src/Bayan.Semantics/Binding/BinderCalls.cs` (`IsDefaultable`), `tests/cases/typed/` — covers: R1 — done when: `let x: Symbol` resolves and dumps as `Symbol`; `==`, `!=`, `<`, `<=`, `>`, `>=` between two `Symbol`s bind to `bool`; `Symbol` is not `unique` (copying a `Symbol` local twice is accepted) and is defaultable; a user `struct Symbol` behaves as a user `struct StrBuf` does today; the suite passes.
+- [x] T2 Literals, `Symbol.intern`, BYN2830 and BYN2832 — files: `src/Bayan.Semantics/Binding/BoundNodes.cs` (`BoundSymbolLiteral`), `src/Bayan.Semantics/Symbols/Symbols.cs` (`BuiltinFunction.SymbolIntern`), `src/Bayan.Semantics/Builtins.cs` (`Make`, beside `HexEncode`), `src/Bayan.Semantics/Binding/BinderExpressions.cs` (`BindLiteral` against `Symbol`, `Convert`, `BoundTypeRef` statics in `BindMember`, `BindMapLiteral` keys), `src/Bayan.Semantics/TypeResolver.cs` (`case "HashMap"`), `src/Bayan.Semantics/Binding/RegionAnalysis.cs` (builtin results that borrow nothing), `src/Bayan.Semantics/Binding/PanicHandlerCheck.cs` (restricted allocations), `src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs` (BYN2830, BYN2832), `docs/diagnostics/BYN2830.md`, `docs/diagnostics/BYN2832.md`, `tests/cases/diag/`, `tests/cases/typed/`, `tests/cases/run/` — covers: R2, R3, R8, R11 — after T1 — done when:
+  - `typed/symbol-literals` dumps type `Symbol` for locals initialized from a literal in a typed `let`, an argument, a `return`, a field initializer, a map-literal key and each comparison operand. No ID appears. A `run/` golden over the same positions prints each literal's `.text` once T4 and T5 land.
+  - `diag/symbol-from-string` reports BYN2832 with the fix `Symbol.intern(name)` for a `string` local, an interpolated literal, a slice, a `Symbol?` target and a generic argument.
+  - `diag/hashmap-not-supported` reports exactly one diagnostic, BYN2830, with the fix `Map<string, i32>`, for a field, a parameter, a local and a type argument. Applying the fixes with `Format.ApplyFixes` gives a program the checker accepts (`bayan format` does not apply BYN2830, a binder diagnostic).
+  - `HashMap<i32>` reports BYN2830 followed by `Map`'s argument-count diagnostic (BYN2023).
+  - `Symbol.intern` in a panic handler reports BYN2612.
+  - `bayan explain BYN2830` and `bayan explain BYN2832` print their pages.
+  - The suite passes.
+- [x] T3 Composite keys, BYN2831 and the BYN2760 help — files: `src/Bayan.Semantics/Symbols/Types.cs` (`MapType.IsValidKey`, `InvalidKeyPart`), `src/Bayan.Semantics/TypeResolver.cs` (`case "Map"`), `src/Bayan.Semantics/Binding/BinderExpressions.cs` (`InvalidMapKey` report in `BindMapLiteral`), `src/Bayan.Semantics/Compilation.cs` (instantiation forwarding, `InvalidMapKey` check), `src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs` (BYN2831), `docs/diagnostics/BYN2831.md`, `docs/diagnostics/BYN2760.md`, `tests/cases/diag/` — covers: R5, R9, R11 — after T1 — parallel with T2 — done when:
+  - Accepted: `Map<Symbol, i32>`, `Map<(i32, Symbol), i32>`, `Map<(i32 scope, Symbol name), i32>`, and a struct whose fields are `i32`, `Symbol` and a nested key struct.
+  - `diag/map-key-part` reports BYN2831 for `struct Weight { f64 grams }`, naming `field` `grams` and `f64`. It also covers a tuple element `List<i32>` (`element` `2`), an optional field, a data-enum field and a `@noEquality` struct.
+  - `diag/invalid-map-key` still reports BYN2760 for `f64` and `List<i32>` keys, with the new help.
+  - A generic `V largest<K, V>(Map<K, V> m)` instantiated with `Map<Weight, i32>` reports BYN2831 at the call.
+  - `bayan explain BYN2831` prints its page.
+  - The suite passes.
+- [x] T4 `sym.text` and interpolation (binder) — files: `src/Bayan.Semantics/Binding/BuiltinMembers.cs` (`SymbolText`), `src/Bayan.Semantics/Binding/BoundNodes.cs`, `src/Bayan.Semantics/Binding/RegionAnalysis.cs` (builtin results that borrow nothing), `src/Bayan.Lowering/Lowerer.cs` (`BoundInterpolated` of `Symbol`), `tests/cases/typed/` — covers: R4 — after T2 — done when: `s.text` binds to `string` and borrows nothing (it may be returned from a function that took the `Symbol` by value; no BYN3003); `$"{s}"` lowers as the text; no `Map` member is added or changed; the suite passes.
+- [x] T5 Runtime table and C emission — files: `src/runtime/bayan-rt.h`, `src/runtime/bayan-rt.c` (`byn_sym`, `byn_sym_init`, `byn_sym_intern`, `byn_sym_text`, `byn_hash_mix`), `src/Bayan.Backend.C/CEmitter.cs` (`CType`, `Key`, `Equal`, `main` prologue beside `byn_hash_seed_init`, `_symbols` flag beside `_hashes`, ordering via `byn_str_cmp`), `src/Bayan.Semantics/Binding/EffectAnalysis.cs` (`BuiltinFunction.SymbolIntern` as `alloc`), `tests/cases/run/` — covers: R2, R3, R4, R10, R11 — after T2, T4 — done when:
+  - `run/symbol-literal-runtime` prints `true` for a literal against `Symbol.intern` of the same text read into a `StrBuf`, and `false` against `"totals"`.
+  - `run/symbol-order` prints `true` and `ba` (the spec's ordering criterion) for both intern orders.
+  - `run/symbol-text-outlives` prints `name` after the source `StrBuf` is cleared and refilled.
+  - The literal table is sorted with `""` at index 0 (checked on the `out.c` of `run/symbol-literal-runtime`).
+  - A program without `Symbol` emits no `byn_sym` code.
+  - A public function calling `Symbol.intern` without `uses alloc` reports BYN6002; `void main()` calling it does not (entry exemption, revision 0002).
+  - The suite passes.
+- [x] T6 Field-wise key hashing and map behaviour — files: `src/Bayan.Backend.C/CEmitter.cs` (`KeyHash` → `bynh_hash_<key>` through `Helper`, `KeyEq`, `MapMethod`), `src/Bayan.Semantics/Binding/RegionAnalysis.cs` (only if the `string`-part golden fails), `tests/cases/run/`, `tests/cases/diag/` — covers: R6, R7, R11 — after T3, T5 — done when:
+  - `run/map-key-struct-padding` (a struct `Pad` with fields `bool flag` and `i64 id`, two separately built equal keys) prints `1` and `2`.
+  - `run/map-key-tuple` prints entries in L003 order after a remove and re-insert.
+  - `run/map-key-symbol` covers `contains`, `remove`, `ref m.slot(k)`, `copy(to:)` and a map literal with symbol keys printing in literal order.
+  - `diag/map-key-string-part` reports the same region diagnostic for a `(string name, i32 scope)` key whose `string` dies before the map that a `string` key reports today.
+  - No emitted key hash calls `byn_hash_bytes` with `sizeof` of a struct or tuple.
+  - The suite passes.
+- [x] T7 Self-hosting reach — files: `tests/cases/run/` (`selfhost-symbol-tables.byn`), `tests/Bayan.Tests/TypedDumpTests.cs` — covers: R12 — after T6 — done when:
+  - The R12 program runs and prints the expected lines. It interns identifiers sliced from a source string, looks keywords up in a `Map<Symbol, TokenKind>` literal, resolves names through a `List<Map<Symbol, i32>>` scope chain innermost first, keys by `(i32 scope, Symbol name)` and a `MemberKey` struct with fields `i32 owner` and `Symbol name`, and prints declarations in order.
+  - `bayan types` on it is byte-identical across two runs.
+  - The suite passes.
+- [x] T8 prove L015 via /prove: interning is identity on text — files: `tests/Bayan.Tests/SymbolLawTests.cs` [Trait Law L015], `docs/laws/015-*.md` (status `proposed`, proof notes) — covers: L015 — after T5 — done when:
+  - Over generated texts (ASCII, multi-byte UTF-8, `""`, the program's literals, prefixes and extensions, texts built byte by byte), `intern(a) == intern(b)` holds exactly when `a == b`, and `intern(s).text == s`.
+  - A literal equals its runtime twin. `<` agrees with `string` `<`.
+  - Output is identical under two seeds.
+  - A mutation that numbers literals in source order without the runtime finding them makes the twin property fail.
+  - `dotnet test -v q --filter "Law=L015"` holds.
+- [x] T9 enact L015 "Interning is identity on text" — files: `docs/laws/015-*.md` — covers: L015 — after T8 — done when: `status: enacted` lands in the same change as T8's passing proof (standing authorization, 2026-10-21).
+- [x] T10 prove L016 via /prove: equal keys are one entry — files: `tests/Bayan.Tests/MapKeyLawTests.cs` [Trait Law L016], `tests/Bayan.Tests/MapModelTests.cs` (`Symbol` and composite key generators), `docs/laws/016-*.md` (status `proposed`, proof notes) — covers: L016 — after T6; parallel with T8 — done when:
+  - Over generated key types (tuples and structs of `bool`, `i8`, `i64`, `rune`, `string`, `Symbol`, plain enums and nested structs, in padding-prone orders), `==` keys built separately are one entry with last write winning, and unequal keys are two entries.
+  - L003's model holds over these keys.
+  - Every accepted program compiles standalone with `-Wall -Werror`.
+  - A mutation back to `byn_hash_bytes(&k, sizeof k)` makes the padding case fail.
+  - `dotnet test -v q --filter "Law=L003|Law=L016"` holds.
+- [x] T11 enact L016 "Equal keys are one entry" — files: `docs/laws/016-*.md` — covers: L016 — after T10 — done when: `status: enacted` lands in the same change as T10's passing proof (standing authorization, 2026-10-21).
+- [x] T12 Docs — files: `docs/bayan-handoff.md` (Q371–Q381, progress entry with spend, "Road to self-hosting" row 008), `docs/bayan-spec.md` (§3.3: `Symbol` as shipped; §3.5: `HashMap` deferred to a fix-it, key types; §16 `Map` keys), `docs/bayan-grammar.md` (no grammar change; `HashMap` noted beside the input-form rows with BYN2830), `CHANGELOG.md`, `008-spec.md` status — covers: all — after T7, T9, T11 — done when:
+  - The handoff lists Q371–Q381 with their choices.
+  - The spec and grammar describe what shipped, with `HashMap` as BYN2830 and Q371 open.
+  - The spec status is done.

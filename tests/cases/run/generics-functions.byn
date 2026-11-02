@@ -1,0 +1,42 @@
+struct Point {
+    i64 x
+    i64 y
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Point {{ x: {x}, y: {y} }}")
+    }
+}
+
+T pick<T>(move T a, by move T b, bool first) => first ? move a : move b
+
+string first<T>(ReadOnlySpan<T> xs) {
+    if xs.length == 0 { return "null" }
+    return $"{xs[0]}"
+}
+
+bool same<T>(T a, as T b) => a == b
+
+T twice<T>(move T x, by move T y) => pick(move x, by: move y, first: false)
+
+i64 countDown<T>(T x, from i64 n) {
+    if n == 0 { return 0 }
+    return 1 + countDown(x, from: n - 1)
+}
+
+let one: i64 = 1
+print($"{pick(one, by: 2, first: true)}")
+print(pick("left", by: "right", first: false))
+let p = pick(Point { x: 1, y: 2 }, by: Point { x: 3, y: 4 }, first: true)
+print($"{p}")
+print($"{pick<i64>(5, by: 6, first: false)}")
+
+var xs = List<i64>()
+xs.append(7)
+xs.append(8)
+print($"{first(xs)}")
+let none = List<string>()
+print($"{first(none)}")
+
+print($"{same(1, as: 1)} {same("a", as: "b")} {same(p, as: Point { x: 1, y: 2 })}")
+print(twice("echo", by: "echo"))
+print($"{countDown("x", from: 3)}")

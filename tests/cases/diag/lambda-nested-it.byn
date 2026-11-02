@@ -1,0 +1,21 @@
+bool any(List<i64> xs, by (i64 -> bool) p) {
+    for x in xs {
+        if p(x) {
+            return true
+        }
+    }
+    return false
+}
+
+bool first(List<List<i64>> xss, by (List<i64> -> bool) p) => p(xss[0])
+
+struct Bag {
+    List<i64> items requires any(it, by: it > 0)
+}
+
+void main() {
+    let xss: List<List<i64>> = [[1, 2], [3]]
+    if first(xss, by: any(it, by: it > 1)) {
+        print("found")
+    }
+}

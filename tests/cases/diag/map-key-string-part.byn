@@ -1,0 +1,15 @@
+// A `string` inside a composite key borrows as a `string` key does: one that dies before the map is reported, and a
+// `Symbol` key borrows nothing (spec 008 R7).
+void main() {
+    var plain = Map<string, i32>()
+    var scoped = Map<(string name, i32 scope), i32>()
+    var symbols = Map<(Symbol name, i32 scope), i32>()
+    {
+        using let arena = Arena()
+        let name = "local".copy(to: arena)
+        plain[name] = 1
+        scoped[(name, 0)] = 1
+        symbols[(Symbol.intern(name), 0)] = 1
+    }
+    print($"{plain.length} {scoped.length} {symbols.length}")
+}

@@ -1,20 +1,20 @@
 string name(Day d) {
-    switch (d) {
+    switch d {
         case .sat or .sun:
-            return "weekend";
+            return "weekend"
         case .mon:
-            print("ugh");
-            break;
+            print("ugh")
+            break
         case var other when other.isHoliday:
-            return "holiday";
+            return "holiday"
         default:
-            return "weekday";
+            return "weekday"
     }
     let size = n switch {
         0 => "none",
         1 or 2 => "few",
         < 10 => "some",
         _ => "many",
-    };
-    return size;
+    }
+    return size
 }

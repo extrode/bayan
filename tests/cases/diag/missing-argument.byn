@@ -1,2 +1,2 @@
-i64 area(i64 width, i64 height) => width * height;
-print($"{area(width: 3)}");
+i64 area(i64 width, by i64 height) => width * height
+print($"{area(width: 3)}")

@@ -1,20 +1,27 @@
 error BYN3004: `xs` is modified while `view` still borrows it
 
-  5 │     xs.add(2);
-    │     ^^^^^^^^^ `view` is used again on line 6
+  5 │     xs.append(2)
+    │     ^^^^^^^^^^^^ `view` is used again on line 6
     │
   help: finish using `view` first, or copy what it needs before changing `xs`
 
+error BYN3004: `xs` is modified while `again` still borrows it
+
+  8 │     xs.remove(from: 0, until: 1)
+    │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `again` is used again on line 9
+    │
+  help: finish using `again` first, or copy what it needs before changing `xs`
+
 error BYN3004: `xs` is modified while the `for` loop still borrows it
 
-  8 │         xs.add(x);
-    │         ^^^^^^^^^ the loop over `xs` is still running
-    │
+  11 │         xs.append(x)
+     │         ^^^^^^^^^^^^ the loop over `xs` is still running
+     │
   help: collect the changes in another list and apply them to `xs` after the loop
 
 error BYN3004: `arena` is modified while `name` still borrows it
 
-  12 │     arena.reset();
-     │     ^^^^^^^^^^^^^ `name` is used again on line 13
+  15 │     arena.reset()
+     │     ^^^^^^^^^^^^^ `name` is used again on line 16
      │
   help: finish using `name` first, or copy what it needs before changing `arena`

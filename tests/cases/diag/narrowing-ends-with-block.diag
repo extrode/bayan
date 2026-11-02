@@ -1,0 +1,4 @@
+error BYN2208: `+` cannot be applied to `i64?` and `i64`
+
+  5 │     return p + 1
+    │            ^^^^^

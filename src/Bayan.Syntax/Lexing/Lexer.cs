@@ -22,15 +22,10 @@ public static class Lexer
         return new LexResult(source, state.Tokens, state.Count, diagnostics.Items);
     }
 
-    internal static bool IsIdentifierStart(Rune r) =>
-        r.Value == '_' || Rune.GetUnicodeCategory(r) is UnicodeCategory.UppercaseLetter
-            or UnicodeCategory.LowercaseLetter or UnicodeCategory.TitlecaseLetter or UnicodeCategory.ModifierLetter
-            or UnicodeCategory.OtherLetter or UnicodeCategory.LetterNumber;
+    internal static bool IsIdentifierStart(Rune r) => Nfc.InRanges(UnicodeTables.IdentStartRanges, r.Value);
 
     internal static bool IsIdentifierContinue(Rune r) =>
-        IsIdentifierStart(r) || r.Value is 0x200C or 0x200D || Rune.GetUnicodeCategory(r) is
-            UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark
-            or UnicodeCategory.DecimalDigitNumber or UnicodeCategory.ConnectorPunctuation;
+        IsIdentifierStart(r) || Nfc.InRanges(UnicodeTables.IdentContinueRanges, r.Value);
 
     /// <summary>Length of the bidi control character at <paramref name="pos"/>, or 0.</summary>
     internal static int BidiControlAt(ReadOnlySpan<byte> text, int pos, out int codePoint)
@@ -217,7 +212,12 @@ internal ref struct LexerState
                         Report(DiagnosticCodes.UnterminatedComment, new TextSpan(start, 2), label: "comment starts here",
                             help: "close it with `*/`");
                     else
+                    {
                         _pos += 2;
+                        var span = new TextSpan(start, _pos - start);
+                        Report(DiagnosticCodes.BlockComment, span, label: "block comment", help: "write each line with `//`",
+                            fix: new Fix(span, LineComments(start, _pos)));
+                    }
                     _flags |= TokenFlags.TriviaBefore;
                     continue;
                 }
@@ -230,6 +230,41 @@ internal ref struct LexerState
                     return;
             }
         }
+    }
+
+    /// <summary>
+    /// BYN1047's fix for the comment <c>[start, end)</c>: one <c>//</c> line per trimmed content line, the outer
+    /// blank lines dropped, at the indent of the <c>/*</c> line; code after <c>*/</c> moves to its own line.
+    /// </summary>
+    private readonly string LineComments(int start, int end)
+    {
+        var lineStart = start;
+        while (lineStart > 0 && _text[lineStart - 1] != '\n') lineStart--;
+        var indentEnd = lineStart;
+        while (indentEnd < start && _text[indentEnd] is (byte)' ' or (byte)'\t') indentEnd++;
+        var indent = Encoding.UTF8.GetString(_text[lineStart..indentEnd]);
+        var lines = new List<string>();
+        var content = _text[(start + 2)..(end - 2)];
+        while (true)
+        {
+            var newline = content.IndexOf((byte)'\n');
+            var line = (newline < 0 ? content : content[..newline]).Trim(" \t\r"u8);
+            lines.Add(Encoding.UTF8.GetString(line));
+            if (newline < 0) break;
+            content = content[(newline + 1)..];
+        }
+        if (lines.Count > 1 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        if (lines.Count > 1 && lines[0].Length == 0) lines.RemoveAt(0);
+        var sb = new StringBuilder();
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (i > 0) sb.Append('\n').Append(indent);
+            sb.Append(lines[i].Length == 0 ? "//" : "// " + lines[i]);
+        }
+        var after = end;
+        while (after < _text.Length && _text[after] is (byte)' ' or (byte)'\t' or (byte)'\r') after++;
+        if (after < _text.Length && _text[after] != '\n') sb.Append('\n').Append(indent);
+        return sb.ToString();
     }
 
     private readonly bool AtLineStart() => _pos == 0 || _text[_pos - 1] == '\n';
@@ -348,6 +383,7 @@ internal ref struct LexerState
                     (byte)'=' => TokenKind.MinusEquals,
                     (byte)'%' => TokenKind.MinusPercent,
                     (byte)'|' => TokenKind.MinusBar,
+                    (byte)'>' => TokenKind.Arrow,
                     _ => TokenKind.Minus,
                 });
                 return;
@@ -430,12 +466,12 @@ internal ref struct LexerState
         if (!ascii)
         {
             var text = Encoding.UTF8.GetString(span);
-            if (!text.IsNormalized(NormalizationForm.FormC))
+            if (!Nfc.IsNfc(text))
             {
-                var normalized = text.Normalize(NormalizationForm.FormC);
+                var normalized = Nfc.ToNfc(text);
                 Report(DiagnosticCodes.IdentifierNotNfc, new TextSpan(start, _pos - start), [text],
                     label: "same letters, different encoding",
-                    help: "identifiers that look the same must be byte-identical; use the composed (NFC) form",
+                    help: "use the composed (NFC) form; identifiers that look the same must be byte-identical",
                     fix: new Fix(new TextSpan(start, _pos - start), normalized));
             }
             Add(TokenKind.Identifier, start, _pos - start);
@@ -730,7 +766,7 @@ internal ref struct LexerState
                 if (digits > 6 || value > 0x10FFFF || value is >= 0xD800 and <= 0xDFFF)
                     Report(DiagnosticCodes.InvalidUnicodeEscape, TextSpan.FromBounds(start, _pos),
                         [Encoding.UTF8.GetString(_text[start.._pos])],
-                        help: "scalar values are U+0000–U+D7FF and U+E000–U+10FFFF");
+                        help: "use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF");
                 return;
             }
             default:
@@ -738,7 +774,7 @@ internal ref struct LexerState
                 AdvanceCodePoint(allowBidi: true);
                 Report(DiagnosticCodes.InvalidEscape, TextSpan.FromBounds(start, _pos),
                     [Encoding.UTF8.GetString(_text[start.._pos])],
-                    help: "valid escapes are \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}");
+                    help: "use a valid escape: \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}");
                 return;
             }
         }

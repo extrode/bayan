@@ -1,0 +1,9 @@
+@sealed
+public struct HttpClientOptions {
+    i64 timeout
+    i32 retries
+}
+
+void tune(ref HttpClientOptions options) {
+    options.retries = 5
+}

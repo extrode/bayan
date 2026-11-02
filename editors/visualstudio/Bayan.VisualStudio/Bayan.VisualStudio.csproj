@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- VisualStudio.Extensibility (out-of-process) extension. Build on Windows with VS 2022 17.10+ installed. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.Extensibility.Sdk" Version="17.12.40390" />
+    <PackageReference Include="Microsoft.VisualStudio.Extensibility.Build" Version="17.12.40390" />
+    <PackageReference Include="Nerdbank.Streams" Version="2.11.79" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\vscode\syntaxes\bayan.tmLanguage.json" Link="Grammars\bayan.tmLanguage.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

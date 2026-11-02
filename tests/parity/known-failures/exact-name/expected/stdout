@@ -1,0 +1,3 @@
+new failure: Bayan.Tests.P.Check(name: "diag/x/other.byn")
+not run: Bayan.Tests.P.Check(name: "diag/x/main.byn")
+known-failures: 2 failed, 1 known, 1 new, 0 now passing

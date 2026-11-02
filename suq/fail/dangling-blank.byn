@@ -1,0 +1,4 @@
+// expect: statement continues into a blank line
+let total = subtotal +
+
+    shipping

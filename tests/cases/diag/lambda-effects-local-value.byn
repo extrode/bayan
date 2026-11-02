@@ -1,0 +1,20 @@
+void run(by (() -> void uses console) f) { f() }
+
+void pure(by (() -> void) f) { f() }
+
+public void undeclared() {
+    let g: () -> void uses console = () => print("x")
+    run(by: g)
+}
+
+public void declared() uses console {
+    let g: () -> void uses console = () => print("x")
+    run(by: g)
+}
+
+public void quiet() {
+    let h: () -> void = () => {}
+    pure(by: h)
+}
+
+void main() {}

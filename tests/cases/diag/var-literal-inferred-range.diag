@@ -1,0 +1,21 @@
+error BYN2203: 300 does not fit in `u8`
+
+  3 │ var n = 300
+    │         ^^^
+    │
+  help: use a value from 0 to 255, the range of `u8`
+
+error BYN2203: -1 does not fit in `u64`
+
+  8 │ var m = -1
+    │         ^^
+    │
+  help: use a value from 0 to 18446744073709551615, the range of `u64`
+
+error BYN2760: `f64` cannot be a `Map` key
+
+  31 │     var idx: Index<f64>
+     │              ^^^^^^^^^^ the generic code needs this of its type arguments
+     │
+  help: use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct
+        of those as the key

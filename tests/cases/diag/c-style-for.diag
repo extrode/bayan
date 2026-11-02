@@ -3,4 +3,4 @@ error BYN1015: C-style `for` loops do not exist in Bayan
   2 │     for (var i = 0; i < 10; i++) {
     │                ^ expected `in`
     │
-  help: loop over a range instead: `for (let i in 0..n) { … }`
+  help: loop over a range instead: `for i in 0..n { … }`

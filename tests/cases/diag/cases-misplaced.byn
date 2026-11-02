@@ -1,0 +1,21 @@
+@cases(1, 2)
+void step() { }
+
+union error StepError {
+    @cases(1)
+    timedOut
+}
+
+test "takes values" (i32 n, bool ok) {
+    assert(ok)
+}
+
+@cases(1)
+@cases(2)
+test "twice" (i32 n) {
+    assert(n > 0)
+}
+
+void main() {
+    step()
+}

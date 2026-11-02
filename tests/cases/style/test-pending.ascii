@@ -1,0 +1,7 @@
+# bayan --ascii test <dir>/tally
+exit: 0
+--- stdout ---
+running 2 tests in 1 module
+
+[38;2;143;214;148m*[0m 1 passed - 1 pending - 0.00s
+--- stderr ---

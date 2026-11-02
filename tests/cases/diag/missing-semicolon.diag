@@ -1,6 +1,0 @@
-error BYN1005: expected `;` after the statement
-
-  1 │ let a = 1
-    │          ^ add `;` here
-    │
-    │ 1 │ let a = 1;

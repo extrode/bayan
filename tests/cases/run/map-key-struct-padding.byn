@@ -1,0 +1,20 @@
+// Two `==` keys built separately are one entry: a struct key hashes its fields, never its padding (spec 008 R6).
+struct Pad {
+    bool flag
+    i64 id
+}
+
+Pad build(i64 id) {
+    var p = Pad { flag: false, id: 0 }
+    p.flag = true
+    p.id = id
+    return p
+}
+
+void main() {
+    var m = Map<Pad, i32>()
+    m[Pad { flag: true, id: 7 }] = 1
+    m[build(7)] = 2
+    print($"{m.length}")
+    print($"{m[Pad { flag: true, id: 7 }]}")
+}

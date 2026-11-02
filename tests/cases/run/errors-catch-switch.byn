@@ -1,0 +1,55 @@
+union error EmailError {
+    /// Not an address.
+    invalid
+    /// Already registered.
+    taken
+}
+
+union error DbError {
+    /// The database took too long.
+    timeout
+    /// The connection dropped.
+    lost
+    /// The row is gone.
+    missing
+}
+
+union error SignupError = EmailError, DbError
+
+i64 signUp(i64 n) fails SignupError {
+    fail .invalid if n == 1
+    fail .taken if n == 2
+    fail .timeout if n == 3
+    fail .lost if n == 4
+    fail .missing if n == 5
+    return n * 100
+}
+
+i64 code(DbError e) => e == .lost ? 40 : 50
+
+i64 handle(i64 n) => signUp(n) catch switch {
+    EmailError => 10,
+    DbError.timeout => 30,
+    DbError e => code(e),
+}
+
+void check(i64 n) fails SignupError {
+    let _ = try signUp(n)
+}
+
+void report(i64 n) {
+    check(n) catch switch {
+        EmailError.taken => print("taken"),
+        EmailError e => print(e == .invalid ? "invalid" : "?"),
+        _ => print("database"),
+    }
+}
+
+void main() {
+    for i in 0..7 {
+        print($"{i}: {handle(i)}")
+    }
+    report(1)
+    report(2)
+    report(4)
+}

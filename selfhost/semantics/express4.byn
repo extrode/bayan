@@ -1,0 +1,734 @@
+// T35: BinderExpressions.cs ~1641-2158 (collections, map/tuple, spread, lambdas, stackalloc, interpolation).
+
+import parser
+
+/// BinderExpressions.cs:1641 BindCollection.
+BExpr bindCollection(ref Binder b, through ref Ctx c, for in parser.CollectionExpr coll, to Type expected) {
+    let target = expected != -1 && kindOf(expected) == .optional ? c.optionalTypes[typeIndex(expected)] : expected
+    for e in coll.elements {
+        if e is .mapEntryExpr(_) { return bindMapLiteral(ref b, through: ref c, for: in coll, to: target) }
+    }
+    if target != -1 && kindOf(target) == .map && coll.elements.length == 0 { return addCollection(ref c, from: BCollection { span: coll.span, type: target }) }
+    let element = t35ElementOf(ref c, for: target)
+    if element == -1 && target == -1 && coll.elements.length > 0 {
+        return t35BindUntypedCollection(ref b, through: ref c, for: in coll)
+    }
+    if element == -1 {
+        if target == -1 || isError(target) {
+            if target == -1 {
+                report(ref b, through: ref c, for: .noTargetType, at: coll.span, by: ("[ … ]", "", "", "", ""), help: "declare the type: `List<i64> xs = [1, 2]`")
+            }
+        } else {
+            report(ref b, through: ref c, for: .typeMismatch, at: coll.span, by: ("a collection literal", typeDisplay(ref c, by: target), "", "", ""))
+        }
+        for e in coll.elements { let _ = bindExpr(ref b, through: ref c, for: in e) }
+        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+    }
+    var elements = List<BExpr>()
+    for e in coll.elements {
+        switch e {
+            case .spreadExpr(let s): elements.append(bindSpread(ref b, through: ref c, for: in s.value, to: element))
+            default: elements.append(bindConverted(ref b, through: ref c, for: in e, to: element))
+        }
+    }
+    return t35FinishCollection(ref b, through: ref c, for: in coll, to: target, from: in elements)
+}
+
+/// The C# `target switch { ListType l => l.Element, SpanType s => s.Element, ArrayType a => a.Element, _ => null }`
+/// (BinderExpressions.cs:1646, :1734); -1 for null.
+Type t35ElementOf(ref Ctx c, for Type t) {
+    if t == -1 { return -1 }
+    switch kindOf(t) {
+        case .list: return c.listTypes[typeIndex(t)]
+        case .span: return c.spanTypes[typeIndex(t)].element
+        case .array: return c.arrayTypes[typeIndex(t)].element
+        default: return -1
+    }
+}
+
+/// `type is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never }` (BinderExpressions.cs:1683, :1805, :1870).
+bool t35CannotInfer(Type t) => kindOf(t) == .nullType || isVoid(t) || isNever(t)
+
+/// BinderExpressions.cs:1674 BindUntypedCollection: `[1, 2, 3]` with no target type, a fixed array of the first element's type.
+BExpr t35BindUntypedCollection(ref Binder b, through ref Ctx c, for in parser.CollectionExpr coll) {
+    var first: BExpr = -1
+    switch coll.elements[0] {
+        case .spreadExpr(let s): first = bindSpread(ref b, through: ref c, for: in s.value, to: -1)
+        default: first = bindExpr(ref b, through: ref c, for: in coll.elements[0])
+    }
+    let element = exprType(in c, for: first)
+    let span0 = parser.exprSpan(in coll.elements[0])
+    if isError(element) {
+        for i in 1..coll.elements.length { let _ = bindExpr(ref b, through: ref c, for: in coll.elements[i]) }
+        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+    }
+    if t35CannotInfer(element) {
+        report(ref b, through: ref c, for: .cannotInferType, at: span0, by: (t15Text(in c, from: b.file, at: span0), "", "", "", ""), help: "declare the type: `List<i64> xs = [1, 2]`")
+        for i in 1..coll.elements.length { let _ = bindExpr(ref b, through: ref c, for: in coll.elements[i]) }
+        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+    }
+    if functionTypeNotHere(ref c, for: element, from: b.file, at: span0, as: "an array element") {
+        for i in 1..coll.elements.length { let _ = bindExpr(ref b, through: ref c, for: in coll.elements[i]) }
+        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+    }
+    if boundKind(first) != .spread { first = convert(ref b, through: ref c, for: first, to: element, at: span0) }
+    var elements = List<BExpr>()
+    elements.append(first)
+    for i in 1..coll.elements.length {
+        switch coll.elements[i] {
+            case .spreadExpr(let s): elements.append(bindSpread(ref b, through: ref c, for: in s.value, to: element))
+            default: elements.append(bindConverted(ref b, through: ref c, for: in coll.elements[i], to: element))
+        }
+    }
+    let array = internArray(ref c, by: element, at: t35KnownLength(ref c, for: in elements) ?? elements.length)
+    return t35FinishCollection(ref b, through: ref c, for: in coll, to: array, from: in elements)
+}
+
+/// BinderExpressions.cs:1700 FinishCollection: spreads into stack storage must have a compile-time length. `elements[i]` is
+/// bound from `coll.elements[i]`, so C#'s `BoundErrorExpr { Syntax: SpreadExpr }` is an error bound from a spread element (Q675).
+BExpr t35FinishCollection(ref Binder b, through ref Ctx c, for in parser.CollectionExpr coll, to Type target, from in List<BExpr> elements) {
+    for i in 0..elements.length {
+        if boundKind(elements[i]) == .errorExpr && coll.elements[i] is .spreadExpr(_) { return addErrorExpr(ref c, from: BErrorExpr { span: coll.span }) }
+    }
+    if kindOf(target) != .list {
+        for e in elements {
+            if boundKind(e) != .spread { continue }
+            let operand = c.bSpreads[boundIndex(e)].operand
+            let operandType = exprType(in c, for: operand)
+            if kindOf(operandType) == .array { continue }
+            let openSpan = c.bSpreads[boundIndex(e)].span
+            let openType = c.bSpreads[boundIndex(e)].type
+            let text = t15Text(in c, from: b.file, at: openSpan)
+            let shape = kindOf(target) == .span ? "Span" : "T[N]"
+            report(ref b, through: ref c, for: .notConstant, at: openSpan, by: ($"the length of `{text}` in a `{shape}` literal", "", "", "", ""),
+                label: $"a `{typeDisplay(ref c, by: operandType)}` has a run-time length",
+                help: $"spread a fixed array `T[N]` here, or build a list: `List<{typeDisplay(ref c, by: openType)}> all = {t15Text(in c, from: b.file, at: coll.span)}`")
+            return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+        }
+    }
+    if kindOf(target) == .array {
+        let known = t35KnownLength(ref c, for: in elements)
+        if known is null || c.arrayTypes[typeIndex(target)].length != known {
+            let knownText = known is { } k ? $"{k}" : ""
+            report(ref b, through: ref c, for: .arrayLengthMismatch, at: coll.span, by: (typeDisplay(ref c, by: target), knownText, "", "", ""))
+        }
+    }
+    var copy = List<BExpr>()
+    for e in elements { copy.append(e) }
+    return addCollection(ref c, from: BCollection { span: coll.span, type: target, elements: move copy })
+}
+
+/// BinderExpressions.cs:1717 KnownLength: each spread fixed array counts its length; null if a spread's length is known only at run time.
+i64? t35KnownLength(ref Ctx c, for in List<BExpr> elements) {
+    var n: i64 = 0
+    for e in elements {
+        if boundKind(e) != .spread {
+            n += 1
+        } else {
+            let operandType = exprType(in c, for: c.bSpreads[boundIndex(e)].operand)
+            if kindOf(operandType) == .array { n += c.arrayTypes[typeIndex(operandType)].length } else { return null }
+        }
+    }
+    return n
+}
+
+/// BinderExpressions.cs:1730 BindSpread: `..xs` in a list, span or array literal; any element type when `element` is -1.
+BExpr bindSpread(ref Binder b, through ref Ctx c, for in parser.SpreadExpr s, to Type element) {
+    let operand = bindExpr(ref b, through: ref c, for: in s.operand)
+    let operandType = exprType(in c, for: operand)
+    if isError(operandType) { return addErrorExpr(ref c, from: BErrorExpr { span: s.span }) }
+    let item = t35ElementOf(ref c, for: operandType)
+    let text = t15Text(in c, from: b.file, at: parser.exprSpan(in s.operand))
+    if item == -1 {
+        var help = "spread a `List`, `Span` or fixed array; a single value goes in without `..`"
+        if element != -1 && implicit(ref c, from: operandType, to: element) is not null { help = $"drop the `..` to add `{text}` as one element" }
+        report(ref b, through: ref c, for: .spreadNotSequence, at: s.span, by: (text, typeDisplay(ref c, by: operandType), "", "", ""),
+            label: "not a `List`, `Span` or fixed array", help: help)
+        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+    }
+    if element != -1 && item != element {
+        let itemName = typeDisplay(ref c, by: item)
+        let elementName = typeDisplay(ref c, by: element)
+        report(ref b, through: ref c, for: .typeMismatch, at: s.span, by: (itemName, elementName, "", "", ""),
+            label: $"`{text}` holds `{itemName}`",
+            help: $"spread a sequence of `{elementName}`, or change the literal's element type to `{itemName}`")
+        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+    }
+    if isUnique(ref c, for: item) {
+        report(ref b, through: ref c, for: .unsupported, at: s.span, by: ($"spreading elements that own memory (`{typeDisplay(ref c, by: item)}`)", "", "", "", ""),
+            help: "add the elements one at a time with `move`")
+        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+    }
+    return addSpread(ref c, from: BSpread { span: s.span, operand: operand, type: item })
+}
+
+/// BinderExpressions.cs:1768 BindMapLiteral: `["k": v, …]`, a `Map` typed by the target or, without one, by the first entry.
+/// C#'s `entries` array is `coll.elements` from index `start` (every element is an entry past the first check).
+BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionExpr coll, to Type target) {
+    for e in coll.elements {
+        if e is .mapEntryExpr(_) { continue }
+        report(ref b, through: ref c, for: .mapLiteralMixed, at: parser.exprSpan(in e), by: ("", "", "", "", ""), label: "no `key:` here",
+            help: "write every element as `key: value`, or remove the keys to make a list")
+        for x in coll.elements { t35BindMapPart(ref b, through: ref c, for: in x) }
+        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+    }
+    var parts = List<BExpr>()
+    var map: Type = -1
+    var start: i64 = 0
+    if target != -1 && kindOf(target) == .map {
+        map = target
+    } else if target == -1 {
+        switch coll.elements[0] {
+            case .mapEntryExpr(let first):
+                let keySpan = parser.exprSpan(in first.value.key)
+                let valueSpan = parser.exprSpan(in first.value.value)
+                let key = bindExpr(ref b, through: ref c, for: in first.value.key)
+                let value = bindExpr(ref b, through: ref c, for: in first.value.value)
+                let keyType = exprType(in c, for: key)
+                let valueType = exprType(in c, for: value)
+                if isError(keyType) || isError(valueType) {
+                    for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
+                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                }
+                if !isValidKey(ref c, by: keyType) {
+                    if (invalidKeyPart(ref c, by: keyType) is { } part) {
+                        report(ref b, through: ref c, for: .keyPartNotHashable, at: keySpan,
+                            by: (typeDisplay(ref c, by: keyType), kindOf(keyType) == .tuple ? "element" : "field", part.part, typeDisplay(ref c, by: part.type), ""),
+                            help: "use a field that identifies the value as the key, such as an id or a `Symbol`")
+                    } else {
+                        report(ref b, through: ref c, for: .invalidMapKey, at: keySpan, by: (typeDisplay(ref c, by: keyType), "", "", "", ""),
+                            help: "use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct of those as the key")
+                    }
+                    for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
+                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                }
+                if t35CannotInfer(valueType) {
+                    report(ref b, through: ref c, for: .cannotInferType, at: valueSpan, by: (t15Text(in c, from: b.file, at: valueSpan), "", "", "", ""),
+                        help: $"declare the type: `Map<{typeDisplay(ref c, by: keyType)}, i64?> m = [ … ]`")
+                    for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
+                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                }
+                if functionTypeNotHere(ref c, for: valueType, from: b.file, at: valueSpan, as: "a map value") {
+                    for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
+                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                }
+                map = internMap(ref c, by: keyType, to: valueType)
+                parts.append(convert(ref b, through: ref c, for: key, to: keyType, at: keySpan))
+                parts.append(convert(ref b, through: ref c, for: value, to: valueType, at: valueSpan))
+                start = 1
+            default: {}
+        }
+    } else {
+        if !isError(target) {
+            report(ref b, through: ref c, for: .typeMismatch, at: coll.span, by: ("a map literal", typeDisplay(ref c, by: target), "", "", ""))
+        }
+        for x in coll.elements { t35BindMapPart(ref b, through: ref c, for: in x) }
+        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+    }
+    let keyType = c.mapTypes[typeIndex(map)].key
+    let valueType = c.mapTypes[typeIndex(map)].value
+    for i in start..coll.elements.length {
+        switch coll.elements[i] {
+            case .mapEntryExpr(let e):
+                parts.append(bindConverted(ref b, through: ref c, for: in e.value.key, to: keyType))
+                parts.append(bindConverted(ref b, through: ref c, for: in e.value.value, to: valueType))
+            default: {}
+        }
+    }
+    for p in parts {
+        if isError(exprType(in c, for: p)) { return addErrorExpr(ref c, from: BErrorExpr { span: coll.span }) }
+    }
+    return addCollection(ref c, from: BCollection { span: coll.span, type: map, elements: move parts })
+}
+
+/// BinderExpressions.cs:1838 BindMapPart: binds the parts of a map literal element for recovery.
+void t35BindMapPart(ref Binder b, through ref Ctx c, for in parser.Expr e) {
+    switch e {
+        case .mapEntryExpr(let entry):
+            let _ = bindExpr(ref b, through: ref c, for: in entry.value.key)
+            let _ = bindExpr(ref b, through: ref c, for: in entry.value.value)
+        case .spreadExpr(let s):
+            let _ = bindExpr(ref b, through: ref c, for: in s.value.operand)
+        default:
+            let _ = bindExpr(ref b, through: ref c, for: in e)
+    }
+}
+
+/// BinderExpressions.cs:1849 BindTuple.
+BExpr bindTuple(ref Binder b, through ref Ctx c, for in parser.TupleExpr t, to Type expected) {
+    let target = expected != -1 && kindOf(expected) == .optional ? c.optionalTypes[typeIndex(expected)] : expected
+    if target != -1 && kindOf(target) == .tuple && c.tupleTypes[typeIndex(target)].length == t.elements.length {
+        var values = List<BExpr>()
+        for i in 0..t.elements.length {
+            let fieldName = c.tupleTypes[typeIndex(target)][i].name
+            let fieldType = c.tupleTypes[typeIndex(target)][i].type
+            if (t.elements[i].name is { } n) {
+                if (fieldName is { } fname) {
+                    let text = t15Text(in c, from: b.file, at: n)
+                    if text != fname { report(ref b, through: ref c, for: .tupleNameMismatch, at: n, by: (text, fname, "", "", "")) }
+                }
+            }
+            values.append(bindConverted(ref b, through: ref c, for: in t.elements[i].value, to: fieldType))
+        }
+        return addTuple(ref c, from: BTuple { span: t.span, tupleType: target, elements: move values })
+    }
+    var elements = List<BExpr>()
+    for e in t.elements { elements.append(bindExpr(ref b, through: ref c, for: in e.value)) }
+    var anyError = target != -1 && isError(target)
+    for e in elements {
+        if isError(exprType(in c, for: e)) { anyError = true }
+    }
+    if anyError { return addErrorExpr(ref c, from: BErrorExpr { span: t.span }) }
+    var fields = List<TupleField>()
+    for i in 0..elements.length {
+        let type = exprType(in c, for: elements[i])
+        if t35CannotInfer(type) {
+            report(ref b, through: ref c, for: .cannotInferType, at: t.elements[i].span, by: (t15Text(in c, from: b.file, at: t.elements[i].span), "", "", "", ""))
+            return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+        }
+        var name: string? = null
+        if (t.elements[i].name is { } n) { name = t15Text(in c, from: b.file, at: n) }
+        fields.append(TupleField { name: name, type: type })
+    }
+    var notHere: i64 = 0
+    for i in 0..fields.length {
+        if functionTypeNotHere(ref c, for: fields[i].type, from: b.file, at: parser.exprSpan(in t.elements[i].value), as: "a tuple element") { notHere += 1 }
+    }
+    if notHere > 0 { return addErrorExpr(ref c, from: BErrorExpr { span: t.span }) }
+    let tupleType = internTuple(ref c, for: in fields)
+    return addTuple(ref c, from: BTuple { span: t.span, tupleType: tupleType, elements: move elements })
+}
+
+/// BinderExpressions.cs:1888 BindLambda: a lambda, lifted to a `.lambda` function of the module and bound inline with its own
+/// scope, loops and `return`; the outer locals it reads are its captures (spec 007 R6, R8). `expected` -1 is C#'s null.
+BExpr bindLambda(ref Binder b, through ref Ctx c, at TextSpan span, for in List<TextSpan> parameters, from in parser.Expr? body, by in parser.BlockStmt? block, to Type expected) {
+    if expected == -1 {
+        report(ref b, through: ref c, for: .noTargetType, at: span, by: (t15Text(in c, from: b.file, at: span), "", "", "", ""),
+            help: "write the function type it has, such as `let f: i64 -> i64 = x => x`")
+        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+    }
+    let fi = typeIndex(expected)
+    let count = c.functionTypes[fi].parameters.length
+    if parameters.length != count {
+        var names = "x"
+        if count != 1 {
+            var sb = StrBuf()
+            sb.append("(")
+            for i in 0..count {
+                if i > 0 { sb.append(", ") }
+                sb.append($"{rune(u32(0x61 + i))}")
+            }
+            sb.append(")")
+            names = $"{sb.finish()}"
+        }
+        report(ref b, through: ref c, for: .lambdaArity, at: span, by: ($"{parameters.length}", typeDisplay(ref c, by: expected), $"{count}", "", ""),
+            help: $"write {count} parameter name(s): `{names} => …`")
+        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+    }
+    if b.fn == -1 {
+        report(ref b, through: ref c, for: .unsupported, at: span, by: ("a lambda outside a function body", "", "", "", ""))
+        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+    }
+    // Numbered in the order the enclosing function's lambdas are bound, which is source order (L009).
+    let ordinal = (b.lambdaCount.tryGet(at: b.fn) ?? 0) + 1
+    b.lambdaCount[b.fn] = ordinal
+    var errorSets = List<ErrorSetId>()
+    for e in c.functionTypes[fi].errorSets { errorSets.append(e) }
+    var paramTypes = List<Type>()
+    for p in c.functionTypes[fi].parameters { paramTypes.append(p) }
+    let module = c.files[b.file].module
+    let hasFails = errorSets.length > 0
+    let lambda = newFunction(ref c, by: FunctionSymbol {
+        name: $"{c.functions[b.fn].name}$lambda{ordinal}",
+        span: span,
+        module: module,
+        kind: .lambda,
+        file: b.file,
+        returnType: c.functionTypes[fi].ret,
+        hasFails: hasFails,
+        enclosing: b.fn,
+        errorSets: move errorSets,
+    })
+    c.modules[module].allFunctions.append(lambda)
+    // `break`, `continue`, `return` and `defer` in the body are the lambda's own.
+    let fn = b.fn
+    var targets = List<JumpTarget>()
+    for t in b.targets { targets.append(t) }
+    let deferDepth = b.deferDepth
+    let inPanicHandler = b.inPanicHandler
+    let firstStatementFile = b.firstStatementFile
+    let firstStatementSpan = b.firstStatementSpan
+    b.fn = lambda
+    b.deferDepth = 0
+    b.inPanicHandler = false
+    b.firstStatementFile = -1
+    b.targets = List<JumpTarget>()
+    b.lambdas.append((lambda, List<BExpr>()))
+    pushScope(ref b)
+    for i in 0..parameters.length {
+        checkValueName(ref b, through: ref c, at: parameters[i])
+        let local = newLocal(ref c, by: LocalSymbol {
+            name: t15Text(in c, from: b.file, at: parameters[i]),
+            nameSpan: parameters[i],
+            span: parameters[i],
+            type: paramTypes[i],
+            kind: .parameter,
+            id: b.nextLocalId,
+            isParameter: true,
+            modifier: .none,
+            ordinal: i,
+        })
+        b.nextLocalId += 1
+        addLocal(ref b, through: ref c, at: parameters[i], for: local)
+    }
+    var lambdaParams = List<LocalId>()
+    for l in c.functions[lambda].locals {
+        if c.locals[l].isParameter { lambdaParams.append(l) }
+    }
+    for l in lambdaParams { c.functions[lambda].parameters.append(l) }
+    var lambdaBody: BStmt = -1
+    if (block is { } blk) {
+        lambdaBody = bindBlock(ref b, through: ref c, for: in blk)
+    } else if (body is { } e) {
+        var statements = List<BStmt>()
+        statements.append(bindExpressionBody(ref b, through: ref c, for: in e))
+        lambdaBody = addBlock(ref c, from: BBlock { span: parser.exprSpan(in e), statements: move statements })
+    }
+    c.functions[lambda].body = lambdaBody
+    popScope(ref b)
+    var captures = List<BExpr>()
+    switch b.lambdas[b.lambdas.length - 1] {
+        case (let _, let caps):
+            for x in caps { captures.append(x) }
+    }
+    b.lambdas.remove(at: b.lambdas.length - 1)
+    for t in targets { b.targets.append(t) }
+    b.fn = fn
+    b.deferDepth = deferDepth
+    b.inPanicHandler = inPanicHandler
+    b.firstStatementFile = firstStatementFile
+    b.firstStatementSpan = firstStatementSpan
+    return addLambda(ref c, from: BLambda { span: span, lambda: lambda, captures: move captures, functionType: expected })
+}
+
+/// BinderExpressions.cs:1950 InLambda: a read of `this` inside a lambda, which does not capture it: BYN2821 (spec 007 R8).
+bool inLambda(ref Binder b, through ref Ctx c, at TextSpan span, for string name, by string reason) {
+    if b.fn == -1 || c.functions[b.fn].kind != .lambda { return false }
+    report(ref b, through: ref c, for: .cannotCapture, at: span, by: (name, reason, "", "", ""), help: "copy the fields you need into `let` values first")
+    return true
+}
+
+/// The lambda of `b.lambdas[i]` (C# `_lambdas[i].Lambda`).
+FuncId t35LambdaAt(in Binder b, at i64 i) {
+    switch b.lambdas[i] {
+        case (let lambda, let _): return lambda
+    }
+}
+
+/// BinderExpressions.cs:1961 Capture: records `local`, read as `type`, as a capture of each lambda being bound that it is outer
+/// to; false after BYN2821 when it is mutable or a parameter with a modifier (spec 007 R8).
+bool capture(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by LocalId local, as Type type) {
+    if b.lambdas.length == 0 || listContains(in c.functions[t35LambdaAt(in b, at: b.lambdas.length - 1)].locals, by: local) { return true }
+    var reason: string? = null
+    var help = ""
+    if c.locals[local].isParameter && c.locals[local].modifier != .none {
+        var m = ""
+        switch c.locals[local].modifier {
+            case .refKeyword: m = "ref"
+            case .moveKeyword: m = "move"
+            case .outKeyword: m = "out"
+            case .inKeyword: m = "in"
+            case .none: m = "none"
+        }
+        reason = $"it is a `{m}` parameter"
+        help = "pass it as a plain parameter"
+    } else if localIsMutable(ref c, by: local) {
+        reason = "it is a `var`"
+        help = "copy it into a `let` first"
+    }
+    if (reason is { } why) {
+        report(ref b, through: ref c, for: .cannotCapture, at: n.span, by: (c.locals[local].name, why, "", "", ""), help: help)
+        return false
+    }
+    var i = b.lambdas.length - 1
+    while i >= 0 && !listContains(in c.functions[t35LambdaAt(in b, at: i)].locals, by: local) {
+        let lambda = t35LambdaAt(in b, at: i)
+        if listContains(in c.functions[lambda].captures, by: local) {
+            i -= 1
+            continue
+        }
+        c.functions[lambda].captures.append(local)
+        let read = addLocalNode(ref c, at: n.span, for: local)
+        c.bLocals[boundIndex(read)].type = type
+        var caps = List<BExpr>()
+        switch b.lambdas[i] {
+            case (let _, let old):
+                for x in old { caps.append(x) }
+        }
+        caps.append(read)
+        b.lambdas[i] = (lambda, move caps)
+        i -= 1
+    }
+    return true
+}
+
+/// BinderExpressions.cs:1985 BindStackalloc.
+BExpr bindStackalloc(ref Binder b, through ref Ctx c, for in parser.StackallocExpr s) {
+    let element = resolveType(ref b, through: ref c, for: in s.element)
+    let count = bindConverted(ref b, through: ref c, for: in s.count, to: prim(.i64))
+    if isError(element) || isError(exprType(in c, for: count)) { return addErrorExpr(ref c, from: BErrorExpr { span: s.span }) }
+    let countSpan = parser.exprSpan(in s.count)
+    let k = exprConstant(in c, for: count)
+    if k is null || k.kind != .integer {
+        report(ref b, through: ref c, for: .notConstant, at: countSpan, by: ("a `stackalloc` length", "", "", "", ""),
+            help: "use a constant length: `stackalloc u8[64]`; v0.1 supports no other")
+        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+    }
+    let n = k.integer
+    if bigCmp(n, as: bigZero()) <= 0 || bigCmp(n, as: bigFromI64(1048576)) > 0 {
+        report(ref b, through: ref c, for: .literalOutOfRange, at: countSpan, by: (bigText(n), "a `stackalloc` length (1 to 1048576)", "", "", ""))
+        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+    }
+    return addStackalloc(ref c, from: BStackalloc { span: s.span, element: element, count: bigToI64(n), type: internSpan(ref c, by: element, readOnly: false) })
+}
+
+/// The member text of `e` when it is a `.member` (C# `TargetMemberExpr { Member.Text: var m }`), else null.
+string? t35TargetMember(in Ctx c, from FileId f, for in parser.Expr e) {
+    switch e {
+        case .targetMemberExpr(let tm): return t15Text(in c, from: f, at: tm.value.member)
+        default: return null
+    }
+}
+
+/// BinderExpressions.cs:2004 BindInterpolated.
+BExpr bindInterpolated(ref Binder b, through ref Ctx c, for in parser.InterpolatedExpr i) {
+    var parts = List<BInterpolationPart>()
+    for part in i.parts {
+        switch part {
+            case .interpolationText(let text):
+                parts.append(BInterpolationPart { text: text.value.text })
+            case .interpolationHole(let hole):
+                let value = bindExpr(ref b, through: ref c, for: in hole.value.expr)
+                let valueType = exprType(in c, for: value)
+                // `as: .debug` shows a struct without `formatInto` in its literal form (spec §13).
+                var debug = false
+                for a in hole.value.specs {
+                    if (a.name is { } an) {
+                        if t15Text(in c, from: b.file, at: an) == "as" && t35TargetMember(in c, from: b.file, for: in a.value) == "debug" { debug = true }
+                    }
+                }
+                if !isError(valueType) {
+                    var seen = List<Type>()
+                    let why = debug ? t35WhyNotDebugFormattable(ref c, for: valueType, by: ref seen) : whyNotFormattable(ref c, for: valueType, by: ref seen)
+                    if (why is { } w) {
+                        var help = ""
+                        if kindOf(valueType) == .structType && !debug { help = $"add `formatInto(ref StrBuf)` to `{c.structs[typeIndex(valueType)].name}`, or use `{{x, as: .debug}}`" }
+                        report(ref b, through: ref c, for: .notFormattable, at: parser.exprSpan(in hole.value.expr), by: (typeDisplay(ref c, by: valueType), "", "", "", ""),
+                            label: w, help: help)
+                    }
+                }
+                var spec: BFormatSpec? = null
+                if !(hole.value.specs.length == 0 || isError(valueType)) { spec = bindFormatSpec(ref b, through: ref c, for: in hole.value.specs, as: valueType) }
+                parts.append(BInterpolationPart { value: value, spec: spec })
+        }
+    }
+    return addInterpolated(ref c, from: BInterpolated { span: i.span, parts: move parts })
+}
+
+/// BinderExpressions.cs:2030 BindFormatSpec: `as:` a radix on integers or `.debug`, `digits:` on floats, `width:`, `fill:` and
+/// `align:` on any value (spec §16.4). Each is a constant; a spec that does not apply is BYN2021.
+BFormatSpec bindFormatSpec(ref Binder b, through ref Ctx c, for in List<parser.Argument> specs, as Type type) {
+    var spec = BFormatSpec { radix: 0, debug: false, width: 0, fill: 32, align: -1, digits: -1 }
+    var seen = List<string>()
+    for a in specs {
+        var name = ""
+        if (a.name is { } an) { name = t15Text(in c, from: b.file, at: an) }
+        if listContainsString(in seen, by: name) {
+            report(ref b, through: ref c, for: .duplicateArgument, at: a.span, by: (name, "", "", "", ""))
+            continue
+        }
+        seen.append(name)
+        let member = t35TargetMember(in c, from: b.file, for: in a.value)
+        let valueSpan = parser.exprSpan(in a.value)
+        let radixType = t9Type(ref c, for: "Radix")
+        var radixMember: EnumMemberId = -1
+        if (member is { } m) { radixMember = findEnumMember(ref c, by: typeIndex(radixType), for: m) }
+        if name == "as" && member == "debug" {
+            spec.debug = true
+        } else if name == "as" && member is not null && radixMember != -1 {
+            if !isInteger(type) && !t35TakesFormatSpec(ref c, for: type) {
+                report(ref b, through: ref c, for: .unknownParameter, at: a.span, by: (typeDisplay(ref c, by: type), $"as: .{member}", "", "", ""))
+            } else {
+                let ordinal = c.enumMembers[radixMember].ordinal
+                spec.radix = ordinal == 0 ? 2 : ordinal == 1 ? 8 : ordinal == 2 ? 10 : 16
+            }
+        } else if name == "as" {
+            let _ = bindConverted(ref b, through: ref c, for: in a.value, to: radixType)
+        } else if name == "width" || name == "digits" {
+            let n = bindConverted(ref b, through: ref c, for: in a.value, to: prim(.i64))
+            if isError(exprType(in c, for: n)) { continue }
+            let k = exprConstant(in c, for: n)
+            if k is null || k.kind != .integer {
+                report(ref b, through: ref c, for: .notConstant, at: valueSpan, by: ($"a format spec's `{name}`", "", "", "", ""))
+                continue
+            }
+            let v = k.integer
+            if name == "width" && (bigCmp(v, as: bigZero()) < 0 || bigCmp(v, as: bigFromI64(1024)) > 0) {
+                report(ref b, through: ref c, for: .literalOutOfRange, at: valueSpan, by: (bigText(v), "a format spec's `width` (0 to 1024)", "", "", ""))
+            } else if name == "digits" && (bigCmp(v, as: bigZero()) < 0 || bigCmp(v, as: bigFromI64(15)) > 0) {
+                report(ref b, through: ref c, for: .literalOutOfRange, at: valueSpan, by: (bigText(v), "a format spec's `digits` (0 to 15)", "", "", ""))
+            } else if name == "digits" && !isFloat(type) && !t35TakesFormatSpec(ref c, for: type) {
+                report(ref b, through: ref c, for: .unknownParameter, at: a.span, by: (typeDisplay(ref c, by: type), "digits", "", "", ""))
+            } else if name == "width" {
+                spec.width = bigToI64(v)
+            } else {
+                spec.digits = bigToI64(v)
+            }
+        } else if name == "fill" {
+            let fill = bindConverted(ref b, through: ref c, for: in a.value, to: prim(.char))
+            if isError(exprType(in c, for: fill)) { continue }
+            if (exprConstant(in c, for: fill) is { } k) {
+                spec.fill = k.rune
+            } else {
+                report(ref b, through: ref c, for: .notConstant, at: valueSpan, by: ("a format spec's `fill`", "", "", "", ""))
+            }
+        } else if name == "align" && (member == "start" || member == "end" || member == "center") {
+            spec.align = member == "start" ? 0 : member == "end" ? 1 : 2
+        } else if name == "align" {
+            report(ref b, through: ref c, for: .unknownEnumMember, at: valueSpan, by: (member ?? t15Text(in c, from: b.file, at: valueSpan), "align", "", "", ""))
+        } else {
+            report(ref b, through: ref c, for: .unknownParameter, at: a.span, by: (typeDisplay(ref c, by: type), name, "", "", ""))
+        }
+    }
+    return spec
+}
+
+/// BinderExpressions.cs:2087 IsFormattable.
+bool isFormattable(ref Ctx c, for Type t) {
+    var seen = List<Type>()
+    return whyNotFormattable(ref c, for: t, by: ref seen) is null
+}
+
+/// BinderExpressions.cs:2093 WhyNotFormattable: null when `t` formats; otherwise the part that does not ("" for `t` itself).
+/// `Owned` formats the value it points to; a type reached again is assumed formattable.
+string? whyNotFormattable(ref Ctx c, for Type t, by ref List<Type> seen) {
+    let i = typeIndex(t)
+    switch kindOf(t) {
+        case .primitive: return !(isVoid(t) || isNever(t)) ? null : ""
+        case .errorSet or .errorUnion or .enumType or .typeParam: return null
+        case .builtin: return builtinKindOf(i) == .symbol ? null : ""
+        case .optional: return t35Part(ref c, for: "the value", as: c.optionalTypes[i], by: ref seen)
+        case .result: return t35Part(ref c, for: "the value", as: c.resultTypes[i].value, by: ref seen)
+        case .owned: return whyNotFormattable(ref c, for: c.ownedTypes[i], by: ref seen)
+        // Structs have no default display (HANDOFF §13): only `formatInto` formats one.
+        case .structType: return t35HasFormatInto(ref c, for: i) ? null : ""
+        case .unionType:
+            if listContains(in seen, by: t) { return null }
+            seen.append(t)
+            var variants = List<VariantId>()
+            for v in c.unions[i].variants { variants.append(v) }
+            for v in variants {
+                var fields = List<LocalId>()
+                for f in c.unionVariants[v].fields { fields.append(f) }
+                for f in fields {
+                    let w = t35Part(ref c, for: $"`{c.unionVariants[v].name}` field `{c.locals[f].name}`", as: c.locals[f].type, by: ref seen)
+                    if w is not null { return w }
+                }
+            }
+            return null
+        case .tuple:
+            var types = List<Type>()
+            for f in c.tupleTypes[i] { types.append(f.type) }
+            for k in 0..types.length {
+                let w = t35Part(ref c, for: $"element {k + 1}", as: types[k], by: ref seen)
+                if w is not null { return w }
+            }
+            return null
+        case .map:
+            let key = c.mapTypes[i].key
+            let value = c.mapTypes[i].value
+            let w = t35Part(ref c, for: "the key", as: key, by: ref seen)
+            if w is not null { return w }
+            return t35Part(ref c, for: "the value", as: value, by: ref seen)
+        // Lists, spans and arrays do not format; an unformattable element is still named.
+        case .list: return t35Part(ref c, for: "an element", as: c.listTypes[i], by: ref seen) ?? ""
+        case .span: return t35Part(ref c, for: "an element", as: c.spanTypes[i].element, by: ref seen) ?? ""
+        case .array: return t35Part(ref c, for: "an element", as: c.arrayTypes[i].element, by: ref seen) ?? ""
+        default: return ""
+    }
+}
+
+/// BinderExpressions.cs:2114 WhyNotDebugFormattable: as `whyNotFormattable`, under `as: .debug`: a struct formats when each of its fields does.
+string? t35WhyNotDebugFormattable(ref Ctx c, for Type t, by ref List<Type> seen) {
+    if kindOf(t) == .structType && !t35TakesFormatSpec(ref c, for: t) {
+        if listContains(in seen, by: t) { return null }
+        seen.append(t)
+        var fields = List<FieldId>()
+        for f in c.structs[typeIndex(t)].fields { fields.append(f) }
+        for f in fields {
+            let ft = c.fields[f].type
+            if (t35WhyNotDebugFormattable(ref c, for: ft, by: ref seen) is { } why) {
+                return why == "" ? $"field `{c.fields[f].name}` is `{typeDisplay(ref c, by: ft)}`" : why
+            }
+        }
+        return null
+    }
+    return whyNotFormattable(ref c, for: t, by: ref seen)
+}
+
+/// BinderExpressions.cs:2123 Part: why `part` of a type does not format, naming it when it is the culprit.
+string? t35Part(ref Ctx c, for string name, as Type part, by ref List<Type> seen) {
+    if (whyNotFormattable(ref c, for: part, by: ref seen) is { } why) {
+        return why == "" ? $"{name} is `{typeDisplay(ref c, by: part)}`" : why
+    }
+    return null
+}
+
+/// BinderExpressions.cs:2127 PropertyType: the type of a built-in property, with the builtin enums `BuiltinMembers` cannot name.
+Type propertyType(ref Binder b, through ref Ctx c, for BuiltinMember member, as Type type) {
+    switch member {
+        case .formatSpecRadix: return t9Type(ref c, for: "Radix")
+        case .formatSpecAlign: return t9Type(ref c, for: "Align")
+        default: return type
+    }
+}
+
+/// BinderExpressions.cs:2135 HasFormatInto: matches the C emitter's `formatInto` lookup.
+bool t35HasFormatInto(ref Ctx c, for StructId s) {
+    var methods = List<FuncId>()
+    for m in c.structs[s].methods { methods.append(m) }
+    for m in methods {
+        let n = c.functions[m].parameters.length
+        if c.functions[m].name == "formatInto" && !c.functions[m].isStatic && !c.functions[m].hasFails && (n == 1 || n == 2)
+            && paramIsByRef(ref c, by: c.functions[m].parameters[0]) && c.locals[c.functions[m].parameters[0]].type == builtinType(.strBuf)
+            && (n == 1 || (!paramIsByRef(ref c, by: c.functions[m].parameters[1]) && c.locals[c.functions[m].parameters[1]].type == builtinType(.formatSpec))) {
+            return true
+        }
+    }
+    return false
+}
+
+/// BinderExpressions.cs:2141 TakesFormatSpec: whether `t` is a struct whose `formatInto` takes the hole's `FormatSpec`.
+bool t35TakesFormatSpec(ref Ctx c, for Type t) {
+    if kindOf(t) != .structType { return false }
+    var methods = List<FuncId>()
+    for m in c.structs[typeIndex(t)].methods { methods.append(m) }
+    for m in methods {
+        if c.functions[m].name == "formatInto" && !c.functions[m].isStatic && !c.functions[m].hasFails && c.functions[m].parameters.length == 2
+            && paramIsByRef(ref c, by: c.functions[m].parameters[0]) && c.locals[c.functions[m].parameters[0]].type == builtinType(.strBuf)
+            && !paramIsByRef(ref c, by: c.functions[m].parameters[1]) && c.locals[c.functions[m].parameters[1]].type == builtinType(.formatSpec) {
+            return true
+        }
+    }
+    return false
+}
+
+/// C# `Host` (BinderExpressions.cs:1939-1946): the function whose body is being bound, skipping enclosing lambdas.
+/// Pre-ported for T17/T18 (user decision 2026-10-31); T35 must not rewrite it.
+FuncId host(Binder b, through Ctx c) {
+    var fn = b.fn
+    while fn != -1 && c.functions[fn].kind == .lambda {
+        fn = c.functions[fn].enclosing
+    }
+    return fn
+}

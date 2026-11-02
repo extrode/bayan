@@ -1,0 +1,18 @@
+union error ParseError {
+    /// No digits.
+    empty
+}
+
+union error RangeError {
+    /// Too big.
+    tooBig
+}
+
+i64!ParseError parse(string s) {
+    fail .empty if s.length == 0
+    return 1
+}
+
+i64!(ParseError, RangeError) parseSmall(string s) {
+    return try parse(s)
+}

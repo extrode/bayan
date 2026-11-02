@@ -1,0 +1,11 @@
+// `==` on a set whose case holds a `List` does not bind; a bare case still compares the code (Q344).
+union error ListError {
+    bad(List<i64> items)
+}
+
+void main() {
+    let l: ListError = .bad(items: List<i64>())
+    let m: ListError = .bad(items: List<i64>())
+    print($"{l == m}")
+    print($"{l == .bad}")
+}

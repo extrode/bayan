@@ -1,13 +1,13 @@
-error enum IoError {
-    full,
+union error IoError {
+    full
 }
 
 void flush() fails IoError {
-    return .full if false;
+    fail .full if false
 }
 
 void work() fails IoError {
-    defer try flush();
+    defer try flush()
 }
 
-work() catch return;
+work() catch return

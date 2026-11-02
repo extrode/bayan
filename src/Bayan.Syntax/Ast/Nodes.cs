@@ -30,10 +30,24 @@ public enum Modifiers
 
 public sealed record CompilationUnit(TextSpan Span, Decl[] Members) : Node(Span);
 
+/// <summary>An attribute: <c>@name</c> or <c>@name(args)</c> before a declaration or an error variant.</summary>
+public sealed record AttributeSyntax(TextSpan Span, Name Name, Argument[] Args) : Node(Span)
+{
+    public BecauseClause? Because { get; init; }
+}
+
+/// <summary><c>because "reason"</c>: why an attribute or a call bypasses a safety rule (J6).</summary>
+public sealed record BecauseClause(TextSpan Span, string Reason) : Node(Span);
+
+/// <summary><c>requires condition</c>, or a struct-level <c>requires condition at .field</c>; <c>it</c> is the field's value.</summary>
+public sealed record RequiresRule(TextSpan Span, Expr Condition, Name? At) : Node(Span);
+
 public abstract record Decl(TextSpan Span) : Node(Span)
 {
     /// <summary>The <c>///</c> doc comment text (markers stripped), if any.</summary>
     public string? Doc { get; init; }
+
+    public AttributeSyntax[] Attributes { get; init; } = [];
 }
 
 public sealed record ImportDecl(TextSpan Span, Name[] Path, Name? Alias) : Decl(Span);
@@ -43,35 +57,165 @@ public sealed record GlobalStatement(TextSpan Span, Stmt Statement) : Decl(Span)
 
 public enum ParamModifier { None, Ref, Move, Out, In }
 
-public sealed record Param(TextSpan Span, ParamModifier Modifier, TypeSyntax Type, Name Name, Expr? Default) : Node(Span);
+public sealed record Param(TextSpan Span, ParamModifier Modifier, TypeSyntax Type, Name Name, Expr? Default) : Node(Span)
+{
+    /// <summary>The particle before the parameter (<c>by Carrier carrier</c>), part of the function's name; parsed only, not yet checked.</summary>
+    public Name? Particle { get; init; }
+
+    /// <summary>The variadic tail <c>rest ReadOnlySpan&lt;T&gt; xs</c>; parsed only, not yet checked.</summary>
+    public bool Rest { get; init; }
+}
 
 /// <summary><c>fails</c> clause: <see cref="Errors"/> empty means the set is inferred.</summary>
 public sealed record FailsClause(TextSpan Span, TypeSyntax[] Errors) : Node(Span);
 
+/// <summary><c>uses alloc, net</c>: the effects a function declares; parsed only, not yet checked.</summary>
+public sealed record UsesClause(TextSpan Span, Name[] Effects) : Node(Span);
+
 /// <summary>A function or method. Exactly one of <see cref="Body"/> and <see cref="ExpressionBody"/> is set, or neither for a declaration.</summary>
 public sealed record FunctionDecl(
     TextSpan Span, Modifiers Modifiers, TypeSyntax ReturnType, Name Name, Param[] Params,
-    FailsClause? Fails, BlockStmt? Body, Expr? ExpressionBody) : Decl(Span);
+    FailsClause? Fails, BlockStmt? Body, Expr? ExpressionBody) : Decl(Span)
+{
+    /// <summary>The <c>&lt;T, U&gt;</c> after the name; empty for a non-generic function.</summary>
+    public Name[] TypeParams { get; init; } = [];
 
-public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span);
+    /// <summary>The <c>ref this</c> written as parameter 0 of a mutating member; not in <see cref="Params"/>.</summary>
+    public TextSpan? RefThis { get; init; }
 
-public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span);
+    /// <summary>The <c>move this</c> written as parameter 0 of a consuming member; parsed only, not yet checked.</summary>
+    public TextSpan? MoveThis { get; init; }
 
-/// <summary>A getter-only property: <c>T name => expr;</c>.</summary>
-public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr Body) : Decl(Span);
+    /// <summary>The states of a receiver <c>this is .a or .b</c>, <c>ref this is .s</c> or <c>move this is .s</c>; parsed only, not yet checked.</summary>
+    public Name[] ReceiverStates { get; init; } = [];
+
+    /// <summary>Where a <c>ref this</c> would go: just after the <c>(</c>.</summary>
+    public int ParamsStart { get; init; }
+
+    /// <summary>The <c>expects</c> clauses after the signature (and the <c>requires</c> input form, BYN1063), checked on entry.</summary>
+    public Expr[] Requires { get; init; } = [];
+
+    /// <summary>The <c>where T : I</c> clauses after <c>fails</c>.</summary>
+    public WhereClause[] Where { get; init; } = [];
+
+    /// <summary>The state of <c>becomes .s</c>, the transition the function performs; parsed only, not yet checked.</summary>
+    public Name? Becomes { get; init; }
+
+    public UsesClause? Uses { get; init; }
+}
+
+/// <summary><c>where T : IA, IB</c>: the interfaces a type parameter must conform to.</summary>
+public sealed record WhereClause(TextSpan Span, Name Param, NamedType[] Bounds) : Node(Span);
+
+public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+
+    /// <summary>The interfaces after <c>:</c>.</summary>
+    public NamedType[] Bases { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
+
+    /// <summary>The struct-level <c>requires</c> rules: those that read more than <c>it</c> (O3).</summary>
+    public RequiresRule[] Rules { get; init; } = [];
+
+    /// <summary>The <c>states { … }</c> block: each state and its named payload; parsed only, not yet checked.</summary>
+    public UnionVariant[] States { get; init; } = [];
+}
+
+/// <summary><c>interface IName&lt;T&gt; { … }</c>: methods (abstract without a body), getters, associated types.</summary>
+public sealed record InterfaceDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
+}
+
+/// <summary><c>T name { get; }</c>: an abstract read-only property of an interface.</summary>
+public sealed record GetterDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name) : Decl(Span);
+
+/// <summary><c>type Item;</c>: an interface's associated type, bound by each conformer.</summary>
+public sealed record AssociatedTypeDecl(TextSpan Span, Name Name) : Decl(Span);
+
+/// <summary><c>extension T : I { … }</c>: retroactive conformance (not supported yet).</summary>
+public sealed record ExtensionDecl(TextSpan Span, Name Name, NamedType[] Bases, Decl[] Members) : Decl(Span);
+
+public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span)
+{
+    /// <summary>The <c>requires</c> rules that read only <c>it</c>, the field's value.</summary>
+    public RequiresRule[] Requires { get; init; } = [];
+}
+
+/// <summary>A getter-only property: <c>T name => expr</c>, or <c>T name { … }</c> with a <see cref="Block"/> body (J46).</summary>
+public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Body) : Decl(Span)
+{
+    /// <summary>The block body; set exactly when <see cref="Body"/> is null.</summary>
+    public BlockStmt? Block { get; init; }
+}
 
 public sealed record ConstructorDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[] Params, BlockStmt Body) : Decl(Span);
 
-public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span);
+public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span)
+{
+    public AttributeSyntax[] Attributes { get; init; } = [];
 
-/// <summary><c>error enum Name { a, b }</c>.</summary>
+    /// <summary>The <c>(Millis after)</c> payload of <c>timeout(Millis after)</c>; empty without one.</summary>
+    public UnionField[] Fields { get; init; } = [];
+}
+
+/// <summary><c>union error Name { a b }</c>, one case per line; a case may carry a payload, <c>timeout(Millis after)</c>.</summary>
 public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);
 
-/// <summary><c>type Name = T;</c> — a plain alias.</summary>
-public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);
+/// <summary><c>union error Name = A, B except .c</c>: a name for several error sets, flattened, less the <see cref="Except"/> cases.</summary>
+public sealed record ErrorSetDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax[] Members) : Decl(Span)
+{
+    /// <summary>The two declaration keywords, as written.</summary>
+    public TextSpan Head { get; init; }
 
-/// <summary><c>test "name" { … }</c>.</summary>
-public sealed record TestDecl(TextSpan Span, string Title, BlockStmt Body) : Decl(Span);
+    public Name[] Except { get; init; } = [];
+}
+
+/// <summary>A member; <see cref="Args"/> is <c>null</c> without parentheses.</summary>
+public sealed record EnumMember(TextSpan Span, Name Name, string? Doc, Argument[]? Args) : Node(Span);
+
+/// <summary><c>enum Name { a, b }</c>, or <c>enum Name(T x) { a(1), b(2); }</c> with associated data (<see cref="Params"/> non-null).</summary>
+public sealed record EnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[]? Params, EnumMember[] Members) : Decl(Span)
+{
+    public NamedType[] Bases { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
+}
+
+/// <summary>A positional payload field of a union variant: <c>f32 r</c>.</summary>
+public sealed record UnionField(TextSpan Span, TypeSyntax Type, Name Name) : Node(Span);
+
+/// <summary><c>circle(f32 r)</c>, or <c>none</c> without a payload; <see cref="Value"/> is the <c>= 1</c> of <c>read = 1</c>.</summary>
+public sealed record UnionVariant(TextSpan Span, Name Name, UnionField[] Fields, string? Doc, Expr? Value = null) : Node(Span);
+
+/// <summary><c>union Name { circle(f32 r), none }</c>: a tagged union stored inline.</summary>
+public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, UnionVariant[] Variants) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+
+    public NamedType[] Bases { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
+}
+
+/// <summary><c>type Name = T</c> — a plain alias, or with <see cref="Distinct"/> a <c>type distinct</c>.</summary>
+public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span)
+{
+    public bool Distinct { get; init; }
+
+    /// <summary>A <c>type distinct</c>'s <c>requires</c> rules, on <c>it</c>.</summary>
+    public RequiresRule[] Requires { get; init; } = [];
+}
+
+/// <summary><c>effect name = net, fs</c>: names a set of effects (§14).</summary>
+public sealed record EffectDecl(TextSpan Span, Modifiers Modifiers, Name Name, Name[] Effects) : Decl(Span);
+
+/// <summary><c>test "name" { … }</c>, or <c>test "name" (T a, U b) { … }</c> run once per <c>@cases</c> value.</summary>
+public sealed record TestDecl(TextSpan Span, string Title, Param[] Params, BlockStmt Body) : Decl(Span);
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 
@@ -89,9 +233,25 @@ public sealed record TupleTypeElement(TextSpan Span, TypeSyntax Type, Name? Name
 
 public sealed record TupleType(TextSpan Span, TupleTypeElement[] Elements) : TypeSyntax(Span);
 
+/// <summary><c>P -&gt; R fails E uses e</c>: <c>P</c> is one type, <c>(A, B)</c> or <c>()</c>.</summary>
+public sealed record FunctionTypeSyntax(TextSpan Span, TypeSyntax[] Params, TypeSyntax Return, FailsClause? Fails, UsesClause? Uses) : TypeSyntax(Span);
+
+/// <summary><c>dyn ref I</c>, <c>dyn ref readonly I</c>, or <c>dyn I</c> (not supported yet).</summary>
+public sealed record DynType(TextSpan Span, bool IsRef, bool IsReadOnly, NamedType Inner) : TypeSyntax(Span);
+
+/// <summary><c>T is .a or .b</c> after a parameter or field name, or in <c>let x: T is .a</c>; parsed only, resolves to <see cref="Inner"/>.</summary>
+public sealed record RefinedType(TextSpan Span, TypeSyntax Inner, Name[] States) : TypeSyntax(Span);
+
+/// <summary><c>T*</c>, or <c>readonly T*</c> when the pointee cannot be written; allowed only in <c>extern</c> declarations (BYN1067).</summary>
+public sealed record PointerType(TextSpan Span, TypeSyntax Pointee, bool ReadOnly) : TypeSyntax(Span);
+
 // ── Statements ───────────────────────────────────────────────────────────────────
 
-public abstract record Stmt(TextSpan Span) : Node(Span);
+public abstract record Stmt(TextSpan Span) : Node(Span)
+{
+    /// <summary>The <c>@unobservable</c> attributes on the lines before this statement (R7); they apply to it only.</summary>
+    public AttributeSyntax[] Attributes { get; init; } = [];
+}
 
 public sealed record BlockStmt(TextSpan Span, Stmt[] Statements) : Stmt(Span);
 
@@ -110,23 +270,49 @@ public sealed record IncDecStmt(TextSpan Span, Expr Target, bool Increment) : St
 
 public sealed record ReturnStmt(TextSpan Span, Expr? Value) : Stmt(Span);
 
+/// <summary><c>fail .x</c>: leaves the function with the error <see cref="Error"/>.</summary>
+public sealed record FailStmt(TextSpan Span, Expr Error) : Stmt(Span);
+
 public sealed record BreakStmt(TextSpan Span, Name? Label) : Stmt(Span);
 
 public sealed record ContinueStmt(TextSpan Span, Name? Label) : Stmt(Span);
 
-public sealed record IfStmt(TextSpan Span, Expr Condition, Stmt Then, Stmt? Else) : Stmt(Span);
+/// <summary><c>become .s(…)</c>: the typestate transition a <c>becomes .s</c> function performs; parsed only, not yet bound.</summary>
+public sealed record BecomeStmt(TextSpan Span, Name State, Argument[] Args) : Stmt(Span);
+
+/// <summary>The word after <c>if</c>: <c>if unlikely</c> (a layout hint) or <c>if never</c> (panics when taken).</summary>
+public enum Likelihood { None, Unlikely, Never }
+
+public sealed record IfStmt(TextSpan Span, Expr Condition, Stmt Then, Stmt? Else) : Stmt(Span)
+{
+    public Likelihood Likelihood { get; init; }
+}
 
 public sealed record UnlessStmt(TextSpan Span, Expr Condition, Stmt Body) : Stmt(Span);
 
 /// <summary>A simple statement with a postfix <c>if</c>/<c>unless</c> (spec §7.3); the condition is evaluated first.</summary>
-public sealed record GuardedStmt(TextSpan Span, Stmt Statement, bool Unless, Expr Condition) : Stmt(Span);
+public sealed record GuardedStmt(TextSpan Span, Stmt Statement, bool Unless, Expr Condition) : Stmt(Span)
+{
+    /// <summary><c>stmt if unlikely cond;</c></summary>
+    public bool Unlikely { get; init; }
+}
 
 public sealed record WhileStmt(TextSpan Span, Expr Condition, Stmt Body) : Stmt(Span);
 
 public sealed record DoWhileStmt(TextSpan Span, Stmt Body, Expr Condition) : Stmt(Span);
 
-/// <summary><c>for (let x in e)</c>.</summary>
-public sealed record ForStmt(TextSpan Span, BindingKind Kind, TypeSyntax? Type, Name Variable, Expr Iterable, Stmt Body) : Stmt(Span);
+/// <summary><c>while let x = e { … }</c>: loops while <c>e</c> is non-null, binding <c>x</c> to its value.</summary>
+public sealed record WhileLetStmt(TextSpan Span, Name Variable, Expr Value, Stmt Body) : Stmt(Span);
+
+/// <summary><c>for x in e</c>, <c>for (k, v) in e</c>, <c>for try x in e</c>, or the input form <c>for (let x in e)</c>.</summary>
+public sealed record ForStmt(TextSpan Span, BindingKind Kind, TypeSyntax? Type, Name Variable, Expr Iterable, Stmt Body) : Stmt(Span)
+{
+    /// <summary><c>for try</c>: every step may fail.</summary>
+    public bool Try { get; init; }
+
+    /// <summary>The names of <c>for (k, v) in e</c>, whose <see cref="Variable"/> is the unnamed element; empty otherwise.</summary>
+    public Name[] Names { get; init; } = [];
+}
 
 public sealed record LabeledStmt(TextSpan Span, Name Label, Stmt Statement) : Stmt(Span);
 
@@ -137,14 +323,25 @@ public sealed record SwitchSection(TextSpan Span, SwitchLabel Label, Stmt[] Stat
 
 public sealed record SwitchStmt(TextSpan Span, Expr Value, SwitchSection[] Sections) : Stmt(Span);
 
-public sealed record DeferStmt(TextSpan Span, Stmt Body) : Stmt(Span);
+/// <summary>When a <c>defer</c> body runs: on every exit, on exit by failure, or while a panic is in progress.</summary>
+public enum DeferKind { Always, Failing, Panicking }
 
-/// <summary><c>errdefer stmt;</c> or <c>errdefer (e) { … }</c>.</summary>
-public sealed record ErrdeferStmt(TextSpan Span, Name? Error, Stmt Body) : Stmt(Span);
+/// <summary>
+/// <c>defer stmt;</c>, <c>defer failing [(e)] stmt</c> or <c>defer panicking [(p)] stmt</c>. <see cref="Binding"/> names the error
+/// or the panic. <c>errdefer [(e)] stmt</c> parses as <c>defer failing</c>.
+/// </summary>
+public sealed record DeferStmt(TextSpan Span, DeferKind Kind, Name? Binding, Stmt Body) : Stmt(Span);
+
+/// <summary><c>assert expr;</c>: panics with the value of each sub-expression when <see cref="Condition"/> is false.</summary>
+public sealed record AssertStmt(TextSpan Span, Expr Condition) : Stmt(Span)
+{
+    /// <summary><c>assert f() fails E.x</c>: the error <see cref="Condition"/> must fail with; null for a plain assert.</summary>
+    public Expr? Fails { get; init; }
+}
 
 public sealed record NamedArg(TextSpan Span, Name Name, Expr Value) : Node(Span);
 
-/// <summary><c>context (allocator: a) { … }</c>.</summary>
+/// <summary><c>provide allocator: a { … }</c>; <c>context (allocator: a) { … }</c> is the input form (BYN6006).</summary>
 public sealed record ContextStmt(TextSpan Span, NamedArg[] Values, BlockStmt Body) : Stmt(Span);
 
 public sealed record EmptyStmt(TextSpan Span) : Stmt(Span);
@@ -166,7 +363,11 @@ public abstract record InterpolationPart(TextSpan Span) : Node(Span);
 /// <summary>Literal text with escapes and doubled braces decoded.</summary>
 public sealed record InterpolationText(TextSpan Span, string Text) : InterpolationPart(Span);
 
-public sealed record InterpolationHole(TextSpan Span, Expr Expr) : InterpolationPart(Span);
+public sealed record InterpolationHole(TextSpan Span, Expr Expr) : InterpolationPart(Span)
+{
+    /// <summary>The named format specs after the value (<c>{n, as: .hex}</c>); parsed only, not yet checked.</summary>
+    public Argument[] Specs { get; init; } = [];
+}
 
 public sealed record InterpolatedExpr(TextSpan Span, InterpolationPart[] Parts) : Expr(Span);
 
@@ -187,7 +388,10 @@ public enum ArgModifier { None, Ref, Move, Out, In }
 
 public sealed record Argument(TextSpan Span, Name? Name, ArgModifier Modifier, Expr Value) : Node(Span);
 
-public sealed record CallExpr(TextSpan Span, Expr Callee, Argument[] Args) : Expr(Span);
+public sealed record CallExpr(TextSpan Span, Expr Callee, Argument[] Args) : Expr(Span)
+{
+    public BecauseClause? Because { get; init; }
+}
 
 public sealed record IndexExpr(TextSpan Span, Expr Target, Expr Index) : Expr(Span);
 
@@ -218,11 +422,20 @@ public sealed record CastExpr(TextSpan Span, TypeSyntax Type, Expr Operand) : Ex
 
 public sealed record IsExpr(TextSpan Span, Expr Value, Pattern Pattern) : Expr(Span);
 
+/// <summary><c>xs except p</c>: the elements of a sequence that do not match the pattern; parsed only, not yet bound.</summary>
+public sealed record ExceptExpr(TextSpan Span, Expr Value, Pattern Pattern) : Expr(Span);
+
+/// <summary><c>x in a..=b</c>: whether a value lies in a range.</summary>
+public sealed record InExpr(TextSpan Span, Expr Value, Expr Range) : Expr(Span);
+
 public sealed record SwitchArm(TextSpan Span, Pattern Pattern, Expr? Guard, Expr Value) : Node(Span);
 
 public sealed record SwitchExpr(TextSpan Span, Expr Value, SwitchArm[] Arms) : Expr(Span);
 
 public sealed record TryExpr(TextSpan Span, Expr Operand) : Expr(Span);
+
+/// <summary><c>move x</c>: hands the value of a unique local over, leaving the local unusable.</summary>
+public sealed record MoveExpr(TextSpan Span, Expr Operand) : Expr(Span);
 
 /// <summary>
 /// <c>e catch h</c>, <c>e catch (x) h</c> (binds the error) or <c>e catch (Set.variant) h</c>
@@ -230,8 +443,14 @@ public sealed record TryExpr(TextSpan Span, Expr Operand) : Expr(Span);
 /// </summary>
 public sealed record CatchExpr(TextSpan Span, Expr Operand, Name? Binding, Expr? Variant, Expr Handler) : Expr(Span);
 
+/// <summary>The subject of <c>catch switch { … }</c>: the caught error; <see cref="Span"/> is the <c>switch</c> keyword.</summary>
+public sealed record CaughtErrorExpr(TextSpan Span) : Expr(Span);
+
 /// <summary><c>return e</c>, <c>break</c>, <c>continue</c> used as a <c>never</c> expression after <c>??</c> or <c>catch</c>.</summary>
 public sealed record JumpExpr(TextSpan Span, Stmt Jump) : Expr(Span);
+
+/// <summary><c>{ … }</c> as a <c>catch</c> handler: runs the statements; it must not complete unless the operand is <c>void</c>.</summary>
+public sealed record BlockExpr(TextSpan Span, BlockStmt Block) : Expr(Span);
 
 public sealed record FieldInit(TextSpan Span, Name Name, Expr Value) : Node(Span);
 
@@ -243,6 +462,9 @@ public sealed record WithExpr(TextSpan Span, Expr Target, FieldInit[] Fields) : 
 
 public sealed record SpreadExpr(TextSpan Span, Expr Operand) : Expr(Span);
 
+/// <summary><c>key: value</c> inside a collection literal; a literal whose elements are all entries is a map literal.</summary>
+public sealed record MapEntryExpr(TextSpan Span, Expr Key, Expr Value) : Expr(Span);
+
 public sealed record CollectionExpr(TextSpan Span, Expr[] Elements) : Expr(Span);
 
 public sealed record TupleElement(TextSpan Span, Name? Name, Expr Value) : Node(Span);
@@ -251,8 +473,14 @@ public sealed record TupleExpr(TextSpan Span, TupleElement[] Elements) : Expr(Sp
 
 public sealed record ParenExpr(TextSpan Span, Expr Inner) : Expr(Span);
 
+/// <summary><c>x =&gt; body</c>, <c>(a, b) =&gt; body</c> or <c>() =&gt; body</c>; the body is an expression or a block.</summary>
+public sealed record LambdaExpr(TextSpan Span, Name[] Params, Expr? Body, BlockStmt? Block) : Expr(Span);
+
 /// <summary><c>stackalloc T[n]</c>.</summary>
 public sealed record StackallocExpr(TextSpan Span, TypeSyntax Element, Expr Count) : Expr(Span);
+
+/// <summary><c>pattern T { … }</c>, a named pattern's value; valid only after <c>=</c> in a <c>const</c> (BYN1046).</summary>
+public sealed record PatternExpr(TextSpan Span, Pattern Pattern) : Expr(Span);
 
 /// <summary>Placeholder after a parse error.</summary>
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);
@@ -266,9 +494,13 @@ public sealed record ConstantPattern(TextSpan Span, Expr Value) : Pattern(Span);
 
 public sealed record RelationalPattern(TextSpan Span, BinaryOp Op, Expr Value) : Pattern(Span);
 
-public sealed record VarPattern(TextSpan Span, Name Name) : Pattern(Span);
+/// <summary><c>var x</c> or <c>let x</c>; both bind an immutable pattern variable.</summary>
+public sealed record VarPattern(TextSpan Span, Name Name, bool IsLet = false) : Pattern(Span);
 
 public sealed record DiscardPattern(TextSpan Span) : Pattern(Span);
+
+/// <summary><c>DbError e</c>: matches a value of <see cref="Type"/> and binds it.</summary>
+public sealed record DeclarationPattern(TextSpan Span, TypeSyntax Type, Name Name) : Pattern(Span);
 
 public sealed record NotPattern(TextSpan Span, Pattern Operand) : Pattern(Span);
 
@@ -281,6 +513,13 @@ public sealed record PropertyPattern(TextSpan Span, TypeSyntax? Type, PropertySu
 
 /// <summary><c>Name(p, q)</c> or <c>(p, q)</c>.</summary>
 public sealed record PositionalPattern(TextSpan Span, TypeSyntax? Type, Pattern[] Elements) : Pattern(Span);
+
+/// <summary><c>.Circle(let r)</c>: a target-typed union variant with payload patterns.</summary>
+public sealed record VariantPattern(TextSpan Span, TargetMemberExpr Variant, Pattern[] Elements) : Pattern(Span)
+{
+    /// <summary><c>.Circle c</c>: binds the whole value, narrowed to the variant; <see cref="Elements"/> is empty.</summary>
+    public Name? Binding { get; init; }
+}
 
 /// <summary><c>..</c> or <c>.. var rest</c> inside a list pattern.</summary>
 public sealed record SlicePattern(TextSpan Span, Pattern? Inner) : Pattern(Span);

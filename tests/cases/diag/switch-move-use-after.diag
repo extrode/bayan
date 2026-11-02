@@ -1,0 +1,14 @@
+error BYN2781: `r` is used after it was moved
+
+  17 │     switch r {
+     │            ^ moved on line 11
+     │
+  help: assign `r` a new value before using it again, or move a `.copy(to: alloc)` of it instead
+
+error BYN2783: `items` borrows from what it was bound to and cannot be changed or moved
+
+  23 │             print($"{keep(move items)}")
+     │                                ^^^^^ moving it would take the value out of what it borrows
+     │                                      from
+     │
+  help: move or copy the value it was bound to instead

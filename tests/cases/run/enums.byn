@@ -1,0 +1,78 @@
+enum Color {
+    red
+    green
+    blue
+}
+
+public enum Suit {
+    clubs
+    diamonds
+    hearts
+    spades
+}
+
+struct Card {
+    Suit suit
+    i64 rank
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Card {{ suit: {suit}, rank: {rank} }}")
+    }
+}
+
+string describe(Color c) => c switch {
+    .red => "warm",
+    Color.green or .blue => "cool",
+}
+
+void kind(Suit s) {
+    switch s {
+        case .hearts or .diamonds:
+            print($"{s} is red")
+        case Suit.clubs:
+            print("clubs is black")
+        case .spades:
+            print("spades is black")
+    }
+}
+
+print($"count {Color.count} {Suit.count}")
+for c in Color.values {
+    print($"{c.ordinal} {c.name} {c} {describe(c)}")
+}
+print(Color.green)
+for s in Suit.values {
+    kind(s)
+}
+
+let c = Color.blue
+let target: Color = .green
+print($"{c == Color.blue} {c != .blue} {target == Color.green} {c == target}")
+
+let third = Color.fromOrdinal(2)
+let none = Color.fromOrdinal(3)
+let negative = Color.fromOrdinal(-1)
+print($"{third} {none} {negative}")
+if (Color.fromOrdinal(0) is { } first) {
+    print($"first {first}")
+}
+
+print($"{Suit.parse("hearts")} {Suit.parse("Hearts")} {Suit.parse("")}")
+let parsed = Suit.parse("spades") ?? .clubs
+print($"parsed {parsed.name} {parsed.ordinal}")
+
+let card = Card { suit: .hearts, rank: 12 }
+print($"{card}")
+print($"{card == Card { suit: Suit.hearts, rank: 12 }} {card == Card { suit: .spades, rank: 12 }}")
+
+var hand = List<Suit>()
+hand.append(.spades)
+hand.append(Suit.diamonds)
+hand.append(card.suit)
+for s in hand {
+    print($"hand {s}")
+}
+let maybe: Suit? = hand[1]
+let missing: Suit? = null
+print($"{maybe} {missing} {maybe == Suit.diamonds}")
+print(maybe switch { null => "none", .diamonds => "diamonds", _ => "other" })

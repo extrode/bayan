@@ -1,0 +1,63 @@
+union error ParseError { empty }
+
+// Names the grammar checker (BYN5xxx) must accept.
+struct Track {
+    i64 speed
+    i64 seed
+    bool done
+
+    // An `-ed` member next to its `ref this` verb.
+    void sort(ref this) {
+        speed = 0
+    }
+
+    Track sorted() => Track { speed: speed, seed: seed, done: done }
+
+    void reverse(ref this) {
+        seed = 0
+    }
+
+    Track reversed => Track { speed: seed, seed: speed, done: done }
+
+    // Words that end in `-ed` but are not participles.
+    i64 need() => speed
+
+    i64 red() => 0
+
+    i64 bed => 0
+
+    i64 hundred() => 100
+
+    // A `ref this` member named with the plain verb; its `-ed` form would be a copy.
+    void fix(ref this) {
+        speed = 1
+    }
+
+    bool isEmpty => speed == 0
+
+    bool hasSeed() => seed != 0
+
+    bool canRun => !done
+
+    bool contains(i64 x) => x == speed
+
+    bool matchesAll() => true
+
+    // An action that reports success is not a state.
+    bool advance(ref this) {
+        speed += 1
+        return true
+    }
+
+    i64 parse() fails ParseError {
+        return speed
+    }
+
+    i64? tryParse() => null
+
+    void reset(ref this) {
+        speed = 0
+    }
+}
+
+print("ok")

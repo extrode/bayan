@@ -1,0 +1,7 @@
+T id<T>(move T v) => v
+
+var n = 0
+let x: i64 = n
+let y = id(n)
+n = 1
+print($"{x} {y} {n}")

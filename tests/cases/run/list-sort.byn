@@ -1,0 +1,39 @@
+// `sort` is stable (J47): equal elements keep their order across insertion runs and merges.
+void main() {
+    var xs = List<i64>()
+    var seed: i64 = 7
+    for i in 0..200 {
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        xs.append(seed % 50)
+    }
+    xs.sort()
+    var ordered = true
+    for i in 1..xs.length {
+        if xs[i - 1] > xs[i] { ordered = false }
+    }
+    print($"{xs.length} sorted: {ordered}, first {xs[0]}, last {xs[xs.length - 1]}")
+
+    // `0.0` and `-0.0` compare equal, so a stable sort keeps them alternating.
+    var zs = List<f64>()
+    for i in 0..60 {
+        zs.append(i % 3 == 0 ? 1.5 : i % 3 == 1 ? 0.0 : -0.0)
+    }
+    zs.sort()
+    var line = StrBuf()
+    for z in zs { if z == 0.0 { line.append($"{z} ") } }
+    print(line.view)
+
+    var names = List<string>()
+    for n in ["pear", "apple", "fig", "Apple", "apple"] { names.append(n) }
+    names.sort()
+    var words = StrBuf()
+    for n in names { words.append($" {n}") }
+    print(words.view)
+    var runes = List<rune>()
+    for r in ['c', 'a', 'b'] { runes.append(r) }
+    runes.sort()
+    print($"{runes[0]}{runes[1]}{runes[2]}")
+    var empty = List<i32>()
+    empty.sort()
+    print($"empty {empty.length}")
+}

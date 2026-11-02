@@ -19,7 +19,8 @@ public sealed class ManifestTests
             var m = Manifest.Parse(Golden.Load(path));
             if (m.Diagnostics.Count > 0) return DiagnosticRenderer.RenderAll(m.Diagnostics);
             return $"name {m.Name}\nversion {m.Version}\nedition {m.Edition}\nkind {m.Kind}\n"
-                + $"targets {string.Join(" ", m.DistTargets)}\nmode {m.DistMode}\n";
+                + $"targets {string.Join(" ", m.DistTargets)}\nmode {m.DistMode}\n"
+                + $"booleans {m.Booleans}\nprimitives {m.Primitives}\n";
         });
 
     [Theory]
@@ -55,7 +56,7 @@ public sealed class ManifestTests
     [InlineData("1.0.0-rc.1", true)]
     public void ManifestVersions(string version, bool valid)
     {
-        var text = $"Package {{ name = \"local/tally\", version = \"{version}\", edition = 2027, kind = .app }}";
+        var text = $"Package {{ name: \"local/tally\", version: \"{version}\", edition: 2027, kind: .app }}";
         var m = Manifest.Parse(Bayan.Syntax.Text.SourceText.FromString("package.byn", text));
         if (valid)
         {
@@ -73,6 +74,56 @@ public sealed class ManifestTests
     [InlineData("1.0.0+build.5", "1.0.0", 0)]
     [InlineData("1.0.0-rc.1+x", "1.0.0", -1)]
     public void VersionOrder(string a, string b, int sign) => Assert.Equal(sign, Math.Sign(Manifest.CompareVersions(a, b)));
+
+    private static Manifest ParseTests(string tests) =>
+        Manifest.Parse(new Bayan.Syntax.Text.SourceText("package.byn",
+            System.Text.Encoding.UTF8.GetBytes($"Package {{ name: \"local/t\", version: \"0.1.0\", test: Tests {{ {tests} }} }}")));
+
+    [Fact]
+    public void TestsFieldsDefaultWhenAbsent()
+    {
+        var m = ParseTests("nightly: [.fuzz]");
+        Assert.Empty(m.Diagnostics);
+        Assert.Null(m.MinLines);
+        Assert.Null(m.MinBranches);
+        Assert.Null(m.MinErrorPaths);
+        Assert.Null(m.MinMutation);
+        Assert.True(m.Summary);
+    }
+
+    [Fact]
+    public void TestsFieldsParse()
+    {
+        var m = ParseTests("lines: 100, branches: 0, errorPaths: 90, mutation: 75, summary: false, diffCoverage: \"anything\", nightly: [.fuzz]");
+        Assert.Empty(m.Diagnostics);
+        Assert.Equal(100, m.MinLines);
+        Assert.Equal(0, m.MinBranches);
+        Assert.Equal(90, m.MinErrorPaths);
+        Assert.Equal(75, m.MinMutation);
+        Assert.False(m.Summary);
+    }
+
+    [Theory]
+    [InlineData("lines")]
+    [InlineData("branches")]
+    [InlineData("errorPaths")]
+    [InlineData("mutation")]
+    public void PercentFieldsRejectWrongTypeAndRange(string field)
+    {
+        foreach (var bad in new[] { "\"80\"", "true", "101", ".x" })
+        {
+            var m = ParseTests($"{field}: {bad}");
+            var d = Assert.Single(m.Diagnostics);
+            Assert.Equal("BYN3102", d.Code);
+        }
+    }
+
+    [Fact]
+    public void SummaryRejectsNonBool()
+    {
+        var d = Assert.Single(ParseTests("summary: 1").Diagnostics);
+        Assert.Equal("BYN3102", d.Code);
+    }
 
     [Fact]
     public void NamesConvertBetweenKebabAndCamel()

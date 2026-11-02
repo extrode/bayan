@@ -1,0 +1,7 @@
+effect db = net, fs
+public effect io = fs, console
+
+let effect = 1
+
+void save() uses db {
+}

@@ -1,0 +1,35 @@
+union error LexError {
+    bad(i64 at, string why)
+    empty
+}
+
+i64 parse(string s) fails LexError {
+    fail .empty if s.isEmpty
+    fail .bad(at: s.length, why: "too long") if s.length > 3
+    return s.length
+}
+
+i64 check(string s, by (string -> i64 fails LexError) f) fails LexError => try f(s)
+
+i64 orZero(string s, by (string -> i64 fails LexError) f) => f(s) catch 0
+
+i64 why(string s, by (string -> i64 fails LexError) f) => f(s) catch switch {
+    .bad(let at, let reason) => at * 100 + reason.length,
+    .empty => -1,
+}
+
+void main() {
+    print($"{check("ab", by: parse) catch -5}")
+    let limit = 2
+    let strict: string -> i64 fails LexError = s => {
+        fail .bad(at: limit, why: "strict") if s.length > limit
+        return try parse(s)
+    }
+    print($"{orZero("abc", by: strict)} {orZero("a", by: strict)}")
+    print($"{why("toolong", by: parse)} {why("", by: parse)} {why("abc", by: strict)}")
+    let r = check("abcd", by: strict) catch switch {
+        .bad e => e.at * 10 + e.why.length,
+        .empty => 0,
+    }
+    print($"{r}")
+}

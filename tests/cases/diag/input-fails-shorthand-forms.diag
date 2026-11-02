@@ -1,0 +1,17 @@
+error BYN1031: `T!E` is an input form; write `T f() fails E`
+
+  4 │ i32!E g() fails F { return 1 }
+    │    ^^ the input form
+    │
+  help: write `fails E, F` after the parameters
+    │ 4 │ i32 g() fails E, F { return 1 }
+    │   │    +++++++++++++
+
+error BYN1031: `T!E` is an input form; write `T f() fails E`
+
+  5 │ i32!E h() fails E { return 1 }
+    │    ^^ the input form
+    │
+  help: write `fails E` after the parameters
+    │ 5 │ i32!E h() fails E { return 1 }
+    │   │    --

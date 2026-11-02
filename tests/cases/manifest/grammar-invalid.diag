@@ -1,0 +1,21 @@
+error BYN3102: `grammar.verbs` must be a list of words, e.g. `["upsert"]`
+
+  5 │         verbs: "upsert",
+    │                ^^^^^^^^
+
+error BYN3102: `grammar.nouns` must be a list of words, e.g. `["upsert"]`
+
+  6 │         nouns: [.sku],
+    │                ^^^^^^
+
+error BYN3102: `grammar.forms` must be a map from a word to its form, e.g. `["upsert": "upserted"]`
+
+  7 │         forms: ["upsert"],
+    │                ^^^^^^^^^^
+
+error BYN3101: `rules` is not a field of `Grammar`
+
+  8 │         rules: [],
+    │         ^^^^^
+    │
+  help: use one of the fields `verbs`, `nouns`, `adjectives`, `forms`

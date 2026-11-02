@@ -1,0 +1,19 @@
+i64 countOf<K>(K key) {
+    var m = Map<K, i64>()
+    m[key] = 1
+    return m.length
+}
+
+bool same<T>(T a, as T b) => a == b
+string show<T>(T x) => $"{x}"
+
+struct Index<K> {
+    Map<K, string> names
+}
+
+print($"{countOf(1.5)}")
+print($"{countOf("fine")}")
+let xs = List<i64>()
+print($"{same(xs, as: xs)}")
+print(show(Arena()))
+var idx: Index<f64>

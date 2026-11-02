@@ -1,0 +1,22 @@
+union error EmailError {
+    /// Not an address.
+    invalid
+}
+
+union error DbError {
+    /// The database took too long.
+    timeout
+    /// The connection dropped.
+    lost
+}
+
+union error SignupError = EmailError, DbError
+
+i64 signUp(i64 n) fails SignupError {
+    fail .invalid if n == 1
+    return n
+}
+
+let r = signUp(1) catch switch {
+    DbError.timeout => 1,
+}

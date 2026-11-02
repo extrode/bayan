@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "mutation",
+  "tool": "stryker",
+  "timing": {"build_s": 2.0, "mean_mutant_s": 2.6666666666666665, "max_mutant_s": 0, "total_s": 10.0, "mutant_share_of_build": 1.3333333333333333},
+  "files": [
+    {
+      "path": "src/A.cs",
+      "mutants": [
+        {"site": {"id": 1, "file": "src/A.cs", "line": 2, "column": 10, "operator": "Arithmetic", "original": "a + 1", "mutated": "a - 1"}, "status": "killed"},
+        {"site": {"id": 2, "file": "src/A.cs", "line": 2, "column": 10, "operator": "Arithmetic", "original": "a + 1", "mutated": "a * 1"}, "status": "survived", "suggestion": "add a case that fails under this change"},
+        {"site": {"id": 3, "file": "src/A.cs", "line": 2, "column": 3, "operator": "Statement", "original": "return a + 1;", "mutated": ";"}, "status": "timeout"},
+        {"site": {"id": 4, "file": "src/A.cs", "line": 1, "column": 1, "operator": "Statement", "original": "int f(int a) {\n  return a + 1;\n}", "mutated": ";"}, "status": "not_reached"},
+        {"site": {"id": 5, "file": "src/A.cs", "line": 2, "column": 10, "operator": "Arithmetic", "original": "a + 1", "mutated": "a / 1"}, "status": "marked"}
+      ]
+    }
+  ],
+  "totals": {"killed": 1, "survived": 1, "timeout": 1, "marked": 1, "not_reached": 1, "not_emitted": 1}
+}

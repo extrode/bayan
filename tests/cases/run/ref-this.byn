@@ -1,0 +1,41 @@
+// A `ref this` member changes its receiver; one without it only reads.
+struct Stat {
+    i64 hits = 0
+    i64 total = 0
+
+    void record(ref this, i64 ms) {
+        hits += 1
+        total += ms
+    }
+
+    // Calls a `ref this` member on `this`, so it is `ref this` too.
+    void recordTwice(ref this, i64 ms) {
+        record(ms)
+        record(ms)
+    }
+
+    i64 average() => total / hits
+}
+
+var s = Stat {}
+s.record(10)
+s.recordTwice(25)
+print($"{s.hits} {s.total} {s.average()}")
+
+// Indexing a `var` collection yields the stored element in place.
+var list = List<Stat>()
+list.append(Stat {})
+list[0].record(12)
+list[0].record(30)
+print($"{list[0].hits} {list[0].total}")
+
+var stats = Map<string, Stat>()
+stats["api"] = Stat {}
+stats["api"].record(12)
+stats["api"].record(5)
+stats.slot("db").record(7)
+print($"{stats["api"].hits} {stats["api"].total} {stats["db"].total}")
+
+// A missing key panics, as reading `map[key]` does; it is not inserted.
+stats["web"].record(1)
+print("unreachable")

@@ -1,0 +1,10 @@
+// A typed `const` of `Symbol` is a literal-table entry fixed at compile time (spec 008 R2).
+const k: Symbol = "foo"
+
+public void main() {
+  const j: Symbol = "bar"
+  print(k.text)
+  print(j.text)
+  let t = Symbol.intern("foo")
+  print($"{k == t}")
+}

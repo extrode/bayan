@@ -1,0 +1,23 @@
+# 010 tasks (trimmed copy of the real file)
+
+- [x] T10 Manifest reader — files: `manifest.byn` (`src/Bayan.Syntax/Packages/Manifest.cs`: data grammar, BYN3100–BYN3103, capabilities, grammar, `camelOf`/`kebabOf`), `SelfhostSemanticsT10Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T9, T11–T27, T34–T39 — done when:
+  - both `package.byn` diag cases parse and report identically; entry-module names match `CliApp.EntryModule`; Q565–Q569 as needed.
+  - Size: about 690 lines.
+- [x] T12 Declaration B — files: `declare.byn` (`Compilation.cs` ~655–1037: variants, payloads, enums, unions, struct members, overloads, `overlap`), `SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T6–T11, T13–T27, T34–T39 — done when:
+  - method-for-method port with copied symbol facts and no synthesized syntax; Q575–Q579 as needed.
+  - Size: about 555 lines.
+- [x] T17 Expression binding A — files: `express.byn` (`BinderExpressions.cs` 1–~599: conversions, literals, integer parsing, names and suggestions), `express2.byn` (helper dedupe, Q726), `selfhost/parser/literals.byn` (public `decodeChar`, Q726), `SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T6–T16, T18–T27, T34–T39 — done when:
+  - method-for-method port; literals and name errors match C#; Q600–Q604 as needed.
+  - Size: about 845 lines.
+- [x] T28 Integration: parity — files: any `selfhost/semantics/*.byn` (stand-ins removed, fixes only), `src/Bayan.*` (only a blocking compiler bug, with a test), `work/todo.md` (removes `t17Host`, `t18Host` and the `t11/t15/t16/t17ExprSpan` copies, Q674), `SelfhostSemanticsTests.cs` and `SelfhostSemanticsGeneratorTests.cs` (the `T28 enables` skips removed), `SelfhostSemanticsT*Tests.cs` (only harness stand-ins that a real port now replaces, removed), `docs/specs/010-self-hosted-semantics/010-api.md` (signatures a T28 fix widens), `tests/cases/diag/generic-guard-mutate-rebind.byn` and `tests/cases/diag/generic-guard-mutate-rebind.diag` (covers the generic `checkGuardWrite` branch and the `bindFunction` rollback, expected file from the C#) — covers: R1, R2, R4, R5, R6, R7, R8 — after: T6–T27, T34–T39; parallel with: none — done when:
+  - every diag (golden and CLI), typed and generated row passes with equal stderr, `--types` bytes and exit code; the 1 MB median ratio is at most 10 and recorded; the full suite including L001/L002/L017/L018 passes; any blocking compiler bug is fixed here with a test; Q655–Q657.
+  - Size: fixes only, no new files.
+- [x] T30 enact L022 "Binder equivalence" — files: `docs/laws/022-binder-equivalence.md` — covers: L022 — after: T29 — done when:
+  - `status: enacted` lands with T29's passing proof (standing authorization, 2026-10-21).
+  - Size: one status line and recorded measurements.
+- [x] T31 prove L023 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L023], `docs/laws/023-no-checker-panic.md`, `compile.byn` (Q661 fix, dispatcher 2026-11-01: `t11DeclareTest` gives the test function C#'s default `void` return type, Symbols.cs:207), `main.byn` (`--many` reports each input's exit) — covers: L023 — after: T28; parallel with: T29 — done when:
+  - over every golden, seed corpus and random byte/token mutation (nesting bounded as in L018), exits are 0 or 1 and `--spans` prints nothing; a span mutation fails it; Q661–Q662.
+  - Size: about 200 lines of C# and the law page.
+- [x] T33 Docs — files: `docs/bayan-handoff.md` (Q520+, spend, Road row 010, readiness), `CHANGELOG.md`, `work/todo.md`, `010-spec.md` status — covers: R8, R9 — after: T28, T30, T32 — done when:
+  - every Question raised by T1–T32 is listed in order; readiness names what the port needed and did not get; spec status done; Q664–Q668.
+  - Size: about 120 lines of docs.

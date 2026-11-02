@@ -1,0 +1,6 @@
+error BYN5003: `tryParse` must return `i64?` or `bool`; it is derived from `parse() fails`
+
+  10 │     i64 tryParse() => 0
+     │     ^^^ returns `i64`
+     │
+  help: change it to return `i64?` or `bool`, or remove `tryParse` and call `try parse()`
