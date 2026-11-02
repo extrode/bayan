@@ -55,6 +55,13 @@ run now-passes 1 "Bayan.Tests.A.One" "$list" "$tmp/pass.trx"
 trx "$tmp/absent.trx" "$DX=Failed" "Bayan.Tests.A.Two=Passed"
 run not-run 0 "not run: Bayan.Tests.A.One" "$list" "$tmp/absent.trx"
 
+for o in Error Timeout Aborted; do
+  trx "$tmp/$o.trx" "Bayan.Tests.A.One=Failed" "$DX=Failed" "Bayan.Tests.A.Four=$o"
+  run "outcome-$o" 1 "new failure: Bayan.Tests.A.Four" "$list" "$tmp/$o.trx"
+  trx "$tmp/$o-known.trx" "Bayan.Tests.A.One=$o" "$DX=Failed"
+  run "outcome-$o-known" 0 "2 failed, 2 known" "$list" "$tmp/$o-known.trx"
+done
+
 # exact match of a display name with a (name: "...") suffix
 trx "$tmp/exact.trx" "Bayan.Tests.A.One=Failed" 'Bayan.Tests.P.Check(name: "diag/x/other.byn")=Failed'
 run exact-name 1 "new failure: Bayan.Tests.P.Check(name: \"diag/x/other.byn\")" "$list" "$tmp/exact.trx"

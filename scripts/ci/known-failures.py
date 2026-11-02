@@ -9,6 +9,9 @@ exit 2: unreadable trx, no trx, or zero results
 import sys
 import xml.etree.ElementTree as ET
 
+# trx outcomes of a test that did not pass: a crashed or timed-out test is a failure too.
+FAILED = {"Failed", "Error", "Timeout", "Aborted"}
+
 
 def main(argv):
     if len(argv) < 3:
@@ -34,12 +37,12 @@ def main(argv):
             name, outcome = el.get("testName"), el.get("outcome")
             if name is None:
                 continue
-            if outcome == "Failed" or name not in outcomes:
+            if outcome in FAILED or name not in outcomes:
                 outcomes[name] = outcome
     if not outcomes:
         print("known-failures: no test results in the trx files")
         return 2
-    failed = {n for n, o in outcomes.items() if o == "Failed"}
+    failed = {n for n, o in outcomes.items() if o in FAILED}
     new = sorted(failed - listed)
     passing = sorted(n for n in listed if outcomes.get(n) == "Passed")
     not_run = sorted(n for n in listed if n not in outcomes)
