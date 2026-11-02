@@ -6,7 +6,7 @@
 # 4. (--remove-docker-image) the bayan-t19 image (2.16 GB) built for the T19 Linux run;
 # 5. (--delete-remote) the T19 scratch clone, bundles and run script on wp1 and wlt1 (ssh), and wp1's old zig 0.16.0-dev and the 0.17.0 zip.
 #    Run --delete-remote only after step 9 of docs/plans/2026-11-02-003-move-to-ikhbat-org.md has moved the wp1/wlt1
-#    checkout to C:\home\code\ikhbat.org\bayan: section 5 names that path.
+#    checkout to C:\home\code\ikhbat.org\bayan: section 5 names that path, and refuses on a host where it has no .git yet.
 # Section 1 also takes the 2026-11-02 review-fix, Q742, docs and tmp/win-combined (test/win-combined-1102), tmp/combined-1102b (test/combined-1102b) worktrees once dev holds them.
 # Dry run by default. --execute / -e acts on worktrees and branches; each later section also needs its own flag.
 # Merged-ness, tracked-ness and existence are asked at run time, never taken from this header.
@@ -112,6 +112,14 @@ printf '== 5. wp1 / wlt1 T19 scratch\n'
 for h in wp1 wlt1; do
   for p in C:/Users/Sy/bayan-bcl C:/Users/Sy/bcl.bundle C:/Users/Sy/AppData/Local/Temp/bayan-013.bundle /home/code/ikhbat.org/bayan/tmp-t19-run.ps1 \
            C:/Users/Sy/winport.bundle C:/home/lang/zig-0.16.0-dev.2682 C:/home/lang/zig-x86_64-windows-0.17.0.zip C:/Users/Sy/kf-trx; do
+    if [ "${p##*/}" = tmp-t19-run.ps1 ]; then
+      if ! co="$(ssh -o ConnectTimeout=5 "$h" "if (Test-Path '/home/code/ikhbat.org/bayan/.git') { 'yes' } else { 'no' }" 2>/dev/null | tr -d '\r')"; then
+        printf 'skip:  %s unreachable\n' "$h"; continue 2
+      fi
+      if [ "$co" != yes ]; then
+        printf 'refuse: %s: /home/code/ikhbat.org/bayan is not a checkout yet (move step 9 first). Left alone.\n' "$h"; failed=1; continue
+      fi
+    fi
     if ! there="$(ssh -o ConnectTimeout=5 "$h" "if (Test-Path '$p') { 'yes' } else { 'no' }" 2>/dev/null | tr -d '\r')"; then
       printf 'skip:  %s unreachable\n' "$h"; continue 2
     fi
