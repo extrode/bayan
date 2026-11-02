@@ -346,6 +346,20 @@ v0.3: fibers and `Io.Evented`, networking, HTTP, TLS through a C wrapper, WASM.
 Formatter, LSP, prose tool and packages land across v0.2–v0.4.
 Addendum 002 (`docs/bayan-handoff-addendum-002.md`): opt-in `law` declarations and `bayan laws` (v0.2), `requires`/`ensures` contracts (runtime v0.2+, `bayan verify` v1.x), `.par()` parallel iterators (v0.3). Design only until the v0.1 exit criterion and addendum 001 are done; its §1 (reserve `law requires ensures`) is done.
 
+### Target: zero dependencies (set by the user 2026-11-02)
+
+Building, testing and shipping Bayan should need nothing but Bayan. Today it needs:
+
+| Dependency | Used for | Leaves when |
+|---|---|---|
+| .NET 10 SDK | the C# compiler, the test suite | self-hosting (spec 010 onward) replaces the C# compiler |
+| zig 0.17.0 (or a system cc/clang/gcc, host builds only) | C compiler and cross-target libc (`Toolchain.FindCompiler`) | Bayan emits machine code itself, or ships its own C toolchain; not yet planned |
+| Python 3 | `scripts/ci/known-failures.py`, `scripts/selfhost/*.py` | the scripts are rewritten as Bayan scripts (the interpreter, v0.2) |
+| bash, curl, tar/unzip | `scripts/**/*.sh`, `scripts/ci/install-zig.sh` | the same |
+| Node 24 | only GitHub Actions' own JavaScript actions (checkout, setup-dotnet, artifacts); nothing of ours runs on Node | `run:` steps can replace them; zig already installs from a script |
+
+Rule from now on: add no new dependency without the user's say; when touching a script or a workflow step, prefer the option that removes one.
+
 ## Self-hosting readiness
 
 `docs/bayan-self-hosting.md` lists what a compiler needs from its own language. Spec 001 (`docs/specs/001-self-hosted-lexer/`) covers phases 1 and 2; milestones M13–M23 continue the numbering above. Correction to that doc's table: file I/O and program arguments were **not** in v0.1; M13 adds them.
@@ -1368,3 +1382,4 @@ Spec order (numbers are provisional; a spec may split):
 - **2026-11-01 — Spec 010 merged into dev (unattended session).** T29–T33 and T40 landed through `land.sh`, each with a PASS review in `docs/specs/010-self-hosted-semantics/reviews/`. A final two-lens review of the code diff found one HIGH: a diagnostic at a `for try` synthetic name panicked `bayan-check`. T40 fixed it, and the review's probe now matches the C# byte for byte. Its two LOWs, plus run-case files left in the checkout root, are in `work/todo.md`. Before the merge: `dotnet test` 6032 of 6032 passed (11 m 5 s), `laws-check --run` holds 21 enacted laws (L018 and L023 still proposed, Q663), and structure-audit reports 0 errors. Next: spec 013 T14, T15, T18 and T19 on `feat/013-test-tooling` after merging dev into it, then the 011 spec draft.
 - **2026-11-02 — Decisions Q742/Q743/011, zig pin.** User decisions: Q742 (b) LF output (runtime `byn_stdio_binary`, CLI `NewLine = "\n"`, LfOutputTests); Q743 (b) std Path module, spec 014 drafted; 011 Q1 (b) port today's lowering, the closure parts again after round 4 (an escaping `move` closure capturing locals stays a compile error: BYN2782, BYN2822, BYN3002, BYN3003); L018/L023 enact at 011 start with a quick/full tier (Q744, proposal). `.zig-version` pins 0.17.0 (ZigVersionPinTests). wlt1 dropped as a T19 host. Next: Windows run on wp1 with zig 0.17.0, the Q743 known-failure list in the Windows CI job, then the user's push.
 - **2026-11-02 — Windows clean, 013 T27, review.** wp1 on zig 0.17.0: full suite 76 failed / 5976 passed / 1 skipped, all 76 the Q743 list (`known-failures: 76 failed, 76 known, 0 new`); fixes on the way: selfhost parser runs read stdout as written (Q742 made the `\r\n` collapse wrong), and `TestDirs.Delete` clears git's read-only objects so a second Windows run can reset CacheTests/CliEnvironmentTests dirs. CI: Windows `Test` step continues on error and `scripts/ci/known-failures.py` decides (Error/Timeout/Aborted count as failures). 013 T27 landed (77 markers → `@unobservable`, 310 of 8087 sites marked); only T19 open (Windows CI run after the push). Review 95a0276..396ec09: 4 LOW found, 3 refuted, 1 fixed; macOS 6052/6053 (1 intermittent, passes alone), all laws hold. Next: user pushes dev; watch the Windows CI job; 014 Path module; 011.
+- **2026-11-02 — Windows CI, Node 24, zero-dependency target.** CI 41387538416 Windows: 263 failed, 187 new, all one memory exhaustion (zig `SystemResources`, bayan-check 0xC000012D) from three test classes each warming ~190 builds at once; `WarmUp.Start` caps them at ProcessorCount. CI 41396961495 then: 77 failed, 76 known, 1 new (`OwnershipTableTests` timeout hidden by its cleanup's IOException), fixed. macOS green three runs running, `OneMegabyteWithinTenTimes` included. Workflows on Node 24 actions; zig from `scripts/ci/install-zig.sh` (pinned sha256) since mlugg/setup-zig still targets Node 20. User set a zero-dependency target (table under *After v0.1*). Next: user pushes; T19 ticks when the Windows known-failures step passes.
