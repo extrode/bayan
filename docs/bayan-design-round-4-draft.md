@@ -83,6 +83,7 @@ Each of these was accepted "for now" or carries a known risk. The self-hosted co
 | Two-layer trust model | Too much ceremony or too little | Sūq handlers: how often `trustUnchecked() because` appears | After Sūq runs |
 | Typestate scope | Used for plain data, adding ceremony | Count of `states` blocks that are not lifecycles | After Sūq runs |
 | .NET interop ("use .NET libraries early on") | Promised, with no design | Decide whether it is a v0.x goal at all | Round 4 |
+| `f64` text form: `1.0` prints as `1` (and `1e21`, where Python writes `1e+21`) | A float written to JSON or a report reads as an integer; readers that care about the type see it change | Spec 015 S8: quality reports compare floats as numbers after the port | Round 4 |
 
 The interop row needs a decision, not evidence. Options are a C ABI bridge to a NativeAOT .NET library (cheap, one direction) or hosting the CLR (heavy, GC at the edge). The first is consistent with "accept GC cost at the edges".
 
