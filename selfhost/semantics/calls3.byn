@@ -938,7 +938,6 @@ BMemberStep? resolveStep(ref Binder b, through ref Ctx c, for Type type, at Text
         default: {}
     }
     if (builtinProperty(ref c, for: type, by: text) is { } bp) {
-        // mutation-exempt: Q673
         return BMemberStep { builtin: bp.member, type: propertyType(ref b, through: ref c, for: bp.member, as: bp.type) }
     }
     if reportRenamed(ref b, through: ref c, for: type, at: name) { return null }
