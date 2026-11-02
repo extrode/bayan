@@ -36,6 +36,18 @@
 extern char** environ;
 #endif
 
+/* Windows text mode would turn each \n written to stdout or stderr into \r\n. Every path that writes either stream
+ * calls this first (byn_stdout_flush precedes all the others), so the switch happens once, before the first byte. */
+static void byn_stdio_binary(void) {
+#ifdef _WIN32
+    static bool done;
+    if (done) return;
+    done = true;
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+#endif
+}
+
 /* ── Panics ──────────────────────────────────────────────────────────────── */
 
 /* The panic in progress: its message (copied, since it may live in the panicking frame the handlers jump over) and
@@ -56,6 +68,7 @@ static void byn_cov_flush_once(void) {
 }
 
 static void byn_panic_print(const char* prefix, const uint8_t* msg, size_t len, const char* file, int line) {
+    byn_stdio_binary();
     fputs(prefix, stderr);
     fwrite(msg, 1, len, stderr);
     if (file) fprintf(stderr, "\n  at %s:%d\n", file, line);
@@ -265,6 +278,7 @@ static void byn_out(const uint8_t* p, int64_t n) {
 }
 
 void byn_stdout_flush(void) {
+    byn_stdio_binary();
     if (byn_out_len > 0) fwrite(byn_out_buf, 1, (size_t)byn_out_len, stdout);
     byn_out_len = 0;
     fflush(stdout);
@@ -1886,6 +1900,7 @@ bool byn_utf8_valid(const uint8_t* p, int64_t n) {
 }
 
 static BYN_NORETURN void byn_bad_arg(int i) {
+    byn_stdio_binary();
     fprintf(stderr, "error: argument %d is not valid UTF-8\n", i);
     fflush(stderr);
     exit(1);
