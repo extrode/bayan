@@ -1,5 +1,5 @@
 # 013 — Test tooling: mutation and coverage
-Status: draft
+Status: done (2026-11-02)
 Created: 2026-10-31
 
 ## Problem
