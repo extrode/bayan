@@ -454,6 +454,17 @@ internal sealed class RegionAnalysis
                 break;
             }
         }
+        // Q745: a callee may store any argument, and its receiver, into a `ref`/`out` argument, and a `ref this` method into its receiver.
+        for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
+        {
+            if (WrittenArgument(fn.Parameters[i], c.Arguments[i]) is not { } written || !MayBorrow(written.Type, [])) continue;
+            if (c.Receiver is not null) StoreInto(written, receiver, c.Receiver.Syntax.Span);
+            for (var j = 0; j < c.Arguments.Length; j++)
+                if (j != i) StoreInto(written, args[j], c.Arguments[j].Syntax.Span);
+        }
+        if (c.Receiver is not null && fn.IsMutating && MayBorrow(c.Receiver.Type, []))
+            for (var j = 0; j < c.Arguments.Length; j++)
+                StoreInto(c.Receiver, args[j], c.Arguments[j].Syntax.Span);
         // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none, and an interned `Symbol` lives until exit.
         // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
