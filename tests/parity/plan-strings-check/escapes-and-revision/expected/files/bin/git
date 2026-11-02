@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Stub for the git calls plan-strings-check makes when codes are named on the command line.
+case "$*" in
+  "ls-files src") printf '%s\n' src/Bayan.Semantics/Lexicon.cs src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs src/Bayan.Syntax/Parsing/Parser.cs src/Bayan.Syntax/Parsing/States.cs ;;
+  "ls-files tests/cases") printf '%s\n' tests/cases/diag/field.diag ;;
+  *) echo "git stub: unexpected $*" >&2; exit 1 ;;
+esac

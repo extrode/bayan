@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+case "$*" in
+  "cat-file -e base:src/A.cs")
+    exit 0 ;;
+  "diff -U0 base -- src/A.cs")
+    cat <<'EOF'
+diff --git a/src/A.cs b/src/A.cs
+--- a/src/A.cs
++++ b/src/A.cs
+@@ -2 +2 @@
+-    int x = 1;
++    int x = 2;
+EOF
+    ;;
+  "cat-file -e base:src/B.cs")
+    exit 1 ;;
+  *)
+    echo "unexpected git args: $*" >&2
+    exit 1 ;;
+esac

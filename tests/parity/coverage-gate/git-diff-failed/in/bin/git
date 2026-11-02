@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+case "$*" in
+  "cat-file -e base:selfhost/semantics/a.byn")
+    exit 0 ;;
+  "diff -U0 base -- selfhost/semantics/a.byn")
+    echo "fatal: bad revision 'base'" >&2
+    exit 128 ;;
+  *)
+    echo "unexpected git args: $*" >&2
+    exit 1 ;;
+esac
