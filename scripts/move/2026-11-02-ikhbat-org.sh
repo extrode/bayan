@@ -118,6 +118,8 @@ rewrite_file() {
 
 clone_cp() { cp -pc "$1" "$2" 2>/dev/null || cp -p "$1" "$2"; }
 
+# interrupted between the mv and its manifest line: the checkout is already at NEW_REPO
+moved_already() { [ -f "$MANIFEST" ] && ! is_done 3 && [ ! -e "$OLD_REPO" ] && [ -d "$NEW_REPO" ]; }
 is_done() { [ -f "$MANIFEST" ] && grep -qx "done${TAB}$1" "$MANIFEST"; }
 mark_done() {
   printf 'done\t%s\n' "$1" >> "$MANIFEST"
@@ -164,7 +166,10 @@ preflight() {
   out=$($PGREP -x "$CLI_NAME" 2>/dev/null || true)
   if [ -n "$out" ]; then
     refuse "Claude process matches pgrep -x $CLI_NAME:"
-    while IFS= read -r line; do say "  $line"; done <<< "$out"
+    while IFS= read -r line; do
+      pid=${line%% *}
+      say "  $pid $(ps -o command= -p "$pid" 2>/dev/null || echo '(command line unavailable)')"
+    done <<< "$out"
   fi
 
   for f in "$CLAUDE_HOME"/sessions/*.json; do
@@ -197,7 +202,7 @@ preflight() {
   done
 
   repo=$OLD_REPO
-  if is_done 3; then
+  if is_done 3 || moved_already; then
     repo=$NEW_REPO
     [ -d "$NEW_REPO" ] || refuse "step 3 is recorded but $NEW_REPO is missing"
     [ ! -e "$OLD_REPO" ] || refuse "step 3 is recorded but $OLD_REPO exists"
@@ -284,6 +289,11 @@ step2() {
 # ---- 3. move the checkout -------------------------------------------------------------------
 step3() {
   if is_done 3; then say "skip: step 3 (move checkout) already done"; return 0; fi
+  if moved_already; then
+    say "skip: $OLD_REPO is already at $NEW_REPO"
+    if [ "$EXECUTE" -eq 1 ]; then mark_done 3; fi
+    return 0
+  fi
   if [ "$EXECUTE" -eq 0 ]; then say "would: mv $OLD_REPO $NEW_REPO"; return 0; fi
   mkdir -p "$(dirname "$NEW_REPO")"
   mv "$OLD_REPO" "$NEW_REPO"

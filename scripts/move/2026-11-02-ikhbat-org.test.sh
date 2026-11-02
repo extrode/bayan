@@ -133,10 +133,13 @@ case "$OUT" in *"would:"*) ;; *) fail "dry run printed no would:" ;; esac
 [ -d "$OLD_REPO" ] && [ ! -e "$NEW_REPO" ] || fail "dry run moved the repo"
 
 # --- preflight refusals
-for form in "-fl /claude/versions/|/claude/versions/" "-fl ClaudeCode.app|ClaudeCode.app" "-fl bin/claude|bin/claude" "-x claude|-x claude"; do
+for form in "-fl /claude/versions/|/claude/versions/" "-fl ClaudeCode.app|ClaudeCode.app" "-fl bin/claude|bin/claude"; do
   build_fixture
   STUB_ARGS=${form%%|*} STUB_OUT="4242 /some/claude cmd" expect_refuse "process form $form" "${form##*|}"
 done
+build_fixture
+STUB_ARGS="-x claude" STUB_OUT="$LIVE_PID" expect_refuse "bare argv form" "-x claude"
+case "$OUT" in *"$LIVE_PID sleep 600"*) ;; *) fail "bare argv form: pid and command line not printed: $OUT" ;; esac
 build_fixture
 printf '{"pid":%s,"cwd":"%s/sub"}\n' "$LIVE_PID" "$OLD_REPO" > "$CLAUDE_HOME/sessions/live.json"
 expect_refuse "live session" "live session"
@@ -201,6 +204,17 @@ for n in 3 5 6; do
   [ "$RC" -eq 0 ] || fail "resume after $n: exit $RC: $OUT"
   [ "$(tree_hash all)" = "$HREF" ] || fail "resume after $n ends in a different tree"
 done
+
+# --- interrupted after the mv, before its manifest line
+build_fixture
+STOP_AFTER=3 run_mv --execute
+[ "$RC" -eq 99 ] || fail "stop after 3 (no marker): exit $RC: $OUT"
+M=$CLAUDE_HOME/backups/bayan-move-2026-11-02/manifest.txt
+grep -v "^done$(printf '\t')3\$" "$M" > "$M.new" && mv "$M.new" "$M"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "resume after mv without marker: exit $RC: $OUT"
+case "$OUT" in *"skip: "*"already at"*) ;; *) fail "step 3 was not a skip: $OUT" ;; esac
+[ "$(tree_hash all)" = "$HREF" ] || fail "resume after mv without marker ends in a different tree"
 
 # --- undo restores the starting tree, twice
 build_fixture
