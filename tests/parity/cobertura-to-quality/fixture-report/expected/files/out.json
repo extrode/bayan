@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "kind": "coverage",
+  "tool": "coverlet",
+  "timing": {
+    "build_s": 1.5,
+    "total_s": 4.0
+  },
+  "files": [
+    {
+      "path": "src/A.cs",
+      "lines": {
+        "covered": 3,
+        "total": 4,
+        "missed": [
+          4
+        ],
+        "unknown": []
+      },
+      "branches": {
+        "covered": 1,
+        "total": 2,
+        "missed": [
+          {
+            "line": 3,
+            "column": 0,
+            "outcome": false
+          }
+        ],
+        "unknown": []
+      },
+      "errorPaths": []
+    },
+    {
+      "path": "src/B.cs",
+      "lines": {
+        "covered": 1,
+        "total": 1,
+        "missed": [],
+        "unknown": []
+      },
+      "branches": {
+        "covered": 2,
+        "total": 2,
+        "missed": [],
+        "unknown": []
+      },
+      "errorPaths": []
+    }
+  ],
+  "totals": {
+    "lines": {
+      "covered": 4,
+      "total": 5
+    },
+    "branches": {
+      "covered": 3,
+      "total": 4
+    },
+    "errorPaths": {
+      "covered": 0,
+      "total": 0
+    }
+  }
+}

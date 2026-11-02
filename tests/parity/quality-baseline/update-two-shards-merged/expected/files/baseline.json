@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "files": {
+    "a.byn": {
+      "mutation": 0.75
+    },
+    "b.byn": {
+      "mutation": 1.0
+    }
+  }
+}

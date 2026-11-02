@@ -1,0 +1,1 @@
+quality-baseline: outdot.json: path ../z.byn is outside the root .; a key would not be root-relative

@@ -1,0 +1,4 @@
+new failure: Bayan.Tests.A.Five
+new failure: Bayan.Tests.A.Four
+new failure: Bayan.Tests.A.Six
+known-failures: 5 failed, 2 known, 3 new, 0 now passing

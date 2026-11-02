@@ -1,0 +1,4 @@
+new failure: Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/not-visible/main.byn")
+now passes: remove it from windows-known-failures.txt: Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/grammar-dictionary/main.byn")
+not run: Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/for-try-next-not-visible/main.byn")
+known-failures: 4 failed, 3 known, 1 new, 1 now passing

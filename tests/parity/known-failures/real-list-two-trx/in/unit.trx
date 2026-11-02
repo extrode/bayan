@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="5c1f0b6e-3a54-4c8e-9a47-0d2f6f1f9a10" name="runner@WIN 2026-11-02 10:14:03" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult executionId="a1" testId="t1" testName="Bayan.Tests.SelfhostSemanticsEquivalenceLawTests.BayanCheckEqualsTheCCheckerOnEveryCleanParse" computerName="WIN" duration="00:00:01.2340000" startTime="2026-11-02T10:14:04.0000000+00:00" endTime="2026-11-02T10:14:05.0000000+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d">
+      <Output><ErrorInfo><Message>Assert.Equal() Failure</Message></ErrorInfo></Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="a2" testId="t2" testName="Bayan.Tests.LexerTests.Tokenizes" computerName="WIN" duration="00:00:00.0100000" outcome="Passed" />
+    <UnitTestResult executionId="a3" testId="t3" testName="Bayan.Tests.ParserTests.Parses" computerName="WIN" duration="00:00:00.0200000" outcome="Passed" />
+  </Results>
+</TestRun>
