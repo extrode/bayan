@@ -18,15 +18,17 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     private static string LexerDir => Path.Combine(Golden.RepoRoot, "selfhost", "lexer");
 
     /// <summary>The built <c>bayan-lex</c>, or the compiler's complaint.</summary>
-    private static readonly Lazy<(string? Path, string Error)> BayanLex = new(() => BuildLex(SelfhostSemanticsHarness.SnapshotDir, SelfhostSemanticsHarness.CoverageDir));
+    private static readonly Lazy<(string? Path, string Error)> BayanLex = new(() => BuildLex(SelfhostSemanticsHarness.SnapshotDir));
 
-    /// <summary><c>selfhost/lexer</c> built in fast mode; under <paramref name="snapshot"/> a schemata build listed in its <c>manifest.json</c>.</summary>
-    internal static (string? Path, string Error) BuildLex(string? snapshot, string? coverage)
+    /// <summary><c>selfhost/lexer</c> built in fast mode; under <paramref name="snapshot"/> a schemata build listed in its <c>manifest.json</c>.
+    /// Never coverage-instrumented: the lexer group ignored <c>BAYAN_COVERAGE</c> before snapshot recording, and a guard
+    /// <c>BAYAN_COVERAGE_FILES</c> naming only non-lexer files would make the build throw.</summary>
+    internal static (string? Path, string Error) BuildLex(string? snapshot)
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.FromPath(Path.Combine(LexerDir, "main.byn"));
         if (c.Diagnostics.HasErrors) return (null, string.Join("\n", c.Diagnostics.Items));
-        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal), snapshot, coverage, Environment.GetEnvironmentVariable("BAYAN_COVERAGE_FILES"));
+        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal), snapshot, null, null);
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
     }
 
@@ -401,7 +403,7 @@ public sealed class LexerSnapshotRecordingTests
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-lexer-snap");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-        var (path, error) = SelfhostLexerTests.BuildLex(dir, null);
+        var (path, error) = SelfhostLexerTests.BuildLex(dir);
         Assert.True(path is not null, error);
         Assert.True(File.Exists(Path.Combine(dir, "manifest.json")), "the build wrote no manifest.json");
         var input = Directory.GetFiles(Path.Combine(Golden.CasesRoot, "lex"), "*.byn").Order(StringComparer.Ordinal).First();

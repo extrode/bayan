@@ -114,14 +114,14 @@ PY
 done 3< <(cut -f1 <<< "$PLAN" | awk '!s[$0]++')
 REPORTS=(); for g in ${OK[@]+"${OK[@]}"}; do REPORTS+=("$OUT/$g"/quality-*.json); done
 if [ ${#REPORTS[@]} -gt 0 ]; then
-  out=$(python3 -I "$HERE/quality-baseline.py" check $BASELINE . "${REPORTS[@]}" 2> "$OUT/baseline.txt"); BX=$?
+  out=$(python3 -I "$HERE/quality-baseline.py" check "$BASELINE" . "${REPORTS[@]}" 2> "$OUT/baseline.txt"); BX=$?
   if [ $BX != 0 ]; then
     [ -n "$out" ] && echo "$out" || echo "baseline: quality-baseline.py check failed on $BASELINE — $(tail -1 "$OUT/baseline.txt")"
     # a refused shard uploads no accepted report: every report it would have applied moves to its group's rejected/
     for g in "${OK[@]}"; do mkdir -p "$OUT/$g/rejected"
       for rp in "$OUT/$g"/quality-*.json; do [ -f "$rp" ] && mv "$rp" "$OUT/$g/rejected/rejected-$(basename "$rp")"; done; done
     echo "mutate-batch: baseline not updated"; exit 1; fi
-  python3 -I "$HERE/quality-baseline.py" update $BASELINE . "${REPORTS[@]}" || { echo "mutate-batch: baseline update failed"; exit 1; }
+  python3 -I "$HERE/quality-baseline.py" update "$BASELINE" . "${REPORTS[@]}" || { echo "mutate-batch: baseline update failed"; exit 1; }
   echo "baseline: $BASELINE updated from ${#REPORTS[@]} report(s)"
 fi
 exit $BAD
