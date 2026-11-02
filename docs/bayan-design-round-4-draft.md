@@ -227,6 +227,7 @@ Round 4 holds every syntax change in one batch, landed after 012 with one migrat
 | `!(x is .s)` input form (BYN1069) | One spelling of negated `is` | One more code |
 | Payload size-ratio lint | Keeps `Result` small | Heuristic threshold |
 | Diagnostic renumbering | Codes grouped by category, as intended | One-time alias table |
+| Consuming `finish()` (`move this`) | Hands the heap block to the caller, so a function can return a built string without a copy (revision 0018 made `finish()` a loan) | A second `finish` form, or a `move` overload rule; the buffer is unusable after it |
 | Store and return summaries across packages (Q745) | A caller's acceptance depends on callee bodies (the Q745 per-callee store summaries, and the return summaries that replace rule 4 for calls with a body), so a public function's body change can break another package; decide: public functions declare their store and return summaries in the signature, or `bayan api diff` reports a summary change as breaking | Signature syntax, or a tooling rule that only catches the break at diff time |
 
 ```cs
