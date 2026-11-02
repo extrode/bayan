@@ -31,7 +31,18 @@ jobs:
         with:
           version: 0.17.0
       - name: Test
+        if: runner.os != 'Windows'
         run: dotnet test Bayan.slnx -c Release
+      # Windows has known failures until spec 014 (Q743); the next step decides the job.
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: dotnet test Bayan.slnx -c Release --logger "trx;LogFileName=windows.trx" --results-directory TestResults
+      - name: Check known failures (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        # The hosted Windows image names its Python `python`; `python3` is not guaranteed there.
+        run: python -I scripts/ci/known-failures.py tests/windows-known-failures.txt TestResults/windows.trx
       - name: Publish (NativeAOT)
         run: dotnet publish src/Bayan.Cli -c Release -r ${{ matrix.rid }} -o out
       - name: Smoke test AOT binary
