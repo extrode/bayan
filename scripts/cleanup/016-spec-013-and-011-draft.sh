@@ -66,7 +66,7 @@ printf '== 1. bayan worktrees and branches\n'
 remove_worktrees "$repo" '.worktrees/worker-w-013-*' '.worktrees/worker-w-winport' '.worktrees/feat-013-test-tooling' \
   '.worktrees/docs-011-spec' '.worktrees/fix-windows-portability' '.worktrees/worker-w-rev1102*' '.worktrees/worker-w-q742*' \
   '.worktrees/fix-q742-lf-output' '.worktrees/fix-review-2026-11-02-2' '.worktrees/chore-remove-mutant-outcome' \
-  '.worktrees/docs-handoff-1102' 'tmp/win-combined'
+  '.worktrees/docs-handoff-1102' 'tmp/win-combined' '.worktrees/chore-q743-known-failures' '.worktrees/worker-w-q743kf'
 delete_branches "$repo"
 
 # 2. ~/.claude (its own dev).
@@ -82,13 +82,20 @@ fi
 # 3. Scratch under tmp/ (gitignored; refused if git tracks it).
 printf '== 3. tmp/ scratch\n'
 for rel in tmp/agy-sh tmp/agy-sh-repo tmp/audit-013.txt tmp/refute2 tmp/review-013 tmp/review-dev-1102 tmp/win-port \
-           tmp/c4 tmp/t19 tmp/bk tmp/mutate-batch tmp/guard-run tmp/013-t27 tmp/law-tier-proposal.md; do
+           tmp/c4 tmp/t19 tmp/bk tmp/mutate-batch tmp/guard-run tmp/013-t27 tmp/law-tier-proposal.md tmp/q743-known tmp/mb-break.out; do
   if [ ! -e "$rel" ]; then printf 'skip:  %s already gone\n' "$rel"; continue; fi
   if [ -n "$(git ls-files -- "$rel" | head -1)" ]; then
     printf 'refuse: %s is tracked by git. Propose it as a commit instead. Left alone.\n' "$rel"; failed=1; continue
   fi
   if [ $execute -eq 1 ] && [ $scratch -eq 1 ]; then rm -rf -- "$rel"; printf 'removed: %s\n' "$rel"
   else printf 'would: rm -rf %s (needs --execute --delete-scratch)\n' "$rel"; fi
+done
+
+# 3b. The T27 gate reviewer's copies in /tmp (outside the repo; the hook blocked its own rm).
+for abs in /tmp/t27rev /tmp/t27base; do
+  if [ ! -e "$abs" ]; then printf 'skip:  %s already gone\n' "$abs"; continue; fi
+  if [ $execute -eq 1 ] && [ $scratch -eq 1 ]; then rm -rf -- "$abs"; printf 'removed: %s\n' "$abs"
+  else printf 'would: rm -rf %s (needs --execute --delete-scratch)\n' "$abs"; fi
 done
 
 # 4. Docker image.
@@ -102,7 +109,7 @@ else printf 'would: docker image rm bayan-t19 (needs --execute --remove-docker-i
 printf '== 5. wp1 / wlt1 T19 scratch\n'
 for h in wp1 wlt1; do
   for p in C:/Users/Sy/bayan-bcl C:/Users/Sy/bcl.bundle C:/Users/Sy/AppData/Local/Temp/bayan-013.bundle /home/code/extrode.com/bayan/tmp-t19-run.ps1 \
-           C:/Users/Sy/winport.bundle C:/home/lang/zig-0.16.0-dev.2682 C:/home/lang/zig-x86_64-windows-0.17.0.zip; do
+           C:/Users/Sy/winport.bundle C:/home/lang/zig-0.16.0-dev.2682 C:/home/lang/zig-x86_64-windows-0.17.0.zip C:/Users/Sy/kf-trx; do
     if ! there="$(ssh -o ConnectTimeout=5 "$h" "if (Test-Path '$p') { 'yes' } else { 'no' }" 2>/dev/null | tr -d '\r')"; then
       printf 'skip:  %s unreachable\n' "$h"; continue 2
     fi
