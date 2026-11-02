@@ -70,7 +70,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
         {
             var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, null, args);
-            return (exit, Encoding.UTF8.GetString(o), Encoding.UTF8.GetString(e));
+            return (exit, ProcessText.Lf(Encoding.UTF8.GetString(o)), Encoding.UTF8.GetString(e));
         }
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
@@ -90,7 +90,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         if (SelfhostSemanticsHarness.SnapshotDir is { } dir)
         {
             var (exit, o, e) = SelfhostSemanticsHarness.RunRecorded(dir, program, input, args);
-            return (exit, o, Encoding.UTF8.GetString(e));
+            return (exit, ProcessText.Lf(o), Encoding.UTF8.GetString(e));
         }
         var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
