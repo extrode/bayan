@@ -181,7 +181,8 @@ keeps redirecting.
       `note:` line (manifest tag `rename-late`), so `undo.sh` reverses it; when step 5 is already done it is renamed then, and
       when step 6 is already done its transcripts with an old `cwd` are adopted and rewritten then
       (otherwise steps 5 and 6 do it); a late `lessons/` dir after step 6 also gets `lessons/INDEX.md`
-      rewritten (key only, as step 6 does; undo needs `--discard-changes-since-move` there, since the
+      rewritten (key only, as step 6 does; decided from the manifest's `rename-late` lines, so a resume
+      after an interruption still does it; undo needs `--discard-changes-since-move` there, since the
       file changed after its step 6 write). `undo.sh` is written here already, so it exists whether or
       not step 9 runs.
    3. `mkdir -p` the parent; `mv OLD_REPO NEW_REPO`.

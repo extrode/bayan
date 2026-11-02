@@ -509,13 +509,12 @@ step2() {
 # renames (so undo.sh reverses it); after step 5 it is renamed here, after step 6 its transcripts with
 # an old cwd are adopted (backed up, listed) and rewritten here, as step 6 does for late transcripts.
 adopt_dirs() {
-  local o n f late_lessons=0
+  local o n f
   [ -f "$MANIFEST" ] || return 0
   while IFS="$TAB" read -r o n; do
     if [ "$EXECUTE" -eq 0 ]; then say "would: add $o (created after step 2) to the renames"; continue; fi
     printf 'rename-late\t%s\t%s\n' "$o" "$n" >> "$MANIFEST"
     say "note: $o is at the old key but not in step 2's list (created after it); added to the renames"
-    case "$o" in "$CLAUDE_HOME"/lessons/*) late_lessons=1 ;; esac
   done < <(late_dirs)
   if [ "$EXECUTE" -eq 0 ] || ! is_done 5; then return 0; fi
   while IFS="$TAB" read -r o n; do
@@ -532,8 +531,9 @@ adopt_dirs() {
       rewrite_file "$f" fields cwd ""
     done <<< "$OLDF"
   done < <(renames)
-  # step 6 already rewrote INDEX.md; a late lessons dir's key in it is rewritten here the same way
-  if [ "$late_lessons" -eq 1 ] && [ -f "$CLAUDE_HOME/lessons/INDEX.md" ]; then
+  # step 6 already rewrote INDEX.md; a late lessons dir's key in it is rewritten here the same way (read
+  # from the manifest, so an interrupted resume still does it on the next one; no hits writes nothing)
+  if grep -q "^rename-late${TAB}$CLAUDE_HOME/lessons/" "$MANIFEST" && [ -f "$CLAUDE_HOME/lessons/INDEX.md" ]; then
     rewrite_listed "$CLAUDE_HOME/lessons/INDEX.md" text "" "" keyonly
   fi
 }
