@@ -8,7 +8,7 @@
 #   --record   write expected/ from this run instead of comparing (only ever with the original script)
 # A case is tests/parity/<tool>/<case>/ holding:
 #   args       arguments, one per line (optional); `$ROOT` in a line becomes the repo root
-#   in/        inputs; copied to a scratch directory that becomes the working directory
+#   in/        inputs; copied to a scratch directory that becomes the working directory (files in in/bin/ made executable)
 #   stdin      bytes fed on stdin (optional)
 #   env        KEY=VALUE lines added to the environment (optional); `$ROOT`, `$WORK` and `$PATH` expand, so
 #              PATH=$WORK/bin:$PATH puts a stub (say a `git` printing a recorded diff) first
@@ -40,6 +40,7 @@ for c in "${cases[@]}"; do
   work="$scratch/$c/work"; got="$scratch/$c/got"
   rm -rf "${scratch:?}/$c"; mkdir -p "$work" "$got"
   [ -d "$case_dir/in" ] && cp -R "$case_dir/in/." "$work/"
+  [ -d "$work/bin" ] && chmod +x "$work/bin"/*  # stubs, whatever mode the checkout gave them
   argv=()
   if [ -f "$case_dir/args" ]; then while IFS= read -r a || [ -n "$a" ]; do argv+=("${a//\$ROOT/$root}"); done < "$case_dir/args"; fi
   envv=()
