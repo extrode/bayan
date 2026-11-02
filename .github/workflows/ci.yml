@@ -35,6 +35,7 @@ jobs:
         run: |
           bash scripts/ci/install-zig.test.sh
           bash scripts/ci/known-failures.test.sh
+          bash scripts/parity/run.test.sh
       - name: Test
         if: runner.os != 'Windows'
         run: dotnet test Bayan.slnx -c Release

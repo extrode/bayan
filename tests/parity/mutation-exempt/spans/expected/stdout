@@ -1,0 +1,5 @@
+skip 3
+skip 5
+skip 6
+note mutation: a.byn:7 exempts 8-9 for Q903, but Q903 cites no a.byn line in that span
+note mutation: a.byn:10 exempts through 2, which is not after the marker and inside the file
