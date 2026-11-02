@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results>
+<UnitTestResult testName="Bayan.Tests.A.One" outcome="Failed"/>
+<UnitTestResult testName="Bayan.Tests.P.Check(name: &quot;diag/x/main.byn&quot;)" outcome="Failed"/>
+<UnitTestResult testName="Bayan.Tests.A.Four" outcome="Aborted"/>
+</Results></TestRun>

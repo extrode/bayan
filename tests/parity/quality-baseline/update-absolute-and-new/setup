@@ -1,0 +1,4 @@
+#!/bin/bash
+# a report naming a file by its absolute path inside the root; written outside the work directory so no path lands in expected/
+printf '{"version": 1, "kind": "mutation", "files": [{"path": "%s/a.byn", "mutants": [%s]}]}\n' "$PWD" \
+  '{"status": "killed"}, {"status": "killed"}, {"status": "killed"}, {"status": "killed"}, {"status": "marked"}, {"status": "marked"}, {"status": "marked"}' > ../abs.json
