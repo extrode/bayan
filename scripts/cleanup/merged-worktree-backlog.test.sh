@@ -21,6 +21,7 @@ for b in merged scratch build unmerged dirty recent; do g worktree add -q ".work
 g worktree add -q --detach .worktrees/detached dev
 g worktree add -q .worktrees/locked locked && git worktree lock .worktrees/locked
 gnow worktree add -q .worktrees/readded readded
+g branch broken && g worktree add -q .worktrees/broken broken && echo "gitdir: $r/nowhere" > .worktrees/broken/.git
 mkdir -p .worktrees/scratch/tmp .worktrees/build/bin && echo x > .worktrees/scratch/tmp/run.log && echo x > .worktrees/build/bin/a.dll
 echo x > .worktrees/dirty/new.txt
 fail() { echo "FAIL: $1"; echo "$out"; cd "$root"; exit 1; }
@@ -34,7 +35,8 @@ echo "$out" | grep -q "^keep:  .worktrees/dirty (modified or untracked files)$" 
 echo "$out" | grep -q "^hold:  .worktrees/scratch (ignored files beyond build output: tmp/ ;" || fail "scratch not held"
 echo "$out" | grep -q "^keep:  .worktrees/locked (locked)$" || fail "locked not kept"
 echo "$out" | grep -q "^keep:  .worktrees/readded (readded moved in the last 24h)$" || fail "a fresh worktree of an old branch not kept"
-[ "$(git worktree list | wc -l | tr -d ' ')" = 10 ] || fail "dry run changed something"
+echo "$out" | grep -q "^keep:  .worktrees/broken (when it last moved is unreadable)$" || fail "a worktree with unreadable times not kept"
+[ "$(git worktree list | wc -l | tr -d ' ')" = 11 ] || fail "dry run changed something"
 
 out="$(bash "$script" -e)"
 for w in merged build detached; do [ ! -d ".worktrees/$w" ] || fail "$w not removed"; done
@@ -44,7 +46,7 @@ for w in scratch unmerged dirty recent; do [ -d ".worktrees/$w" ] || fail "$w re
 out="$(bash "$script" -e --delete-worktree-scratch)"
 [ ! -d .worktrees/scratch ] && ! git rev-parse -q --verify scratch >/dev/null || fail "scratch not removed with its flag"
 for w in unmerged dirty recent; do [ -d ".worktrees/$w" ] || fail "$w removed on the second run"; done
-for w in locked readded; do [ -d ".worktrees/$w" ] || fail "$w removed"; done
+for w in locked readded broken; do [ -d ".worktrees/$w" ] || fail "$w removed"; done
 out="$(bash "$script" -e)" || fail "a run with nothing left to do failed (a locked worktree is not a failure)"
 # Run from a linked worktree holding dev (the main one on another branch): neither it nor dev is a target.
 g switch -q -c side && g worktree add -q .worktrees/devwt dev

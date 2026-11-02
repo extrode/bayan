@@ -59,7 +59,8 @@ while IFS=$'\037' read -r wt br locked; do  # not a tab: IFS whitespace merges a
     printf 'keep:  %s (%s not in dev)\n' "$rel" "$label"; kept=$((kept+1)); continue
   fi
   moved="$(last_moved "$wt" "$br")"
-  if [ -z "$moved" ] || [ "$moved" -gt "$recent" ]; then
+  if [ -z "$moved" ]; then printf 'keep:  %s (when it last moved is unreadable)\n' "$rel"; kept=$((kept+1)); continue; fi
+  if [ "$moved" -gt "$recent" ]; then
     printf 'keep:  %s (%s moved in the last %sh)\n' "$rel" "$label" "${CLEANUP_RECENT_HOURS:-24}"; kept=$((kept+1)); continue
   fi
   if [ -n "$(git -C "$wt" status --porcelain)" ]; then
