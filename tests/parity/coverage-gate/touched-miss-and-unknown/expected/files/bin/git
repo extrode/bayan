@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+case "$*" in
+  "cat-file -e base:selfhost/semantics/a.byn")
+    exit 0 ;;
+  "diff -U0 base -- selfhost/semantics/a.byn")
+    cat <<'EOF'
+diff --git a/selfhost/semantics/a.byn b/selfhost/semantics/a.byn
+--- a/selfhost/semantics/a.byn
++++ b/selfhost/semantics/a.byn
+@@ -4,0 +5,5 @@
++
++fn g(a: int) -> int {
++    if a > 2 { return 2 }
++    return a
++}
+EOF
+    ;;
+  *)
+    echo "unexpected git args: $*" >&2
+    exit 1 ;;
+esac

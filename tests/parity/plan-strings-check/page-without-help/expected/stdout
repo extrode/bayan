@@ -1,0 +1,3 @@
+BYN1053 message not in docs/diagnostics/BYN1053.md: "`{0}` declares its cases on one line"
+BYN1053 help not in docs/diagnostics/BYN1053.md: "write each case on its own line"
+2 string(s) differ from the plan

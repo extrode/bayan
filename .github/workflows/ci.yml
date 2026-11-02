@@ -47,6 +47,7 @@ jobs:
           bash scripts/ci/install-dotnet.test.sh
           bash scripts/ci/sdk-patch-check.test.sh
           bash scripts/ci/known-failures.test.sh
+          bash scripts/parity/run.test.sh
       - name: Test
         if: runner.os != 'Windows'
         run: dotnet test Bayan.slnx -c Release

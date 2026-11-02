@@ -1,0 +1,4 @@
+coverage: src/A.cs: touched functions: lines 2/2, branches 1/2 (listing: tmp/guard-run/coverage/src/A.cs.cov.txt)
+coverage: src/A.cs: other functions, not gated (no line of theirs changed): lines 1/2, branches 0/0 (listing: tmp/guard-run/coverage/src/A.cs.cov.txt)
+- coverage: missed branch src/A.cs:3:0 never false; no test under --filter runs it; add a C# oracle case that does
+coverage: src/B.cs: touched functions: lines 1/1, branches 2/2 (listing: tmp/guard-run/coverage/src/B.cs.cov.txt)

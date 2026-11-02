@@ -1,0 +1,7 @@
+# Windows-only test failures expected until spec 014 (std Path module, handoff Q743) lands.
+# Measured on wp1, 2026-11-02, test/win-combined-1102 (83ed4a17), zig 0.17.0: 78 failed of 6051; the 2 not listed are fixed separately.
+Bayan.Tests.SelfhostSemanticsEquivalenceLawTests.BayanCheckEqualsTheCCheckerOnEveryCleanParse
+Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/capability-exceeded/main.byn")
+Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/error-set-same-name/main.byn")
+Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/for-try-next-not-visible/main.byn")
+Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/grammar-dictionary/main.byn")

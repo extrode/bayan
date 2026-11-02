@@ -1,0 +1,3 @@
+Stryker mutation-testing-elements JSON to bayan-quality.json, kind "mutation" (spec 013 R12, R15).
+
+usage: stryker_to_quality.py OUT.json REPO_ROOT BUILD_S TOTAL_S REPORT.json...

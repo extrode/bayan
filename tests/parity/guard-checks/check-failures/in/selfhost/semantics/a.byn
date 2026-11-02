@@ -1,0 +1,9 @@
+// stub: T99 ports Foo
+// stub: T99 ports Bar (blocked: Q901)
+void blocked() {
+}
+void f() {
+    let x = 1
+}
+void empty() {
+}

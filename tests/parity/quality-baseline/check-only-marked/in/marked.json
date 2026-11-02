@@ -1,0 +1,1 @@
+{"version": 1, "kind": "mutation", "files": [{"path": "m.byn", "mutants": [{"site": {"file": "m.byn"}, "status": "marked"}, {"site": {"file": "m.byn"}, "status": "marked"}]}]}

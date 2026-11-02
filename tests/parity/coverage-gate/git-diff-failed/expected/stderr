@@ -1,0 +1,1 @@
+coverage-gate.py: git diff -U0 base -- selfhost/semantics/a.byn failed: fatal: bad revision 'base'

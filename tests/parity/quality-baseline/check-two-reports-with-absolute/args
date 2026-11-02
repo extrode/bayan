@@ -1,0 +1,5 @@
+check
+baseline.json
+$WORK
+drop.json
+$WORK/../abs.json

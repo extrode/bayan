@@ -1,0 +1,11 @@
+void f() {
+    // mutation-exempt: Q901
+    if a == 1 { }
+    // mutation-exempt: Q902 through 6
+    if b == 1 { }
+    if c == 1 { }
+    if d == 1 { } // mutation-exempt: Q903 through 9
+    if e == 1 { }
+    if g == 1 { }
+    // mutation-exempt: Q901 through 2
+}
