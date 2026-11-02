@@ -2,6 +2,7 @@
 # Cleanup after 018 (2026-11-02): leaves only dev and main, locally and on origin. Every other branch whose tip is in dev
 # goes; a branch not in dev, checked out in a worktree, or moved in the last hour (another session may have just cut it)
 # stays and is listed.
+# A remote branch stays too while its local copy does. Remote recency is its commit time (origin keeps no push times).
 # Order: remote first (--delete-remote-branches, `git push origin --delete`), then local with `git branch -d`. With the
 # remote copy gone, -d checks the local branch against dev only, and still refuses one that is not merged.
 # Dry run by default. --execute / -e deletes local branches; --delete-remote-branches also deletes them on origin.
@@ -36,10 +37,19 @@ moved() {
   if [ -n "$t" ] && [ "$t" -gt "$c" ]; then printf '%s' "$t"; else printf '%s' "$c"; fi
 }
 
+inwt="$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')"
+# A remote branch whose local copy is checked out or moved recently stays with it: a fresh push of an old dev commit
+# shows no recent commit time on origin.
+local_busy() {
+  git rev-parse -q --verify "refs/heads/$1" >/dev/null || return 1
+  printf '%s\n' "$inwt" | grep -qxF -- "$1" || [ "$(moved "refs/heads/$1")" -gt "$recent" ]
+}
+
 printf '== remote branches on origin\n'
 while read -r b; do
   case "$b" in dev|main|HEAD|'') continue ;; esac
   if ! git merge-base --is-ancestor "refs/remotes/origin/$b" refs/heads/dev; then printf 'keep:  origin/%s (not in dev)\n' "$b"; continue; fi
+  if local_busy "$b"; then printf 'keep:  origin/%s (its local branch is checked out or moved in the last %sh)\n' "$b" "${CLEANUP_RECENT_HOURS:-1}"; continue; fi
   if [ "$(moved "refs/remotes/origin/$b")" -gt "$recent" ]; then printf 'keep:  origin/%s (moved in the last %sh)\n' "$b" "${CLEANUP_RECENT_HOURS:-1}"; continue; fi
   if [ $execute -eq 1 ] && [ $remote -eq 1 ]; then
     git push -q origin --delete "$b" && printf 'deleted: origin/%s\n' "$b" || { printf '  refused: origin/%s. Left alone.\n' "$b"; failed=1; }
@@ -47,7 +57,6 @@ while read -r b; do
 done < <(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin)
 
 printf '== local branches\n'
-inwt="$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')"
 while read -r b; do
   case "$b" in dev|main|'') continue ;; esac
   if printf '%s\n' "$inwt" | grep -qxF -- "$b"; then printf 'keep:  %s (checked out in a worktree)\n' "$b"; continue; fi
@@ -56,7 +65,7 @@ while read -r b; do
   if [ $execute -eq 1 ]; then
     git branch -q -d "$b" && printf 'deleted: %s\n' "$b" || { printf '  refused: %s (git said why above). Left alone.\n' "$b"; failed=1; }
   else printf 'would: git branch -d %s\n' "$b"; fi
-done < <(git for-each-ref --format='%(refname:short)' refs/heads)
+done < <(git for-each-ref --format='%(refname:lstrip=2)' refs/heads)
 
 printf '\nbranches left: local %s, origin %s\n' "$(git for-each-ref refs/heads | wc -l | tr -d ' ')" \
   "$(git for-each-ref refs/remotes/origin | grep -vc 'refs/remotes/origin/HEAD$' || true)"
