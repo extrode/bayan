@@ -1,0 +1,5 @@
+[0m[1m[31merror[0m: Uncaught (in promise) NotFound: No such file or directory (os error 2): readfile 'missing.md'
+const plan = parsePlan(await Deno.readTextFile(planPath));
+[0m[31m                       ^[0m
+    [0m[2m[38;5;245mat [0m[0m[2m[38;5;245masync [0m[0m[2m[38;5;245mObject.readTextFile[0m[0m[2m[38;5;245m ([0m[0m[2m[38;5;245mext:deno_fs/30_fs.js[0m[0m[2m[38;5;245m:[0m[0m[2m[38;5;245m866[0m[0m[2m[38;5;245m:[0m[0m[2m[38;5;245m18[0m[0m[2m[38;5;245m)[0m
+    at async [0m[36mfile://$ROOT/scripts/plan-strings-check.js[0m:[0m[33m86[0m:[0m[33m24[0m

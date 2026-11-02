@@ -7,13 +7,13 @@
 #              e.g. --impl "$(scripts/pinned-bayan.sh) run tools/mutation-exempt.byn"
 #   --record   write expected/ from this run instead of comparing (only ever with the original script)
 # A case is tests/parity/<tool>/<case>/ holding:
-#   args       arguments, one per line (optional); `$ROOT` in a line becomes the repo root
+#   args       arguments, one per line (optional); `$ROOT` and `$WORK` in a line become the repo root and the work directory
 #   in/        inputs; copied to a scratch directory that becomes the working directory (files in in/bin/ made executable)
 #   stdin      bytes fed on stdin (optional)
 #   env        KEY=VALUE lines added to the environment (optional); `$ROOT`, `$WORK` and `$PATH` expand, so
 #              PATH=$WORK/bin:$PATH puts a stub (say a `git` printing a recorded diff) first
 #   setup      a bash script run in the work directory before the tool (optional; e.g. builds a git repo)
-#   expected/  exit, stdout, stderr, and files/ (the work directory after the run, setup's .git excluded)
+#   expected/  exit, stdout, stderr, and files/ (the work directory's files after the run, setup's .git excluded)
 # Prints `PASS <tool> <n> cases` or one `FAIL <tool>/<case>: …` line per mismatch and exits 1.
 set -euo pipefail
 
@@ -32,6 +32,14 @@ done
 [ -n "$impl" ] || impl="$(sed "s|\$ROOT|$root|g" "$dir/impl")"
 [ ${#cases[@]} -gt 0 ] || for c in "$dir"/*/; do cases+=("$(basename "$c")"); done
 
+# Files only: git keeps no empty directories, so they are not part of a case (a case that leaves nothing has no
+# expected/files in a checkout).
+list_files() { [ -d "$1" ] && (cd "$1" && find . \( -type f -o -type l \) | LC_ALL=C sort); return 0; }
+same_files() {
+  diff <(list_files "$1") <(list_files "$2") || return 1
+  local f; while IFS= read -r f; do cmp "$1/$f" "$2/$f" || return 1; done < <(list_files "$2")
+}
+
 scratch="$root/tmp/parity/$tool"
 bad=0; n=0
 for c in "${cases[@]}"; do
@@ -42,7 +50,7 @@ for c in "${cases[@]}"; do
   [ -d "$case_dir/in" ] && cp -R "$case_dir/in/." "$work/"
   [ -d "$work/bin" ] && chmod +x "$work/bin"/*  # stubs, whatever mode the checkout gave them
   argv=()
-  if [ -f "$case_dir/args" ]; then while IFS= read -r a || [ -n "$a" ]; do argv+=("${a//\$ROOT/$root}"); done < "$case_dir/args"; fi
+  if [ -f "$case_dir/args" ]; then while IFS= read -r a || [ -n "$a" ]; do a="${a//\$ROOT/$root}"; argv+=("${a//\$WORK/$work}"); done < "$case_dir/args"; fi
   envv=()
   if [ -f "$case_dir/env" ]; then while IFS= read -r e || [ -n "$e" ]; do
     [ -n "$e" ] || continue; e="${e//\$ROOT/$root}"; e="${e//\$WORK/$work}"; envv+=("${e//\$PATH/$PATH}")
@@ -68,7 +76,7 @@ for c in "${cases[@]}"; do
   for f in exit stdout stderr; do
     cmp -s "$case_dir/expected/$f" "$got/$f" || { echo "FAIL $tool/$c: $f differs: $(diff "$case_dir/expected/$f" "$got/$f" | sed -n 2,3p | tr '\n' ' ' | cut -c1-300)"; bad=1; }
   done
-  diff -r "$case_dir/expected/files" "$got/files" > "$got/files.diff" 2>&1 \
+  same_files "$case_dir/expected/files" "$got/files" > "$got/files.diff" 2>&1 \
     || { echo "FAIL $tool/$c: files differ: $(head -3 "$got/files.diff" | tr '\n' ' ' | cut -c1-300)"; bad=1; }
 done
 [ $record = 1 ] && { echo "RECORDED $tool $n cases"; exit 0; }

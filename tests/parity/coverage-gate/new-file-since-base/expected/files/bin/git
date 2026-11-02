@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+case "$*" in
+  "cat-file -e base:selfhost/semantics/b.byn")
+    exit 1 ;;
+  *)
+    echo "unexpected git args: $*" >&2
+    exit 1 ;;
+esac
