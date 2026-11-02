@@ -174,6 +174,37 @@ public sealed class CacheTests
         });
     }
 
+    /// <summary>
+    /// On Windows, ReplaceFile retries when another process holds the destination open with FileShare.Read|Delete.
+    /// The reproduction runs on Windows; on non-Windows, the test runs ReplaceFile and asserts the content is replaced.
+    /// </summary>
+    [Fact]
+    public void ReplaceFileRetriesWhileDestinationIsOpen()
+    {
+        var root = Root("replace-open");
+        var path = Path.Combine(root, "target.txt");
+        File.WriteAllText(path, "before");
+        if (OperatingSystem.IsWindows())
+        {
+            using var open = new ManualResetEventSlim();
+            var thread = new Thread(() =>
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+                open.Set();
+                Thread.Sleep(200);
+            });
+            thread.Start();
+            open.Wait();
+            Toolchain.ReplaceFile(path, temp => File.WriteAllText(temp, "after"));
+            thread.Join();
+        }
+        else
+        {
+            Toolchain.ReplaceFile(path, temp => File.WriteAllText(temp, "after"));
+        }
+        Assert.Equal("after", File.ReadAllText(path));
+    }
+
     [Fact]
     public void ADamagedEntryIsRebuilt()
     {

@@ -74,8 +74,8 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-snapshot-differ");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-        var e = Assert.Throws<InvalidOperationException>(() => SelfhostSemanticsHarness.RunRecorded(dir, "/bin/sh", null, ["-c", "echo $$"]));
-        Assert.Contains("/bin/sh -c echo $$", e.Message);
+        var e = Assert.Throws<InvalidOperationException>(() => SelfhostSemanticsHarness.RunRecorded(dir, SnapshotFixture.DifferProgram, null, SnapshotFixture.DifferArgs));
+        Assert.Contains(SnapshotFixture.DifferCommand, e.Message);
         Assert.Contains("differ in stdout", e.Message);
         Assert.Contains("tag the test [Trait(\"Snapshot\", \"skip\")] if its output is not deterministic", e.Message);
         Assert.False(File.Exists(Path.Combine(dir, "runs.jsonl")));
@@ -89,22 +89,31 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-snapshot-two-builds");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "manifest.json"),
-            """{"version": 1, "builds": [{"binary": "/bin/echo", "sites": "a"}, {"binary": "/usr/bin/false", "sites": "b"}]}""");
+        var manifest = new JsonObject
+        {
+            ["version"] = 1,
+            ["builds"] = new JsonArray(
+                new JsonObject { ["binary"] = SnapshotFixture.EchoProgram, ["sites"] = "a" },
+                new JsonObject { ["binary"] = SnapshotFixture.FalseProgram, ["sites"] = "b" }),
+        };
+        File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest.ToJsonString());
         static string Run(string program, string[] args, string stdout) => new JsonObject
         {
             ["program"] = program, ["args"] = new JsonArray(args.Select(a => (JsonNode?)a).ToArray()), ["cwd"] = Golden.RepoRoot,
             ["stdin"] = null, ["stdout"] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(stdout)), ["stderr"] = "", ["exit"] = 0,
         }.ToJsonString();
-        File.WriteAllLines(Path.Combine(dir, "runs.jsonl"), [Run("/bin/echo", ["hi"], "hi\n"), Run("/usr/bin/false", [], "")]);
+        File.WriteAllLines(Path.Combine(dir, "runs.jsonl"), [
+            Run(SnapshotFixture.EchoProgram, SnapshotFixture.EchoArgs("hi"), SnapshotFixture.EchoStdout("hi")),
+            Run(SnapshotFixture.FalseProgram, SnapshotFixture.FalseArgs, ""),
+        ]);
 
-        var (exit, text) = Replay(dir, 0, "/bin/echo");
+        var (exit, text) = Replay(dir, 0, SnapshotFixture.EchoProgram);
         Assert.True(exit == 0, text);
         Assert.Contains("replay: 1 runs match", text);
 
         (exit, text) = Replay(dir, 0, null);
         Assert.Equal(2, exit);
-        Assert.Contains("/bin/echo, /usr/bin/false", text);
+        Assert.Contains($"{SnapshotFixture.EchoProgram}, {SnapshotFixture.FalseProgram}", text);
     }
 
     /// <summary>A second recording into a directory replaces the first: this process's first write deletes the earlier
@@ -119,14 +128,14 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         File.WriteAllText(Path.Combine(dir, "manifest.json"), """{"version": 1, "builds": [{"binary": "/old", "sites": "/old.sites.json"}]}""");
         File.WriteAllText(Path.Combine(dir, "runs.jsonl"), """{"program": "/old", "args": [], "cwd": "/", "stdin": null, "stdout": "", "stderr": "", "exit": 0}""" + "\n");
 
-        SelfhostSemanticsHarness.RecordBuild(dir, "/bin/echo", "/echo.sites.json");
-        SelfhostSemanticsHarness.RunRecorded(dir, "/bin/echo", null, ["one"]);
-        SelfhostSemanticsHarness.RunRecorded(dir, "/bin/echo", null, ["two"]);
+        SelfhostSemanticsHarness.RecordBuild(dir, SnapshotFixture.EchoProgram, "/echo.sites.json");
+        SelfhostSemanticsHarness.RunRecorded(dir, SnapshotFixture.EchoProgram, null, SnapshotFixture.EchoArgs("one"));
+        SelfhostSemanticsHarness.RunRecorded(dir, SnapshotFixture.EchoProgram, null, SnapshotFixture.EchoArgs("two"));
 
         var build = Assert.Single(JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json")))!["builds"]!.AsArray());
-        Assert.Equal("/bin/echo", (string?)build!["binary"]);
+        Assert.Equal(SnapshotFixture.EchoProgram, (string?)build!["binary"]);
         var runs = File.ReadAllLines(Path.Combine(dir, "runs.jsonl")).Select(l => JsonNode.Parse(l)!).ToList();
-        Assert.Equal(["one", "two"], runs.Select(r => (string?)r["args"]![0]));
+        Assert.Equal(["one", "two"], runs.Select(r => (string?)r["args"]!.AsArray().Last()));
     }
 
     /// <summary><c>BAYAN_SNAPSHOT_FILES</c> entries are trimmed, and one matching no compiled source throws naming it.
@@ -206,6 +215,21 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
             return (-1, "timed out");
         }
         return (p.ExitCode, stdout.Result + stderr.Result);
+    }
+
+    /// <summary>Programs and arguments for snapshot test fixtures across platforms.</summary>
+    private static class SnapshotFixture
+    {
+        internal static readonly string DifferProgram = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh";
+        internal static readonly string[] DifferArgs = OperatingSystem.IsWindows() ? ["/c", "echo", "%RANDOM%"] : ["-c", "echo $$"];
+        internal static string DifferCommand => $"{DifferProgram} {string.Join(' ', DifferArgs)}";
+
+        internal static readonly string EchoProgram = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/echo";
+        internal static string[] EchoArgs(params string[] args) => OperatingSystem.IsWindows() ? ["/c", "echo", .. args] : args;
+        internal static string EchoStdout(string text) => OperatingSystem.IsWindows() ? text + "\r\n" : text + "\n";
+
+        internal static readonly string FalseProgram = OperatingSystem.IsWindows() ? Path.Combine(Environment.SystemDirectory, "cmd.exe") : "/usr/bin/false";
+        internal static readonly string[] FalseArgs = OperatingSystem.IsWindows() ? ["/c", "exit", "1"] : [];
     }
 }
 

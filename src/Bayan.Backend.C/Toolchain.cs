@@ -233,7 +233,19 @@ public static class Toolchain
         try
         {
             write(temp);
-            File.Move(temp, path, overwrite: true);
+            const int maxTries = 50;
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    File.Move(temp, path, overwrite: true);
+                    break;
+                }
+                catch (Exception ex) when (attempt < maxTries && (ex is UnauthorizedAccessException || ex is IOException))
+                {
+                    Thread.Sleep(Math.Min(attempt * 2, 100));
+                }
+            }
         }
         finally
         {
