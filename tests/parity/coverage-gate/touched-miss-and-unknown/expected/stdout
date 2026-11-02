@@ -1,0 +1,6 @@
+coverage: selfhost/semantics/a.byn: touched functions: lines 0/2, branches 1/3 (listing: tmp/guard-run/coverage/selfhost/semantics/a.byn.cov.txt)
+coverage: selfhost/semantics/a.byn: other functions, not gated (no line of theirs changed): lines 1/2, branches 0/1 (listing: tmp/guard-run/coverage/selfhost/semantics/a.byn.cov.txt)
+- coverage: missed line selfhost/semantics/a.byn:8; no test under --filter runs it; add a C# oracle case that does
+- coverage: missed branch selfhost/semantics/a.byn:7:10 never true; no test under --filter runs it; add a C# oracle case that does
+- coverage: unknown line selfhost/semantics/a.byn:7; a counter file was unreadable; run the guard again
+- coverage: unknown branch selfhost/semantics/a.byn:8:5 never false; a counter file was unreadable; run the guard again

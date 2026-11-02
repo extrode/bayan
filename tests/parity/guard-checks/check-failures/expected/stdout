@@ -1,0 +1,10 @@
+oracle: tests/Bayan.Tests/SelfhostSemanticsT99Tests.cs never runs the C# implementation; build each expected line from `Bayan.Semantics` (see SelfhostSemanticsT10Tests.Expected) instead of typing it
+oracle: tests/Bayan.Tests/SelfhostSemanticsT99Tests.cs:9 hand-typed expected lines; compute them from the C# oracle (at most 2 exemptions, each `// no-oracle: Qnnn`)
+stub: selfhost/semantics/a.byn:1 still marked `// stub: T99 ports Foo`; port it and delete the marker, or append `(blocked: Qnnn)` naming the Question that blocks it
+stub: selfhost/semantics/a.byn:8 has an empty body; port it, or mark it `// stub: T99 … (blocked: Qnnn)`
+ctx: ctx.byn deletes lines near :2; sections only grow
+ctx: ctx.byn:6-6 is outside `// ── T99 state` sections; add fields only there
+gate: Q902 must be decided before T99 and is still Open; stop and ask the dispatcher
+docs: add a Progress log entry for T99 (what landed, what is left, test count)
+docs: Q901 cites a.byn:7, which is blank, a brace or past the end; cite the line as it stands now
+docs: Q901 cites a.byn:6 `let wrong = 0`, which is not on or near that line

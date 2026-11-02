@@ -1,0 +1,7 @@
+struct Ctx {
+    // ── T99 state
+    a: int
+    // ── T98 state
+    b: int
+    stray: int
+}
