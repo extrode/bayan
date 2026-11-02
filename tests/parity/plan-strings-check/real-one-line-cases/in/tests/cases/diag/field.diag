@@ -1,0 +1,12 @@
+error BYN1053: `Shape` declares its cases on one line; write one per line
+
+  1 │ union Shape { circle(f64 r), square(f64 side) }
+    │                            ^ the first `,`
+    │
+  help: write each case on its own line
+    │ 1 │ union Shape {
+    │ 2 │     circle(f64 r)
+    │   │ +++++++++++++++++
+    │ 3 │     square(f64 side)
+    │   │ ++++++++++++++++++++
+    │ 4 │ }

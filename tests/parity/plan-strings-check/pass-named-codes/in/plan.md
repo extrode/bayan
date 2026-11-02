@@ -1,0 +1,4 @@
+- (c) BYN1044 `KeywordOrder` "`{0}` is an input form; write `{1}`" (label at the keywords; help "put the kind first: `{1}`"; fix yes).
+- (c) BYN1043 `TypeNameOrder` (revised), two forms. A field: "`{0}: {1}` is an input form; write `{1} {0}`" (label "name before type"; help "put the type before the name; declarations are type-first"; fix yes).
+- (c) BYN1053 `OneLine` "`{0}` declares its cases on one line" (O1; label at the first `,`; help "write each case on its own line"; fix yes).
+- (c) BYN6006 `ContextInput` "`context (…) { }` is now `provide … { }`" (label at `context`; help "write `provide`"; fix yes).
