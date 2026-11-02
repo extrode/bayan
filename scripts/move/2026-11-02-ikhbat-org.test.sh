@@ -2,11 +2,24 @@
 # Test for 2026-11-02-ikhbat-org.sh on a fixture HOME under <repo>/tmp/move-test. Prints PASS at the end.
 set -euo pipefail
 
-HERE=$(cd "$(dirname "$0")" && pwd)
-ROOT=$(cd "$HERE/../.." && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd -P)
+ROOT=$(cd "$HERE/../.." && pwd -P)
 SCRIPT=$HERE/2026-11-02-ikhbat-org.sh
 FX=$ROOT/tmp/move-test
 HOME_FX=$FX/home
+
+# the enclosing repo's config, hashed now and at the end: a git command that escaped the fixture shows there
+if [ -d "$ROOT/.git" ]; then REAL_GIT=$ROOT/.git
+else
+  REAL_GIT=$(sed -n 's/^gitdir: //p' "$ROOT/.git")
+  if [ -f "$REAL_GIT/commondir" ]; then
+    c=$(cat "$REAL_GIT/commondir"); case "$c" in /*) ;; *) c=$REAL_GIT/$c ;; esac
+    REAL_GIT=$(cd "$c" && pwd -P)
+  fi
+fi
+REAL_CFG_SUM=$(shasum -a 256 < "$REAL_GIT/config")
+mkdir -p "$ROOT/tmp"
+export GIT_CEILING_DIRECTORIES=$ROOT/tmp
 
 export HOME=$HOME_FX
 export OLD_REPO=$HOME_FX/Developer/extrode.com/bayan
@@ -15,15 +28,20 @@ export CLAUDE_HOME=$HOME_FX/.claude
 export CLAUDE_JSON=$HOME_FX/.claude.json
 export NEW_REMOTE=$FX/remote.git
 export PGREP=$FX/pgrep-stub
+export STUB_COUNT=$ROOT/tmp/move-pgrep-count
 export LC_ALL=C
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 export GIT_AUTHOR_DATE='2026-01-01T00:00:00Z' GIT_COMMITTER_DATE='2026-01-01T00:00:00Z'
+REF2020=$ROOT/tmp/move-2020
+touch -t 202001010000 "$REF2020"
 
 OKEY=$(printf '%s' "$OLD_REPO" | tr '/.' '--')
 NKEY=$(printf '%s' "$NEW_REPO" | tr '/.' '--')
+UNDO=$CLAUDE_HOME/backups/bayan-move-2026-11-02/undo.sh
 FAILS=0
 fail() { echo "FAIL: $*"; FAILS=$(( FAILS + 1 )); }
 ok_if() { local desc=$1; shift; if "$@"; then :; else fail "$desc"; fi; }
+fstat() { stat -f '%Lp %m' "$1" 2>/dev/null || stat -c '%a %Y' "$1"; }
 
 sleep 600 & LIVE_PID=$!
 trap 'kill "$LIVE_PID" 2>/dev/null || true' EXIT
@@ -40,6 +58,7 @@ mk_transcripts() { # dir-suffix-key P ; writes projects/<key>... files
 {"cwd":"${OLD_REPO}_x"}
 EOF
   printf '{"cwd":"%s"}\n{"cwd":"%s/x"}' "$P" "$P" > "$d/s2.jsonl"
+  printf '{"cwd":"/elsewhere","message":"%s"}\n' "$OLD_REPO" > "$d/s3.jsonl"
   printf '{"cwd":"%s","agent":1}\n' "$P" > "$d/s1/subagents/agent.jsonl"
   echo "memory mentions $OLD_REPO" > "$d/memory/m.md"
 }
@@ -64,9 +83,9 @@ mk_claude_state() { # P K ; writes the whole fixture ~/.claude (rewritable parts
 - path $O/docs stays
 EOF
   cat > "$CLAUDE_HOME/lessons/queue.jsonl" <<EOF
-{"transcript":"$CLAUDE_HOME/projects/$K/s1.jsonl","cwd":"$P","project":"$K"}
+{"transcript":"$CLAUDE_HOME/projects/$K/s1.jsonl","cwd":"$P","project":"$K","repoTop":"$P"}
 {"transcript":"$CLAUDE_HOME/projects/$K--worktrees-w1/s1.jsonl","cwd":"$P/.worktrees/w1","project":"$K extra"}
-{"transcript":"x","cwd":"$O-x","project":"${OK}x","note":"$O"}
+{"transcript":"x","cwd":"$O-x","project":"${OK}x","note":"$P"}
 EOF
   cat > "$CLAUDE_HOME/history.jsonl" <<EOF
 {"display":"fix $O/foo","project":"$P","ts":1}
@@ -77,7 +96,8 @@ EOF
   jq -n --arg p "$P" --arg o "$O" '{w1:{cwd:$p,repo:$p,worktree:($p+"/.worktrees/w1"),criteria:("read "+$p+"/docs and "+$o+"-x/foo"),note:$o}}' > "$CLAUDE_HOME/workers/registry.json"
   jq -n --arg p "$P" --arg k "$K" --arg o "$O" '{state:"done",cwd:$p,linkScanPath:($p+"/x"),fan:[{label:($k+"--worktrees-w1 fine")}],keep:($o+"-x")}' > "$CLAUDE_HOME/jobs/aaa/state.json"
   echo '{"state":"working","cwd":"/elsewhere"}' > "$CLAUDE_HOME/jobs/bbb/state.json"
-  echo '{"workers":[]}' > "$CLAUDE_HOME/daemon/roster.json"
+  # roster shape as in the real daemon/roster.json: workers keyed by id, each with pid, replPid, cwd, dispatch.cwd
+  jq -n --arg p "$P" --argjson d "$DEAD_PID" '{proto:1,workers:{w9:{pid:$d,replPid:$d,cwd:$p,dispatch:{cwd:($p+"/.worktrees/w9")}},w7:{pid:$d,cwd:"/elsewhere"}}}' > "$CLAUDE_HOME/daemon/roster.json"
   printf '{"pid":%s,"cwd":"%s"}\n' "$DEAD_PID" "$O" > "$CLAUDE_HOME/sessions/dead.json"
   printf '{"cwd":"%s"}\n' "$O" > "$CLAUDE_HOME/sessions/nopid.json"
 }
@@ -88,7 +108,7 @@ mk_claude_json() { # file P gh-key
 
 build_fixture() {
   case "$FX" in "$ROOT"/tmp/move-test) ;; *) echo "bad fixture path $FX"; exit 1 ;; esac
-  rm -rf "$FX"; mkdir -p "$HOME_FX"
+  rm -rf "$FX" "$STUB_COUNT"; mkdir -p "$HOME_FX"
   mkdir -p "$OLD_REPO"
   git -C "$OLD_REPO" init -q -b dev
   echo hi > "$OLD_REPO/README.md"
@@ -98,21 +118,31 @@ build_fixture() {
   git -C "$OLD_REPO" remote add origin file:///nonexistent/extrode-bayan.git
   cat > "$PGREP" <<'EOF'
 #!/bin/sh
+if [ -n "${STUB_RC:-}" ]; then exit "$STUB_RC"; fi
+if [ -n "${STUB_FROM:-}" ]; then
+  n=$(( $(cat "$STUB_COUNT" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$STUB_COUNT"
+  [ "$n" -ge "$STUB_FROM" ] || exit 1
+fi
 if [ "$*" = "${STUB_ARGS:-}" ]; then echo "${STUB_OUT:-}"; exit 0; fi
 exit 1
 EOF
   chmod +x "$PGREP"
   mk_claude_state "$OLD_REPO" "$OKEY"
   mk_claude_json "$CLAUDE_JSON" "$OLD_REPO" extrode/bayan
+  find "$CLAUDE_HOME" -type f -exec touch -t 202001010000 {} +
 }
 
-tree_hash() { # [all] : files only, .git excluded, backups excluded unless "all"
+tree_hash() { # [all] : files only, .git excluded, backups excluded unless "all"; claude home files outside backups add mode and mtime
   local skip=./home/.claude/backups/*
   [ "${1:-}" = all ] && skip=./nonexistent/*
   (cd "$FX" && find . -type f -not -path '*/.git/*' -not -name .git -not -path "$skip" \
-    | sort | while IFS= read -r f; do shasum "$f"; done | shasum | cut -d' ' -f1)
+    | sort | while IFS= read -r f; do
+        case "$f" in ./home/.claude/backups/*) ;; ./home/.claude/*) echo "$f $(fstat "$f")" ;; esac
+        shasum "$f" 2>/dev/null || echo "unreadable $f"
+      done | shasum | cut -d' ' -f1)
 }
 run_mv() { OUT=$(bash "$SCRIPT" "$@" 2>&1) && RC=0 || RC=$?; }
+run_undo() { OUT=$(bash "$UNDO" "$@" 2>&1) && RC=0 || RC=$?; }
 expect_refuse() { # desc keyword : runs --execute, must refuse and change nothing
   local desc=$1 kw=$2 before
   before=$(tree_hash all)
@@ -131,6 +161,9 @@ run_mv
 case "$OUT" in *"would:"*) ;; *) fail "dry run printed no would:" ;; esac
 [ "$(tree_hash all)" = "$H0" ] || fail "dry run changed the tree"
 [ -d "$OLD_REPO" ] && [ ! -e "$NEW_REPO" ] || fail "dry run moved the repo"
+# F15: the count is files with an old cwd; files naming the old path elsewhere are counted apart
+case "$OUT" in *'rewrite "cwd" in 9 transcript files'*) ;; *) fail "dry run cwd count: $OUT" ;; esac
+case "$OUT" in *"info: 3 other transcript files"*) ;; *) fail "dry run other count: $OUT" ;; esac
 
 # --- preflight refusals
 for form in "-fl /claude/versions/|/claude/versions/" "-fl ClaudeCode.app|ClaudeCode.app" "-fl bin/claude|bin/claude"; do
@@ -140,6 +173,9 @@ done
 build_fixture
 STUB_ARGS="-x claude" STUB_OUT="$LIVE_PID" expect_refuse "bare argv form" "-x claude"
 case "$OUT" in *"$LIVE_PID sleep 600"*) ;; *) fail "bare argv form: pid and command line not printed: $OUT" ;; esac
+# F13: pgrep failing is not "no process"
+build_fixture
+STUB_RC=2 expect_refuse "pgrep exit 2" "exit 2"
 build_fixture
 printf '{"pid":%s,"cwd":"%s/sub"}\n' "$LIVE_PID" "$OLD_REPO" > "$CLAUDE_HOME/sessions/live.json"
 expect_refuse "live session" "live session"
@@ -152,6 +188,24 @@ expect_refuse "live daemon.lock" "daemon.lock"
 build_fixture
 echo "{\"state\":\"working\",\"cwd\":\"$OLD_REPO\"}" > "$CLAUDE_HOME/jobs/bbb/state.json"
 expect_refuse "working job" "job"
+# F4: an unreadable working job naming the old path refuses, naming the file
+build_fixture
+echo "{\"state\":\"working\",\"cwd\":\"$OLD_REPO\"}" > "$CLAUDE_HOME/jobs/bbb/state.json"
+chmod 000 "$CLAUDE_HOME/jobs/bbb/state.json"
+expect_refuse "unreadable job" "jobs/bbb/state.json"
+chmod 644 "$CLAUDE_HOME/jobs/bbb/state.json"
+# F10: a live roster worker at the old path refuses (the ended one in the fixture is rewritten, below)
+build_fixture
+jq --arg o "$OLD_REPO" --argjson l "$LIVE_PID" '.workers.w8 = {pid:$l, cwd:$o}' "$CLAUDE_HOME/daemon/roster.json" > "$FX/r.tmp"
+mv "$FX/r.tmp" "$CLAUDE_HOME/daemon/roster.json"
+expect_refuse "live roster worker" "roster"
+# F5: a bad history line and an existing new projects key refuse before any change
+build_fixture
+echo '{bad' >> "$CLAUDE_HOME/history.jsonl"
+expect_refuse "bad history line" "history.jsonl"
+build_fixture
+jq --arg n "$NEW_REPO" '.projects[$n] = {trust:true}' "$CLAUDE_JSON" > "$FX/c.tmp" && mv "$FX/c.tmp" "$CLAUDE_JSON"
+expect_refuse "new projects key exists" "projects"
 build_fixture
 echo untracked > "$OLD_REPO/new.txt"
 expect_refuse "dirty repo" "not clean"
@@ -188,15 +242,31 @@ sed "s|$EXP|$SAVE_CH|g" "$EXP/lessons/queue.jsonl" > "$EXP/q.tmp" && mv "$EXP/q.
 diff -r -x backups "$CLAUDE_HOME" "$EXP" > "$ROOT/tmp/move-diff.out" 2>&1 || { fail "claude home differs from expected:"; head -30 "$ROOT/tmp/move-diff.out"; }
 mk_claude_json "$EXP.json" "$NEW_REPO" ikhbat-org/bayan
 cmp -s "$EXP.json" "$CLAUDE_JSON" || fail ".claude.json differs from expected"
-[ -f "$CLAUDE_HOME/backups/bayan-move-2026-11-02/undo.sh" ] || fail "no undo.sh"
+[ -f "$UNDO" ] || fail "no undo.sh"
+# F6: rewrites keep the mtime
+[ "$(fstat "$CLAUDE_HOME/projects/$NKEY/s1.jsonl")" = "$(fstat "$REF2020")" ] || fail "rewritten transcript lost its 2020-01-01 mtime"
+# F7: queue rows rewrite every string value
+[ "$(jq -r 'select(.repoTop) | .repoTop' "$CLAUDE_HOME/lessons/queue.jsonl")" = "$NEW_REPO" ] || fail "queue repoTop not rewritten"
+# F10: the ended roster worker is rewritten
+[ "$(jq -r '.workers.w9.cwd' "$CLAUDE_HOME/daemon/roster.json")" = "$NEW_REPO" ] || fail "ended roster worker not rewritten"
 HREF=$(tree_hash all)
 # a rerun after completion changes nothing
 run_mv --execute
 [ "$RC" -eq 0 ] || fail "rerun exit $RC: $OUT"
 [ "$(tree_hash all)" = "$HREF" ] || fail "rerun changed the tree"
 
-# --- interrupted runs resume to the same tree
-for n in 3 5 6; do
+# --- F8: githubRepoPaths keeps other entries and merges an existing new one
+build_fixture
+jq --arg o "$OLD_REPO" '.githubRepoPaths["extrode/bayan"] = [$o, "/elsewhere/bayan"] | .githubRepoPaths["ikhbat-org/bayan"] = ["/pre"]' \
+  "$CLAUDE_JSON" > "$FX/c.tmp" && mv "$FX/c.tmp" "$CLAUDE_JSON"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "githubRepoPaths run exit $RC: $OUT"
+GOT=$(jq -c '.githubRepoPaths["ikhbat-org/bayan"]' "$CLAUDE_JSON")
+WANT=$(jq -cn --arg n "$NEW_REPO" '["/pre", $n, "/elsewhere/bayan"]')
+[ "$GOT" = "$WANT" ] || fail "githubRepoPaths: got $GOT, want $WANT"
+
+# --- interrupted runs resume to the same tree (F16: 4, 7, 8 too)
+for n in 3 4 5 6 7 8; do
   build_fixture
   STOP_AFTER=$n run_mv --execute
   [ "$RC" -eq 99 ] || fail "stop after $n: exit $RC: $OUT"
@@ -216,18 +286,86 @@ run_mv --execute
 case "$OUT" in *"skip: "*"already at"*) ;; *) fail "step 3 was not a skip: $OUT" ;; esac
 [ "$(tree_hash all)" = "$HREF" ] || fail "resume after mv without marker ends in a different tree"
 
+# --- F9: a Claude process appearing mid-run stops before step 6; a rerun resumes
+build_fixture
+STUB_FROM=5 STUB_ARGS="-fl /claude/versions/" STUB_OUT="4242 /x/claude/versions/2.1" run_mv --execute
+[ "$RC" -ne 0 ] && [ "$RC" -ne 99 ] || fail "mid-run process: exit $RC: $OUT"
+case "$OUT" in *"before step 6"*"resume: "*"$NEW_REPO/scripts/move/2026-11-02-ikhbat-org.sh --execute"*) ;; *) fail "mid-run process: no stop and resume: $OUT" ;; esac
+grep -q "^done$(printf '\t')5\$" "$M" && ! grep -q "^done$(printf '\t')6\$" "$M" || fail "mid-run process: not stopped between steps 5 and 6"
+rm -f "$STUB_COUNT"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "resume after mid-run process: exit $RC: $OUT"
+[ "$(tree_hash all)" = "$HREF" ] || fail "resume after mid-run process ends in a different tree"
+
+# --- F11: a failed fetch after the move is a warning; later steps still run
+build_fixture
+STOP_AFTER=3 run_mv --execute
+[ "$RC" -eq 99 ] || fail "stop after 3 (fetch): exit $RC: $OUT"
+NEW_REMOTE=$FX/missing.git run_mv --execute
+[ "$RC" -eq 0 ] || fail "fetch failure aborted: exit $RC: $OUT"
+case "$OUT" in *"warn: "*"fetch"*"ok: verified"*) ;; *) fail "fetch failure: no warn: line or no ok: verified: $OUT" ;; esac
+
+# --- F14: a transcript gaining an old cwd after step 2 is not rewritten unlisted
+build_fixture
+STOP_AFTER=2 run_mv --execute
+[ "$RC" -eq 99 ] || fail "stop after 2: exit $RC: $OUT"
+printf '{"cwd":"%s"}\n' "$OLD_REPO" > "$CLAUDE_HOME/projects/$OKEY/late.jsonl"
+run_mv --execute
+[ "$RC" -ne 0 ] || fail "unlisted transcript: expected a refusal"
+case "$OUT" in *"refuse: "*"late.jsonl"*"backup list"*"resume: "*) ;; *) fail "unlisted transcript: no refusal with resume: $OUT" ;; esac
+grep -qF "\"cwd\":\"$OLD_REPO\"" "$CLAUDE_HOME/projects/$NKEY/late.jsonl" || fail "unlisted transcript was rewritten"
+
+# --- F1: undo refuses to run git in a dir that is not a checkout's top
+build_fixture
+STOP_AFTER=2 run_mv --execute
+[ "$RC" -eq 99 ] || fail "stop after 2 (undo): exit $RC: $OUT"
+rm -rf "$OLD_REPO"; mkdir "$OLD_REPO"
+run_undo
+[ "$RC" -ne 0 ] || fail "undo with an empty OLD_REPO: expected a refusal"
+case "$OUT" in *"refuse: "*"not the top"*) ;; *) fail "undo with an empty OLD_REPO: no refusal: $OUT" ;; esac
+[ ! -e "$CLAUDE_HOME/backups/bayan-move-2026-11-02/undone" ] || fail "undo with an empty OLD_REPO: marked undone"
+
+# --- F2: undo keeps changes made after the move unless told to discard them
+build_fixture
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "execute before F2 undo: $OUT"
+printf '{"display":"later","project":"%s","ts":9}\n' "$NEW_REPO" >> "$CLAUDE_HOME/history.jsonl"
+run_undo
+[ "$RC" -ne 0 ] || fail "undo after a later change: expected a refusal"
+case "$OUT" in *"refuse: "*"history.jsonl"*) ;; *) fail "undo after a later change: file not listed: $OUT" ;; esac
+grep -q '"later"' "$CLAUDE_HOME/history.jsonl" || fail "undo after a later change: row lost"
+[ -d "$NEW_REPO" ] && [ ! -e "$OLD_REPO" ] || fail "undo after a later change: repo moved"
+run_undo --discard-changes-since-move
+[ "$RC" -eq 0 ] || fail "undo --discard-changes-since-move: exit $RC: $OUT"
+[ -d "$OLD_REPO" ] && ! grep -q '"later"' "$CLAUDE_HOME/history.jsonl" || fail "undo --discard-changes-since-move did not restore"
+
+# --- F3: undo refuses when a rename source and target both exist
+build_fixture
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "execute before F3 undo: $OUT"
+mkdir -p "$CLAUDE_HOME/projects/$OKEY"
+HB=$(tree_hash all)
+run_undo
+[ "$RC" -ne 0 ] || fail "undo with both dirs: expected a refusal"
+case "$OUT" in *"refuse: both "*"$OKEY"*) ;; *) fail "undo with both dirs: no refusal naming them: $OUT" ;; esac
+case "$OUT" in *"ok: undone"*) fail "undo with both dirs printed ok: undone" ;; esac
+[ ! -e "$CLAUDE_HOME/backups/bayan-move-2026-11-02/undone" ] || fail "undo with both dirs: marked undone"
+[ "$(tree_hash all)" = "$HB" ] || fail "undo with both dirs changed the tree"
+
 # --- undo restores the starting tree, twice
 build_fixture
 H0=$(tree_hash)
 run_mv --execute
 [ "$RC" -eq 0 ] || fail "execute before undo: $OUT"
 for i in 1 2; do
-  bash "$CLAUDE_HOME/backups/bayan-move-2026-11-02/undo.sh" > "$ROOT/tmp/move-undo.out" 2>&1 || { fail "undo $i failed"; cat "$ROOT/tmp/move-undo.out"; }
+  bash "$UNDO" > "$ROOT/tmp/move-undo.out" 2>&1 || { fail "undo $i failed"; cat "$ROOT/tmp/move-undo.out"; }
   [ "$(tree_hash)" = "$H0" ] || fail "undo $i: tree differs from the start"
   [ -d "$OLD_REPO" ] && [ ! -e "$NEW_REPO" ] || fail "undo $i: repo not back"
   [ "$(git -C "$OLD_REPO" remote get-url origin)" = file:///nonexistent/extrode-bayan.git ] || fail "undo $i: origin not restored"
 done
 
-rm -rf "$FX" "$EXP" "$EXP.json"
+rm -rf "$FX" "$EXP" "$EXP.json" "$STUB_COUNT" "$REF2020"
+# F1: no git command reached the enclosing repo
+[ "$(shasum -a 256 < "$REAL_GIT/config")" = "$REAL_CFG_SUM" ] || fail "the enclosing repo's .git/config changed"
 if [ "$FAILS" -ne 0 ]; then echo "$FAILS failure(s)"; exit 1; fi
 echo PASS

@@ -12,6 +12,8 @@ CLAUDE_JSON=${CLAUDE_JSON:-$HOME/.claude.json}
 NEW_REMOTE=${NEW_REMOTE:-git@github.com:ikhbat-org/bayan.git}
 PGREP=${PGREP:-pgrep}
 CLI_NAME=claude
+# git never looks for a repository above either checkout's parent
+export GIT_CEILING_DIRECTORIES="$(dirname "$OLD_REPO"):$(dirname "$NEW_REPO")"
 
 EXECUTE=0
 case "${1:-}" in
@@ -28,6 +30,7 @@ DP=$(( ${#NEW_REPO} - ${#OLD_REPO} ))
 DK=$(( ${#NKEY} - ${#OKEY} ))
 BACKUP=$CLAUDE_HOME/backups/bayan-move-2026-11-02
 MANIFEST=$BACKUP/manifest.txt
+SUMS=$BACKUP/post-move.sha256
 
 say() { printf '%s\n' "$*"; }
 
@@ -88,12 +91,27 @@ rw_run() {
     perl -e "$PERL_RW" -- "$1" "$3" "${4:-}"
 }
 
-# hits MODE FIELDS FILE: total replacements it would make
-hits() {
+# has_hits MODE FIELDS FILE [keyonly]: status 0 when the rewrite would change FILE. Call it
+# directly, never inside $(...): an unreadable file stops the whole run.
+has_hits() {
   local c
-  c=$(rw_run "$1" "$2" "$3") || { say "refuse: cannot scan $3"; exit 1; }
-  echo $(( ${c% *} + ${c#* } ))
+  if ! c=$(rw_run "$1" "$2" "$3" "" "${4:-}" 2>/dev/null); then say "refuse: cannot read $3"; exit 1; fi
+  [ $(( ${c% *} + ${c#* } )) -gt 0 ]
 }
+
+json_ok() { jq empty "$1" >/dev/null 2>&1; }
+jsonl_ok() { jq -nR 'inputs | select(length > 0) | fromjson | empty' "$1" >/dev/null 2>&1; }
+sha() { shasum -a 256 < "$1" | cut -d' ' -f1; }
+
+# git only in a dir that is the top of its own checkout, never in an enclosing one
+is_top() {
+  local p t
+  p=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
+  t=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+  [ "$t" = "$p" ]
+}
+need_top() { is_top "$1" || { say "refuse: $1 is not the top of its own git checkout; git not run there"; exit 1; }; }
+g() { need_top "$1"; git -C "$@"; }
 
 # rewrite_file FILE MODE FIELDS JSON(json|"") [keyonly]
 rewrite_file() {
@@ -112,8 +130,22 @@ rewrite_file() {
   if [ "$4" = json ] && ! jq empty "$tmp" 2>/dev/null; then
     rm -f "$tmp"; say "refuse: $f: rewrite is not valid JSON; left unchanged"; exit 1
   fi
+  touch -r "$f" "$tmp"
   mv "$tmp" "$f"
   say "run: rewrote $f ($pc path, $kc key replacements)"
+}
+
+# is_listed FILE: FILE is in the step 2 list (manifest "home" lines: path before and after the renames)
+is_listed() {
+  local rel=${1#"$CLAUDE_HOME"/}
+  awk -F'\t' -v r="$rel" '$1 == "home" && ($2 == r || $3 == r) { f = 1 } END { exit !f }' "$MANIFEST"
+}
+# rewrite_listed FILE MODE FIELDS JSON [keyonly]: steps 6-8 rewrite only files step 2 backed up
+rewrite_listed() {
+  if is_listed "$1"; then rewrite_file "$@"; return 0; fi
+  if has_hits "$2" "$3" "$1" "${5:-}"; then
+    say "refuse: $1 names the old path but is not in step 2's backup list ($MANIFEST); left unchanged"; exit 1
+  fi
 }
 
 clone_cp() { cp -pc "$1" "$2" 2>/dev/null || cp -p "$1" "$2"; }
@@ -125,6 +157,15 @@ mark_done() {
   printf 'done\t%s\n' "$1" >> "$MANIFEST"
   if [ "${STOP_AFTER:-}" = "$1" ]; then say "stop: STOP_AFTER=$1"; exit 99; fi
 }
+
+# any failure once the checkout has moved: the script now lives under NEW_REPO
+on_exit() {
+  local rc=$?
+  if [ "$EXECUTE" -eq 1 ] && [ "$rc" -ne 0 ] && [ "$rc" -ne 99 ] && { is_done 3 || moved_already; }; then
+    say "resume: fix the cause above, then run: bash $NEW_REPO/scripts/move/2026-11-02-ikhbat-org.sh --execute"
+  fi
+}
+trap on_exit EXIT
 
 # old<TAB>new for every projects/ and lessons/ dir at the old key
 scan_renames() {
@@ -145,61 +186,119 @@ renames() {
     scan_renames
   fi
 }
+# post_rel REL RENAMES: REL under its renamed dir
+post_rel() {
+  local o n p=$CLAUDE_HOME/$1
+  while IFS="$TAB" read -r o n; do
+    [ -n "$o" ] || continue
+    case "$p" in "$o"/*) p=$n${p#"$o"}; break ;; esac
+  done <<< "$2"
+  printf '%s\n' "${p#"$CLAUDE_HOME"/}"
+}
 
 # ---- 1. preflight -------------------------------------------------------------------------
 REF=0
 refuse() { say "refuse: $*"; REF=$(( REF + 1 )); }
 alive() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; kill -0 "$1" 2>/dev/null; }
 
-preflight() {
-  local pat out line f pid st repo e parent base ldev rdev o n nrn
-  for pat in jq perl; do command -v "$pat" >/dev/null 2>&1 || { say "refuse: $pat not found"; exit 1; }; done
-  if [ -e "$BACKUP/undone" ]; then refuse "$BACKUP/undone exists: the move was undone; remove $BACKUP to run again"; fi
-
+# Claude processes (pgrep exit 1 = none, other non-zero = unknown) and live sessions at the old path
+proc_check() {
+  local pat out rc line pid f
   for pat in "/claude/versions/" "ClaudeCode.app" "bin/$CLI_NAME"; do
-    out=$($PGREP -fl "$pat" 2>/dev/null || true)
-    if [ -n "$out" ]; then
-      refuse "Claude process matches pgrep -fl $pat:"
-      while IFS= read -r line; do say "  $line"; done <<< "$out"
-    fi
+    out=$($PGREP -fl "$pat" 2>/dev/null) && rc=0 || rc=$?
+    case $rc in
+      0) refuse "Claude process matches pgrep -fl $pat:"
+         while IFS= read -r line; do say "  $line"; done <<< "$out" ;;
+      1) ;;
+      *) refuse "pgrep -fl $pat failed (exit $rc): cannot tell whether Claude runs" ;;
+    esac
   done
-  out=$($PGREP -x "$CLI_NAME" 2>/dev/null || true)
-  if [ -n "$out" ]; then
-    refuse "Claude process matches pgrep -x $CLI_NAME:"
-    while IFS= read -r line; do
-      pid=${line%% *}
-      say "  $pid $(ps -o command= -p "$pid" 2>/dev/null || echo '(command line unavailable)')"
-    done <<< "$out"
-  fi
+  out=$($PGREP -x "$CLI_NAME" 2>/dev/null) && rc=0 || rc=$?
+  case $rc in
+    0) refuse "Claude process matches pgrep -x $CLI_NAME:"
+       while IFS= read -r line; do
+         pid=${line%% *}
+         say "  $pid $(ps -o command= -p "$pid" 2>/dev/null || echo '(command line unavailable)')"
+       done <<< "$out" ;;
+    1) ;;
+    *) refuse "pgrep -x $CLI_NAME failed (exit $rc): cannot tell whether Claude runs" ;;
+  esac
 
   for f in "$CLAUDE_HOME"/sessions/*.json; do
     [ -f "$f" ] || continue
-    pid=$(jq -r '.pid // empty' "$f" 2>/dev/null || true)
+    if ! pid=$(jq -r '.pid // empty' "$f" 2>/dev/null); then refuse "cannot read or parse $f"; continue; fi
     [ -n "$pid" ] || continue
-    if alive "$pid" && [ "$(hits fields cwd "$f")" -gt 0 ]; then
+    if alive "$pid" && has_hits fields cwd "$f"; then
       refuse "live session $f (pid $pid) has its cwd at the old path"
     fi
   done
-  if [ -f "$CLAUDE_HOME/daemon.lock" ]; then
-    pid=$(jq -r '.pid // empty' "$CLAUDE_HOME/daemon.lock" 2>/dev/null || true)
-    if alive "$pid"; then refuse "daemon.lock: pid $pid is alive"; fi
+  f=$CLAUDE_HOME/daemon.lock
+  if [ -f "$f" ]; then
+    if ! pid=$(jq -r '.pid // empty' "$f" 2>/dev/null); then refuse "cannot read or parse $f"
+    elif alive "$pid"; then refuse "daemon.lock: pid $pid is alive"; fi
   fi
+}
+
+# rerun before steps 6, 8 and 10: a Claude started during the run stops it (the EXIT trap prints the resume)
+midrun_check() {
+  [ "$EXECUTE" -eq 1 ] || return 0
+  REF=0
+  proc_check
+  if [ "$REF" -gt 0 ]; then say "stop: a Claude process appeared before step $1; nothing more changed"; exit 1; fi
+}
+
+# workers (roster.json .workers, object or array) naming the old path or key: "pid<TAB>replPid"
+JQ_ROSTER='
+def nmp: (length == 0) or (.[0:1] | test("[A-Za-z0-9._-]") | not);
+def nmk: (length == 0) or (.[0:1] | test("[A-Za-z0-9._]") | not);
+def hit($o; nm): . as $s | any(($s | indices($o))[]; $s[(. + ($o | length)):] | nm);
+(.workers // {}) | .[] | select(type == "object")
+| select([.. | strings | (hit($old; nmp) or hit($okey; nmk))] | any)
+| "\(.pid // "")\t\(.replPid // "")"'
+
+preflight() {
+  local pat out line f pid rpid st repo e parent base ldev rdev o n nrn cj
+  for pat in jq perl shasum; do command -v "$pat" >/dev/null 2>&1 || { say "refuse: $pat not found"; exit 1; }; done
+  if [ -e "$BACKUP/undone" ]; then refuse "$BACKUP/undone exists: the move was undone; remove $BACKUP to run again"; fi
+
+  proc_check
 
   parent=$(dirname "$OLD_REPO"); base=$(basename "$OLD_REPO")
   for e in "$parent/$base"?*; do
     if [ -e "$e" ] || [ -L "$e" ]; then refuse "sibling $e next to $OLD_REPO would share its Claude key"; fi
   done
 
-  if [ -f "$CLAUDE_HOME/daemon/roster.json" ] && [ "$(hits all "" "$CLAUDE_HOME/daemon/roster.json")" -gt 0 ]; then
-    refuse "daemon/roster.json names the old path"
+  # roster: a live worker naming the old path refuses; ended ones are backed up and rewritten (step 8)
+  f=$CLAUDE_HOME/daemon/roster.json
+  if [ -f "$f" ]; then
+    if ! out=$(jq -r --arg old "$OLD_REPO" --arg okey "$OKEY" "$JQ_ROSTER" "$f" 2>/dev/null); then
+      refuse "cannot read or parse $f"
+    else
+      while IFS="$TAB" read -r pid rpid; do
+        if alive "$pid" || alive "$rpid"; then refuse "daemon/roster.json: live worker (pid $pid $rpid) names the old path"; fi
+      done <<< "$out"
+    fi
   fi
   for f in "$CLAUDE_HOME"/jobs/*/state.json; do
     [ -f "$f" ] || continue
-    st=$(jq -r '.state // ""' "$f" 2>/dev/null || true)
-    if [ "$st" != done ] && [ "$(hits all "" "$f")" -gt 0 ]; then
+    if ! st=$(jq -r '.state // ""' "$f" 2>/dev/null); then refuse "cannot read or parse $f"; continue; fi
+    if [ "$st" != done ] && has_hits all "" "$f"; then
       refuse "job $f (state '$st') names the old path"
     fi
   done
+
+  # every JSON file the run rewrites parses (transcripts: step 2, before any change)
+  for f in "$CLAUDE_HOME/workers/registry.json" "$CLAUDE_JSON"; do
+    if [ -f "$f" ] && ! json_ok "$f"; then refuse "$f is not valid JSON"; fi
+  done
+  for f in "$CLAUDE_HOME/history.jsonl" "$CLAUDE_HOME/lessons/queue.jsonl"; do
+    if [ -f "$f" ] && ! jsonl_ok "$f"; then refuse "$f has a line that is not valid JSON"; fi
+  done
+  cj=$CLAUDE_JSON
+  if [ -f "$MANIFEST" ] && [ -f "$BACKUP/claude.json" ]; then cj=$BACKUP/claude.json; fi
+  if [ -f "$cj" ] && jq -e --arg new "$NEW_REPO" '(.projects // {}) | has($new)' "$cj" >/dev/null 2>&1; then
+    refuse "$CLAUDE_JSON already has projects[\"$NEW_REPO\"] (step 7 would merge two entries)"
+  fi
 
   repo=$OLD_REPO
   if is_done 3 || moved_already; then
@@ -226,13 +325,21 @@ preflight() {
   fi
 
   if [ -d "$repo" ]; then
-    [ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ] || refuse "$repo is not clean"
-    nrn=$(git -C "$repo" worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)
-    [ "$nrn" -le 1 ] || refuse "$repo has a linked worktree ($nrn worktrees)"
-    ldev=$(git -C "$repo" rev-parse refs/heads/dev 2>/dev/null || true)
-    rdev=$(git ls-remote "$NEW_REMOTE" refs/heads/dev 2>/dev/null | cut -f1 || true)
-    if [ -z "$ldev" ] || [ "$ldev" != "$rdev" ]; then
-      refuse "git ls-remote $NEW_REMOTE dev ('$rdev') differs from local dev ('$ldev')"
+    if ! is_top "$repo"; then
+      refuse "$repo is not the top of its own git checkout"
+    else
+      [ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ] || refuse "$repo is not clean"
+      nrn=$(git -C "$repo" worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)
+      [ "$nrn" -le 1 ] || refuse "$repo has a linked worktree ($nrn worktrees)"
+      ldev=$(git -C "$repo" rev-parse refs/heads/dev 2>/dev/null || true)
+      rdev=$(git -C "$repo" ls-remote "$NEW_REMOTE" refs/heads/dev 2>/dev/null | cut -f1 || true)
+      if [ -z "$ldev" ] || [ "$ldev" != "$rdev" ]; then
+        if [ "$repo" = "$NEW_REPO" ]; then
+          say "warn: git ls-remote $NEW_REMOTE dev ('$rdev') differs from local dev ('$ldev'); the checkout has moved, going on"
+        else
+          refuse "git ls-remote $NEW_REMOTE dev ('$rdev') differs from local dev ('$ldev')"
+        fi
+      fi
     fi
   fi
 
@@ -241,44 +348,55 @@ preflight() {
 }
 
 # ---- 2. backup and manifest -----------------------------------------------------------------
+# The manifest's "home" lines are the list of every file steps 6-8 may rewrite.
 step2() {
-  local rel f o n tmp nfiles=0 nren=0 origin
+  local rel f o n tmp rn list= nfiles nren=0 origin
   if is_done 2; then say "skip: step 2 (backup) already done"; return 0; fi
-  local list; list=$(mktemp "${TMPDIR:-/tmp}/bayan-move.XXXXXX")
+  rn=$(scan_renames)
   for rel in workers/registry.json lessons/INDEX.md lessons/queue.jsonl history.jsonl; do
-    [ -f "$CLAUDE_HOME/$rel" ] && echo "$rel" >> "$list"
+    if [ -f "$CLAUDE_HOME/$rel" ]; then list+=$rel$'\n'; fi
   done
+  f=$CLAUDE_HOME/daemon/roster.json
+  if [ -f "$f" ] && has_hits all "" "$f"; then list+=daemon/roster.json$'\n'; fi
   for f in "$CLAUDE_HOME"/jobs/*/state.json; do
     [ -f "$f" ] || continue
-    if [ "$(hits all "" "$f")" -gt 0 ]; then echo "${f#"$CLAUDE_HOME"/}" >> "$list"; fi
+    if has_hits all "" "$f"; then list+=${f#"$CLAUDE_HOME"/}$'\n'; fi
   done
   while IFS="$TAB" read -r o n; do
+    [ -n "$o" ] || continue
     nren=$(( nren + 1 ))
-    case "$o" in "$CLAUDE_HOME"/projects/*)
-      grep -rlF --include='*.jsonl' -- "$OLD_REPO" "$o" 2>/dev/null | while IFS= read -r f; do echo "${f#"$CLAUDE_HOME"/}"; done >> "$list" || true ;;
-    esac
-  done < <(scan_renames)
-  nfiles=$(wc -l < "$list" | tr -d ' ')
+    case "$o" in "$CLAUDE_HOME"/projects/*) ;; *) continue ;; esac
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      has_hits fields cwd "$f" || continue
+      jsonl_ok "$f" || { say "refuse: $f has a line that is not valid JSON; nothing changed"; exit 1; }
+      list+=${f#"$CLAUDE_HOME"/}$'\n'
+    done < <(grep -rlF --include='*.jsonl' -- "$OLD_REPO" "$o" 2>/dev/null || true)
+  done <<< "$rn"
+  nfiles=$(printf '%s' "$list" | grep -c '' || true)
   if [ "$EXECUTE" -eq 0 ]; then
     say "would: back up $CLAUDE_JSON and $nfiles files under $CLAUDE_HOME to $BACKUP; record $nren renames"
-    rm -f "$list"; return 0
+    return 0
   fi
+  need_top "$OLD_REPO"
   mkdir -p "$BACKUP/files"
   tmp=$MANIFEST.tmp
   : > "$tmp"
   while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
     mkdir -p "$BACKUP/files/$(dirname "$rel")"
     clone_cp "$CLAUDE_HOME/$rel" "$BACKUP/files/$rel"
-    printf 'home\t%s\n' "$rel" >> "$tmp"
-  done < "$list"
+    printf 'home\t%s\t%s\n' "$rel" "$(post_rel "$rel" "$rn")" >> "$tmp"
+  done <<< "$list"
   if [ -f "$CLAUDE_JSON" ]; then
     clone_cp "$CLAUDE_JSON" "$BACKUP/claude.json"
     printf 'json\n' >> "$tmp"
   fi
-  while IFS="$TAB" read -r o n; do printf 'rename\t%s\t%s\n' "$o" "$n" >> "$tmp"; done < <(scan_renames)
+  while IFS="$TAB" read -r o n; do
+    if [ -n "$o" ]; then printf 'rename\t%s\t%s\n' "$o" "$n" >> "$tmp"; fi
+  done <<< "$rn"
   origin=$(git -C "$OLD_REPO" remote get-url origin 2>/dev/null || true)
   if [ -n "$origin" ]; then printf 'origin\t%s\n' "$origin" >> "$tmp"; fi
-  rm -f "$list"
   gen_undo
   printf 'done\t2\n' >> "$tmp"
   mv "$tmp" "$MANIFEST"
@@ -306,11 +424,12 @@ step4() {
   local cur
   if is_done 4; then say "skip: step 4 (remote) already done"; return 0; fi
   if [ "$EXECUTE" -eq 0 ]; then say "would: git -C $NEW_REPO remote set-url origin $NEW_REMOTE; fetch -q origin"; return 0; fi
+  need_top "$NEW_REPO"
   cur=$(git -C "$NEW_REPO" remote get-url origin 2>/dev/null || true)
   if [ "$cur" = "$NEW_REMOTE" ]; then say "skip: origin is already $NEW_REMOTE"
-  else git -C "$NEW_REPO" remote set-url origin "$NEW_REMOTE"; say "run: origin -> $NEW_REMOTE"; fi
-  git -C "$NEW_REPO" fetch -q origin
-  say "run: fetched origin"
+  else g "$NEW_REPO" remote set-url origin "$NEW_REMOTE"; say "run: origin -> $NEW_REMOTE"; fi
+  if g "$NEW_REPO" fetch -q origin; then say "run: fetched origin"
+  else say "warn: git -C $NEW_REPO fetch -q origin failed; going on, fetch by hand later"; fi
   mark_done 4
 }
 
@@ -331,35 +450,39 @@ step5() {
 
 # ---- 6. transcripts and lessons index ---------------------------------------------------------
 step6() {
-  local o n d f cnt=0
+  local o n d f cnt=0 other=0
   if is_done 6; then say "skip: step 6 (transcripts, INDEX.md) already done"; return 0; fi
   while IFS="$TAB" read -r o n; do
     case "$o" in "$CLAUDE_HOME"/projects/*) ;; *) continue ;; esac
     d=$n; [ -e "$d" ] || d=$o
     while IFS= read -r f; do
       [ -n "$f" ] || continue
-      cnt=$(( cnt + 1 ))
-      if [ "$EXECUTE" -eq 1 ]; then rewrite_file "$f" fields cwd ""; fi
+      if [ "$EXECUTE" -eq 1 ]; then rewrite_listed "$f" fields cwd ""
+      elif has_hits fields cwd "$f"; then cnt=$(( cnt + 1 ))
+      else other=$(( other + 1 )); fi
     done < <(grep -rlF --include='*.jsonl' -- "$OLD_REPO" "$d" 2>/dev/null || true)
   done < <(renames)
   if [ "$EXECUTE" -eq 0 ]; then
     say "would: rewrite \"cwd\" in $cnt transcript files, key in lessons/INDEX.md"
+    say "info: $other other transcript files name the old path outside \"cwd\" only; not rewritten"
     return 0
   fi
-  if [ -f "$CLAUDE_HOME/lessons/INDEX.md" ]; then rewrite_file "$CLAUDE_HOME/lessons/INDEX.md" text "" "" keyonly; fi
+  if [ -f "$CLAUDE_HOME/lessons/INDEX.md" ]; then rewrite_listed "$CLAUDE_HOME/lessons/INDEX.md" text "" "" keyonly; fi
   mark_done 6
 }
 
 # ---- 7. ~/.claude.json ------------------------------------------------------------------------
+# githubRepoPaths: the old entry's elements under the path rule, merged after any existing new entry, NEW_REPO once
 JQ_CLAUDE_JSON='
 def nm: (length == 0) or (.[0:1] | test("[A-Za-z0-9._-]") | not);
-(if (.projects | type) == "object" then .projects |= with_entries(
-    .key as $k
-    | if ($k | startswith($old)) and ($k[($old | length):] | nm)
-      then .key = $new + $k[($old | length):] else . end)
-  else . end)
+def mv: if type == "string" and startswith($old) and (.[($old | length):] | nm) then $new + .[($old | length):] else . end;
+(if (.projects | type) == "object" then .projects |= with_entries(.key |= mv) else . end)
 | (if (.githubRepoPaths | type) == "object" then .githubRepoPaths |= (
-    if has("extrode/bayan") then del(.["extrode/bayan"]) | .["ikhbat-org/bayan"] = [$new] else . end)
+    if has("extrode/bayan") then
+      ((.["ikhbat-org/bayan"] // []) + ((.["extrode/bayan"] // []) | map(mv)) + [$new]
+        | reduce .[] as $x ([]; if any(.[]; . == $x) then . else . + [$x] end)) as $merged
+      | del(.["extrode/bayan"]) | .["ikhbat-org/bayan"] = $merged
+    else . end)
   else . end)'
 step7() {
   local tmp flag=
@@ -380,24 +503,25 @@ step7() {
   mark_done 7
 }
 
-# ---- 8. registry, history, queue, job state -----------------------------------------------------
+# ---- 8. registry, history, queue, roster, job state ---------------------------------------------
 step8() {
   local f
-  if is_done 8; then say "skip: step 8 (registry, history, queue, jobs) already done"; return 0; fi
+  if is_done 8; then say "skip: step 8 (registry, history, queue, roster, jobs) already done"; return 0; fi
   if [ "$EXECUTE" -eq 0 ]; then
-    say "would: rewrite workers/registry.json, history.jsonl (project), lessons/queue.jsonl, jobs/*/state.json"
+    say "would: rewrite workers/registry.json, history.jsonl (project), lessons/queue.jsonl, daemon/roster.json, jobs/*/state.json"
     return 0
   fi
-  if [ -f "$CLAUDE_HOME/workers/registry.json" ]; then
-    rewrite_file "$CLAUDE_HOME/workers/registry.json" fields 'cwd|repo|worktree|criteria' json
-  fi
-  if [ -f "$CLAUDE_HOME/history.jsonl" ]; then rewrite_file "$CLAUDE_HOME/history.jsonl" fields project json; fi
-  if [ -f "$CLAUDE_HOME/lessons/queue.jsonl" ]; then
-    rewrite_file "$CLAUDE_HOME/lessons/queue.jsonl" fields 'transcript|cwd|project' json
-  fi
+  f=$CLAUDE_HOME/workers/registry.json
+  if [ -f "$f" ]; then rewrite_listed "$f" fields 'cwd|repo|worktree|criteria' json; fi
+  f=$CLAUDE_HOME/history.jsonl
+  if [ -f "$f" ]; then rewrite_listed "$f" fields project json; fi
+  f=$CLAUDE_HOME/lessons/queue.jsonl
+  if [ -f "$f" ]; then rewrite_listed "$f" all "" json; fi
+  f=$CLAUDE_HOME/daemon/roster.json
+  if [ -f "$f" ]; then rewrite_listed "$f" all "" json; fi
   for f in "$CLAUDE_HOME"/jobs/*/state.json; do
     [ -f "$f" ] || continue
-    rewrite_file "$f" all "" json
+    rewrite_listed "$f" all "" json
   done
   mark_done 8
 }
@@ -408,13 +532,61 @@ gen_undo() {
   {
     echo '#!/usr/bin/env bash'
     echo '# Reverses steps 3-8 of 2026-11-02-ikhbat-org.sh from the manifest and backups. Idempotent. Close Claude first.'
+    echo '# Refuses, changing nothing, when a rename source and target both exist, when a git dir is not the top of'
+    echo '# its own checkout, or when a file it would restore changed after the move (--discard-changes-since-move overrides).'
     echo 'set -euo pipefail'
     printf 'OLD_REPO=%q\nNEW_REPO=%q\nCLAUDE_HOME=%q\nCLAUDE_JSON=%q\nBACKUP=%q\n' \
       "$OLD_REPO" "$NEW_REPO" "$CLAUDE_HOME" "$CLAUDE_JSON" "$BACKUP"
     cat <<'EOF'
+DISCARD=0
+case "${1:-}" in
+  "") ;;
+  --discard-changes-since-move) DISCARD=1 ;;
+  *) echo "usage: $0 [--discard-changes-since-move]" >&2; exit 2 ;;
+esac
+export GIT_CEILING_DIRECTORIES="$(dirname "$OLD_REPO"):$(dirname "$NEW_REPO")"
 TAB=$(printf '\t')
 MANIFEST=$BACKUP/manifest.txt
+SUMS=$BACKUP/post-move.sha256
 [ -f "$MANIFEST" ] || { echo "refuse: no manifest at $MANIFEST"; exit 1; }
+is_top() {
+  local p t
+  p=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
+  t=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+  [ "$t" = "$p" ]
+}
+sha() { shasum -a 256 < "$1" | cut -d' ' -f1; }
+bad=0
+while IFS="$TAB" read -r kind a b; do
+  if [ "$kind" = rename ] && [ -e "$a" ] && [ -e "$b" ]; then echo "refuse: both $b and $a exist"; bad=1; fi
+done < "$MANIFEST"
+if [ -e "$NEW_REPO" ] && [ -e "$OLD_REPO" ]; then echo "refuse: both $NEW_REPO and $OLD_REPO exist"; bad=1; fi
+if grep -q "^origin$TAB" "$MANIFEST"; then
+  repo=$OLD_REPO
+  if [ -e "$NEW_REPO" ]; then repo=$NEW_REPO; fi
+  if [ -e "$repo" ] && ! is_top "$repo"; then echo "refuse: $repo is not the top of its own git checkout"; bad=1; fi
+fi
+if [ "$bad" -ne 0 ]; then echo "refuse: nothing changed"; exit 1; fi
+if [ ! -f "$SUMS" ]; then
+  echo "warn: no $SUMS (the move did not reach step 9); changes since the move are not checked"
+elif [ "$DISCARD" -eq 0 ]; then
+  changed=
+  while IFS="$TAB" read -r sum kind a b; do
+    case "$kind" in
+      home) cur=$CLAUDE_HOME/$b; [ -e "$cur" ] || cur=$CLAUDE_HOME/$a; bak=$BACKUP/files/$a ;;
+      json) cur=$CLAUDE_JSON; bak=$BACKUP/claude.json ;;
+      *) continue ;;
+    esac
+    s=$(sha "$cur" 2>/dev/null || echo missing)
+    if [ "$s" != "$sum" ] && [ "$s" != "$(sha "$bak")" ]; then changed=$changed"  $cur"$'\n'; fi
+  done < "$SUMS"
+  if [ -n "$changed" ]; then
+    echo "refuse: these files changed after the move; restoring the backups would discard those changes:"
+    printf '%s' "$changed"
+    echo "refuse: nothing restored. Run with --discard-changes-since-move to restore the backups anyway."
+    exit 1
+  fi
+fi
 while IFS="$TAB" read -r kind a b; do
   if [ "$kind" = rename ] && [ -e "$b" ] && [ ! -e "$a" ]; then mv "$b" "$a"; echo "run: mv $b $a"; fi
 done < "$MANIFEST"
@@ -428,7 +600,10 @@ if [ -d "$NEW_REPO" ] && [ ! -e "$OLD_REPO" ]; then
   mkdir -p "$(dirname "$OLD_REPO")"; mv "$NEW_REPO" "$OLD_REPO"; echo "run: mv $NEW_REPO $OLD_REPO"
 fi
 while IFS="$TAB" read -r kind a b; do
-  if [ "$kind" = origin ] && [ -d "$OLD_REPO" ]; then git -C "$OLD_REPO" remote set-url origin "$a"; echo "run: origin -> $a"; fi
+  if [ "$kind" = origin ] && [ -d "$OLD_REPO" ]; then
+    is_top "$OLD_REPO" || { echo "refuse: $OLD_REPO is not the top of its own git checkout"; exit 1; }
+    git -C "$OLD_REPO" remote set-url origin "$a"; echo "run: origin -> $a"
+  fi
 done < "$MANIFEST"
 touch "$BACKUP/undone"
 echo "ok: undone"
@@ -436,11 +611,22 @@ EOF
   } > "$u"
   chmod +x "$u"
 }
+# post-move sha256 of every file undo.sh would restore: "<sha><TAB>home<TAB><rel before><TAB><rel after>" or "<sha><TAB>json"
 step9() {
+  local kind a b tmp
   if is_done 9; then say "skip: step 9 (undo.sh) already done"; return 0; fi
-  if [ "$EXECUTE" -eq 0 ]; then say "would: write $BACKUP/undo.sh"; return 0; fi
+  if [ "$EXECUTE" -eq 0 ]; then say "would: write $BACKUP/undo.sh and $SUMS"; return 0; fi
+  tmp=$SUMS.tmp
+  : > "$tmp"
+  while IFS="$TAB" read -r kind a b; do
+    case "$kind" in
+      home) if [ -f "$CLAUDE_HOME/$b" ]; then printf '%s\thome\t%s\t%s\n' "$(sha "$CLAUDE_HOME/$b")" "$a" "$b" >> "$tmp"; fi ;;
+      json) if [ -f "$CLAUDE_JSON" ]; then printf '%s\tjson\n' "$(sha "$CLAUDE_JSON")" >> "$tmp"; fi ;;
+    esac
+  done < "$MANIFEST"
+  mv "$tmp" "$SUMS"
   gen_undo
-  say "run: wrote $BACKUP/undo.sh"
+  say "run: wrote $BACKUP/undo.sh and $SUMS"
   mark_done 9
 }
 
@@ -470,14 +656,14 @@ step10() {
       jq -e --arg new "$NEW_REPO" '.projects | has($new)' "$CLAUDE_JSON" >/dev/null \
         || { say "FAIL: projects key $NEW_REPO missing"; bad=1; }
     fi
-    jq -e --arg new "$NEW_REPO" '(.githubRepoPaths // {}) as $g | ($g | has("extrode/bayan") | not) and (($g | has("ikhbat-org/bayan") | not) or $g["ikhbat-org/bayan"] == [$new])' \
+    jq -e --arg new "$NEW_REPO" '(.githubRepoPaths // {}) as $g | ($g | has("extrode/bayan") | not) and (($g | has("ikhbat-org/bayan") | not) or any($g["ikhbat-org/bayan"][]; . == $new))' \
       "$CLAUDE_JSON" >/dev/null || { say "FAIL: githubRepoPaths not rewritten"; bad=1; }
     say "info: projects[$NEW_REPO] = $(jq -c --arg new "$NEW_REPO" '.projects[$new]' "$CLAUDE_JSON")"
     say "info: githubRepoPaths[ikhbat-org/bayan] = $(jq -c '.githubRepoPaths["ikhbat-org/bayan"]' "$CLAUDE_JSON")"
   fi
   [ ! -e "$OLD_REPO" ] || { say "FAIL: $OLD_REPO still exists"; bad=1; }
-  git -C "$NEW_REPO" status -sb
-  git -C "$NEW_REPO" remote -v
+  g "$NEW_REPO" status -sb
+  g "$NEW_REPO" remote -v
   if [ "$bad" -ne 0 ]; then exit 1; fi
   say "ok: verified"
 }
@@ -489,8 +675,11 @@ step2
 step3
 step4
 step5
+midrun_check 6
 step6
 step7
+midrun_check 8
 step8
 step9
+midrun_check 10
 step10
