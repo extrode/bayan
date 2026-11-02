@@ -196,7 +196,7 @@ every file written.
 | quality-baseline | `check` and `update` over the last mutation run's reports; `quality-baseline.test.sh` | output bytes; written baseline bytes (S8 may make floats normalized) |
 | mutate-plan, report-paths, manifest | `--shard k/4` for k=1..4, `--files` cases from `mutate-batch.test.sh` | bytes |
 | coverage-gate | merge bases of the last 10 010 landings with their reports | bytes |
-| stryker/cobertura-to-quality | `scripts/quality/fixtures/` plus one real Stryker and Cobertura report | JSON: bytes, or parsed-equal if S8 says so |
+| stryker-to-quality | `scripts/quality/fixtures/` plus one real Stryker report (Cobertura is not ported, S9) | JSON: bytes, or parsed-equal if S8 says so |
 | replay | a recorded snapshot from `guard.test.sh`, with and without a mutant | exit code, stdout, stderr per record |
 | gen-lowercase | `UnicodeData.txt` 16.0.0 (the script's `UNICODE_VERSION`) from `tmp/ucd-16.0.0/`; then a fresh download | regenerated `bayan-rt.c` bytes |
 | install-textmate | a scratch `USERPROFILE` | file tree and bytes |
