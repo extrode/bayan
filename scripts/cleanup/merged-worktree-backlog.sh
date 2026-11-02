@@ -6,7 +6,7 @@
 #   - its branch tip is in dev (a detached one: its HEAD is in dev);
 #   - its branch or HEAD has not moved in the last $CLEANUP_RECENT_HOURS hours (default 24), so a worktree just cut from
 #     dev for new work, whose tip is still a dev commit, is kept;
-#   - git worktree remove accepts it (no modified or untracked files, not locked).
+#   - it is not locked, not the worktree this runs from, not on dev, and has no modified or untracked files.
 # `git worktree remove` also deletes ignored files. Build output (bin/, obj/, TestResults/, __pycache__/, .DS_Store) goes
 # with --execute; any other ignored content (a tmp/ of test runs, say) also needs --delete-worktree-scratch.
 # Dry run by default. --execute / -e acts.
@@ -32,27 +32,34 @@ main="$(git rev-parse --path-format=absolute --git-common-dir)"; main="${main%/.
 
 # reflog_time WT REF: the time of REF's newest reflog entry (not its commit's date), empty when it has none.
 reflog_time() { git -C "$1" log -g -1 --date=unix --format=%gd "$2" 2>/dev/null | sed -n 's/.*@{\([0-9]*\)}$/\1/p' || true; }
-# last_moved WT BRANCH: when the branch (or a detached worktree's HEAD) last moved, from its reflog, else its tip commit.
+# last_moved WT BRANCH: the newest of the branch's reflog, the worktree's HEAD reflog (a fresh `git worktree add` of an old
+# branch moves only HEAD) and the tip commit; empty when none of them can be read.
 last_moved() {
-  local t
-  if [ -n "$2" ]; then t="$(reflog_time "$1" "refs/heads/$2")"
-    [ -n "$t" ] || t="$(git log -1 --format=%ct "refs/heads/$2")"
-  else t="$(reflog_time "$1" HEAD)"
-    [ -n "$t" ] || t="$(git -C "$1" log -1 --format=%ct HEAD)"
-  fi
-  printf '%s' "$t"
+  local t best="" ref
+  for ref in ${2:+"refs/heads/$2"} HEAD; do
+    t="$(reflog_time "$1" "$ref")"; [ -n "$t" ] && { [ -z "$best" ] || [ "$t" -gt "$best" ]; } && best="$t"
+  done
+  t="$(git -C "$1" log -1 --format=%ct HEAD 2>/dev/null || true)"
+  [ -n "$t" ] && { [ -z "$best" ] || [ "$t" -gt "$best" ]; } && best="$t"
+  printf '%s' "$best"
 }
 
 printf '== worktrees whose work dev holds\n'
-while IFS=$'\t' read -r wt br; do
-  [ "$wt" = "$main" ] && continue
+while IFS=$'\t' read -r wt br locked; do
+  # The main worktree, the one this runs from and dev itself are never targets.
+  [ "$wt" = "$main" ] || [ "$wt" = "$repo" ] || [ "$br" = dev ] && continue
   rel="${wt#"$repo"/}"; label="${br:-detached}"
   if [ ! -d "$wt" ]; then printf 'skip:  %s is gone (git worktree prune drops it)\n' "$rel"; continue; fi
-  if [ -n "$br" ]; then tip="refs/heads/$br"; else tip="$(git -C "$wt" rev-parse HEAD)"; fi
+  if [ "$locked" = 1 ]; then printf 'keep:  %s (locked)\n' "$rel"; kept=$((kept+1)); continue; fi
+  if [ -n "$br" ]; then tip="refs/heads/$br"
+  elif ! tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"; then
+    printf 'keep:  %s (HEAD unreadable)\n' "$rel"; kept=$((kept+1)); continue
+  fi
   if ! git merge-base --is-ancestor "$tip" refs/heads/dev 2>/dev/null; then
     printf 'keep:  %s (%s not in dev)\n' "$rel" "$label"; kept=$((kept+1)); continue
   fi
-  if [ "$(last_moved "$wt" "$br")" -gt "$recent" ]; then
+  moved="$(last_moved "$wt" "$br")"
+  if [ -z "$moved" ] || [ "$moved" -gt "$recent" ]; then
     printf 'keep:  %s (%s moved in the last %sh)\n' "$rel" "$label" "${CLEANUP_RECENT_HOURS:-24}"; kept=$((kept+1)); continue
   fi
   if [ -n "$(git -C "$wt" status --porcelain)" ]; then
@@ -72,7 +79,9 @@ while IFS=$'\t' read -r wt br; do
   if ! git worktree remove "$wt"; then printf '  refused: %s (git said why above). Left alone.\n' "$rel"; failed=1; continue; fi
   printf 'removed: %s\n' "$rel"; removed=$((removed+1))
   if [ -n "$br" ]; then git branch -d "$br" || { printf '  refused: branch %s. Left alone.\n' "$br"; failed=1; }; fi
-done < <(git worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} /^branch /{print w "\t" substr($0,19)} /^detached/{print w "\t"}')
+done < <(git worktree list --porcelain | awk '
+  function out() { if (w != "") print w "\t" b "\t" l; w = ""; b = ""; l = 0 }
+  /^worktree /{out(); w = substr($0, 10)} /^branch /{b = substr($0, 19)} /^locked/{l = 1} END{out()}')
 
 if [ $execute -eq 1 ]; then git worktree prune; else printf 'would: git worktree prune\n'; fi
 printf '\nremoved %s, kept %s, held for --delete-worktree-scratch %s; %s worktrees remain\n' \

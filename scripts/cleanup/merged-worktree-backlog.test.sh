@@ -12,12 +12,15 @@ old="2020-01-01T00:00:00"
 g() { GIT_COMMITTER_DATE="$old" GIT_AUTHOR_DATE="$old" git -c user.email=t@t -c user.name=t "$@"; }
 git init -q -b dev && git config core.hooksPath /dev/null
 printf 'tmp/\nbin/\n' > .gitignore && git add .gitignore && g commit -q -m base
-for b in merged scratch build unmerged dirty; do g branch "$b"; done
-git -c user.email=t@t -c user.name=t branch recent
+gnow() { git -c user.email=t@t -c user.name=t "$@"; }
+for b in merged scratch build unmerged dirty locked readded; do g branch "$b"; done
+gnow branch recent
 g switch -q merged && g commit -q --allow-empty -m m && g switch -q dev && g merge -q --no-ff merged -m mm
 g switch -q unmerged && g commit -q --allow-empty -m u && g switch -q dev
 for b in merged scratch build unmerged dirty recent; do g worktree add -q ".worktrees/$b" "$b"; done
 g worktree add -q --detach .worktrees/detached dev
+g worktree add -q .worktrees/locked locked && git worktree lock .worktrees/locked
+gnow worktree add -q .worktrees/readded readded
 mkdir -p .worktrees/scratch/tmp .worktrees/build/bin && echo x > .worktrees/scratch/tmp/run.log && echo x > .worktrees/build/bin/a.dll
 echo x > .worktrees/dirty/new.txt
 fail() { echo "FAIL: $1"; echo "$out"; cd "$root"; exit 1; }
@@ -29,7 +32,9 @@ echo "$out" | grep -q "^keep:  .worktrees/unmerged (unmerged not in dev)$" || fa
 echo "$out" | grep -q "^keep:  .worktrees/recent (recent moved in the last 24h)$" || fail "recent not kept"
 echo "$out" | grep -q "^keep:  .worktrees/dirty (modified or untracked files)$" || fail "dirty not kept"
 echo "$out" | grep -q "^hold:  .worktrees/scratch (ignored files beyond build output: tmp/ ;" || fail "scratch not held"
-[ "$(git worktree list | wc -l | tr -d ' ')" = 8 ] || fail "dry run changed something"
+echo "$out" | grep -q "^keep:  .worktrees/locked (locked)$" || fail "locked not kept"
+echo "$out" | grep -q "^keep:  .worktrees/readded (readded moved in the last 24h)$" || fail "a fresh worktree of an old branch not kept"
+[ "$(git worktree list | wc -l | tr -d ' ')" = 10 ] || fail "dry run changed something"
 
 out="$(bash "$script" -e)"
 for w in merged build detached; do [ ! -d ".worktrees/$w" ] || fail "$w not removed"; done
@@ -39,5 +44,11 @@ for w in scratch unmerged dirty recent; do [ -d ".worktrees/$w" ] || fail "$w re
 out="$(bash "$script" -e --delete-worktree-scratch)"
 [ ! -d .worktrees/scratch ] && ! git rev-parse -q --verify scratch >/dev/null || fail "scratch not removed with its flag"
 for w in unmerged dirty recent; do [ -d ".worktrees/$w" ] || fail "$w removed on the second run"; done
-out="$(bash "$script" -e)" || fail "a run with nothing left to do failed"
+for w in locked readded; do [ -d ".worktrees/$w" ] || fail "$w removed"; done
+out="$(bash "$script" -e)" || fail "a run with nothing left to do failed (a locked worktree is not a failure)"
+# Run from a linked worktree holding dev (the main one on another branch): neither it nor dev is a target.
+g switch -q -c side && g worktree add -q .worktrees/devwt dev
+out="$(cd .worktrees/devwt && bash "$script" -e)" || fail "run from a linked dev worktree failed"
+[ -d .worktrees/devwt ] && git rev-parse -q --verify dev >/dev/null || fail "the worktree it ran from, or dev, was removed"
+if echo "$out" | grep -q "devwt"; then fail "the worktree it ran from was considered"; fi
 cd "$root"; echo ok
