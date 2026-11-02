@@ -51,11 +51,10 @@ public sealed partial class OutputTests
         return sb.ToString();
     }
 
-    /// <summary>On Windows a test's captured output carries the text-mode <c>\r\n</c> (Q742), escaped in the JSON.</summary>
+    /// <summary>Masks the host, durations and hashes. The masked files (results.json, SHA256SUMS, BUILDINFO.json, VERSION) hold LF only: captured test output is LF since the runtime writes stdout/stderr in binary mode (Q742).</summary>
     private static string Mask(string text, bool maskHost = true)
     {
-        var masked = Sha().Replace(Duration().Replace(maskHost ? text.Replace(Targets.Host!, "<host>") : text, "\"durationMs\": 0"), "<sha256>  ");
-        return OperatingSystem.IsWindows() ? masked.Replace("\\r\\n", "\\n") : masked;
+        return Sha().Replace(Duration().Replace(maskHost ? text.Replace(Targets.Host!, "<host>") : text, "\"durationMs\": 0"), "<sha256>  ");
     }
 
     private static void Compare(string name, string actual)
