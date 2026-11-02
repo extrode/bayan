@@ -48,6 +48,23 @@ internal static class TestDirs
     }
 }
 
+/// <summary>Starts the theories' warm-up builds in the background, at most <see cref="Environment.ProcessorCount"/> at once across every class. Unbounded, three classes' 190 builds each ran zig together and hit the 7 GB Windows runner's commit limit (zig `failed to spawn: SystemResources`, exit 0xC000012D).</summary>
+internal static class WarmUp
+{
+    private static readonly SemaphoreSlim Gate = new(Environment.ProcessorCount);
+
+    internal static void Start(IEnumerable<string> names, Action<string> build) => Start(names, build, Gate);
+
+    internal static Task Start(IEnumerable<string> names, Action<string> build, SemaphoreSlim gate) =>
+        Task.WhenAll(names.Select(name => Task.Run(async () =>
+        {
+            await gate.WaitAsync();
+            try { build(name); }
+            catch { } // the theory reads the same cached build and reports its failure
+            finally { gate.Release(); }
+        })));
+}
+
 /// <summary>Child-process text. Only on Windows, where the C runtime's text-mode stdout turns every <c>\n</c> into <c>\r\n</c> (Q742), is <c>\r\n</c> read as <c>\n</c> (the <c>Golden.Compare</c> rule); elsewhere the bytes are kept, so a lost or added <c>\r</c> is still caught.</summary>
 internal static class ProcessText
 {

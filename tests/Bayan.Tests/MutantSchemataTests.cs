@@ -95,14 +95,10 @@ public sealed class MutantSchemataTests
 
     private static readonly ConcurrentDictionary<string, Lazy<string>> Builds = new();
 
-    /// <summary>Starts every schemata build in parallel, so the sequential theory mostly waits on finished work.</summary>
+    /// <summary>Starts every schemata build in the background (<see cref="WarmUp"/>), so the sequential theory mostly waits on finished work.</summary>
     private static readonly Lazy<bool> Warm = new(() =>
     {
-        foreach (var row in (IEnumerable<object[]>)ProgramCases())
-        {
-            var name = (string)row[0];
-            Task.Run(() => SchemataBuild(name));
-        }
+        WarmUp.Start(((IEnumerable<object[]>)ProgramCases()).Select(row => (string)row[0]), name => SchemataBuild(name));
         return true;
     });
 

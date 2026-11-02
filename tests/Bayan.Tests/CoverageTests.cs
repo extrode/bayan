@@ -58,14 +58,10 @@ public sealed class CoverageTests
 
     private static readonly ConcurrentDictionary<string, Lazy<string>> Builds = new();
 
-    /// <summary>Starts every coverage build in parallel, so the sequential theory mostly waits on finished work.</summary>
+    /// <summary>Starts every coverage build in the background (<see cref="WarmUp"/>), so the sequential theory mostly waits on finished work.</summary>
     private static readonly Lazy<bool> Warm = new(() =>
     {
-        foreach (var row in (IEnumerable<object[]>)MutantSchemataTests.ProgramCases())
-        {
-            var name = (string)row[0];
-            Task.Run(() => CoverageBuild(name));
-        }
+        WarmUp.Start(((IEnumerable<object[]>)MutantSchemataTests.ProgramCases()).Select(row => (string)row[0]), name => CoverageBuild(name));
         return true;
     });
 
