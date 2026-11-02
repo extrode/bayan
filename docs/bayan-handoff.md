@@ -359,7 +359,7 @@ Building, testing and shipping Bayan should need nothing but Bayan. Today it nee
 | Deno | `scripts/plan-strings-check.js` and its test | the same |
 | PowerShell | `editors/visualstudio/install-textmate.ps1` | the same, or the editor's own installer |
 | Node / VS Code | `editors/vscode/extension.js` (the extension runs inside VS Code) | an LSP server in Bayan leaves only the editor's own host |
-| Node 24 (Actions) | GitHub Actions' own JavaScript actions (checkout, setup-dotnet, artifacts); no CI step of ours runs on Node | `run:` steps can replace them; zig already installs from a script |
+| Node 24 (Actions) | `upload-artifact`/`download-artifact` only; no CI step of ours runs on Node | checkout, the .NET SDK and zig install from shell steps (spec 015 handoff, T4); the artifact actions stay |
 
 Rule from now on: add no new dependency without the user's say; when touching a script or a workflow step, prefer the option that removes one.
 
