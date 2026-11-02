@@ -44,7 +44,7 @@ prog=$(basename "$3")
 cat $AUX/rep/$bn.txt; cp $AUX/rep/$bn.json "$(dirname "$3")/bayan-quality.json"
 exit 0
 STUB
-chmod +x $aux/dotnet src/Bayan.Cli/bin/Debug/net10.0/bayan; export AUX=$aux
+chmod +x $aux/dotnet src/Bayan.Cli/bin/Debug/net10.0/bayan; export AUX=$aux PINNED_BAYAN=$PWD/src/Bayan.Cli/bin/Debug/net10.0/bayan
 # rep <file> <killed> <survived> <marked>: the stub report and summary of the build recorded for <file>
 rep() { local bn; bn=$(basename "$1")
   echo "mutation: $2 killed, $3 survived, 0 timeout, $4 marked, 0 not reached, 0 not emitted" > $aux/rep/$bn.txt
@@ -111,7 +111,7 @@ echo "$badshard" | grep -q 'want k/n' || fail "a bad --shard was accepted" "$bad
 [ "$m0x" != 0 ] && [ "$m0a" = 1.0 ] && [ "$m0b" = None ] || fail "a failed mutant 0 exited $m0x (a=$m0a b=$m0b)" "$m0"
 echo "$m0" | grep -q '^group semantics-b: mutation: the recording does not replay on the unmutated build' || fail "a failed mutant 0 did not name its group" "$m0"
 echo "$nomanifest" | grep -q '^group parser-p: mutation: the recording wrote no tmp/mutate-batch/parser-p/snap/manifest.json' || fail "a manifest-less recording did not name its group" "$nomanifest"
-echo "$nocli" | grep -q '^group parser-p: mutation: src/Bayan.Cli/bin/Debug/net10.0/bayan is missing' || fail "a missing CLI did not name its group" "$nocli"
+echo "$nocli" | grep -q '^group parser-p: mutation: no pinned bayan — pinned-bayan: PINNED_BAYAN=.*/src/Bayan.Cli/bin/Debug/net10.0/bayan is not an executable' || fail "a missing CLI did not name its group" "$nocli"
 [ "$relpath" = selfhost/semantics/a.byn ] || fail "the copied report's path was not rewritten repo-root-relative (got $relpath)" "$fill"
 echo "$outside" | grep -q '^group parser-p: report: .*quality-1-prog.json: path /elsewhere/p.byn is not under the repo root' || fail "a report path outside the repo root did not fail the group naming the report" "$outside"
 [ "$m0_2x" != 0 ] && [ -z "$fail_matches" ] && [ -n "$fail_rej" ] || fail "a failed group's report was matched by the merge job's glob ($fail_matches)" "$m0_2"

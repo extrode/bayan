@@ -11,3 +11,4 @@ TestResults/
 *.vsix
 .DS_Store
 __pycache__/
+.cache/
