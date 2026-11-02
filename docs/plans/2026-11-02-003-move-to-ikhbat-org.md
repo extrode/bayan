@@ -1,6 +1,7 @@
 # Move Bayān to the Ikhbat Foundation
 
-Date: 2026-11-02. Tier: Standard. Status: draft, waiting for review and the user's approval.
+Date: 2026-11-02. Tier: Standard. Status: rev 2 (reviews A and B folded in, the user's choices
+applied), waiting for the user's approval.
 
 ## Goal
 
@@ -12,154 +13,185 @@ Date: 2026-11-02. Tier: Standard. Status: draft, waiting for review and the user
 | Claude project key (mb1) | `-Users-sy-Developer-extrode-com-bayan` | `-Users-sy-Developer-ikhbat-org-bayan` |
 | Home page | none | `https://bayan.run` (registered 2026-11-02, Cloudflare) |
 
-Nothing is lost: every session, memory, lesson, worker key, release and the review watermark is
-reachable at the new location, and the old GitHub URL keeps redirecting.
+Nothing is lost: every session (resumable at the new path), memory, lesson, prompt history, worker
+key, release and the review watermark is reachable at the new location, and the old GitHub URL
+keeps redirecting.
+
+## User decisions (2026-11-02)
+
+- Finish worktree business before the move, so no linked worktree moves. Done: `docs/011-plan`
+  merged (52f5c35e), `.worktrees/worker-plan-011` removed by the user's cleanup run; `git worktree
+  list` shows the main checkout only.
+- Transcripts: rewrite the recorded `cwd` so `claude --resume` at the new path accepts old sessions.
+- `~/.claude/history.jsonl`: rewrite `project`, with a backup.
+- Trusted-directory entry in `~/.claude.json`: moved to the new path (step 2.7).
 
 ## Facts this plan relies on (measured 2026-11-02)
 
-- `gh api orgs/ikhbat-org`: exists, 0 repos, the user is admin of both orgs.
-- `extrode/bayan`: public; no Actions secrets, no rulesets, no webhooks, no deploy keys. Workflows use
-  GitHub-hosted runners only (`ubuntu-24.04[-arm]`, `macos-15[-intel]`, `windows-2025`,
-  `windows-11-arm`, `ubuntu-latest`), and every checkout uses `$GITHUB_REPOSITORY`, so nothing in
-  `.github/` names the owner. Release `v0.1.0` (6 archives + SHA256SUMS) is published.
-- GitHub transfer moves issues, releases, tags, Actions history and settings, and redirects the
-  old web and git URLs for as long as no new `extrode/bayan` is created.
-- Tracked files naming `extrode`: `docs/misc/b-trees.md` (three `file:///Users/sy/Developer/extrode.com/bayan/…`
-  links), `docs/laws/README.md` (an `Extrode.Jaunty` example, unrelated, unchanged),
-  `scripts/cleanup/016-spec-013-and-011-draft.sh` (`/home/code/extrode.com/bayan` on wp1/wlt1).
-- mb1 Claude state keyed by the path:
-  - `~/.claude/projects/-Users-sy-Developer-extrode-com-bayan*`: 368 dirs (the main one 266 MB,
-    81 sessions, `memory/` with 29 files incl. `MEMORY.md`; the rest are worktree sessions).
-  - `~/.claude/lessons/-Users-sy-Developer-extrode-com-bayan*`: 163 dirs; `lessons/INDEX.md`: 274
-    lines naming them. `lessons/` is gitignored in `~/.claude`.
-  - `~/.claude.json`: `projects["/Users/sy/Developer/extrode.com/bayan"]` (trust, allowed tools,
-    MCP settings) and `githubRepoPaths["extrode/bayan"]`.
-  - `~/.claude/workers/registry.json`: 329 entries whose `cwd` is under the old path.
-  - `~/.claude/scripts/cleanup/mac-background-services.sh` (+ `.test.sh`): `BAYAN="$HOME/Developer/extrode.com/bayan"`.
-  - The memory files themselves never mention `extrode`.
-  - The old key prefix matches only bayan's own dirs: 344 `--worktrees-*`, 18 `-tmp-wt-*`, 5 `-tmp-bench-*`, 1 main. No sibling such as `extrode.com/bayan-x` exists (its encoding would collide), and the script refuses a name whose remainder after the prefix is not empty or does not start with `-`.
-- Vault (`~/dotfiles/claude-vault`, keyed by git remote): has no bayan entry. Bayan's memory
-  exists only on mb1.
-- wp1 and wlt1 (over `ssh wp1`, `ssh wlt1`): each has the checkout at `C:\home\code\extrode.com\bayan`
-  on `feat/013-test-tooling` at fbecfff1, `origin` = `C:\Users\Sy\AppData\Local\Temp\bayan-013.bundle`,
-  nothing unpushed, no stash, one untracked file `tmp-t19-run.ps1`. Neither has a bayan Claude
-  project dir, lesson dir or `.claude.json` reference. `C:\home\code\ikhbat.org` exists on wp1,
-  not on wlt1; `C:\home\code\ikhbat.org\bayan` exists on neither.
-- `~/Developer/ikhbat.org/bayan` does not exist on mb1. No other repo under `~/Developer`, and no
-  launchd agent, crontab or shell rc, references the bayan path.
-- Claude Code rewrites `~/.claude.json` and appends to the session's project dir while it runs.
-  This session's cwd is the path being moved.
+- `gh api orgs/ikhbat-org`: exists, 12 private repos, none named `bayan`. The org's Actions
+  policy is unread (the token lacks `admin:org`); the user checks it in the web UI before step 6.
+- `extrode/bayan`: public; no Actions secrets, rulesets, webhooks or deploy keys. Workflows use
+  GitHub-hosted runners only and `$GITHUB_REPOSITORY`, so nothing in `.github/` names the owner.
+  Release `v0.1.0` has 7 assets (6 archives + SHA256SUMS). GitHub branches: `dev`, `main`.
+- GitHub transfer moves issues, releases, tags, Actions history and settings, and redirects the old
+  web and git URLs for as long as no new `extrode/bayan` is created.
+- Local `dev` = 52f5c35e, `origin/dev` = e27f0daf. Local branches with commits not on any remote:
+  `dev`, `docs/011-plan` (in dev), `docs/ikhbat-move-plan` (merges in step 1). Local refs move with
+  the directory, so nothing depends on pushing them, but the transfer check compares `dev`.
+- Review watermark: local config `review.reviewedthrough` = e27f0daf (no `refs/review/reviewed`
+  locally or on origin). It lives in `.git/config` and moves with the checkout.
+- Tracked files naming the old path: `docs/misc/b-trees.md` (three `file:///…` links),
+  `scripts/cleanup/016-spec-013-and-011-draft.sh` (`/home/code/extrode.com/bayan`).
+  `docs/laws/README.md` names `Extrode.Jaunty`, unrelated, unchanged.
+- mb1 Claude state naming the path or its key:
 
-## Decisions (recommended; the user confirms)
+  | Where | Count | Handled by |
+  |---|---|---|
+  | `projects/-Users-sy-Developer-extrode-com-bayan*` dirs | 368 (main 271 MB, 29 memory files) | rename (2.5) |
+  | transcript files with a `"cwd":"<old>…"` line | 911 | rewrite `cwd` (2.6) |
+  | `lessons/-Users-sy-Developer-extrode-com-bayan*` dirs | 163 | rename (2.5) |
+  | `lessons/INDEX.md` lines naming the key | 274 | rewrite (2.6) |
+  | `history.jsonl` rows with `"project":"<old>"` | 336 | rewrite (2.8) |
+  | `~/.claude.json` `projects["<old>"]`, `githubRepoPaths["extrode/bayan"]` | 1 + 1 | rewrite (2.7) |
+  | `workers/registry.json` string fields: `cwd` 331, `repo` 114, `worktree` 114, `criteria` 74 | 633 | rewrite (2.8) |
+  | `jobs/c6b5c540/state.json` (`cwd`, `linkScanPath`); `daemon/roster.json` (this job's worker) | 2 | this job ends before step 7; state.json rewritten (2.8) |
+  | `scripts/cleanup/mac-background-services{,.test}.sh` | 2 files | step 3 |
 
-| # | Question | Recommendation | Rejected |
+  The key prefix matches only bayan's own dirs (344 `--worktrees-*`, 18 `-tmp-wt-*`, 5
+  `-tmp-bench-*`, 1 main); no `extrode.com/bayan-x` sibling exists. Accepted as history, not
+  rewritten: `workers/dispatch-log.jsonl`, `workers/logs/`, `file-history/`, `~/.claude/tmp/`,
+  `backups/.claude.json.backup.*`, `jobs/*/timeline.jsonl`, `~/.cache/zig`, the repo's `.cache/`
+  and `obj/` (rebuilt in step 10), message text inside transcripts.
+- Running Claude processes take several forms: `~/.local/bin/claude` (incl. `claude daemon run`),
+  `~/.local/share/claude/versions/<v>` (basename is the version), `ClaudeCode.app/…/claude
+  --bg-pty-host`. This session is bg job c6b5c540 with the old cwd.
+- Vault (`~/dotfiles/claude-vault`, keyed by git remote): no bayan entry. The slug for the new
+  remote is `github.com--ikhbat-org--bayan`.
+- wp1 and wlt1: checkout at `C:\home\code\extrode.com\bayan` on `feat/013-test-tooling` at
+  fbecfff1 (in dev; not a GitHub branch), `origin` = a local bundle, nothing unpushed, no stash,
+  one untracked file `tmp-t19-run.ps1`. No bayan Claude state. `C:\home\code\ikhbat.org` exists
+  on wp1 only.
+- `~/.claude` worktrees `.worktrees/feat/agy-shell-class` and `.worktrees/fix/agy-session-settings`
+  carry their own copies of `mac-background-services{,.test}.sh` with the old path.
+- Disk: 553 GiB free; APFS, so `cp -c` backups are clones.
+
+## Decisions
+
+| # | Question | Choice | Rejected |
 |---|---|---|---|
-| D1 | URL | `https://bayan.run`: already registered, and it is the CLI verb (`bayan run`) | bayan.sh, bayan.build, getbayan.org, bayan.foundation (free, unregistered) |
-| D2 | Old mb1 path | No symlink. A symlink lets a session start at the old path and re-create the old project key, splitting memory again | Symlink for a transition period |
-| D3 | Session files | Rename the dirs; do not edit the `.jsonl` contents. Resume lists sessions by directory; the old `cwd` inside a transcript is history | `sed` over 266 MB+ of transcripts |
-| D4 | wp1/wlt1 | Move the dir (keeps `tmp-t19-run.ps1` and build caches), set `origin` to the GitHub URL, fetch | Fresh clone (loses the scratch file); leave as is |
-| D5 | Who runs the GitHub transfer | The agent, after the user says yes in that turn (confirm-first); or the user runs the one command | — |
-| D6 | bayan.run DNS | Out of scope here: the domain has Cloudflare NS and no A record. A redirect to the GitHub repo until a site exists is a Cloudflare rule the user sets | — |
+| D1 | URL | `https://bayan.run`: registered, and it is the CLI verb | bayan.sh, bayan.build |
+| D2 | Old mb1 path | No symlink: a session started there would re-create the old key | symlink for a transition |
+| D3 | Transcripts | Rewrite only the `"cwd"` field, prefix-matched with a `/` or `"` boundary; clone backup first | leave as is (resume filter rejects); rewrite every mention |
+| D4 | wp1/wlt1 | Move the dir, set `origin` to GitHub, switch to `dev` | fresh clone |
+| D5 | GitHub transfer | The agent runs it after the user's "yes" in that turn | — |
+| D6 | bayan.run DNS | Out of scope; a Cloudflare redirect rule is the user's | — |
 
 ## Order (each step checks the previous one)
 
-0. **User pushes dev** (`git push origin dev`): origin/dev must equal local dev (`e27f0daf` or later).
-   Preflight in step 3 refuses otherwise.
-1. **Repo edits** (branch `chore/ikhbat-move` off dev, merge `--no-ff`, unpushed):
-   - `docs/misc/b-trees.md`: the three `file:///…` links become relative (`../bayan-spec.md#L284`,
-     `../../src/runtime/bayan-rt.h#L27`, `…#L324`).
+1. **Repo edits** on `chore/ikhbat-move` off dev (this branch merged in), merge `--no-ff`:
+   - `docs/misc/b-trees.md`: the three `file:///…` links become relative.
    - `README.md`: one line naming `https://bayan.run` and `github.com/ikhbat-org/bayan`.
-   - `CHANGELOG.md` `## [Unreleased]`: "Changed: the repository moved to `github.com/ikhbat-org/bayan`
-     (Ikhbat Foundation); home page `https://bayan.run`."
-   - `scripts/cleanup/016-spec-013-and-011-draft.sh`: the Windows checkout path becomes
-     `/home/code/ikhbat.org/bayan` (the script may still be unrun).
-   - The move script and its test (step 2), and the handoff progress-log entry.
-   - Not changed: `docs/laws/README.md`, historical handoffs and specs that mention old paths as
-     history.
-2. **Move script** `scripts/move/2026-11-02-ikhbat-org.sh` + `scripts/move/2026-11-02-ikhbat-org.test.sh`,
-   written by `codegen-lite`, gated against this plan. Interface per `~/.claude/scripts/cleanup/README.md`:
-   dry run by default, `--execute` acts, no irreversible step (every rename has a backup or is a
-   rename back). Every path comes from variables (`OLD_REPO`, `NEW_REPO`, `CLAUDE_HOME`,
-   `CLAUDE_JSON`, `NEW_REMOTE`) defaulting to the real ones, so the test runs it on a fixture
-   `$HOME` under the repo's `tmp/`. Steps, each printing `would:`/`run:`/`skip:`/`refuse:`:
+   - `CHANGELOG.md` `## [Unreleased]`: "Changed: the repository moved to
+     `github.com/ikhbat-org/bayan` (Ikhbat Foundation); home page `https://bayan.run`."
+   - `scripts/cleanup/016-spec-013-and-011-draft.sh`: Windows path → `/home/code/ikhbat.org/bayan`.
+   - The move script and its test (step 2), the handoff progress-log entry.
+2. **Move script** `scripts/move/2026-11-02-ikhbat-org.sh` + `.test.sh`, written by
+   `codegen-lite`, gated against this plan. Dry run by default, `--execute` acts. Every path from
+   variables (`OLD_REPO`, `NEW_REPO`, `CLAUDE_HOME`, `CLAUDE_JSON`, `NEW_REMOTE`, `PGREP`)
+   defaulting to the real ones. Every rewrite matches `OLD_REPO` only when followed by `/`, `"` or
+   end of string, and the key prefix only when followed by `-`, `/` or end (fixed strings, never
+   regex built from the path). Each step prints `would:`/`run:`/`skip:`/`refuse:` and is
+   idempotent: the manifest records finished steps, a rerun after an interruption skips them,
+   and a step whose target already holds the new form is a `skip:`.
    1. Preflight, all refusals before any change:
-      - no running Claude Code process (`pgrep -f` on the claude binary; the script names the
-        PIDs it found);
-      - `NEW_REPO` and every target project/lesson dir absent (no collision);
-      - `OLD_REPO` clean (`git status --porcelain` empty), on any branch, and `dev` equal to
-        `origin/dev`;
-      - `git ls-remote "$NEW_REMOTE" refs/heads/dev` answers with the same sha (the transfer
-        happened and nothing is lost);
-      - `jq` present.
+      - no Claude process: `pgrep -fl` for `/claude/versions/`, `ClaudeCode.app`, `bin/claude`;
+        the script prints each PID and command line and stops nothing itself;
+      - `daemon/roster.json` and every `jobs/*/state.json` whose status is not finished name no
+        old path;
+      - `NEW_REPO` and every target project/lesson dir absent;
+      - `OLD_REPO` clean, `git worktree list` shows the main checkout only;
+      - `git ls-remote "$NEW_REMOTE" refs/heads/dev` equals local `dev`;
+      - `jq` and `perl` present.
    2. Backup to `~/.claude/backups/bayan-move-2026-11-02/`: `~/.claude.json`,
-      `workers/registry.json`, `lessons/INDEX.md`, and a manifest (old name, new name) of every
-      dir to rename. Project/lesson dirs are renamed, not copied, so the manifest is the undo.
-   3. `mv OLD_REPO NEW_REPO` (`mkdir -p` the parent).
-   4. In `NEW_REPO`: `git worktree repair` (fixes `.worktrees/worker-plan-011`), `git remote set-url
-      origin "$NEW_REMOTE"`, `git fetch -q origin`.
-   5. Rename every `projects/` and `lessons/` dir whose name starts with the old key prefix to the
-      new prefix (suffix kept), refusing the whole step on any existing target.
-   6. `lessons/INDEX.md`: replace the old key prefix with the new one (fixed string, not regex).
-   7. `~/.claude.json` via `jq` to a temp file then `mv`: move every `projects` key starting with
-      `OLD_REPO` to the same key under `NEW_REPO`; `githubRepoPaths`: drop `extrode/bayan`, set
-      `ikhbat-org/bayan` to `[NEW_REPO]`. Refuses if the output is not valid JSON or the number of
-      top-level keys changed.
-   8. `workers/registry.json`: every `cwd` under `OLD_REPO` rewritten to `NEW_REPO` (same `jq`
-      discipline). Session ids are unchanged, so keyed workers resume from the renamed dirs.
-   9. Undo file: `undo.sh` in the backup dir reverses 3–8 from the manifest and the backups.
-   10. Verify and print: `git -C NEW_REPO status -sb`, `git worktree list`, count of renamed
-       dirs (expect 368 + 163 on mb1), `jq` read of the two moved `.claude.json` keys, and that
-       `NEW_REPO/../../extrode.com/bayan` no longer exists.
-   The test covers: dry run changes nothing (tree hash of the fixture before/after); each preflight
-   refusal (Claude running via a stub `pgrep`, dirty repo, dev ahead, ls-remote mismatch, target
-   exists); a full execute on the fixture (repo moved, worktree repaired, remote set, dirs renamed
-   with suffixes, INDEX rewritten, `.claude.json` keys moved and other keys byte-equal, registry
-   cwds rewritten); `undo.sh` restores the fixture to its starting tree hash.
-3. **~/.claude edits** (branch off `~/.claude`'s dev, merge `--no-ff`, unpushed):
-   `scripts/cleanup/mac-background-services.sh` and its test: `BAYAN="$HOME/Developer/ikhbat.org/bayan"`.
-4. **Review of steps 1–3** (`review` worker, both lenses), fix, merge both repos into dev.
-5. **GitHub transfer** (confirm-first, D5):
-   `gh api -X POST repos/extrode/bayan/transfer -f new_owner=ikhbat-org`, then poll
-   `gh api repos/ikhbat-org/bayan` until it answers; then
-   `gh repo edit ikhbat-org/bayan --homepage https://bayan.run`. Check: `gh release view v0.1.0
-   --repo ikhbat-org/bayan` lists the 7 assets; `git ls-remote git@github.com:ikhbat-org/bayan.git
-   refs/heads/dev` equals local dev. Never create a repo named `extrode/bayan` afterwards.
-6. **mb1 local move** — the user, in a plain terminal, with every Claude Code session closed:
+      `workers/registry.json`, `lessons/INDEX.md`, `history.jsonl`, `jobs/*/state.json` that name
+      the path, and `cp -c` clones of every transcript the rewrite touches. Manifest: each dir
+      rename (old, new) and each file rewritten.
+   3. `mkdir -p` the parent; `mv OLD_REPO NEW_REPO`.
+   4. In `NEW_REPO`: `git remote set-url origin "$NEW_REMOTE"`, `git -C "$NEW_REPO" fetch -q origin`.
+   5. Rename every `projects/` and `lessons/` dir starting with the old key prefix to the new
+      prefix (suffix kept); refuse the step on any existing target.
+   6. Transcripts in the renamed project dirs (`*.jsonl`, subagent files included): `perl -pi`
+      replacing `"cwd":"<OLD_REPO>` at a boundary with `"cwd":"<NEW_REPO>`. `lessons/INDEX.md`:
+      the key prefix. Line counts and byte sizes compared before/after (size changes by exactly
+      the path-length delta times the replacements).
+   7. `~/.claude.json` via `jq` to a temp file then `mv`: every `projects` key at `OLD_REPO` or
+      below moves to the same key under `NEW_REPO`; `githubRepoPaths`: drop `extrode/bayan`, set
+      `ikhbat-org/bayan` to `[NEW_REPO]`. Refuses if the output is invalid or the top-level key
+      count changed.
+   8. Same `jq` discipline, every string value at a boundary: `workers/registry.json` (`cwd`,
+      `repo`, `worktree`, `criteria`), `history.jsonl` (`project`, line by line, line count
+      unchanged), `jobs/*/state.json` (`cwd`, `linkScanPath`, the project key in session paths).
+   9. `undo.sh` in the backup dir reverses 3–8 from the manifest and backups; idempotent.
+   10. Verify: zero `projects/`/`lessons/` dirs with the old prefix; renamed counts equal the
+       manifest's; `grep -c` of old-path `cwd` lines in the new dirs is 0; the two `.claude.json`
+       keys read back; `git -C NEW_REPO status -sb` and `remote -v`; `OLD_REPO` absent.
+
+   The test runs on a fixture `$HOME` under the repo's `tmp/` and covers: dry run changes nothing
+   (tree hash before/after); each preflight refusal (each process form via a stub `PGREP`, live
+   job, dirty repo, linked worktree, ls-remote mismatch, target exists); boundary cases
+   (`/…/bayan-x` and `-…-bayan-x` untouched, `"cwd":"<old>/sub"` rewritten); a full execute
+   (repo moved, remote set, dirs renamed with suffixes, transcripts' `cwd` rewritten and other
+   bytes equal, INDEX, `.claude.json` keys moved and other keys byte-equal, registry, history,
+   job state); an interrupted run resumed; `undo.sh` restores the starting tree hash, twice.
+3. **~/.claude edits** (branch off its dev, merge `--no-ff`): `mac-background-services.sh`
+   (the variable and the comment at line 12) and `.test.sh` (`bayan=` at line 14) name the new
+   path. The two open agy worktree branches keep the old copy; noted in `~/.claude`'s
+   `work/todo.md` to take dev's version when they merge.
+4. **Review** of steps 1–3 (`review`, both lenses), fix, merge both repos into dev.
+5. **User pushes dev** (`git push origin dev`). The transfer check in step 6 and the preflight need
+   GitHub's `dev` to equal local `dev`. The user also checks the org's Actions policy
+   (ikhbat-org → Settings → Actions → General: actions allowed, public-repo runners usable).
+6. **GitHub transfer** (confirm-first): `gh api -X POST repos/extrode/bayan/transfer -f
+   new_owner=ikhbat-org`; poll `gh api repos/ikhbat-org/bayan`; `gh repo edit ikhbat-org/bayan
+   --homepage https://bayan.run`. Checks: `gh release view v0.1.0 --repo ikhbat-org/bayan` lists 7
+   assets; `git ls-remote git@github.com:ikhbat-org/bayan.git refs/heads/dev refs/heads/main`
+   equals local `dev` and `origin/main`; tags `v0.1.0` present. Never create `extrode/bayan` again.
+7. **mb1 local move**: the user ends this session and its bg job, quits the desktop app and the
+   `claude daemon`, then in a plain terminal:
    ```
    bash ~/Developer/extrode.com/bayan/scripts/move/2026-11-02-ikhbat-org.sh            # dry run, read it
    bash ~/Developer/extrode.com/bayan/scripts/move/2026-11-02-ikhbat-org.sh --execute
    ```
-   Then `cd ~/Developer/ikhbat.org/bayan && claude --continue` (or `claude --resume`) must list
-   this session.
-7. **Vault**: in the new session, `deno run -A ~/.claude/tools/memory-sync.js scan`, then
-   `push --dry-run`, then `push`: adds `github.com--ikhbat-org--bayan` with the 29 memory files.
-   Committing/pushing `~/dotfiles` stays the user's.
-8. **wp1, wlt1** (from mb1 over ssh, dry run first, then execute; PowerShell):
-   `New-Item -ItemType Directory -Force C:\home\code\ikhbat.org`;
-   `Move-Item C:\home\code\extrode.com\bayan C:\home\code\ikhbat.org\bayan` (refuse if the target
-   exists or the source is not clean apart from `tmp-t19-run.ps1`);
-   `git -C C:\home\code\ikhbat.org\bayan remote set-url origin https://github.com/ikhbat-org/bayan.git`;
-   `git fetch -q origin`. Verify with `git status -sb` there. No Claude state to move (measured).
-9. **Post-move checks** (new session, new path): `dotnet build -v q` (regenerates `obj/` with new
-   paths), `dotnet test -v q`, `laws-check.js --run`, `structure-audit.js`, `bash
-   scripts/release/package.test.sh`, `bash scripts/ci/install-dotnet.test.sh`; a CI run on
-   `ikhbat-org/bayan` after the user's next push is green.
-10. **Records**: handoff progress log; memory note that the project moved (new key, old key retired
-    per `docs/memory-supersession.md`); `AGENTS.md` unchanged (it names no path).
+   Then `cd ~/Developer/ikhbat.org/bayan && claude --resume` lists this session; resuming it works.
+8. **Vault**: in the new session, `memory-sync.js scan`, `push --dry-run`, `push`: adds
+   `github.com--ikhbat-org--bayan` with 29 memory files. Committing `~/dotfiles` stays the user's.
+9. **wp1, wlt1** (over ssh, PowerShell, dry run first): refuse if the target exists or the source
+   has changes other than `tmp-t19-run.ps1`; `dotnet build-server shutdown`; `New-Item -ItemType
+   Directory -Force C:\home\code\ikhbat.org`; `Move-Item` the checkout; `git -C <new> remote set-url
+   origin https://github.com/ikhbat-org/bayan.git`; `git -C <new> fetch -q origin`; `git -C <new>
+   switch dev` (or `switch --track origin/dev` when no local dev). Verify `git -C <new> rev-parse
+   HEAD origin/dev` equal and `tmp-t19-run.ps1` present.
+10. **Post-move checks** (new session, new path): `dotnet build -v q`, `dotnet test -v q`,
+    `laws-check.js --run`, `structure-audit.js`, `bash scripts/release/package.test.sh`, `bash
+    scripts/ci/install-dotnet.test.sh`, `review-nudge.js --watermark` prints e27f0daf or later; a
+    CI run on `ikhbat-org/bayan` after the user's next push is green.
+11. **Records**: handoff progress log; memory note that the project moved (old key retired per
+    `docs/memory-supersession.md`).
 
 ## Rollback
 
-- Before step 5: nothing outside the branches changed; drop them.
-- After 5: GitHub can transfer back (`gh api -X POST repos/ikhbat-org/bayan/transfer -f new_owner=extrode`).
-- After 6: `bash ~/.claude/backups/bayan-move-2026-11-02/undo.sh`.
-- After 8: `Move-Item` back and `remote set-url` to the bundle path.
+- Before 6: nothing outside branches changed.
+- After 6: transfer back (`gh api -X POST repos/ikhbat-org/bayan/transfer -f new_owner=extrode`).
+- After 7: `bash ~/.claude/backups/bayan-move-2026-11-02/undo.sh` (Claude closed).
+- After 9: `Move-Item` back; `origin` → `https://github.com/extrode/bayan.git` (redirects).
 
 ## Risks
 
-- **A Claude process writes during the move** → split state. Preflight refuses while any runs.
-- **`.claude.json` corruption** → Claude loses every project's settings. `jq` to temp, validate,
-  key count check, backup, `undo.sh`.
-- **Worker auto keys** embed a hash of the cwd (`bayan-f1322a`): after the move they compute a new
-  key and start fresh. Explicit `--key` workers resume. Accepted.
-- **bayanlang.org** was registered on 2026-10-22 by someone else; name confusion is possible. Noted only.
-- **Old absolute paths in transcripts and historical docs** stay as written (D3).
+- **A Claude process writes during the move** → split state. Preflight refuses on any process form
+  and any live job.
+- **`.claude.json` or registry corruption** → `jq` to temp, validate, key count, backup, `undo.sh`.
+- **Transcript rewrite damage** → `cwd` field only, boundary-matched, size delta checked, clone
+  backups restored by `undo.sh`.
+- **Worker auto keys** embed a hash of the cwd: they start fresh after the move. Explicit `--key`
+  workers resume. Accepted.
+- **bayanlang.org** is someone else's (registered 2026-10-22); name confusion possible. Noted.
