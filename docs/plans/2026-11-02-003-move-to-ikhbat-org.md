@@ -29,14 +29,15 @@ reachable at the new location, and the old GitHub URL keeps redirecting.
   `scripts/cleanup/016-spec-013-and-011-draft.sh` (`/home/code/extrode.com/bayan` on wp1/wlt1).
 - mb1 Claude state keyed by the path:
   - `~/.claude/projects/-Users-sy-Developer-extrode-com-bayan*`: 368 dirs (the main one 266 MB,
-    81 sessions, `memory/` with 26 files; the rest are worktree sessions).
-  - `~/.claude/lessons/-Users-sy-Developer-extrode-com-bayan*`: 171 dirs; `lessons/INDEX.md`: 274
+    81 sessions, `memory/` with 29 files incl. `MEMORY.md`; the rest are worktree sessions).
+  - `~/.claude/lessons/-Users-sy-Developer-extrode-com-bayan*`: 163 dirs; `lessons/INDEX.md`: 274
     lines naming them. `lessons/` is gitignored in `~/.claude`.
   - `~/.claude.json`: `projects["/Users/sy/Developer/extrode.com/bayan"]` (trust, allowed tools,
     MCP settings) and `githubRepoPaths["extrode/bayan"]`.
   - `~/.claude/workers/registry.json`: 329 entries whose `cwd` is under the old path.
   - `~/.claude/scripts/cleanup/mac-background-services.sh` (+ `.test.sh`): `BAYAN="$HOME/Developer/extrode.com/bayan"`.
   - The memory files themselves never mention `extrode`.
+  - The old key prefix matches only bayan's own dirs: 344 `--worktrees-*`, 18 `-tmp-wt-*`, 5 `-tmp-bench-*`, 1 main. No sibling such as `extrode.com/bayan-x` exists (its encoding would collide), and the script refuses a name whose remainder after the prefix is not empty or does not start with `-`.
 - Vault (`~/dotfiles/claude-vault`, keyed by git remote): has no bayan entry. Bayan's memory
   exists only on mb1.
 - wp1 and wlt1 (over `ssh wp1`, `ssh wlt1`): each has the checkout at `C:\home\code\extrode.com\bayan`
@@ -107,7 +108,7 @@ reachable at the new location, and the old GitHub URL keeps redirecting.
       discipline). Session ids are unchanged, so keyed workers resume from the renamed dirs.
    9. Undo file: `undo.sh` in the backup dir reverses 3–8 from the manifest and the backups.
    10. Verify and print: `git -C NEW_REPO status -sb`, `git worktree list`, count of renamed
-       dirs (expect 368 + 171 on mb1), `jq` read of the two moved `.claude.json` keys, and that
+       dirs (expect 368 + 163 on mb1), `jq` read of the two moved `.claude.json` keys, and that
        `NEW_REPO/../../extrode.com/bayan` no longer exists.
    The test covers: dry run changes nothing (tree hash of the fixture before/after); each preflight
    refusal (Claude running via a stub `pgrep`, dirty repo, dev ahead, ls-remote mismatch, target
@@ -131,7 +132,7 @@ reachable at the new location, and the old GitHub URL keeps redirecting.
    Then `cd ~/Developer/ikhbat.org/bayan && claude --continue` (or `claude --resume`) must list
    this session.
 7. **Vault**: in the new session, `deno run -A ~/.claude/tools/memory-sync.js scan`, then
-   `push --dry-run`, then `push`: adds `github.com--ikhbat-org--bayan` with the 26 memory files.
+   `push --dry-run`, then `push`: adds `github.com--ikhbat-org--bayan` with the 29 memory files.
    Committing/pushing `~/dotfiles` stays the user's.
 8. **wp1, wlt1** (from mb1 over ssh, dry run first, then execute; PowerShell):
    `New-Item -ItemType Directory -Force C:\home\code\ikhbat.org`;
