@@ -418,7 +418,7 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
             report(ref b, through: ref c, for: .nothingToHandle, at: parser.exprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
         }
         return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-    } // mutation-exempt: Q599 through 357 (reached only after T20's bindCall binds a call)
+    }
     let sets = errorSetsOf(ref c, for: c.bCalls[boundIndex(operand)].function)
     let errorType = errorUnionOf(ref c, for: in sets, as: in List<VariantId>())
     var boundSet: BExpr = -1
@@ -650,7 +650,7 @@ BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) 
     var type: Type = -1
     if declared != -1 {
         type = declared
-    } else if init != -1 { // mutation-exempt: Q599 through 542 (init is -1 until T22 ports built)
+    } else if init != -1 {
         type = defaultType(ref b, through: ref c, for: init, from: in d.init)
         init = convert(ref b, through: ref c, for: init, to: type, at: parser.exprSpan(in d.init))
     } else {
@@ -834,7 +834,7 @@ BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpT
     }
     var user: UserIteration? = null
     let itType = exprType(in c, for: iterable)
-    var element = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user) // mutation-exempt: Q599 (the switch's element goes only to T36's declaredElement)
+    var element = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user)
     if element == -1 {
         switch kindOf(itType) {
             case .range:

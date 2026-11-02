@@ -191,7 +191,6 @@ Type receiverStates(ref Binder b, through ref Ctx c, for FuncId fn) {
     let owner = c.functions[fn].owner
     if owner == -1 { return -1 }
     let states = statesOf(ref c, for: owner)
-    // mutation-exempt: Q627 through 147
     if states == -1 { return -1 }
     var found = List<VariantId>()
     for n in decl.receiverStates {
@@ -431,7 +430,7 @@ void t22Collect(ref Binder b, through ref Ctx c, for BExpr cond, bool when, to r
             let pattern = c.bIses[boundIndex(cond)].pattern
             if (subject(ref b, through: ref c, for: value) is { } s) {
                 let type = narrow(ref c, for: s.type, by: pattern, matched: when)
-                // mutation-exempt: Q627
+                @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
                 if type != -1 { learned.append((t16ScopeId(ref b), s.key, type)) }
             }
         case .unary:
@@ -480,7 +479,6 @@ void learnArmState(ref Binder b, through ref Ctx c, for BExpr subject, by BPatte
         default: return
     }
     let narrowed = narrow(ref c, for: type, by: pattern, matched: true)
-    // mutation-exempt: Q627
     if narrowed != -1 { learnState(ref b, for: key, as: narrowed) }
 }
 
@@ -488,7 +486,6 @@ void learnArmState(ref Binder b, through ref Ctx c, for BExpr subject, by BPatte
 Type narrow(ref Ctx c, for Type type, by BPattern pattern, bool matched) {
     if kindOf(type) == .optional { return -1 }
     let states = statesUnion(ref c, for: type)
-    // mutation-exempt: Q627 through 447
     if states == -1 { return -1 }
     let possible = possibleStates(ref c, for: type, by: states)
     // A match proves the tag even when a payload subpattern also had to hold; a failed match proves it only for a bare tag test.
@@ -549,7 +546,6 @@ void learnBecomes(ref Binder b, through ref Ctx c, for BExpr e) {
     let owner = c.functions[fn].owner
     if !c.functions[fn].isMutating || owner == -1 { return }
     let decl = t22DeclFacts(ref c, for: fn)
-    // mutation-exempt: Q627 through 474
     if (decl.becomes is { } to) {
         if c.functions[fn].hasFails && !isTry { return }
         let states = statesOf(ref c, for: owner)

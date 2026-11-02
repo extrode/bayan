@@ -135,7 +135,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
     switch e.op {
         case .logicalAnd or .logicalOr:
             let l = bindConverted(ref b, through: ref c, for: in e.left, to: prim(.bool))
-            // mutation-exempt: Q613
+            @unobservable because "Q613: bindPattern is a stub, so narrowing facts never form; add an is-pattern narrowing case when T34 lands"
             let scope = narrowedBegin(ref b, through: ref c, for: l, whenTrue: e.op == .logicalAnd)
             let r = bindConverted(ref b, through: ref c, for: in e.right, to: prim(.bool))
             narrowedEnd(ref b, through: ref c, by: move scope)
@@ -592,7 +592,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
     if isError(type) { return addErrorExpr(ref c, from: BErrorExpr { span: s.span }) }
     // `Order.paid { … }` builds a value in one state; with several states, none is named.
     let stateType: Type = kindOf(type) == .state ? type : -1
-    // mutation-exempt: Q613
+    @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
     let state: VariantId = stateType != -1 && c.stateTypes[typeIndex(stateType)].states.length == 1 ? c.stateTypes[typeIndex(stateType)].states[0] : -1
     if stateType != -1 { type = makeType(.structType, at: c.stateTypes[typeIndex(stateType)].s) }
     if kindOf(type) != .structType {
@@ -605,7 +605,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
         let ctor = c.structs[st].constructors[0]
         var parameters = StrBuf()
         for pi in 0..c.functions[ctor].parameters.length {
-            // mutation-exempt: Q613
+            @unobservable because "Q613: declareSignature is a stub; add a constructor with parameters case when T38 lands"
             if pi > 0 { parameters.append(", ") }
             parameters.append($"{c.locals[c.functions[ctor].parameters[pi]].name}: …")
         }
@@ -613,9 +613,10 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             help: $"call the constructor: `{stName}({parameters.finish()})`")
         return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
     }
-    // mutation-exempt: Q613 through 629
     if state == -1 {
+        @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
         let states = statesOf(ref c, for: st)
+        @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
         if states != -1 {
             var at = s.span
             switch s.type {
@@ -637,7 +638,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
     for init in s.fields {
         let name = t15Text(in c, from: b.file, at: init.name)
         let field = findField(ref c, by: st, for: name)
-        // mutation-exempt: Q613 through 658
+        @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
         if field == -1 && state != -1 {
             var payloadField: LocalId = -1
             for pf in c.unionVariants[state].fields {
@@ -686,12 +687,12 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             values[i] = addErrorExpr(ref c, from: BErrorExpr { span: s.span })
         } else {
             let d = fieldDefault(ref c, for: st, by: f, from: b.file, at: s.span)
-            // mutation-exempt: Q613
+            @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
             values[i] = d != -1 ? d : addErrorExpr(ref c, from: BErrorExpr { span: s.span })
         }
     }
     for i in 0..payload.length {
-        // mutation-exempt: Q613
+        @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
         if payload[i] != -1 { continue }
         missing.append(c.locals[c.unionVariants[state].fields[i]].name)
         payload[i] = addErrorExpr(ref c, from: BErrorExpr { span: s.span })
@@ -714,12 +715,14 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             label: label, help: $"set {missing.length == 1 ? "it" : "them"}: `{written} {{ {sets.finish()} }}`")
         return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
     }
-    // mutation-exempt: Q613 through 723
+    @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
     if state == -1 {
         let literal = addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, type: type })
         return checkedValue(ref b, through: ref c, for: in syntax, by: literal)
     }
+    @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
     let literal = addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, state: state, payload: move payload, type: stateType })
+    @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
     return checkedValue(ref b, through: ref c, for: in syntax, by: literal)
 }
 

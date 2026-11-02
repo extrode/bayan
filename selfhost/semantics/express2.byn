@@ -94,7 +94,8 @@ BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.Name
         report(ref b, through: ref c, for: .instanceMemberWithoutThis, at: n.span, by: (nameText, "", "", "", ""), help: helpText)
         return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
     }
-    if inLambda(ref b, through: ref c, at: n.span, for: nameText, by: "it is read through `this`, which a lambda does not capture") { // mutation-exempt: Q607
+    if inLambda(ref b, through: ref c, at: n.span, for: nameText, by: "it is read through `this`, which a lambda does not capture") {
+        @unobservable because "Q607: inLambda is a stub; add a lambda read of an implicit this member when T35 lands"
         return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
     }
     let self = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
@@ -104,7 +105,8 @@ BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.Name
         case .propertyKeyword:
             return addCall(ref c, from: BCall { span: n.span, function: c.properties[member.id].getter, receiver: self, arguments: List<BExpr>(), type: c.properties[member.id].type })
         case .method:
-            if c.functions[member.id].kind == .getter { // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
+            if c.functions[member.id].kind == .getter {
+                @unobservable because "Q607: declareInterfaceMembers is a stub; add a getter-through-interface case when T38 lands"
                 return addCall(ref c, from: BCall { span: n.span, function: member.id, receiver: self, arguments: List<BExpr>(), type: c.functions[member.id].returnType })
             }
             return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: self, function: member.id, typeArgs: List<TextSpan>() })
@@ -333,7 +335,8 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     let name = t18Text(in c, from: b.file, at: member)
     let targetType = exprType(in c, for: target)
     var lookupType = targetType
-    if kindOf(targetType) == .state { // mutation-exempt: Q607 (l) resolveStates, typeresolve.byn:431; statesOf, declare2.byn:27
+    if kindOf(targetType) == .state {
+        @unobservable because "Q607: resolveStates and statesOf are stubs; add a union-with-states receiver when T38 lands"
         lookupType = makeType(.structType, at: c.stateTypes[typeIndex(targetType)].s)
     }
 
@@ -360,15 +363,18 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             return addMethodGroup(ref c, from: BMethodGroup { span: span, receiver: recv, function: foundMethod, typeArgs: List<TextSpan>() })
         }
 
-        let states = statesOf(ref c, for: s) // mutation-exempt: Q607 (j) statesOf, declare2.byn:27
-        if states != -1 { // mutation-exempt: Q607 through 373
+        let states = statesOf(ref c, for: s)
+        if states != -1 {
+            @unobservable because "Q607: statesOf and bindPayloadField are stubs; add a union-with-states payload read when T38 lands"
             let payload = bindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member)
+            @unobservable because "Q607: statesOf and bindPayloadField are stubs; add a union-with-states payload read when T38 lands"
             if payload != -1 { return payload }
         }
     } else if lk == .errorSet || lk == .errorUnion {
+        @unobservable because "Q607: bindErrorCasePattern is a stub; add a narrowed error-set field read when T22 lands"
         if boundKind(target) == .local {
             let el = c.bLocals[boundIndex(target)].local
-            if b.errorNarrowed.contains(el) { // mutation-exempt: Q607 through 385
+            if b.errorNarrowed.contains(el) {
                 let v = b.errorNarrowed[el]
                 for fi in 0..c.errorVariants[v].fields.length {
                     let f = c.errorVariants[v].fields[fi]
@@ -379,10 +385,12 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             }
         }
     } else if lk == .unionType {
+        @unobservable because "Q607: bindPattern is a stub; add a narrowed union field read when T34 lands"
         let u = typeIndex(lookupType)
+        @unobservable because "Q607: bindPattern is a stub; add a narrowed union field read when T34 lands"
         if boundKind(target) == .local {
             let l = c.bLocals[boundIndex(target)].local
-            if b.narrowed.contains(l) { // mutation-exempt: Q607 through 400
+            if b.narrowed.contains(l) {
                 let v = b.narrowed[l]
                 for fi in 0..c.unionVariants[v].fields.length {
                     let f = c.unionVariants[v].fields[fi]
@@ -392,10 +400,13 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 }
             }
         }
+        @unobservable because "Q607: bindPattern is a stub; add a narrowed union field read when T34 lands"
         var fieldVariant = -1
         for vi in 0..c.unions[u].variants.length {
+            @unobservable because "Q607: bindPattern is a stub; add a narrowed union field read when T34 lands"
             let v = c.unions[u].variants[vi]
             for fi in 0..c.unionVariants[v].fields.length {
+                @unobservable because "Q607: bindPattern is a stub; add a narrowed union field read when T34 lands"
                 let f = c.unionVariants[v].fields[fi]
                 if c.locals[f].name == name {
                     fieldVariant = v
@@ -440,14 +451,16 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         if c.typeParams[tp].constraints.length > 0 {
             var foundMember: FuncId = -1
             for iface in copyIds(in c.typeParams[tp].constraints) {
-                foundMember = findInterfaceProperty(ref c, by: iface, for: name) // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
+                foundMember = findInterfaceProperty(ref c, by: iface, for: name)
                 if foundMember == -1 {
                     let methods = findInterfaceMethods(ref c, by: iface, for: name)
                     if methods.length > 0 { foundMember = methods[0] }
-                } // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
+                }
+                @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
                 if foundMember != -1 { break }
             }
-            if foundMember != -1 { // mutation-exempt: Q607
+            if foundMember != -1 {
+                @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
                 return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member)
             }
             let self = c.interfaces[c.typeParams[tp].constraints[0]].self == tp
@@ -470,32 +483,38 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
     } else if lk == .dynRef {
         let d = c.dynRefTypes[typeIndex(lookupType)]
-        var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name) // mutation-exempt: Q607 (i) declareInterfaceMembers, declare2.byn:12
+        var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name)
         if foundMember == -1 {
             let methods = findInterfaceMethods(ref c, by: d.iface, for: name)
             if methods.length > 0 { foundMember = methods[0] }
         }
-        if foundMember != -1 { // mutation-exempt: Q607 through 491
+        if foundMember != -1 {
+            @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
             if d.readOnly && c.functions[foundMember].isMutating {
                 report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, interfaceDisplayName(ref c, by: d.iface), "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {interfaceDisplayName(ref c, by: d.iface)}`")
                 return addErrorExpr(ref c, from: BErrorExpr { span: span })
             }
+            @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
             return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member)
         }
     }
 
     if (builtinProperty(ref c, for: targetType, by: name) is { } builtin) {
-        var callType: Type = -1 // mutation-exempt: Q607 through 501 (a) bindCollection, express4.byn:9; (g) propertyType, express4.byn:39
+        @unobservable because "Q607: propertyType and bindCollection are stubs; add str.length and static-array length cases when T35 lands"
+        var callType: Type = -1
+        @unobservable because "Q607: propertyType and bindCollection are stubs; add str.length and static-array length cases when T35 lands"
         if kindOf(builtin.type) == .span && boundKind(target) == .staticArray {
             callType = internSpan(ref c, by: c.spanTypes[typeIndex(builtin.type)].element, readOnly: true)
         } else {
             callType = propertyType(ref b, through: ref c, for: builtin.member, as: builtin.type)
         }
+        @unobservable because "Q607: propertyType and bindCollection are stubs; add str.length and static-array length cases when T35 lands"
         return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: builtin.member, receiver: target, arguments: List<BExpr>(), type: callType })
     }
+    @unobservable because "Q607: fact is a stub; add an Untrusted<string> length case when T19 lands"
     if kindOf(targetType) == .untrusted && (name == "length" || name == "isEmpty") {
         let innerType = c.untrustedTypes[typeIndex(targetType)]
-        if (builtinProperty(ref c, for: innerType, by: name) is { } factProp) { // mutation-exempt: Q607 (h) fact, express3.byn:42
+        if (builtinProperty(ref c, for: innerType, by: name) is { } factProp) {
             return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: factProp.member, receiver: fact(ref c, for: target), arguments: List<BExpr>(), type: factProp.type })
         }
     }
@@ -516,24 +535,28 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
 }
 
 /// A member of an interface, reached through a constrained type parameter or a `dyn ref`.
-BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) { // mutation-exempt: Q607 through 535
+BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) {
+    @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
     if c.functions[m].typeParams.length > 0 {
         report(ref b, through: ref c, for: .unsupported, at: memberSpan, by: ("calling a generic interface method", "", "", "", ""))
         return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
     }
+    @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
     if c.functions[m].kind == .getter {
         let returnType = returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: target), by: m)
         return addCall(ref c, from: BCall { span: syntaxSpan, function: m, receiver: target, arguments: List<BExpr>(), type: returnType })
     }
+    @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
     return addMethodGroup(ref c, from: BMethodGroup { span: syntaxSpan, receiver: target, function: m, typeArgs: List<TextSpan>() })
 }
 
 /// The return type of interface member `m` called on `receiver`: an associated type `Item` is `T.Item`.
-Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) { // mutation-exempt: Q607 through 541 (d) declareInterfaceMembers, declare2.byn:12
+Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) {
+    @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
     if kindOf(receiver) == .typeParam {
         let tp = typeIndex(receiver)
         let iface = c.functions[m].iface
-        if iface >= 0 && c.interfaces[iface].self != tp { // mutation-exempt: Q607 through 559
+        if iface >= 0 && c.interfaces[iface].self != tp {
             let ret = c.functions[m].returnType
             if kindOf(ret) == .typeParam {
                 let rIdx = typeIndex(ret)
@@ -552,6 +575,7 @@ Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by Fu
             }
         }
     }
+    @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
     return c.functions[m].returnType
 }
 
@@ -595,31 +619,42 @@ bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan m
 /// The renames that change the call's shape (J72, round 3 §27): the fix rewrites the member and its arguments,
 /// so it is written only when the member is called with the old arguments.
 RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at TextSpan memberSpan) {
-    let name = t18Text(in c, from: b.file, at: memberSpan) // mutation-exempt: Q607 through 605 (b) bindCall, calls.byn:6
+    let name = t18Text(in c, from: b.file, at: memberSpan)
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     var isCalleeMatch = false
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     var tail = TextSpan { start: memberSpan.start, length: 0 }
-    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 612
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
+    if (b.calleeOf is { } activeCall) {
         if activeCall.isMember && activeCall.member.start == memberSpan.start && activeCall.member.length == memberSpan.length {
             isCalleeMatch = true
             tail = TextSpan.fromBounds(memberSpan.start, until: activeCall.span.end)
         }
     }
 
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     let isList = kindOf(type) == .list
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     let isArrayT = kindOf(type) == .array
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     let isMap = kindOf(type) == .map
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     let isStr = isString(type)
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     let isInt = isInteger(type)
 
-    if isList && name == "removeRange" { // mutation-exempt: Q607 through 626
+    if isList && name == "removeRange" {
+        @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.argCount == 2 && cCall.firstTwoPlain {
             let from = t18Text(in c, from: b.file, at: cCall.arg0)
             let until = t18Text(in c, from: b.file, at: cCall.arg1)
             return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: true, fixSpan: tail, replacement: $"remove(from: {from}, until: {until})" }
         }
+        @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 633
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
+    if isList && name == "replaceRange" {
         if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.argCount == 2 && rCall.firstTwoPlain {
             let at = t18Text(in c, from: b.file, at: rCall.arg0)
             let by = t18Text(in c, from: b.file, at: rCall.arg1)
@@ -627,7 +662,8 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isMap && name == "getOr" { // mutation-exempt: Q607 through 645
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
+    if isMap && name == "getOr" {
         if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.argCount == 2 && mCall.firstTwoPlain {
             if mCall.isMember {
                 let key = t18Text(in c, from: b.file, at: mCall.arg0)
@@ -638,20 +674,23 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 651
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
+    if (isList || isArrayT) && name == "asSpan" {
         if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.argCount == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 656
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
+    if isStr && name == "toUtf16" {
         if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.argCount == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 667
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal")
         if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.argCount == 0 {
             if hCall.isMember {
                 let targetText = t18Text(in c, from: b.file, at: hCall.target)
@@ -660,6 +699,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: false, fixSpan: tail, replacement: "" }
     }
+    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     return null
 }
 
