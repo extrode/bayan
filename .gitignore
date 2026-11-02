@@ -12,5 +12,6 @@ TestResults/
 .DS_Store
 __pycache__/
 .cache/
-# parity cases keep stub tools (in/bin/) and their recorded copies (expected/files/bin/)
+# parity cases keep stub tools (in/bin/), and the files a tool wrote under bin/ or tmp/ (expected/files/...)
 !tests/parity/**/bin/
+!tests/parity/**/tmp/
