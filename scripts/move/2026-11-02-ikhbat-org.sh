@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Move Bayān to the Ikhbat Foundation: repo checkout, git remote, Claude state.
 # Plan: docs/plans/2026-11-02-003-move-to-ikhbat-org.md (step 2). Dry run by default; --execute acts.
-# Test hook: STOP_AFTER=<step> exits 99 once that step is recorded as done.
+# Test hooks: STOP_AFTER=<step> exits 99 once that step is recorded as done; STOP_AFTER_MV=<file> exits 99
+# right after a rewrite's mv onto that file.
 set -euo pipefail
 export LC_ALL=C GIT_OPTIONAL_LOCKS=0
 
@@ -37,6 +38,8 @@ say() { printf '%s\n' "$*"; }
 
 # Fixed-string rewrite. mode: fields (values of the named JSON fields), all (every JSON string
 # value), text (raw text). Paths end at a char outside [A-Za-z0-9._-], keys outside [A-Za-z0-9._].
+# Both start at the string's start or after a char outside [A-Za-z0-9._-] (paths: and not /); in the
+# JSON modes an escape such as \n before the match counts as its decoded char, a boundary.
 # Writes the output file only when something changed; prints "<path hits> <key hits>".
 read -r -d '' PERL_RW <<'EOF' || true
 use strict; use warnings;
@@ -44,14 +47,23 @@ my ($mode, $in, $out) = @ARGV;
 my $fields = $ENV{RW_FIELDS} // '';
 my ($po, $pn, $ko, $kn) = map { $ENV{$_} // '' } qw(RW_OLD RW_NEW RW_OLDK RW_NEWK);
 my ($pc, $kc) = (0, 0);
+sub left_ok {
+  my ($s, $i, $lcls) = @_;
+  return 1 if $i == 0;
+  return 1 if substr($s, $i - 1, 1) !~ $lcls;
+  return 0 if $mode eq 'text' || substr($s, $i - 1, 1) !~ /[bfnrt]/;
+  my $k = 0;
+  $k++ while $i - 2 - $k >= 0 && substr($s, $i - 2 - $k, 1) eq '\\';
+  return $k % 2;
+}
 sub rw1 {
-  my ($s, $o, $n, $cls, $cnt) = @_;
+  my ($s, $o, $n, $cls, $lcls, $cnt) = @_;
   return $s if $o eq '';
   my ($r, $p) = ('', 0);
   while ((my $i = index($s, $o, $p)) >= 0) {
     my $e = $i + length($o);
     my $c = substr($s, $e, 1);
-    if ($c eq '' || $c !~ $cls) { $r .= substr($s, $p, $i - $p) . $n; $$cnt++; }
+    if (left_ok($s, $i, $lcls) && ($c eq '' || $c !~ $cls)) { $r .= substr($s, $p, $i - $p) . $n; $$cnt++; }
     else { $r .= substr($s, $p, $e - $p); }
     $p = $e;
   }
@@ -59,8 +71,8 @@ sub rw1 {
 }
 sub rw {
   my $s = shift;
-  $s = rw1($s, $po, $pn, qr/[A-Za-z0-9._-]/, \$pc);
-  return rw1($s, $ko, $kn, qr/[A-Za-z0-9._]/, \$kc);
+  $s = rw1($s, $po, $pn, qr/[A-Za-z0-9._-]/, qr/[A-Za-z0-9._\/-]/, \$pc);
+  return rw1($s, $ko, $kn, qr/[A-Za-z0-9._]/, qr/[A-Za-z0-9._-]/, \$kc);
 }
 open(my $fh, '<', $in) or die "open $in: $!";
 binmode $fh;
@@ -133,15 +145,18 @@ rewrite_file() {
     rm -f "$tmp"; say "refuse: $f: rewrite is not valid JSON; left unchanged"; exit 1
   fi
   touch -r "$f" "$tmp"
-  mv "$tmp" "$f"
   bak=$(backup_of "$f")
-  if [ -n "$bak" ] && [ "$pre" = "$(sha "$bak")" ]; then record_write "$f"; else changed_note "$f"; fi
+  if [ -n "$bak" ] && [ "$pre" = "$(sha "$bak")" ]; then record_write "$f" "$tmp"; else changed_note "$f"; fi
+  mv "$tmp" "$f"
+  stop_after_mv "$f"
   say "run: rewrote $f ($pc path, $kc key replacements)"
 }
 
-# record_write FILE: its hash as just written. A file that changed between its backup and the rewrite
-# gets none, so undo.sh lists it as changed since the move instead of restoring over the change.
-record_write() { printf '%s %s\n' "$(sha "$1")" "$1" >> "$WRITTEN"; }
+# record_write FILE TMP: the hash of TMP, about to be moved onto FILE, recorded before the mv, so FILE
+# always equals its backup or its recorded hash. A file that changed between its backup and the
+# rewrite gets none, so undo.sh lists it as changed since the move instead of restoring over the change.
+record_write() { printf '%s %s\n' "$(sha "$2")" "$1" >> "$WRITTEN"; }
+stop_after_mv() { if [ "${STOP_AFTER_MV:-}" = "$1" ]; then say "stop: STOP_AFTER_MV=$1"; exit 99; fi; }
 changed_note() { say "note: $1 changed after its step 2 backup; no write hash recorded, undo.sh will list it as changed"; }
 # backup_of FILE: its step 2 backup, from the manifest "home" line naming it before or after the renames
 backup_of() {
@@ -216,6 +231,16 @@ renames() {
   else
     scan_renames
   fi
+}
+# late_dirs: old<TAB>new for dirs at the old key missing from the manifest's renames (created after step 2)
+late_dirs() {
+  local listed o n
+  [ -f "$MANIFEST" ] || return 0
+  listed=$(renames | cut -f1)
+  while IFS="$TAB" read -r o n; do
+    [ -n "$o" ] || continue
+    grep -qxF -- "$o" <<< "$listed" || printf '%s\t%s\n' "$o" "$n"
+  done < <(scan_renames)
 }
 # post_rel REL RENAMES: REL under its renamed dir
 post_rel() {
@@ -358,7 +383,7 @@ preflight() {
     case "$o" in "$CLAUDE_HOME"/projects/*) ;; *) continue ;; esac
     d=$n; [ -e "$d" ] || d=$o
     old_files "$d" || REF=$(( REF + 1 ))
-  done < <(renames)
+  done < <(renames; late_dirs)
 
   repo=$OLD_REPO
   if is_done 3 || moved_already; then
@@ -370,14 +395,14 @@ preflight() {
     [ ! -e "$NEW_REPO" ] || refuse "$NEW_REPO exists"
   fi
   if [ -f "$MANIFEST" ]; then
+    # after step 5 a source still present with its target absent is a late dir's rename, done by adopt_dirs
     while IFS="$TAB" read -r o n; do
-      if is_done 5; then
-        { [ -e "$n" ] && [ ! -e "$o" ]; } || refuse "step 5 is recorded but $n is missing or $o exists"
-      else
-        if [ -e "$o" ] && [ -e "$n" ]; then refuse "both $o and $n exist"; fi
-        if [ ! -e "$o" ] && [ ! -e "$n" ]; then refuse "neither $o nor $n exists"; fi
-      fi
+      if [ -e "$o" ] && [ -e "$n" ]; then refuse "both $o and $n exist"; fi
+      if [ ! -e "$o" ] && [ ! -e "$n" ]; then refuse "neither $o nor $n exists"; fi
     done < <(renames)
+    while IFS="$TAB" read -r o n; do
+      if [ -e "$n" ]; then refuse "$o was created after step 2 and its target $n exists"; fi
+    done < <(late_dirs)
   else
     while IFS="$TAB" read -r o n; do
       if [ -e "$n" ]; then refuse "target $n exists"; fi
@@ -388,9 +413,13 @@ preflight() {
     if ! is_top "$repo"; then
       refuse "$repo is not the top of its own git checkout"
     else
-      [ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ] || refuse "$repo is not clean"
-      nrn=$(git -C "$repo" worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)
-      [ "$nrn" -le 1 ] || refuse "$repo has a linked worktree ($nrn worktrees)"
+      if ! out=$(git -C "$repo" status --porcelain 2>&1); then refuse "cannot check $repo: $out"
+      elif [ -n "$out" ]; then refuse "$repo is not clean"; fi
+      if ! out=$(git -C "$repo" worktree list --porcelain 2>&1); then refuse "cannot check $repo: $out"
+      else
+        nrn=$(printf '%s\n' "$out" | grep -c '^worktree ' || true)
+        [ "$nrn" -le 1 ] || refuse "$repo has a linked worktree ($nrn worktrees)"
+      fi
       ldev=$(git -C "$repo" rev-parse refs/heads/dev 2>/dev/null || true)
       rdev=$(git -C "$repo" ls-remote "$NEW_REMOTE" refs/heads/dev 2>/dev/null | cut -f1 || true)
       if [ -z "$ldev" ] || [ "$ldev" != "$rdev" ]; then
@@ -463,6 +492,34 @@ step2() {
   mv "$tmp" "$MANIFEST"
   say "run: backed up $nfiles files and $CLAUDE_JSON to $BACKUP; manifest has $nren renames"
   if [ "${STOP_AFTER:-}" = 2 ]; then say "stop: STOP_AFTER=2"; exit 99; fi
+}
+
+# A resumed run: a projects/ or lessons/ dir at the old key created after step 2 joins the manifest's
+# renames (so undo.sh reverses it); after step 5 it is renamed here, after step 6 its transcripts with
+# an old cwd are adopted (backed up, listed) and rewritten here, as step 6 does for late transcripts.
+adopt_dirs() {
+  local o n f
+  [ -f "$MANIFEST" ] || return 0
+  while IFS="$TAB" read -r o n; do
+    if [ "$EXECUTE" -eq 0 ]; then say "would: add $o (created after step 2) to the renames"; continue; fi
+    printf 'rename\t%s\t%s\n' "$o" "$n" >> "$MANIFEST"
+    say "note: $o is at the old key but not in step 2's list (created after it); added to the renames"
+  done < <(late_dirs)
+  if [ "$EXECUTE" -eq 0 ] || ! is_done 5; then return 0; fi
+  while IFS="$TAB" read -r o n; do
+    if [ -e "$o" ] && [ ! -e "$n" ]; then mv "$o" "$n"; say "run: mv $o $n"; fi
+  done < <(renames)
+  is_done 6 || return 0
+  while IFS="$TAB" read -r o n; do
+    case "$o" in "$CLAUDE_HOME"/projects/*) ;; *) continue ;; esac
+    old_files "$n" || exit 1
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      has_hits fields cwd "$f" || continue
+      is_listed "$f" || adopt_late "$f"
+      rewrite_file "$f" fields cwd ""
+    done <<< "$OLDF"
+  done < <(renames)
 }
 
 # ---- 3. move the checkout -------------------------------------------------------------------
@@ -565,9 +622,10 @@ step7() {
   fi
   if cmp -s "$tmp" "$CLAUDE_JSON"; then rm -f "$tmp"; say "skip: $CLAUDE_JSON already holds the new keys"
   else
-    mv "$tmp" "$CLAUDE_JSON"
-    if [ -f "$BACKUP/claude.json" ] && [ "$pre" = "$(sha "$BACKUP/claude.json")" ]; then record_write "$CLAUDE_JSON"
+    if [ -f "$BACKUP/claude.json" ] && [ "$pre" = "$(sha "$BACKUP/claude.json")" ]; then record_write "$CLAUDE_JSON" "$tmp"
     else changed_note "$CLAUDE_JSON"; fi
+    mv "$tmp" "$CLAUDE_JSON"
+    stop_after_mv "$CLAUDE_JSON"
     say "run: rewrote $CLAUDE_JSON"
   fi
   mark_done 7
@@ -737,7 +795,8 @@ EOF
   } > "$u"
   chmod +x "$u"
 }
-# undo.sh is written in step 2 already; step 9 rewrites it from the final manifest
+# undo.sh is written in step 2 already and reads the manifest when it runs; step 9 writes the same text
+# again (a no-op unless the file was removed or edited)
 step9() {
   if is_done 9; then say "skip: step 9 (undo.sh) already done"; return 0; fi
   if [ "$EXECUTE" -eq 0 ]; then say "would: write $BACKUP/undo.sh"; return 0; fi
@@ -789,6 +848,7 @@ step10() {
 if [ "$EXECUTE" -eq 1 ]; then say "mode: execute"; else say "mode: dry run (use --execute to act)"; fi
 preflight
 step2
+adopt_dirs
 step3
 step4
 step5
