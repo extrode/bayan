@@ -363,6 +363,15 @@ Building, testing and shipping Bayan should need nothing but Bayan. Today it nee
 
 Rule from now on: add no new dependency without the user's say; when touching a script or a workflow step, prefer the option that removes one.
 
+### Pinned bayan for gates and tooling (spec 015 handoff, decision T2)
+
+Gates and tooling run `bayan` from `scripts/pinned-bayan.sh`, never the working tree's build, so a broken compiler change cannot disable the gate meant to catch it. The helper resolves `dev`'s tip (every commit there is a merge), builds `src/Bayan.Cli` from a `git clone --shared` checked out at that commit into `<main checkout>/.cache/bayan/<sha>/` (shared by all worktrees, git-ignored) if it is missing, and prints the binary's path. The pin follows `dev`; nobody edits it. A failed build exits 1 naming the commit and its build log; there is no fallback.
+
+- `PINNED_BAYAN_REF` pins another ref; CI's mutation run passes `HEAD` (a depth-1 checkout has no `dev` branch).
+- `PINNED_BAYAN` (tests only) names the binary to print instead.
+- Callers today: `scripts/selfhost/mutation-step.sh` (the guard's and `mutate-batch.sh`'s `bayan mutate`). The compiler's own tests, and writer probes (`scripts/selfhost/bayan-cheatsheet.md`), still use the working tree.
+- Test: `bash scripts/pinned-bayan.test.sh`, local only: its scratch repo commits need a git identity, which CI runners lack and repo-local identities are refused here.
+
 ## Self-hosting readiness
 
 `docs/bayan-self-hosting.md` lists what a compiler needs from its own language. Spec 001 (`docs/specs/001-self-hosted-lexer/`) covers phases 1 and 2; milestones M13–M23 continue the numbering above. Correction to that doc's table: file I/O and program arguments were **not** in v0.1; M13 adds them.

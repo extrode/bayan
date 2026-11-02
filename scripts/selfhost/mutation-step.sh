@@ -8,9 +8,11 @@
 # reached the per-build runs, 1 when the CLI, the recording or the manifest stopped it before.
 mutation_step() {
   local LOG=$1 FILTER=$2 MUTATE=$3 SURV=$4 REL=${1#$PWD/} n name bin sites l MX
-  local BAYAN=src/Bayan.Cli/bin/Debug/net10.0/bayan SNAP=$1/snap REPLAY
+  local BAYAN SNAP=$1/snap REPLAY
   REPLAY=$(dirname "${BASH_SOURCE[0]}")/replay.py
-  if [ ! -x "$BAYAN" ]; then note "mutation: $BAYAN is missing; build src/Bayan.Cli (dotnet build) and run the guard again"
+  # `bayan mutate` is tooling: it runs from the pinned build of dev (scripts/pinned-bayan.sh), never the branch under test
+  if ! BAYAN=$(bash "$(dirname "${BASH_SOURCE[0]}")/../pinned-bayan.sh" 2> "$LOG/pinned-bayan.txt"); then
+    note "mutation: no pinned bayan — $(tail -1 "$LOG/pinned-bayan.txt")"
   else
     rm -f "$SNAP/manifest.json" "$SNAP/runs.jsonl"
     BAYAN_SNAPSHOT=$SNAP BAYAN_SNAPSHOT_FILES=$MUTATE dotnet test --no-build --filter "($FILTER)&Snapshot!=skip" --logger "console;verbosity=normal" > "$LOG/record.txt" 2>&1 \

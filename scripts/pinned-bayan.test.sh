@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Tests scripts/pinned-bayan.sh on a scratch repo with a stub `dotnet` whose "build" writes a bayan that prints the
+# commit's src/Bayan.Cli/stamp.
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+script="$root/scripts/pinned-bayan.sh"
+tmp="$root/tmp/pinned-bayan-test"
+rm -rf "$tmp"
+mkdir -p "$tmp/aux"
+trap 'rm -rf "$tmp"' EXIT
+fail() { echo "FAIL: $1" >&2; exit 1; }
+
+cat > "$tmp/aux/dotnet" <<'STUB'
+#!/bin/bash
+echo build >> "$AUX/builds.txt"
+proj=$2; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done
+[ -f "$proj/broken" ] && { echo "error CS0001: stub failure"; exit 1; }
+git -C "$proj" rev-parse HEAD > "$AUX/commit.txt"
+mkdir -p "$out"; printf '#!/bin/sh\necho %s\n' "$(cat "$proj/stamp")" > "$out/bayan"; chmod +x "$out/bayan"
+STUB
+chmod +x "$tmp/aux/dotnet"
+export AUX="$tmp/aux" PATH="$tmp/aux:$PATH"
+unset PINNED_BAYAN PINNED_BAYAN_REF
+
+r="$tmp/repo"; mkdir -p "$r/src/Bayan.Cli"; cd "$r"
+git init -q -b dev; git config core.hooksPath /dev/null  # a scratch repo: the global hooks refuse commits on dev
+echo one > src/Bayan.Cli/stamp; git add -A; git commit -qm one
+devsha=$(git rev-parse dev)
+git checkout -q -b feat/x; echo two > src/Bayan.Cli/stamp; git commit -qam two
+echo dirty > src/Bayan.Cli/stamp
+
+# Built from dev's tip, not the branch or the dirty tree, and cached by that commit.
+bin=$("$script") || fail "pinned build failed"
+[ "$bin" = "$r/.cache/bayan/$devsha/bin/bayan" ] || fail "binary path was '$bin'"
+[ "$("$bin")" = one ] || fail "the binary was not built from dev"
+[ "$(cat "$AUX/commit.txt")" = "$devsha" ] || fail "git in the build sees $(cat "$AUX/commit.txt"), not $devsha (the version line would lie)"
+[ "$(cat src/Bayan.Cli/stamp)" = dirty ] && [ "$(git rev-parse --abbrev-ref HEAD)" = feat/x ] || fail "the caller's tree changed"
+[ -z "$(git status --porcelain -- . ':!src/Bayan.Cli/stamp' ':!.cache')" ] || fail "the build left files outside .cache/: $(git status --porcelain)"
+
+# The second call reuses the cache.
+[ "$("$script")" = "$bin" ] && [ "$(wc -l < "$AUX/builds.txt" | tr -d ' ')" = 1 ] || fail "the cached build was rebuilt"
+
+# A worktree shares the main checkout's cache.
+git worktree add -q --detach "$tmp/wt" feat/x
+[ "$(cd "$tmp/wt" && "$script")" = "$bin" ] || fail "a worktree did not use the main checkout's cache"
+
+# PINNED_BAYAN_REF picks another commit.
+[ "$(PINNED_BAYAN_REF=feat/x "$script" | xargs sh)" = two ] || fail "PINNED_BAYAN_REF was not honoured"
+
+# A failed build exits 1 naming the commit and the log, and prints no binary.
+git checkout -q -- src/Bayan.Cli/stamp; git checkout -q dev; touch src/Bayan.Cli/broken; git add src; git commit -qm broken; badsha=$(git rev-parse dev)
+if out=$("$script" 2> "$tmp/err"); then fail "a failed build succeeded: $out"; fi
+[ -z "$out" ] || fail "a failed build printed '$out'"
+grep -q "building bayan at $badsha (dev) failed; log: .*build.log" "$tmp/err" || fail "no failure message: $(cat "$tmp/err")"
+grep -q "stub failure" "$(sed -E 's/.*log: //' "$tmp/err")" || fail "the log does not hold the build output"
+
+# An unknown ref is refused.
+if PINNED_BAYAN_REF=nope "$script" 2> "$tmp/err"; then fail "an unknown ref was accepted"; fi
+grep -q "no commit for 'nope'" "$tmp/err" || fail "no unknown-ref message: $(cat "$tmp/err")"
+
+# PINNED_BAYAN (tests) must name an executable.
+[ "$(PINNED_BAYAN="$bin" "$script")" = "$bin" ] || fail "PINNED_BAYAN was not printed"
+if PINNED_BAYAN="$tmp/none" "$script" 2> "$tmp/err"; then fail "a missing PINNED_BAYAN was accepted"; fi
+grep -q "PINNED_BAYAN=$tmp/none is not an executable" "$tmp/err" || fail "no PINNED_BAYAN message"
+
+# Wiring: the mutation step runs the pinned bayan; CI's mutation run pins the commit it checked out.
+grep -q 'pinned-bayan.sh' "$root/scripts/selfhost/mutation-step.sh" || fail "mutation-step.sh does not use pinned-bayan.sh"
+! grep -q 'bin/Debug/net10.0/bayan' "$root/scripts/selfhost/mutation-step.sh" || fail "mutation-step.sh still names the working-tree build"
+grep -q 'PINNED_BAYAN_REF: HEAD' "$root/.github/workflows/mutation.yml" || fail "mutation.yml does not pin HEAD"
+echo PASS
