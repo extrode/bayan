@@ -1,0 +1,13 @@
+error BYN3002: arena `arena` does not live as long as `kept`, which borrows it
+
+  16 │         kept = viaLocal(name)
+     │                ^^^^^^^^^^^^^^ arena `arena` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough
+
+error BYN3002: arena `arena` does not live as long as `nested`, which borrows it
+
+  17 │         nested = viaCall(name)
+     │                  ^^^^^^^^^^^^^ arena `arena` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

@@ -1885,6 +1885,9 @@ public sealed partial class Compilation
     /// </summary>
     internal Dictionary<FunctionSymbol, Dictionary<(int Source, int Target), TextSpan>> StoreSummaries { get; } = new();
 
+    /// <summary>For each template with a body, the parameters (or <c>this</c>, -1) its result may borrow, for region analysis.</summary>
+    internal Dictionary<FunctionSymbol, HashSet<int>> ReturnSummaries { get; } = new();
+
     /// <summary>
     /// A method is mutating when it is declared <c>ref this</c>. Every call of one needs a writable
     /// receiver, and a method that writes <c>this</c> without <c>ref this</c> is BYN2115.

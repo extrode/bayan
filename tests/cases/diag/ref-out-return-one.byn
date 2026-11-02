@@ -1,0 +1,16 @@
+string first(string a, by string b) {
+    return a
+}
+
+void main() {
+    var kept = ""
+    var other = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        other = first("bob", by: name)
+        kept = first(name, by: "bob")
+    }
+    print(other)
+    print(kept)
+}

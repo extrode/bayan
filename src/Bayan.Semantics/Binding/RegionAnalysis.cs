@@ -80,6 +80,8 @@ internal sealed class RegionAnalysis
     /// <summary>Set while computing <see cref="_fn"/>'s store summary: nothing is reported, and stores into a target are recorded in <see cref="_pairs"/>.</summary>
     private readonly bool _summary;
     private readonly Dictionary<(int Source, int Target), TextSpan> _pairs = new();
+    /// <summary>The parameters (or <see cref="This"/>) the result may borrow.</summary>
+    private readonly HashSet<int> _returns = new();
     /// <summary>The summary's target parameters, with their index.</summary>
     private readonly Dictionary<LocalSymbol, int> _targets = new();
 
@@ -98,11 +100,12 @@ internal sealed class RegionAnalysis
     }
 
     /// <summary>
-    /// Q745: each template's store summary, the least fixpoint from none, recomputed in declaration order until no summary grows.
+    /// Q745: each template's store and return summaries, one least fixpoint from none, recomputed in declaration order until no summary grows.
     /// </summary>
     public static void Summarize(Compilation c)
     {
-        var functions = c.Modules.SelectMany(m => m.AllFunctions).Where(f => f.File is not null && f.Body is not null && !f.IsInstance && HasTargets(f)).ToList();
+        var functions = c.Modules.SelectMany(m => m.AllFunctions)
+            .Where(f => f.File is not null && f.Body is not null && !f.IsInstance && (HasTargets(f) || MayHold(f.ReturnType))).ToList();
         for (var changed = true; changed;)
         {
             changed = false;
@@ -110,9 +113,16 @@ internal sealed class RegionAnalysis
             {
                 var analysis = new RegionAnalysis(c, fn, summary: true);
                 analysis.Run();
-                if (analysis._pairs.Count == (c.StoreSummaries.TryGetValue(fn, out var known) ? known.Count : 0)) continue;
-                c.StoreSummaries[fn] = analysis._pairs;
-                changed = true;
+                if (analysis._pairs.Count != (c.StoreSummaries.TryGetValue(fn, out var known) ? known.Count : 0))
+                {
+                    c.StoreSummaries[fn] = analysis._pairs;
+                    changed = true;
+                }
+                if (analysis._returns.Count != (c.ReturnSummaries.TryGetValue(fn, out var returned) ? returned.Count : 0))
+                {
+                    c.ReturnSummaries[fn] = analysis._returns;
+                    changed = true;
+                }
             }
         }
     }
@@ -432,6 +442,9 @@ internal sealed class RegionAnalysis
         if (BuiltinStores.TryGetValue(b.Member, out var stored) && stored < args.Length) StoreInto(b.Receiver, args[stored], b.Arguments[stored].Syntax.Span);
         switch (b.Member)
         {
+            // `finish()` points into the buffer's storage, which outlives the local: a loan on it, but not its scope.
+            case BuiltinMember.StrBufAsString when b.Syntax is Syntax.Ast.CallExpr && RootLocal(b.Receiver) is { } buffer:
+                return receiver.Lent(buffer, b.Syntax.Span.End);
             case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString or BuiltinMember.ListMutableSpan or BuiltinMember.ArrayMutableSpan:
                 return Lend(b.Receiver, receiver, b.Syntax.Span.End);
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
@@ -464,6 +477,10 @@ internal sealed class RegionAnalysis
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.StrBufInsert or BuiltinMember.ArenaReset:
+                Mutate(b.Receiver, b.Syntax.Span);
+                return Borrow.None;
+            // Appending may grow the buffer's storage, which `finish()` and `view` point into.
+            case BuiltinMember.StrBufAppend or BuiltinMember.StrBufAppendRepeated:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             default:
@@ -522,14 +539,16 @@ internal sealed class RegionAnalysis
                 : null;
             StoreInto(target, source, c.Syntax.Span, note);
         }
-        // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none, and an interned `Symbol` lives until exit.
+        // A callee with a body borrows what its return summary names; a builtin what its table entry names; any other, every argument (rule 4).
         // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
-        var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
-            or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
-            or BuiltinFunction.SymbolIntern
-            ? Borrow.None
-            : args.Select((a, i) => i < fn.Parameters.Count && fn.Parameters[i].Type is FunctionType ? a with { Regions = a.Regions.Except(_environments) } : a)
-                .Aggregate(receiver, (acc, a) => acc.Union(a));
+        HashSet<int>? returned = fn.Builtin is not BuiltinFunction.None ? BuiltinResults.TryGetValue(fn.Builtin, out var named) ? named : null
+            : IsBroad(fn) || (Compilation.TemplateOf(fn) ?? fn).Body is null ? null
+            : _c.ReturnSummaries.GetValueOrDefault(Compilation.TemplateOf(fn) ?? fn) ?? [];
+        // An arena argument the result may borrow lends its memory, as `copy(to:)` does.
+        var result = args.Select((a, i) => i < fn.Parameters.Count && fn.Parameters[i].Type is FunctionType ? a with { Regions = a.Regions.Except(_environments) }
+                : returned is not null && i < c.Arguments.Length && c.Arguments[i].Type is BuiltinType { Kind: BuiltinKind.Arena } ? AllocatedFrom(c.Arguments[i], a) : a)
+            .Where((_, i) => returned is null || i >= fn.Parameters.Count || returned.Contains(i))
+            .Aggregate(returned is null || returned.Contains(This) ? receiver : Borrow.None, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
         if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver, c.Syntax.Span.End));
         // So may a function returning one: the result lives no longer than any argument passed by `ref` (`in` is by value),
@@ -554,7 +573,7 @@ internal sealed class RegionAnalysis
     /// </summary>
     private IEnumerable<((int Source, int Target) Pair, TextSpan? Site)> Stores(FunctionSymbol fn, BoundCall c)
     {
-        if (fn.Kind is FunctionKind.Invoke || fn.IsAbstract || fn.Decl?.Modifiers.HasFlag(Syntax.Ast.Modifiers.Extern) == true)
+        if (IsBroad(fn))
         {
             var targets = Enumerable.Range(0, Math.Min(c.Arguments.Length, fn.Parameters.Count))
                 .Where(i => WrittenArgument(fn.Parameters[i], c.Arguments[i]) is not null).ToList();
@@ -566,6 +585,30 @@ internal sealed class RegionAnalysis
             ? pairs.OrderBy(p => p.Key.Target).ThenBy(p => p.Key.Source).Select(p => (p.Key, (TextSpan?)p.Value)).ToList()
             : [];
     }
+
+    /// <summary>A function value, an interface method or an <c>extern</c> function: no body to summarise.</summary>
+    private static bool IsBroad(FunctionSymbol fn) =>
+        fn.Kind is FunctionKind.Invoke || fn.IsAbstract || fn.Decl?.Modifiers.HasFlag(Syntax.Ast.Modifiers.Extern) == true;
+
+    /// <summary>
+    /// The builtin functions' return summaries: the arguments each result borrows. <c>Io</c> results and decoded or encoded text are fresh copies,
+    /// and an interned <c>Symbol</c> lives until exit, so they borrow none. Every other builtin's result borrows every argument (rule 4).
+    /// </summary>
+    private static readonly Dictionary<BuiltinFunction, HashSet<int>> BuiltinResults = new()
+    {
+        [BuiltinFunction.IoReadFile] = [],
+        [BuiltinFunction.IoReadText] = [],
+        [BuiltinFunction.IoListDir] = [],
+        [BuiltinFunction.IoRun] = [],
+        [BuiltinFunction.IoRunBatch] = [],
+        [BuiltinFunction.Utf8Decode] = [],
+        [BuiltinFunction.Utf8TryDecode] = [],
+        [BuiltinFunction.Utf8DecodeReplace] = [],
+        [BuiltinFunction.StringInvalidUtf8At] = [],
+        [BuiltinFunction.HexEncode] = [],
+        [BuiltinFunction.HexDecode] = [],
+        [BuiltinFunction.SymbolIntern] = [],
+    };
 
     private static string ParameterName(FunctionSymbol fn, int index) => index == This ? "this" : fn.Parameters[index].Name;
 
@@ -589,12 +632,15 @@ internal sealed class RegionAnalysis
     }
 
     /// <summary>Memory from the arena (or other allocator) <paramref name="allocator"/>.</summary>
-    private Borrow AllocatedFrom(BoundExpr allocator)
+    private Borrow AllocatedFrom(BoundExpr allocator) => AllocatedFrom(allocator, Expr(allocator));
+
+    private Borrow AllocatedFrom(BoundExpr allocator, Borrow borrow)
     {
-        var borrow = Expr(allocator);
         if (RootLocal(allocator) is not { } root) return borrow;
         var depth = _depthOf.GetValueOrDefault(root, 0);
         var regions = depth > 0 ? borrow.Regions.Add(new Region(depth, $"arena `{root.Name}`")) : borrow.Regions;
+        // In a summary, memory from an allocator parameter borrows that parameter.
+        if (_summary && root is ParameterSymbol p && _fn.Parameters.IndexOf(p) is >= 0 and var index) regions = regions.Add(new Region(0, "the caller's data", index));
         return new Borrow(regions, borrow.Owners.Add(root));
     }
 
@@ -678,6 +724,9 @@ internal sealed class RegionAnalysis
 
     private void CheckReturn(Borrow value, TextSpan span)
     {
+        if (_summary)
+            foreach (var region in value.Regions)
+                if (region.Source != NoSource) _returns.Add(region.Source);
         if (!_reporting) return;
         foreach (var region in Ordered(value.Regions))
         {

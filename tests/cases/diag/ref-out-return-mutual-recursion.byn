@@ -1,0 +1,22 @@
+string f(string a, by string b, at i64 n) {
+    if n > 0 { return g(b, by: a, at: n - 1) }
+    return ""
+}
+
+string g(string a, by string b, at i64 n) {
+    if n > 0 { return f(b, by: a, at: n - 1) }
+    return a
+}
+
+void main() {
+    var kept = ""
+    var other = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        other = f(name, by: "bob", at: 2)
+        kept = f("bob", by: name, at: 2)
+    }
+    print(other)
+    print(kept)
+}
