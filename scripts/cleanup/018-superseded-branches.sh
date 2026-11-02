@@ -37,8 +37,8 @@ for f in a.txt b.txt C.txt copy.bin empty.bin input.bin; do
   if [ -z "$(git -C "$w" status --porcelain -- "$f" | grep '^??' || true)" ]; then
     printf 'refuse: %s/%s is not untracked. Left alone.\n' "$w" "$f"; failed=1; continue
   fi
-  # As left on 2026-11-01: on that branch, and at most 6 bytes (the run cases write 0-6).
-  if [ "$on" != feat/010-self-hosted-semantics ] || [ "$(wc -c < "$w/$f" | tr -d ' ')" -gt 6 ]; then
+  # As the run cases left it on 2026-11-01: a regular file of at most 6 bytes (they write 0-6), on that branch.
+  if [ "$on" != feat/010-self-hosted-semantics ] || [ ! -f "$w/$f" ] || [ -L "$w/$f" ] || [ "$(wc -c < "$w/$f" | tr -d ' ')" -gt 6 ]; then
     printf 'refuse: %s/%s is not the run-case leftover (branch %s, or over 6 bytes). Left alone.\n' "$w" "$f" "${on:-none}"; failed=1; continue
   fi
   if act; then rm -f -- "$w/$f"; printf 'removed: %s/%s\n' "$w" "$f"

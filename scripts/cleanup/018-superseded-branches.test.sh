@@ -63,4 +63,7 @@ echo 'more than six bytes' > .worktrees/feat-010-self-hosted-semantics/C.txt
 out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" && fail "a large file was not a failure"
 echo "$out" | grep -q "^refuse: .worktrees/feat-010-self-hosted-semantics/C.txt is not the run-case leftover" || fail "large file not refused"
 [ -f .worktrees/feat-010-self-hosted-semantics/C.txt ] || fail "a large file was removed"
+rm .worktrees/feat-010-self-hosted-semantics/C.txt && mkdir .worktrees/feat-010-self-hosted-semantics/empty.bin && touch .worktrees/feat-010-self-hosted-semantics/empty.bin/x
+out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" && fail "a directory was not a failure"
+echo "$out" | grep -q "^refuse: .worktrees/feat-010-self-hosted-semantics/empty.bin/\? is not the run-case leftover" || fail "directory not refused"
 cd "$root"; echo ok
