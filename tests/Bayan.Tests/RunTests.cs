@@ -29,14 +29,10 @@ public sealed class RunTests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
     }
 
-    /// <summary>Starts building every case in parallel, so the sequential theory mostly waits on finished work.</summary>
+    /// <summary>Starts building every case in the background (<see cref="WarmUp"/>), so the sequential theory mostly waits on finished work.</summary>
     private static readonly Lazy<bool> Warm = new(() =>
     {
-        foreach (var row in (IEnumerable<object[]>)Cases)
-        {
-            var name = (string)row[0];
-            Task.Run(() => Get(name));
-        }
+        WarmUp.Start(((IEnumerable<object[]>)Cases).Select(row => (string)row[0]), name => Get(name));
         return true;
     });
 
