@@ -26,21 +26,21 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]  # n = 4: --shard k/4
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       # The tests cross-compile (OutputTests) and `bayan doctor` expects zig; no runner image has it.
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
+      - name: Install zig
+        shell: bash
+        run: bash scripts/ci/install-zig.sh "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
       - name: Build
         run: dotnet build Bayan.slnx
       - name: Mutate
         run: bash scripts/selfhost/mutate-batch.sh --shard ${{ matrix.shard }}/4
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-reports-${{ matrix.shard }}
@@ -50,10 +50,10 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: mutation-reports-*
           path: reports
@@ -62,11 +62,11 @@ jobs:
           mapfile -t reports < <(find reports -name 'quality-[0-9]*.json' | sort)
           python3 -I scripts/selfhost/quality-baseline.py check tests/quality-baseline.json . "${reports[@]}"
           python3 -I scripts/selfhost/quality-baseline.py update tests/quality-baseline.json . "${reports[@]}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: quality-baseline
           path: tests/quality-baseline.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: accepted-reports
           path: reports/**/quality-[0-9]*.json
