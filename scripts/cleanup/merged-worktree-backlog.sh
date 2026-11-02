@@ -45,7 +45,7 @@ last_moved() {
 }
 
 printf '== worktrees whose work dev holds\n'
-while IFS=$'\t' read -r wt br locked; do
+while IFS=$'\037' read -r wt br locked; do  # not a tab: IFS whitespace merges an empty branch away
   # The main worktree, the one this runs from and dev itself are never targets.
   [ "$wt" = "$main" ] || [ "$wt" = "$repo" ] || [ "$br" = dev ] && continue
   rel="${wt#"$repo"/}"; label="${br:-detached}"
@@ -80,7 +80,7 @@ while IFS=$'\t' read -r wt br locked; do
   printf 'removed: %s\n' "$rel"; removed=$((removed+1))
   if [ -n "$br" ]; then git branch -d "$br" || { printf '  refused: branch %s. Left alone.\n' "$br"; failed=1; }; fi
 done < <(git worktree list --porcelain | awk '
-  function out() { if (w != "") print w "\t" b "\t" l; w = ""; b = ""; l = 0 }
+  function out() { if (w != "") print w "\037" b "\037" l; w = ""; b = ""; l = 0 }
   /^worktree /{out(); w = substr($0, 10)} /^branch /{b = substr($0, 19)} /^locked/{l = 1} END{out()}')
 
 if [ $execute -eq 1 ]; then git worktree prune; else printf 'would: git worktree prune\n'; fi
