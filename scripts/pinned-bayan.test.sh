@@ -16,6 +16,7 @@ cat > "$tmp/aux/dotnet" <<'STUB'
 echo build >> "$AUX/builds.txt"
 proj=$2; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done
 [ -f "$proj/broken" ] && { echo "error CS0001: stub failure"; exit 1; }
+git -C "$proj" rev-parse HEAD > "$AUX/commit.txt"
 mkdir -p "$out"; printf '#!/bin/sh\necho %s\n' "$(cat "$proj/stamp")" > "$out/bayan"; chmod +x "$out/bayan"
 STUB
 chmod +x "$tmp/aux/dotnet"
@@ -33,6 +34,7 @@ echo dirty > src/Bayan.Cli/stamp
 bin=$("$script") || fail "pinned build failed"
 [ "$bin" = "$r/.cache/bayan/$devsha/bin/bayan" ] || fail "binary path was '$bin'"
 [ "$("$bin")" = one ] || fail "the binary was not built from dev"
+[ "$(cat "$AUX/commit.txt")" = "$devsha" ] || fail "git in the build sees $(cat "$AUX/commit.txt"), not $devsha (the version line would lie)"
 [ "$(cat src/Bayan.Cli/stamp)" = dirty ] && [ "$(git rev-parse --abbrev-ref HEAD)" = feat/x ] || fail "the caller's tree changed"
 [ -z "$(git status --porcelain -- . ':!src/Bayan.Cli/stamp' ':!.cache')" ] || fail "the build left files outside .cache/: $(git status --porcelain)"
 

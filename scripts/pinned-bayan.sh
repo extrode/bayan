@@ -18,11 +18,12 @@ main="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"  # shared by every wo
 cache="$main/.cache/bayan/$sha"
 exe=bayan; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exe=bayan.exe ;; esac
 if [ ! -x "$cache/bin/$exe" ]; then
-  # Built from `git archive` into a fresh directory: the caller's tree, index and worktrees are never touched.
+  # Built from a fresh `git clone --shared` checked out at the commit: the caller's tree, index and worktrees are never
+  # touched, and the CLI's version line (git rev-parse HEAD in the project) names the pinned commit.
   build="$main/.cache/bayan/.build-$sha-$$"
   mkdir -p "$build/src"
   log="$build/build.log"
-  if ! { git archive "$sha" | tar -x -C "$build/src" && dotnet build "$build/src/src/Bayan.Cli" -c Debug -o "$build/bin" -v q --nologo; } > "$log" 2>&1; then
+  if ! { git clone -q --shared --no-checkout "$main" "$build/src" && git -C "$build/src" checkout -q --detach "$sha" && dotnet build "$build/src/src/Bayan.Cli" -c Debug -o "$build/bin" -v q --nologo; } > "$log" 2>&1; then
     echo "pinned-bayan: building bayan at $sha ($ref) failed; log: $log" >&2; exit 1
   fi
   mkdir -p "$(dirname "$cache")"
