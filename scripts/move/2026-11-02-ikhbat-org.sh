@@ -38,7 +38,8 @@ say() { printf '%s\n' "$*"; }
 
 # Fixed-string rewrite. mode: fields (values of the named JSON fields), all (every JSON string
 # value), text (raw text). Paths end at a char outside [A-Za-z0-9._-], keys outside [A-Za-z0-9._].
-# Both start at the string's start or after a char outside [A-Za-z0-9._-] (paths: and not /); in the
+# Both start at the string's start or after a char outside [A-Za-z0-9._-] (paths: a run of / counts as
+# one char, so file:///O and //O match but /a/O does not); in the
 # JSON modes an escape such as \n before the match counts as its decoded char, a boundary.
 # Writes the output file only when something changed; prints "<path hits> <key hits>".
 read -r -d '' PERL_RW <<'EOF' || true
@@ -50,6 +51,11 @@ my ($pc, $kc) = (0, 0);
 sub left_ok {
   my ($s, $i, $lcls) = @_;
   return 1 if $i == 0;
+  if (substr($s, $i - 1, 1) eq '/' && '/' =~ $lcls) {
+    my $j = $i - 1;
+    $j-- while $j > 0 && substr($s, $j - 1, 1) eq '/';
+    return left_ok($s, $j, $lcls);
+  }
   return 1 if substr($s, $i - 1, 1) !~ $lcls;
   return 0 if $mode eq 'text' || substr($s, $i - 1, 1) !~ /[bfnrt]/;
   my $k = 0;
@@ -227,11 +233,13 @@ scan_renames() {
 }
 renames() {
   if [ -f "$MANIFEST" ]; then
-    grep "^rename${TAB}" "$MANIFEST" | cut -f2,3 || true
+    grep -E "^rename(-late)?${TAB}" "$MANIFEST" | cut -f2,3 || true
   else
     scan_renames
   fi
 }
+# only the renames step 2 recorded (adopt_dirs tags its own lines "rename-late")
+step2_renames() { grep "^rename${TAB}" "$MANIFEST" | cut -f2,3 || true; }
 # late_dirs: old<TAB>new for dirs at the old key missing from the manifest's renames (created after step 2)
 late_dirs() {
   local listed o n
@@ -395,6 +403,9 @@ preflight() {
     [ ! -e "$NEW_REPO" ] || refuse "$NEW_REPO exists"
   fi
   if [ -f "$MANIFEST" ]; then
+    while IFS="$TAB" read -r o n; do
+      if is_done 5 && { [ ! -e "$n" ] || [ -e "$o" ]; }; then refuse "step 5 is recorded but $n is missing or $o exists"; fi
+    done < <(step2_renames)
     # after step 5 a source still present with its target absent is a late dir's rename, done by adopt_dirs
     while IFS="$TAB" read -r o n; do
       if [ -e "$o" ] && [ -e "$n" ]; then refuse "both $o and $n exist"; fi
@@ -413,7 +424,7 @@ preflight() {
     if ! is_top "$repo"; then
       refuse "$repo is not the top of its own git checkout"
     else
-      if ! out=$(git -C "$repo" status --porcelain 2>&1); then refuse "cannot check $repo: $out"
+      if ! out=$(git -C "$repo" status --porcelain 2>/dev/null); then refuse "cannot check $repo: $(git -C "$repo" status --porcelain 2>&1 >/dev/null)"
       elif [ -n "$out" ]; then refuse "$repo is not clean"; fi
       if ! out=$(git -C "$repo" worktree list --porcelain 2>&1); then refuse "cannot check $repo: $out"
       else
@@ -498,12 +509,13 @@ step2() {
 # renames (so undo.sh reverses it); after step 5 it is renamed here, after step 6 its transcripts with
 # an old cwd are adopted (backed up, listed) and rewritten here, as step 6 does for late transcripts.
 adopt_dirs() {
-  local o n f
+  local o n f late_lessons=0
   [ -f "$MANIFEST" ] || return 0
   while IFS="$TAB" read -r o n; do
     if [ "$EXECUTE" -eq 0 ]; then say "would: add $o (created after step 2) to the renames"; continue; fi
-    printf 'rename\t%s\t%s\n' "$o" "$n" >> "$MANIFEST"
+    printf 'rename-late\t%s\t%s\n' "$o" "$n" >> "$MANIFEST"
     say "note: $o is at the old key but not in step 2's list (created after it); added to the renames"
+    case "$o" in "$CLAUDE_HOME"/lessons/*) late_lessons=1 ;; esac
   done < <(late_dirs)
   if [ "$EXECUTE" -eq 0 ] || ! is_done 5; then return 0; fi
   while IFS="$TAB" read -r o n; do
@@ -520,6 +532,10 @@ adopt_dirs() {
       rewrite_file "$f" fields cwd ""
     done <<< "$OLDF"
   done < <(renames)
+  # step 6 already rewrote INDEX.md; a late lessons dir's key in it is rewritten here the same way
+  if [ "$late_lessons" -eq 1 ] && [ -f "$CLAUDE_HOME/lessons/INDEX.md" ]; then
+    rewrite_listed "$CLAUDE_HOME/lessons/INDEX.md" text "" "" keyonly
+  fi
 }
 
 # ---- 3. move the checkout -------------------------------------------------------------------
@@ -725,7 +741,7 @@ if [ -f "$f" ]; then
   elif alive "$pid"; then echo "refuse: daemon.lock: pid $pid is alive"; bad=1; fi
 fi
 while IFS="$TAB" read -r kind a b; do
-  if [ "$kind" = rename ] && [ -e "$a" ] && [ -e "$b" ]; then echo "refuse: both $b and $a exist"; bad=1; fi
+  if { [ "$kind" = rename ] || [ "$kind" = rename-late ]; } && [ -e "$a" ] && [ -e "$b" ]; then echo "refuse: both $b and $a exist"; bad=1; fi
 done < "$MANIFEST"
 if [ -e "$NEW_REPO" ] && [ -e "$OLD_REPO" ]; then echo "refuse: both $NEW_REPO and $OLD_REPO exist"; bad=1; fi
 if grep -q "^origin$TAB" "$MANIFEST"; then
@@ -766,7 +782,7 @@ if [ -n "$changed" ] && [ "$DISCARD" -eq 0 ]; then
   exit 1
 fi
 while IFS="$TAB" read -r kind a b; do
-  if [ "$kind" = rename ] && [ -e "$b" ] && [ ! -e "$a" ]; then mv "$b" "$a"; echo "run: mv $b $a"; fi
+  if { [ "$kind" = rename ] || [ "$kind" = rename-late ]; } && [ -e "$b" ] && [ ! -e "$a" ]; then mv "$b" "$a"; echo "run: mv $b $a"; fi
 done < "$MANIFEST"
 while IFS="$TAB" read -r kind a b; do
   case "$skip" in *$'\n'"$kind$TAB$a"$'\n'*) continue ;; esac

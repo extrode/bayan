@@ -1,8 +1,8 @@
 # Move Bayān to the Ikhbat Foundation
 
-Date: 2026-11-02. Tier: Standard. Status: rev 3d (reviews A, B and C folded in, the user's choices
+Date: 2026-11-02. Tier: Standard. Status: rev 3e (reviews A, B and C folded in, the user's choices
 applied; rev 3b: move-script fix round 1, F1-F16; rev 3c: fix round 2, G1-G6; rev 3d: session-end
-review fixes M1-M6), waiting for the user's approval.
+review fixes M1-M6; rev 3e: review loop 2, N1-N4), waiting for the user's approval.
 
 ## Goal
 
@@ -122,7 +122,8 @@ keeps redirecting.
      queue.jsonl has the key before `"` and space.
    - Left boundary (rev 3d), both forms: a match counts only at the start of the string or after
      a char outside `[A-Za-z0-9._-]`; for the path, not after `/` either, so
-     `/Volumes/bk/Users/sy/…` and `x-Users-sy-…` stay. Inside JSON strings an escape such as `\n`
+     `/Volumes/bk/Users/sy/…` and `x-Users-sy-…` stay. A run of `/` counts as one char (rev 3e): the
+     path matches after `file://` and `/` (`file:///Users/…`, `//Users/…`), not after `/a`. Inside JSON strings an escape such as `\n`
      before the match counts as the char it stands for, a boundary.
 
      Every `git -C <dir>` (script and `undo.sh`) first
@@ -135,7 +136,9 @@ keeps redirecting.
       a manifest (a resumed run) the checks a finished step made obsolete are replaced by the
       manifest's recorded state: after step 3, `NEW_REPO` must exist and `OLD_REPO` be absent;
       for each recorded rename, its source and target are not both present and not both absent
-      (after step 5 a present source with an absent target is a late dir's rename, 2.2). Process
+      (for renames step 2 recorded, once step 5 is done the target must exist and the source be
+      absent; after step 5 a present source with an absent target is a late dir's rename, 2.2,
+      recorded as a `rename-late` manifest line). Process
       checks always apply.
       - no Claude process: `pgrep -fl` for `/claude/versions/`, `ClaudeCode.app`, `bin/claude`,
         and `pgrep -x claude` for a bare argv; the script prints each PID and command line and
@@ -175,9 +178,11 @@ keeps redirecting.
       at that moment, appended to the list with a `note:` line naming it, and rewritten like the
       others. Likewise a `projects/` or `lessons/` dir at the old key created after step 2 (rev
       3d): right after step 2 on a resumed run it is appended to the manifest's renames with a
-      `note:` line, so `undo.sh` reverses it; when step 5 is already done it is renamed then, and
+      `note:` line (manifest tag `rename-late`), so `undo.sh` reverses it; when step 5 is already done it is renamed then, and
       when step 6 is already done its transcripts with an old `cwd` are adopted and rewritten then
-      (otherwise steps 5 and 6 do it). `undo.sh` is written here already, so it exists whether or
+      (otherwise steps 5 and 6 do it); a late `lessons/` dir after step 6 also gets `lessons/INDEX.md`
+      rewritten (key only, as step 6 does; undo needs `--discard-changes-since-move` there, since the
+      file changed after its step 6 write). `undo.sh` is written here already, so it exists whether or
       not step 9 runs.
    3. `mkdir -p` the parent; `mv OLD_REPO NEW_REPO`.
    4. In `NEW_REPO`: `git remote set-url origin "$NEW_REMOTE"`, `git -C "$NEW_REPO" fetch -q origin`;

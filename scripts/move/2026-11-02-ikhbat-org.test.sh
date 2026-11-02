@@ -86,7 +86,7 @@ EOF
 {"transcript":"$CLAUDE_HOME/projects/$K/s1.jsonl","cwd":"$P","project":"$K","repoTop":"$P"}
 {"transcript":"$CLAUDE_HOME/projects/$K--worktrees-w1/s1.jsonl","cwd":"$P/.worktrees/w1","project":"$K extra"}
 {"transcript":"x","cwd":"$O-x","project":"${OK}x","note":"$P"}
-{"transcript":"y","a":"/Volumes/bk$O/x","a2":"/mnt/$O/x","b":"x$OK","b2":"x-$OK","c":"$P/x","d":"$K","e":"l1\\n$P/x"}
+{"transcript":"y","a":"/Volumes/bk$O/x","a2":"/mnt/$O/x","b":"x$OK","b2":"x-$OK","c":"$P/x","d":"$K","e":"l1\\n$P/x","f":"file://$P/docs/x.md","g":"/$P"}
 EOF
   cat > "$CLAUDE_HOME/history.jsonl" <<EOF
 {"display":"fix $O/foo","project":"$P","ts":1}
@@ -254,8 +254,8 @@ cmp -s "$EXP.json" "$CLAUDE_JSON" || fail ".claude.json differs from expected"
 # F7: queue rows rewrite every string value
 [ "$(jq -r 'select(.repoTop) | .repoTop' "$CLAUDE_HOME/lessons/queue.jsonl")" = "$NEW_REPO" ] || fail "queue repoTop not rewritten"
 # M4: a match needs a left boundary too (not [A-Za-z0-9._-], for paths not / either; a \n escape is one)
-GOT=$(jq -c 'select(.transcript == "y") | [.a, .a2, .b, .b2, .c, .d, .e]' "$CLAUDE_HOME/lessons/queue.jsonl")
-WANT=$(jq -cn --arg o "$OLD_REPO" --arg ok "$OKEY" --arg n "$NEW_REPO" --arg nk "$NKEY" '["/Volumes/bk"+$o+"/x", "/mnt/"+$o+"/x", "x"+$ok, "x-"+$ok, $n+"/x", $nk, "l1\n"+$n+"/x"]')
+GOT=$(jq -c 'select(.transcript == "y") | [.a, .a2, .b, .b2, .c, .d, .e, .f, .g]' "$CLAUDE_HOME/lessons/queue.jsonl")
+WANT=$(jq -cn --arg o "$OLD_REPO" --arg ok "$OKEY" --arg n "$NEW_REPO" --arg nk "$NKEY" '["/Volumes/bk"+$o+"/x", "/mnt/"+$o+"/x", "x"+$ok, "x-"+$ok, $n+"/x", $nk, "l1\n"+$n+"/x", "file://"+$n+"/docs/x.md", "/"+$n]')
 [ "$GOT" = "$WANT" ] || fail "queue left boundary: got $GOT, want $WANT"
 # F10: the ended roster worker is rewritten
 [ "$(jq -r '.workers.w9.cwd' "$CLAUDE_HOME/daemon/roster.json")" = "$NEW_REPO" ] || fail "ended roster worker not rewritten"
@@ -358,6 +358,47 @@ STOP_AFTER=2 run_mv --execute
 mkdir -p "$CLAUDE_HOME/projects/$OKEY--worktrees-new" "$CLAUDE_HOME/projects/$NKEY--worktrees-new"
 expect_refuse "late dir with target" "$CLAUDE_HOME/projects/$OKEY--worktrees-new was created after step 2 and its target $CLAUDE_HOME/projects/$NKEY--worktrees-new exists"
 case "$OUT" in *"preflight failed"*) ;; *) fail "late dir with target: not refused at preflight: $OUT" ;; esac
+
+# --- N2: a step-2 rename moved back after step 5 refuses; N4: a late lessons dir after step 6 rewrites INDEX.md
+build_fixture
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "N2: full run: exit $RC: $OUT"
+mv "$CLAUDE_HOME/projects/$NKEY--worktrees-w1" "$CLAUDE_HOME/projects/$OKEY--worktrees-w1"
+H0=$(tree_hash all)
+run_mv --execute
+[ "$RC" -ne 0 ] || fail "N2: expected a refusal"
+case "$OUT" in *"refuse: step 5 is recorded but $CLAUDE_HOME/projects/$NKEY--worktrees-w1 is missing or $CLAUDE_HOME/projects/$OKEY--worktrees-w1 exists"*) ;; *) fail "N2: no step 5 refusal: $OUT" ;; esac
+[ "$(tree_hash all)" = "$H0" ] || fail "N2: tree changed"
+build_fixture
+STOP_AFTER=6 run_mv --execute
+[ "$RC" -eq 99 ] || fail "N4: stop after 6: exit $RC: $OUT"
+LL=$CLAUDE_HOME/lessons/$OKEY--worktrees-new
+mkdir -p "$LL"; echo "lesson n" > "$LL/n.md"
+echo "- late $OKEY--worktrees-new/n.md" >> "$CLAUDE_HOME/lessons/INDEX.md"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "N4: resume: exit $RC: $OUT"
+grep -qxF -- "- late $NKEY--worktrees-new/n.md" "$CLAUDE_HOME/lessons/INDEX.md" || fail "N4: INDEX.md not rewritten"
+if grep -qF "$OKEY--worktrees-new" "$CLAUDE_HOME/lessons/INDEX.md"; then fail "N4: old key left in INDEX.md"; fi
+run_undo
+[ "$RC" -ne 0 ] || fail "N4: undo restored over a line added after the move"
+run_undo --discard-changes-since-move
+[ "$RC" -eq 0 ] || fail "N4: undo: exit $RC: $OUT"
+if grep -qF "$NKEY" "$CLAUDE_HOME/lessons/INDEX.md" || ! grep -qF "$OKEY" "$CLAUDE_HOME/lessons/INDEX.md"; then fail "N4: undo did not restore INDEX.md"; fi
+[ -f "$LL/n.md" ] && [ ! -e "$CLAUDE_HOME/lessons/$NKEY--worktrees-new" ] || fail "N4: undo did not reverse the late lessons dir"
+
+# --- N3: a git stderr warning on exit 0 is not "not clean"
+build_fixture
+mkdir -p "$FX/gitshim"
+REALGIT=$(command -v git)
+cat > "$FX/gitshim/git" <<GITEOF
+#!/bin/sh
+for a; do [ "\$a" = status ] && { echo "warning: untracked cache disabled" >&2; exit 0; }; done
+exec "$REALGIT" "\$@"
+GITEOF
+chmod +x "$FX/gitshim/git"
+OUT=$(PATH="$FX/gitshim:$PATH" bash "$SCRIPT" 2>&1) && RC=0 || RC=$?
+[ "$RC" -eq 0 ] || fail "N3: stderr warning refused: $OUT"
+case "$OUT" in *"not clean"*) fail "N3: warning read as not clean: $OUT" ;; esac
 
 # --- M2: an interrupt right after a rewrite's mv leaves its write hash recorded; undo needs no flag
 for f in "$CLAUDE_HOME/projects/$NKEY/s2.jsonl" "$CLAUDE_JSON"; do
