@@ -30,7 +30,8 @@ DP=$(( ${#NEW_REPO} - ${#OLD_REPO} ))
 DK=$(( ${#NKEY} - ${#OKEY} ))
 BACKUP=$CLAUDE_HOME/backups/bayan-move-2026-11-02
 MANIFEST=$BACKUP/manifest.txt
-SUMS=$BACKUP/post-move.sha256
+# "<sha256> <path>" of each file right after the run wrote it; undo.sh trusts only these
+WRITTEN=$BACKUP/written.sha256
 
 say() { printf '%s\n' "$*"; }
 
@@ -115,12 +116,13 @@ g() { need_top "$1"; git -C "$@"; }
 
 # rewrite_file FILE MODE FIELDS JSON(json|"") [keyonly]
 rewrite_file() {
-  local f=$1 tmp counts pc kc lb la sb sa want
+  local f=$1 tmp counts pc kc lb la sb sa want pre bak
   tmp=$f.mvtmp.$$
   rm -f "$tmp"
   counts=$(rw_run "$2" "$3" "$f" "$tmp" "${5:-}") || { rm -f "$tmp"; say "refuse: rewrite of $f failed"; exit 1; }
   pc=${counts% *}; kc=${counts#* }
   if [ ! -e "$tmp" ]; then say "skip: $f (nothing to rewrite)"; return 0; fi
+  pre=$(sha "$f")
   lb=$(( $(wc -l < "$f") )); la=$(( $(wc -l < "$tmp") ))
   sb=$(( $(wc -c < "$f") )); sa=$(( $(wc -c < "$tmp") ))
   want=$(( sb + pc * DP + kc * DK ))
@@ -132,7 +134,19 @@ rewrite_file() {
   fi
   touch -r "$f" "$tmp"
   mv "$tmp" "$f"
+  bak=$(backup_of "$f")
+  if [ -n "$bak" ] && [ "$pre" = "$(sha "$bak")" ]; then record_write "$f"; else changed_note "$f"; fi
   say "run: rewrote $f ($pc path, $kc key replacements)"
+}
+
+# record_write FILE: its hash as just written. A file that changed between its backup and the rewrite
+# gets none, so undo.sh lists it as changed since the move instead of restoring over the change.
+record_write() { printf '%s %s\n' "$(sha "$1")" "$1" >> "$WRITTEN"; }
+changed_note() { say "note: $1 changed after its step 2 backup; no write hash recorded, undo.sh will list it as changed"; }
+# backup_of FILE: its step 2 backup, from the manifest "home" line naming it before or after the renames
+backup_of() {
+  local rel=${1#"$CLAUDE_HOME"/}
+  awk -F'\t' -v r="$rel" -v b="$BACKUP/files/" '$1 == "home" && ($2 == r || $3 == r) { p = b $2 } END { if (p != "") print p }' "$MANIFEST"
 }
 
 # is_listed FILE: FILE is in the step 2 list (manifest "home" lines: path before and after the renames)
@@ -149,6 +163,23 @@ rewrite_listed() {
 }
 
 clone_cp() { cp -pc "$1" "$2" 2>/dev/null || cp -p "$1" "$2"; }
+
+# old_files DIR: sets OLDF to the *.jsonl files under DIR naming OLD_REPO (grep exit 1 = none).
+# grep exit 2 (a path it could not read) prints a refusal naming the path and returns 1.
+old_files() {
+  local out rc line
+  out=$(grep -rlF --include='*.jsonl' -- "$OLD_REPO" "$1" 2>&1) && rc=0 || rc=$?
+  OLDF=
+  case $rc in
+    0) OLDF=$out ;;
+    1) ;;
+    *) while IFS= read -r line; do
+         case "$line" in "grep: "*) say "refuse: cannot scan ${line#grep: }" ;; esac
+       done <<< "$out"
+       say "refuse: grep -r under $1 failed (exit $rc)"
+       return 1 ;;
+  esac
+}
 
 # interrupted between the mv and its manifest line: the checkout is already at NEW_REPO
 moved_already() { [ -f "$MANIFEST" ] && ! is_done 3 && [ ! -e "$OLD_REPO" ] && [ -d "$NEW_REPO" ]; }
@@ -194,6 +225,25 @@ post_rel() {
     case "$p" in "$o"/*) p=$n${p#"$o"}; break ;; esac
   done <<< "$2"
   printf '%s\n' "${p#"$CLAUDE_HOME"/}"
+}
+# pre_rel REL: REL under its dir's name before the renames
+pre_rel() {
+  local o n p=$CLAUDE_HOME/$1
+  while IFS="$TAB" read -r o n; do
+    [ -n "$o" ] || continue
+    case "$p" in "$n"/*) p=$o${p#"$n"}; break ;; esac
+  done < <(renames)
+  printf '%s\n' "${p#"$CLAUDE_HOME"/}"
+}
+# adopt_late FILE: a transcript with an old cwd written after step 2 is backed up now and added to the list
+adopt_late() {
+  local rel=${1#"$CLAUDE_HOME"/} pre
+  pre=$(pre_rel "$rel")
+  jsonl_ok "$1" || { say "refuse: $1 has a line that is not valid JSON; left unchanged"; exit 1; }
+  mkdir -p "$BACKUP/files/$(dirname "$pre")"
+  clone_cp "$1" "$BACKUP/files/$pre"
+  printf 'home\t%s\t%s\n' "$pre" "$rel" >> "$MANIFEST"
+  say "note: $1 has an old cwd but is not in step 2's list (written after it); backed up and added"
 }
 
 # ---- 1. preflight -------------------------------------------------------------------------
@@ -257,7 +307,7 @@ def hit($o; nm): . as $s | any(($s | indices($o))[]; $s[(. + ($o | length)):] | 
 | "\(.pid // "")\t\(.replPid // "")"'
 
 preflight() {
-  local pat out line f pid rpid st repo e parent base ldev rdev o n nrn cj
+  local pat out line f pid rpid st repo e parent base ldev rdev o n d nrn cj
   for pat in jq perl shasum; do command -v "$pat" >/dev/null 2>&1 || { say "refuse: $pat not found"; exit 1; }; done
   if [ -e "$BACKUP/undone" ]; then refuse "$BACKUP/undone exists: the move was undone; remove $BACKUP to run again"; fi
 
@@ -296,9 +346,19 @@ preflight() {
   done
   cj=$CLAUDE_JSON
   if [ -f "$MANIFEST" ] && [ -f "$BACKUP/claude.json" ]; then cj=$BACKUP/claude.json; fi
-  if [ -f "$cj" ] && jq -e --arg new "$NEW_REPO" '(.projects // {}) | has($new)' "$cj" >/dev/null 2>&1; then
-    refuse "$CLAUDE_JSON already has projects[\"$NEW_REPO\"] (step 7 would merge two entries)"
+  if [ -f "$cj" ]; then
+    out=$(jq -r --arg new "$NEW_REPO" '(.projects // {}) | keys[] | select(. == $new or startswith($new + "/"))' "$cj" 2>/dev/null || true)
+    if [ -n "$out" ]; then
+      refuse "$CLAUDE_JSON already has projects keys at or under $NEW_REPO (step 7 would merge entries):"
+      while IFS= read -r line; do say "  $line"; done <<< "$out"
+    fi
   fi
+  # every transcript dir at the old key can be scanned: an unreadable path would hide a file from steps 2 and 6
+  while IFS="$TAB" read -r o n; do
+    case "$o" in "$CLAUDE_HOME"/projects/*) ;; *) continue ;; esac
+    d=$n; [ -e "$d" ] || d=$o
+    old_files "$d" || REF=$(( REF + 1 ))
+  done < <(renames)
 
   repo=$OLD_REPO
   if is_done 3 || moved_already; then
@@ -366,12 +426,13 @@ step2() {
     [ -n "$o" ] || continue
     nren=$(( nren + 1 ))
     case "$o" in "$CLAUDE_HOME"/projects/*) ;; *) continue ;; esac
+    old_files "$o" || exit 1
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       has_hits fields cwd "$f" || continue
       jsonl_ok "$f" || { say "refuse: $f has a line that is not valid JSON; nothing changed"; exit 1; }
       list+=${f#"$CLAUDE_HOME"/}$'\n'
-    done < <(grep -rlF --include='*.jsonl' -- "$OLD_REPO" "$o" 2>/dev/null || true)
+    done <<< "$OLDF"
   done <<< "$rn"
   nfiles=$(printf '%s' "$list" | grep -c '' || true)
   if [ "$EXECUTE" -eq 0 ]; then
@@ -455,12 +516,15 @@ step6() {
   while IFS="$TAB" read -r o n; do
     case "$o" in "$CLAUDE_HOME"/projects/*) ;; *) continue ;; esac
     d=$n; [ -e "$d" ] || d=$o
+    old_files "$d" || exit 1
     while IFS= read -r f; do
       [ -n "$f" ] || continue
-      if [ "$EXECUTE" -eq 1 ]; then rewrite_listed "$f" fields cwd ""
+      if [ "$EXECUTE" -eq 1 ]; then
+        if ! is_listed "$f" && has_hits fields cwd "$f"; then adopt_late "$f"; fi
+        rewrite_listed "$f" fields cwd ""
       elif has_hits fields cwd "$f"; then cnt=$(( cnt + 1 ))
       else other=$(( other + 1 )); fi
-    done < <(grep -rlF --include='*.jsonl' -- "$OLD_REPO" "$d" 2>/dev/null || true)
+    done <<< "$OLDF"
   done < <(renames)
   if [ "$EXECUTE" -eq 0 ]; then
     say "would: rewrite \"cwd\" in $cnt transcript files, key in lessons/INDEX.md"
@@ -485,11 +549,12 @@ def mv: if type == "string" and startswith($old) and (.[($old | length):] | nm) 
     else . end)
   else . end)'
 step7() {
-  local tmp flag=
+  local tmp pre flag=
   if is_done 7; then say "skip: step 7 (.claude.json) already done"; return 0; fi
   if [ ! -f "$CLAUDE_JSON" ]; then say "skip: $CLAUDE_JSON does not exist"; return 0; fi
   if [ "$EXECUTE" -eq 0 ]; then say "would: move projects keys and githubRepoPaths in $CLAUDE_JSON"; return 0; fi
   tmp=$CLAUDE_JSON.mvtmp.$$
+  pre=$(sha "$CLAUDE_JSON")
   cp -p "$CLAUDE_JSON" "$tmp"
   if [ "$(wc -l < "$CLAUDE_JSON")" -le 1 ]; then flag=-c; fi
   if ! jq $flag --arg old "$OLD_REPO" --arg new "$NEW_REPO" "$JQ_CLAUDE_JSON" "$CLAUDE_JSON" > "$tmp" \
@@ -499,7 +564,12 @@ step7() {
     rm -f "$tmp"; say "refuse: step 7: jq output invalid or key counts changed; $CLAUDE_JSON unchanged"; exit 1
   fi
   if cmp -s "$tmp" "$CLAUDE_JSON"; then rm -f "$tmp"; say "skip: $CLAUDE_JSON already holds the new keys"
-  else mv "$tmp" "$CLAUDE_JSON"; say "run: rewrote $CLAUDE_JSON"; fi
+  else
+    mv "$tmp" "$CLAUDE_JSON"
+    if [ -f "$BACKUP/claude.json" ] && [ "$pre" = "$(sha "$BACKUP/claude.json")" ]; then record_write "$CLAUDE_JSON"
+    else changed_note "$CLAUDE_JSON"; fi
+    say "run: rewrote $CLAUDE_JSON"
+  fi
   mark_done 7
 }
 
@@ -532,8 +602,9 @@ gen_undo() {
   {
     echo '#!/usr/bin/env bash'
     echo '# Reverses steps 3-8 of 2026-11-02-ikhbat-org.sh from the manifest and backups. Idempotent. Close Claude first.'
-    echo '# Refuses, changing nothing, when a rename source and target both exist, when a git dir is not the top of'
-    echo '# its own checkout, or when a file it would restore changed after the move (--discard-changes-since-move overrides).'
+    echo '# Refuses, changing nothing, when a Claude process or a live session runs, when a rename source and target'
+    echo '# both exist, when a git dir is not the top of its own checkout, or (--discard-changes-since-move overrides'
+    echo '# these two) when the moved checkout has a linked worktree or a file it would restore changed after the move.'
     echo 'set -euo pipefail'
     printf 'OLD_REPO=%q\nNEW_REPO=%q\nCLAUDE_HOME=%q\nCLAUDE_JSON=%q\nBACKUP=%q\n' \
       "$OLD_REPO" "$NEW_REPO" "$CLAUDE_HOME" "$CLAUDE_JSON" "$BACKUP"
@@ -545,9 +616,11 @@ case "${1:-}" in
   *) echo "usage: $0 [--discard-changes-since-move]" >&2; exit 2 ;;
 esac
 export GIT_CEILING_DIRECTORIES="$(dirname "$OLD_REPO"):$(dirname "$NEW_REPO")"
+PGREP=${PGREP:-pgrep}
+CLI_NAME=claude
 TAB=$(printf '\t')
 MANIFEST=$BACKUP/manifest.txt
-SUMS=$BACKUP/post-move.sha256
+WRITTEN=$BACKUP/written.sha256
 [ -f "$MANIFEST" ] || { echo "refuse: no manifest at $MANIFEST"; exit 1; }
 is_top() {
   local p t
@@ -556,7 +629,43 @@ is_top() {
   [ "$t" = "$p" ]
 }
 sha() { shasum -a 256 < "$1" | cut -d' ' -f1; }
+alive() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; kill -0 "$1" 2>/dev/null; }
 bad=0
+# the move script's process checks: pgrep exit 1 = none, any other non-zero refuses
+for pat in "/claude/versions/" "ClaudeCode.app" "bin/$CLI_NAME"; do
+  out=$($PGREP -fl "$pat" 2>/dev/null) && rc=0 || rc=$?
+  case $rc in
+    0) echo "refuse: Claude process matches pgrep -fl $pat:"; bad=1
+       while IFS= read -r line; do echo "  $line"; done <<< "$out" ;;
+    1) ;;
+    *) echo "refuse: pgrep -fl $pat failed (exit $rc): cannot tell whether Claude runs"; bad=1 ;;
+  esac
+done
+out=$($PGREP -x "$CLI_NAME" 2>/dev/null) && rc=0 || rc=$?
+case $rc in
+  0) echo "refuse: Claude process matches pgrep -x $CLI_NAME:"; bad=1
+     while IFS= read -r line; do
+       pid=${line%% *}
+       echo "  $pid $(ps -o command= -p "$pid" 2>/dev/null || echo '(command line unavailable)')"
+     done <<< "$out" ;;
+  1) ;;
+  *) echo "refuse: pgrep -x $CLI_NAME failed (exit $rc): cannot tell whether Claude runs"; bad=1 ;;
+esac
+# live sessions with their cwd at either path; a live daemon
+for f in "$CLAUDE_HOME"/sessions/*.json; do
+  [ -f "$f" ] || continue
+  if ! pid=$(jq -r '.pid // empty' "$f" 2>/dev/null); then echo "refuse: cannot read or parse $f"; bad=1; continue; fi
+  if alive "$pid" && jq -e --arg o "$OLD_REPO" --arg n "$NEW_REPO" '
+      def at($p): (.cwd // "") as $c | ($c | startswith($p)) and ($c[($p | length):] | (length == 0) or (.[0:1] | test("[A-Za-z0-9._-]") | not));
+      at($o) or at($n)' "$f" >/dev/null 2>&1; then
+    echo "refuse: live session $f (pid $pid) has its cwd at the old or new path"; bad=1
+  fi
+done
+f=$CLAUDE_HOME/daemon.lock
+if [ -f "$f" ]; then
+  if ! pid=$(jq -r '.pid // empty' "$f" 2>/dev/null); then echo "refuse: cannot read or parse $f"; bad=1
+  elif alive "$pid"; then echo "refuse: daemon.lock: pid $pid is alive"; bad=1; fi
+fi
 while IFS="$TAB" read -r kind a b; do
   if [ "$kind" = rename ] && [ -e "$a" ] && [ -e "$b" ]; then echo "refuse: both $b and $a exist"; bad=1; fi
 done < "$MANIFEST"
@@ -566,31 +675,43 @@ if grep -q "^origin$TAB" "$MANIFEST"; then
   if [ -e "$NEW_REPO" ]; then repo=$NEW_REPO; fi
   if [ -e "$repo" ] && ! is_top "$repo"; then echo "refuse: $repo is not the top of its own git checkout"; bad=1; fi
 fi
-if [ "$bad" -ne 0 ]; then echo "refuse: nothing changed"; exit 1; fi
-if [ ! -f "$SUMS" ]; then
-  echo "warn: no $SUMS (the move did not reach step 9); changes since the move are not checked"
-elif [ "$DISCARD" -eq 0 ]; then
-  changed=
-  while IFS="$TAB" read -r sum kind a b; do
-    case "$kind" in
-      home) cur=$CLAUDE_HOME/$b; [ -e "$cur" ] || cur=$CLAUDE_HOME/$a; bak=$BACKUP/files/$a ;;
-      json) cur=$CLAUDE_JSON; bak=$BACKUP/claude.json ;;
-      *) continue ;;
-    esac
-    s=$(sha "$cur" 2>/dev/null || echo missing)
-    if [ "$s" != "$sum" ] && [ "$s" != "$(sha "$bak")" ]; then changed=$changed"  $cur"$'\n'; fi
-  done < "$SUMS"
-  if [ -n "$changed" ]; then
-    echo "refuse: these files changed after the move; restoring the backups would discard those changes:"
-    printf '%s' "$changed"
-    echo "refuse: nothing restored. Run with --discard-changes-since-move to restore the backups anyway."
-    exit 1
+# linked worktrees added after the move hold the new path; moving the checkout back breaks them
+wts=
+if [ -d "$NEW_REPO" ] && [ ! -e "$OLD_REPO" ] && is_top "$NEW_REPO"; then
+  wts=$(git -C "$NEW_REPO" worktree list --porcelain | grep '^worktree ' | tail -n +2 | cut -c10- || true)
+  if [ -n "$wts" ] && [ "$DISCARD" -eq 0 ]; then
+    echo "refuse: $NEW_REPO has linked worktrees; remove them (git worktree remove) or pass --discard-changes-since-move:"
+    while IFS= read -r line; do echo "  $line"; done <<< "$wts"
+    bad=1
   fi
+fi
+if [ "$bad" -ne 0 ]; then echo "refuse: nothing changed"; exit 1; fi
+# each file to restore: unchanged since the move when its hash is its last recorded write (restore it) or
+# its backup's (nothing to restore); anything else changed after the move
+changed=
+skip=$'\n'
+while IFS="$TAB" read -r kind a b; do
+  case "$kind" in
+    home) cur=$CLAUDE_HOME/$b; [ -e "$cur" ] || cur=$CLAUDE_HOME/$a; bak=$BACKUP/files/$a ;;
+    json) cur=$CLAUDE_JSON; bak=$BACKUP/claude.json ;;
+    *) continue ;;
+  esac
+  s=$(sha "$cur" 2>/dev/null || echo missing)
+  w=$(awk -v p="$cur" 'substr($0, index($0, " ") + 1) == p { h = $1 } END { print h }' "$WRITTEN" 2>/dev/null || true)
+  if [ "$s" = "$(sha "$bak")" ]; then skip=$skip$kind$TAB$a$'\n'
+  elif [ -z "$w" ] || [ "$s" != "$w" ]; then changed=$changed"  $cur"$'\n'; fi
+done < "$MANIFEST"
+if [ -n "$changed" ] && [ "$DISCARD" -eq 0 ]; then
+  echo "refuse: these files changed after the move; restoring the backups would discard those changes:"
+  printf '%s' "$changed"
+  echo "refuse: nothing restored. Run with --discard-changes-since-move to restore the backups anyway."
+  exit 1
 fi
 while IFS="$TAB" read -r kind a b; do
   if [ "$kind" = rename ] && [ -e "$b" ] && [ ! -e "$a" ]; then mv "$b" "$a"; echo "run: mv $b $a"; fi
 done < "$MANIFEST"
 while IFS="$TAB" read -r kind a b; do
+  case "$skip" in *$'\n'"$kind$TAB$a"$'\n'*) continue ;; esac
   case "$kind" in
     home) mkdir -p "$(dirname "$CLAUDE_HOME/$a")"; cp -p "$BACKUP/files/$a" "$CLAUDE_HOME/$a"; echo "run: restored $a" ;;
     json) cp -p "$BACKUP/claude.json" "$CLAUDE_JSON"; echo "run: restored $CLAUDE_JSON" ;;
@@ -598,6 +719,11 @@ while IFS="$TAB" read -r kind a b; do
 done < "$MANIFEST"
 if [ -d "$NEW_REPO" ] && [ ! -e "$OLD_REPO" ]; then
   mkdir -p "$(dirname "$OLD_REPO")"; mv "$NEW_REPO" "$OLD_REPO"; echo "run: mv $NEW_REPO $OLD_REPO"
+  if [ -n "$wts" ]; then
+    is_top "$OLD_REPO" || { echo "refuse: $OLD_REPO is not the top of its own git checkout"; exit 1; }
+    if out=$(git -C "$OLD_REPO" worktree repair 2>&1); then echo "run: git worktree repair: ok${out:+ ($out)}"
+    else echo "warn: git -C $OLD_REPO worktree repair failed: $out"; fi
+  fi
 fi
 while IFS="$TAB" read -r kind a b; do
   if [ "$kind" = origin ] && [ -d "$OLD_REPO" ]; then
@@ -611,22 +737,12 @@ EOF
   } > "$u"
   chmod +x "$u"
 }
-# post-move sha256 of every file undo.sh would restore: "<sha><TAB>home<TAB><rel before><TAB><rel after>" or "<sha><TAB>json"
+# undo.sh is written in step 2 already; step 9 rewrites it from the final manifest
 step9() {
-  local kind a b tmp
   if is_done 9; then say "skip: step 9 (undo.sh) already done"; return 0; fi
-  if [ "$EXECUTE" -eq 0 ]; then say "would: write $BACKUP/undo.sh and $SUMS"; return 0; fi
-  tmp=$SUMS.tmp
-  : > "$tmp"
-  while IFS="$TAB" read -r kind a b; do
-    case "$kind" in
-      home) if [ -f "$CLAUDE_HOME/$b" ]; then printf '%s\thome\t%s\t%s\n' "$(sha "$CLAUDE_HOME/$b")" "$a" "$b" >> "$tmp"; fi ;;
-      json) if [ -f "$CLAUDE_JSON" ]; then printf '%s\tjson\n' "$(sha "$CLAUDE_JSON")" >> "$tmp"; fi ;;
-    esac
-  done < "$MANIFEST"
-  mv "$tmp" "$SUMS"
+  if [ "$EXECUTE" -eq 0 ]; then say "would: write $BACKUP/undo.sh"; return 0; fi
   gen_undo
-  say "run: wrote $BACKUP/undo.sh and $SUMS"
+  say "run: wrote $BACKUP/undo.sh"
   mark_done 9
 }
 
@@ -639,11 +755,12 @@ step10() {
   while IFS="$TAB" read -r o n; do
     want=$(( want + 1 )); [ -d "$n" ] && got=$(( got + 1 ))
     case "$n" in "$CLAUDE_HOME"/projects/*)
+      old_files "$n" || exit 1
       while IFS= read -r f; do
         [ -n "$f" ] || continue
         c=$(rw_run fields cwd "$f"); c=${c% *}
         [ "$c" -eq 0 ] || { say "FAIL: $f has $c old-path cwd values"; bad=1; }
-      done < <(grep -rlF --include='*.jsonl' -- "$OLD_REPO" "$n" 2>/dev/null || true) ;;
+      done <<< "$OLDF" ;;
     esac
   done < <(renames)
   [ "$want" -eq "$got" ] || { say "FAIL: $got of $want renamed dirs exist"; bad=1; }
