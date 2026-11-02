@@ -1,0 +1,5 @@
+{"schemaVersion": "1", "files": {"/repo/src/Lexer.cs": {"language": "cs", "source": "if (c == '\\n') {\n  line++;\n}\n", "mutants": [
+  {"id": "1", "mutatorName": "Equality", "replacement": "c != '\\n'", "location": {"start": {"line": 1, "column": 5}, "end": {"line": 1, "column": 15}}, "status": "Survived"},
+  {"id": "2", "mutatorName": "Update", "replacement": "line--", "location": {"start": {"line": 2, "column": 3}, "end": {"line": 2, "column": 9}}, "status": "Killed"},
+  {"id": "3", "mutatorName": "Block", "replacement": "{}", "location": {"start": {"line": 1, "column": 17}, "end": {"line": 3, "column": 2}}, "status": "Killed"}
+]}}}

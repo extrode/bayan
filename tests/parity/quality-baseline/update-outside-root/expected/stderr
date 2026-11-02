@@ -1,0 +1,1 @@
+quality-baseline: outabs.json: path /elsewhere/z.byn is outside the root .; a key would not be root-relative

@@ -1,0 +1,4 @@
+{"schemaVersion": "1", "files": {"src/Parser.cs": {"language": "cs", "source": "return a && b;\n", "mutants": [
+  {"id": "1", "mutatorName": "Logical", "replacement": "a || b", "location": {"start": {"line": 1, "column": 8}, "end": {"line": 1, "column": 14}}, "status": "Killed"},
+  {"id": "2", "mutatorName": "Boolean", "replacement": "true", "location": {"start": {"line": 1, "column": 8}, "end": {"line": 1, "column": 14}}, "status": "Timeout"}
+]}}}

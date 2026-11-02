@@ -1,0 +1,2 @@
+not run: Bayan.Tests.A.One
+known-failures: 1 failed, 1 known, 0 new, 0 now passing

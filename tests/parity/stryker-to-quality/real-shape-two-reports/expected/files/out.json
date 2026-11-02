@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "kind": "mutation",
+  "tool": "stryker",
+  "timing": {
+    "build_s": 0.5,
+    "mean_mutant_s": 1.35,
+    "max_mutant_s": 0,
+    "total_s": 7.25,
+    "mutant_share_of_build": 2.7
+  },
+  "files": [
+    {
+      "path": "src/Lexer.cs",
+      "mutants": [
+        {
+          "site": {
+            "id": 1,
+            "file": "src/Lexer.cs",
+            "line": 1,
+            "column": 5,
+            "operator": "Equality",
+            "original": "c == '\\n')",
+            "mutated": "c != '\\n'"
+          },
+          "status": "survived",
+          "suggestion": "add a case that fails under this change"
+        },
+        {
+          "site": {
+            "id": 2,
+            "file": "src/Lexer.cs",
+            "line": 2,
+            "column": 3,
+            "operator": "Update",
+            "original": "line++",
+            "mutated": "line--"
+          },
+          "status": "killed"
+        },
+        {
+          "site": {
+            "id": 3,
+            "file": "src/Lexer.cs",
+            "line": 1,
+            "column": 17,
+            "operator": "Block",
+            "original": "\n  line++;\n}",
+            "mutated": "{}"
+          },
+          "status": "killed"
+        }
+      ]
+    },
+    {
+      "path": "src/Parser.cs",
+      "mutants": [
+        {
+          "site": {
+            "id": 4,
+            "file": "src/Parser.cs",
+            "line": 1,
+            "column": 8,
+            "operator": "Logical",
+            "original": "a && b",
+            "mutated": "a || b"
+          },
+          "status": "killed"
+        },
+        {
+          "site": {
+            "id": 5,
+            "file": "src/Parser.cs",
+            "line": 1,
+            "column": 8,
+            "operator": "Boolean",
+            "original": "a && b",
+            "mutated": "true"
+          },
+          "status": "timeout"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "killed": 3,
+    "survived": 1,
+    "timeout": 1,
+    "marked": 0,
+    "not_reached": 0,
+    "not_emitted": 0
+  },
+  "operators": {
+    "Equality": {
+      "killed": 0,
+      "survived": 1,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "Update": {
+      "killed": 1,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "Block": {
+      "killed": 1,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "Logical": {
+      "killed": 1,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "Boolean": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 1,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    }
+  }
+}

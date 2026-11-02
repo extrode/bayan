@@ -1,0 +1,4 @@
+<coverage><packages><package name="P"><classes>
+  <class name="A" filename="/repo/src/A.cs"><lines><line number="1" hits="1" branch="True" condition-coverage="25% (1/4)" /></lines></class>
+  <class name="A/Inner" filename="/repo/src/A.cs"><lines><line number="1" hits="1" branch="True" condition-coverage="100% (2/2)" /></lines></class>
+</classes></package></packages></coverage>

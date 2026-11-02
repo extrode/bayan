@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "kind": "coverage",
+  "tool": "coverlet",
+  "timing": {
+    "build_s": 12.5,
+    "total_s": 61.0
+  },
+  "files": [
+    {
+      "path": "src/Bayan/Lexer.cs",
+      "lines": {
+        "covered": 3,
+        "total": 4,
+        "missed": [
+          12
+        ],
+        "unknown": []
+      },
+      "branches": {
+        "covered": 3,
+        "total": 4,
+        "missed": [
+          {
+            "line": 11,
+            "column": 0,
+            "outcome": false
+          }
+        ],
+        "unknown": []
+      },
+      "errorPaths": []
+    },
+    {
+      "path": "src/Bayan/Parser.cs",
+      "lines": {
+        "covered": 1,
+        "total": 2,
+        "missed": [
+          4
+        ],
+        "unknown": []
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0,
+        "missed": [],
+        "unknown": []
+      },
+      "errorPaths": []
+    }
+  ],
+  "totals": {
+    "lines": {
+      "covered": 4,
+      "total": 6
+    },
+    "branches": {
+      "covered": 3,
+      "total": 4
+    },
+    "errorPaths": {
+      "covered": 0,
+      "total": 0
+    }
+  }
+}

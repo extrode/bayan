@@ -1,0 +1,3 @@
+Cobertura XML (coverlet) to bayan-quality.json, kind "coverage" (spec 013 R12, R15).
+
+usage: cobertura_to_quality.py COBERTURA.xml REPO_ROOT OUT.json BUILD_S TOTAL_S

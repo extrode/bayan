@@ -1,0 +1,1 @@
+stryker_to_quality: ValueError("bad-status.json: unknown status 'Bogus'")

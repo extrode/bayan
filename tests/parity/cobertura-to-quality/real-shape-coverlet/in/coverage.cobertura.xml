@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coverage line-rate="0.6667" branch-rate="0.75" version="1.9" timestamp="1762041600" lines-covered="4" lines-valid="6" branches-covered="3" branches-valid="4">
+  <sources>
+    <source>/repo/</source>
+  </sources>
+  <packages>
+    <package name="Bayan" line-rate="0.6667" branch-rate="0.75" complexity="5">
+      <classes>
+        <class name="Bayan.Lexer" filename="src/Bayan/Lexer.cs" line-rate="0.75" branch-rate="0.75" complexity="3">
+          <methods />
+          <lines>
+            <line number="10" hits="5" branch="False" />
+            <line number="11" hits="5" branch="True" condition-coverage="75% (3/4)">
+              <conditions>
+                <condition number="0" type="jump" coverage="100%" />
+              </conditions>
+            </line>
+            <line number="12" hits="0" branch="False" />
+            <line number="13" hits="2" branch="False" />
+          </lines>
+        </class>
+        <class name="Bayan.Parser" filename="src/Bayan/Parser.cs" line-rate="0.5" branch-rate="1" complexity="2">
+          <methods />
+          <lines>
+            <line number="3" hits="1" branch="False" />
+            <line number="4" hits="0" branch="False" />
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

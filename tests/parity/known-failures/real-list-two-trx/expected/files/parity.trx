@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="7d2e1c9f-4b65-4d9f-8b58-1e3a7a2a0b21" name="runner@WIN 2026-11-02 10:20:41" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult executionId="b1" testId="u1" testName="Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: &quot;diag/capability-exceeded/main.byn&quot;)" computerName="WIN" duration="00:00:00.5000000" outcome="Failed" />
+    <UnitTestResult executionId="b2" testId="u2" testName="Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: &quot;diag/error-set-same-name/main.byn&quot;)" computerName="WIN" duration="00:00:00.5000000" outcome="Failed" />
+    <UnitTestResult executionId="b3" testId="u3" testName="Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: &quot;diag/grammar-dictionary/main.byn&quot;)" computerName="WIN" duration="00:00:00.4000000" outcome="Passed" />
+    <UnitTestResult executionId="b4" testId="u4" testName="Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: &quot;diag/not-visible/main.byn&quot;)" computerName="WIN" duration="00:00:00.4000000" outcome="Failed" />
+  </Results>
+</TestRun>

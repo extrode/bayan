@@ -1,0 +1,3 @@
+mutation: 1 killed, 1 survived, 1 timeout, 1 marked, 1 not reached, 1 not emitted
+survived: src/A.cs:2:10: a + 1 -> a * 1 [Arithmetic]
+  suggestion: add a case that fails under this change

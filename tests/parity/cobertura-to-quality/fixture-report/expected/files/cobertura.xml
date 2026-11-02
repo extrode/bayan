@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coverage line-rate="0.5" branch-rate="0.5" version="1.9" timestamp="0">
+  <sources><source>/repo/</source></sources>
+  <packages>
+    <package name="P">
+      <classes>
+        <class name="A" filename="/repo/src/A.cs">
+          <lines>
+            <line number="1" hits="3" branch="False" />
+            <line number="2" hits="0" branch="False" />
+            <line number="3" hits="2" branch="True" condition-coverage="50.5% (1/2)" />
+          </lines>
+        </class>
+        <class name="A/Inner" filename="/repo/src/A.cs">
+          <lines>
+            <line number="2" hits="1" branch="False" />
+            <line number="4" hits="0" branch="False" />
+          </lines>
+        </class>
+        <class name="B" filename="src/B.cs">
+          <lines>
+            <line number="7" hits="1" branch="True" condition-coverage="100% (2/2)" />
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
