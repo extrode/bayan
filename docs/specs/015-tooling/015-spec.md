@@ -121,13 +121,13 @@ neither, settled under *Decisions*; **014-path** = specified by spec 014 (`Path`
 | `List`, `Map`, stable `sort` | `std.collections` | Exists (in part) | all |
 | `Path.combine`, `fileName`, `directoryName`, `isRooted`, `fullPath`, `relative` | `std.path` | 014-path (spec 014) | `review-brief` |
 | environment variable read | `std.env` | New (S2) | `wave-brief` |
-| regex match, search, find-all, replace, escape | `std.regex` | New (S3) | `mutation-exempt` |
+| regex match, search, find-all, replace, escape | `std.regex` | New (S3) | none yet (S13) |
 | `exists`, `createDirectory`, `rename`, `canonical` (symlinks resolved) | `std.fs` | Spec-only, API New (S4) | `wave-brief` |
 | recursive glob / walk; shell-style pattern match (`fnmatch`) | `std.fs` | Spec-only, API New (S5) | `mutate-plan` |
 | `run` with `directory:`, `input:` bytes, `env:` over the inherited env | `std.process` | New (S6) | `replay` |
 | JSON read (decode to a struct or a tree) and write (2-space indent, Python's `json.dumps(indent=2)` layout) | `std.json` | Spec-only (decoders, §11), API New (S7) | `quality-baseline` |
 | `Base64.decode` | byte codecs, module Open (Q3) | Spec-only (J83) | `replay` |
-| XML pull reader (.trx, Cobertura) | `kit.xml` | New, placement Open (Q9) | `known-failures` |
+| XML pull reader (.trx, Cobertura) | `kit.xml` | Not built (S9) | — |
 | `f64` formatting matching Python `repr`, for ratios in quality JSON | `core` | New (S8) | `stryker-to-quality` |
 | Unicode data lines → tables | `core` strings + `std.fs` | Exists | `gen-lowercase` |
 | HTTPS fetch | `kit.http` | Spec-only; `curl` via `run` meanwhile (R8) | `gen-lowercase` |
@@ -137,7 +137,7 @@ Easiest first; each New API arrives with the first port that needs it. Group by 
 
 | # | Port (`tools/…`) | Replaces | Introduces |
 | --- | --- | --- | --- |
-| 1 | `mutation-exempt.byn` | `mutation-exempt.py` | `std.regex` |
+| 1 | `mutation-exempt.byn` | `mutation-exempt.py` | nothing new (S13) |
 | 2 | `review-brief.byn` | `review-brief.py` | uses `std.path` (014) |
 | 3 | `wave-brief.byn` | `wave-brief.py` | `std.env`, `std.fs` exists |
 | 4 | `plan-strings-check.byn` | `plan-strings-check.js` + test (Deno leaves, R7) | — |
@@ -147,9 +147,9 @@ Easiest first; each New API arrives with the first port that needs it. Group by 
 | 8 | `coverage-gate.byn` | `coverage-gate.py` | — |
 | 9 | `stryker-to-quality.byn` | `stryker_to_quality.py` | `f64` formatting (S8) |
 | 10 | `replay.byn` | `replay.py` | `run` with `directory:`/`input:`/`env:`, `Base64` |
-| 11 | `known-failures.byn` | `known-failures.py` | `kit.xml` |
-| 12 | `cobertura-to-quality.byn` | `cobertura_to_quality.py` | — |
-| 13 | `gen-lowercase.byn` | `gen-lowercase.py` (Python leaves, R7) | `curl` shell-out (R8) |
+| 11 | not ported (S9) | `known-failures.py`, deleted with the C# suite | — |
+| 12 | not ported (S9) | `cobertura_to_quality.py`, deleted with the C# suite | — |
+| 13 | `gen-lowercase.byn` | `gen-lowercase.py` (Python leaves once the C# suite and its two S9 scripts go, R7) | `curl` shell-out (R8) |
 | 14 | Bayān | `install-textmate.ps1` (PowerShell leaves) | per S10 |
 
 ## Decisions (user, 2026-11-02)
@@ -163,13 +163,14 @@ rule of no abbreviations. Nothing below is built before its first port (R4 now r
 | S3 | `std.regex`, RE2-style: classes, `\d\s\w`, anchors, groups, `?*+{m,n}`, alternation, lazy quantifiers; no backreferences or lookaround; linear time. Members as proposed: `Regex.parse(pattern) fails RegexError`, `matches`, `find → Match?`, `findAll`, `replaced(text, by:)`, `Match.group(i)`, `Match.span`, `Regex.escaped(text)`. |
 | S4 | Path strings now, under `uses fs`: `bool exists(string path)`, `void createDirectory(string path, bool parents = true) fails IoError`, `void rename(string from, string to) fails IoError`, `string canonical(string path) fails IoError` (symlinks resolved). The same verbs later on capability `Dir` handles. |
 | S5 | `List<string> glob(string pattern) uses fs` in `std.fs` (`**`, `*`, `?`, `[…]`, `{a,b}`; sorted; `/` separators); pure `bool Glob.matches(string pattern, string path)` in `std.path`. |
-| S6 | Named arguments on `run`: `run(program, args, directory: string? = none, input: ReadOnlySpan<u8>? = none, env: Map<string, string>? = none)`. The environment is inherited; `env:` entries are added over it (assumed; confirm at the `replay` port). No `Command` builder. |
+| S6 | Named arguments on `run`: `run(program, args, directory: string? = none, input: ReadOnlySpan<u8>? = none, env: Map<string, string>? = none)`. The environment is inherited; `env:` entries are added over it (user, 2026-11-02). A clean-environment switch (`inheritEnv: false`) is added only when a port needs one. No `Command` builder. |
 | S7 | `std.json` in layers: a pull reader first, the tree (`JsonValue`: null, bool, number as `f64` plus its text, string, list, object in key order) built on the reader, `Json.encode(JsonValue v, i32 indent = 0)`; struct derivation later, on the reader. Decoded values are `Untrusted`. |
 | S8 | Parity on float fields compares numbers, not bytes; `tests/quality-baseline.json` changes once when its writer moves (`1.0` → `1`). Measured on the pinned build: `5.0 / 6.0` → `0.8333333333333334`, `0.1 + 0.2` → `0.30000000000000004` (both as Python), `1.0` → `1`, `1e21` → `1e21` (Python `1e+21`). `1.0 → 1` is logged for round 4 (`docs/bayan-design-round-4-draft.md` §3). |
-| S9 | `kit.xml` only if the known-failures script outlives the C# test suite; confirm with the user before building it. Both XML readers (`known-failures.py` over `.trx`, `cobertura_to_quality.py` over coverlet output) serve the C# suite, which self-hosting retires. |
+| S9 | `kit.xml` is not built (user, 2026-11-02): `known-failures.py` and `cobertura_to_quality.py` are not ported and are deleted with the C# test suite; R7 (no `python` in CI) holds from that commit. Both XML readers (`known-failures.py` over `.trx`, `cobertura_to_quality.py` over coverlet output) serve the C# suite, which self-hosting retires. |
 | S10 | `install-textmate.ps1` is ported to Bayān (Windows then needs only `bayan`), using S4. |
 | S11 | `docs/assets/artifact.js` is on the Keep list. |
 | S12 | `Base64` lives in `std.encoding` with `Hex` (settles tiers Q3). |
+| S13 | `mutation-exempt` is ported to Bayān with string members only (`lines`, `position`, slices, `i64.tryParse`), not with `std.regex` and not to awk (user, 2026-11-02). `std.regex` (S3) arrives with the first later port that needs it. |
 | D1 | The macOS 10x timing test stays as it is (green three runs in a row). |
 | D2 | The .NET SDK stays pinned exactly (10.0.403, sha512) with a monthly reminder to bump the patch. |
 | D3 | The `bayan new --ci github` template moves to `actions/checkout@v5` now: the scaffolder is CLI code that 010 does not port, so this is an A1 exception the user granted. |
@@ -197,7 +198,6 @@ every file written.
 | coverage-gate | merge bases of the last 10 010 landings with their reports | bytes |
 | stryker/cobertura-to-quality | `scripts/quality/fixtures/` plus one real Stryker and Cobertura report | JSON: bytes, or parsed-equal if S8 says so |
 | replay | a recorded snapshot from `guard.test.sh`, with and without a mutant | exit code, stdout, stderr per record |
-| known-failures | `known-failures.test.sh` cases; the latest Windows `.trx` from CI | bytes; exit code |
 | gen-lowercase | `UnicodeData.txt` 16.0.0 (the script's `UNICODE_VERSION`) from `tmp/ucd-16.0.0/`; then a fresh download | regenerated `bayan-rt.c` bytes |
 | install-textmate | a scratch `USERPROFILE` | file tree and bytes |
 
@@ -212,7 +212,7 @@ mutants), `gen-lowercase` (needs the Unicode download), the report-paths and man
 ## Acceptance criteria
 - Given the repo after port 14, when searching by extension and shebang, then only the Keep list remains non-Bayān,
   non-shell (R2).
-- Given CI after the last port, then no step runs `python`, `python3` or `deno` (R7).
+- Given CI after the last port and the C# suite's retirement (S9), then no step runs `python`, `python3` or `deno` (R7).
 - Given a port, when its parity check runs, then every recorded input matches (R6), and its commit removes the old script (R5).
 - Given a working tree whose compiler is broken, when a gate runs a port, then it runs the pinned build (R1).
 
@@ -221,8 +221,6 @@ mutants), `gen-lowercase` (needs the Unicode download), the report-paths and man
   only until the original is deleted, so a parity check, not a law.
 
 ## Open questions
-- S9: does `known-failures` (and `cobertura-to-quality`) outlive the C# suite? If not, both retire with it and
-  `kit.xml` is not built.
 - Conflicts found: the handoff's paths `GRAMMAR.md`, `HANDOFF.md`, `bootstrap/`, `npm run lsp`, `npm run grammar` and
   `tests/lsp-regress.js` do not exist here (the first two are `docs/bayan-grammar.md`, `docs/bayan-handoff.md`; the
   rest have no counterpart, so nothing to port).
