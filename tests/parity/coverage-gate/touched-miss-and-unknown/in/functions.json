@@ -1,0 +1,1 @@
+{"version": 1, "files": {"selfhost/semantics/a.byn": [{"span": [1, 4], "lines": [1, 2], "branches": [0, 1]}, {"span": [6, 9], "lines": [0, 2], "branches": [1, 3]}]}}

@@ -1,0 +1,1 @@
+{"version": 1, "files": {"src/A.cs": [{"span": [1, 6], "lines": [2, 2], "branches": [1, 2]}, {"span": [4, 5], "lines": [1, 2], "branches": [0, 0]}], "src/B.cs": [{"span": [1, 4], "lines": [1, 1], "branches": [2, 2]}]}}

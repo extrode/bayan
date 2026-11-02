@@ -1,0 +1,1 @@
+{"version": 1, "kind": "coverage", "files": [{"path": "selfhost/semantics/a.byn", "lines": {"covered": 1, "total": 1, "missed": [], "unknown": []}, "branches": {"covered": 0, "total": 0, "missed": [], "unknown": []}, "errorPaths": []}]}

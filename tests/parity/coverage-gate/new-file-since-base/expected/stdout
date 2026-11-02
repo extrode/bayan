@@ -1,0 +1,2 @@
+coverage: selfhost/semantics/b.byn: touched functions: lines 0/1, branches 0/0 (listing: tmp/guard-run/coverage/selfhost/semantics/b.byn.cov.txt)
+- coverage: missed line selfhost/semantics/b.byn:2; no test under --filter runs it; add a C# oracle case that does
