@@ -1,10 +1,10 @@
 # 015 — Bayān tooling: replace Python, Deno and other non-Bayān scripts
-Status: draft
+Status: decided (2026-11-02); ports wait for 012 (S1)
 Created: 2026-11-02
 
 Sources: `docs/handoffs/2026-11-02-spec-015-tooling.md` (the handoff, filed as 015 because 014 is the `Path` module) and
 `docs/bayan-library-tiers.md` (library placement; it wins over the handoff). Decisions T1–T4 there are settled and not
-re-proposed here. Porting starts after spec 010 lands (T3); this document is for the user to approve before `/tasks`.
+re-proposed here. Porting starts after 012 passes (S1, which updates T3's "after 010"); the decisions are below.
 
 ## Problem
 Building, testing and gating Bayān needs Python 3 (11 scripts plus 3 inline blocks), Deno (1 script and its test),
@@ -86,10 +86,10 @@ the rest is sequencing.
 | `upload-artifact`, `download-artifact` | Keep | no supported shell equivalent (§4) |
 | `scripts/pinned-bayan.sh`, `install-zig.sh`, `install-dotnet.sh` | Keep (shell) | run before any `bayan` exists (§4) |
 | Stryker, `scripts/quality/mutate.sh`, `tools/Bayan.UnicodeGen` | Keep | C#-side tooling, leaves with self-hosting (§4 "C# compiler and its tests") |
-| `docs/assets/artifact.js` | Keep | runs in the reader's browser; owned by `~/.claude` (not in §4: question S11) |
+| `docs/assets/artifact.js` | Keep | runs in the reader's browser; owned by `~/.claude` (S11) |
 | `guard.sh`, `land.sh`, `mutation-step.sh`, `coverage.sh`, the `*.test.sh` files | Shell | sequencing; their callers switch to the ports |
 | `mutate-batch.sh` | Shell, after its inline Python moves into a Bayān port (`tools/mutate-plan.byn`) | |
-| `install-textmate.ps1` | Shell (question S10) | 3 file copies; or Bayān so Windows needs no bash |
+| `install-textmate.ps1` | Bayān (S10) | 3 file copies; Windows then needs only `bayan` |
 | All 11 `.py` files and the 3 inline blocks | Bayān | parsing (JSON, XML, Markdown task lists, diffs) and decisions |
 | `plan-strings-check.js` (+ its test) | Bayān | reads C# sources and a plan, regex matching |
 
@@ -99,7 +99,7 @@ the rest is sequencing.
 - R2 After the last port, the repo holds no `.py`, Deno or PowerShell file and no `.js` outside the Keep list.
 - R3 Each library API a port adds is in the module the tiers doc names, declares its effects, takes outside data as
   `Untrusted<T>`, calls libc only through `rt`, and has `std.test` tests and doc comments; nothing a port does not use.
-- R4 No new public API is written before the user approves its question (below).
+- R4 No new public API is written before the user approves its shape (*Decisions* below records the approved ones).
 - R5 A port replaces its script in one commit: callers (CI, shell, docs) switch, the old script and its test go.
 - R6 A port lands only after its parity check (below) passes on every recorded input, the old script's test cases among them.
 - R7 When the last user of Python, Deno or PowerShell goes, that runtime leaves CI and the setup docs in the same commit.
@@ -109,7 +109,7 @@ the rest is sequencing.
 
 ## APIs per port
 Status: **Exists** = v0.1 builtin in the compiler today; **Spec-only** = in the language spec, not built; **New** = in
-neither, needs a question below; **015-path** = specified by spec 014 (`Path`), built there.
+neither, needs a question below; **014-path** = specified by spec 014 (`Path`), built there.
 
 | API | Module (tiers doc) | Status | First port |
 | --- | --- | --- | --- |
@@ -119,7 +119,7 @@ neither, needs a question below; **015-path** = specified by spec 014 (`Path`), 
 | `run(program, args)` → `exitCode`, `stdout`, `stderr` | `std.process` | Exists | `guard-checks` |
 | string members: `lines`, `parts`, `trimmed`, `position`, `replaced`, `joined`, slices | `core` | Exists (v0.1 set) | all |
 | `List`, `Map`, stable `sort` | `std.collections` | Exists (in part) | all |
-| `Path.combine`, `fileName`, `directoryName`, `isRooted`, `fullPath`, `relative` | `std.path` | 015-path (spec 014) | `review-brief` |
+| `Path.combine`, `fileName`, `directoryName`, `isRooted`, `fullPath`, `relative` | `std.path` | 014-path (spec 014) | `review-brief` |
 | environment variable read | `std.env` | New (S2) | `wave-brief` |
 | regex match, search, find-all, replace, escape | `std.regex` | New (S3) | `mutation-exempt` |
 | file exists, mkdir, rename, real path (symlinks resolved) | `std.fs` | Spec-only, API New (S4) | `wave-brief` |
@@ -152,42 +152,35 @@ Easiest first; each New API arrives with the first port that needs it. Group by 
 | 13 | `gen-lowercase.byn` | `gen-lowercase.py` (Python leaves, R7) | `curl` shell-out (R8) |
 | 14 | shell or Bayān | `install-textmate.ps1` (PowerShell leaves) | per S10 |
 
-## Spec questions (for the user)
-Signatures use current syntax; each is a proposal, nothing is written before approval (R4).
+## Decisions (user, 2026-11-02)
+The questions S1–S12 and D1–D4 were answered on 2026-11-02. Signatures are the approved shapes; names follow the house
+rule of no abbreviations. Nothing below is built before its first port (R4 now reads: built as approved here).
 
-- **S1 Where library source lives and how a script imports it.** No `std/` or `kit/` source exists in the repo, and
-  v0.1 has no `import std.x` resolution. Proposal: `lib/std/<module>/*.byn` and `lib/kit/<module>/*.byn`, resolved by
-  the compiler for `import std.regex`; `core` stays in the compiler and runtime. This touches the compiler, so it needs
-  A1 clearance or waits for self-hosting. Alternative: each port vendors what it needs until imports exist (rejected by
-  T1's "homes fixed now" unless you prefer it).
-- **S2 `std.env`.** `string? Env.get(string name) uses env` (absent → `none`); value is `Untrusted<string>`?
-  Proposal: returns `Untrusted<string>?`; no `set`.
-- **S3 `std.regex`.** `Regex.parse(string pattern) fails RegexError`; members `matches(text)` (whole), `find(text) → Match?`,
-  `findAll(text)`, `replaced(text, by:)`, `Match.group(i)`/`.span`; static `Regex.escaped(text)`. Syntax: the subset
-  the ports use (classes, `\d\s\w`, anchors, groups, `?*+{m,n}`, alternation, lazy quantifiers); RE2-style, no
-  backreferences, linear time. Comptime compile of literal patterns later.
-- **S4 `std.fs` basics.** `bool exists(string path) uses fs`, `void makeDir(string path, bool parents = true) uses fs fails IoError`,
-  `void rename(string from, string to) uses fs fails IoError`, `string realPath(string path) uses fs fails IoError`.
-  Path-string API now; capability `Dir` handles later (tiers doc §5) — or wait for `Dir`?
-- **S5 `std.fs` globbing.** `List<string> glob(string pattern) uses fs` (`**`, `*`, `?`, `[…]`, `{a,b}`, sorted, `/`
-  separators) and pure `bool Glob.matches(string pattern, string path)` (fnmatch rules). Home: `std.fs` for `glob`,
-  `std.path` for `matches`?
-- **S6 `std.process` options.** Named arguments on `run`: `run(program, args, cwd: string? = none, stdin: ReadOnlySpan<u8>? = none)`;
-  env always inherited. Or a `Command` builder?
-- **S7 `std.json`.** Reading needs decoders (spec §11, spec-only). Proposal for the ports: a tree reader now,
-  `JsonValue Json.decode(Untrusted<string> text) fails JsonError` with `JsonValue` a union (null, bool, number as `f64`
-  and raw text, string, list, object keeping key order), plus `string Json.encode(JsonValue v, i32 indent = 0)`;
-  struct derivation `@derive(Json)` comes in v0.2. Accept a tree API in `std.json`, or wait for derivation?
-- **S8 `f64` text form.** Quality ratios are written by Python as `repr(float)` (shortest round-trip, e.g. `0.8333333333333334`, `1.0`).
-  Does `string(x)` for `f64` already give shortest round-trip, and is `1.0` vs `1` acceptable? If not, parity on these
-  fields is a normalized (numeric) compare, not bytes.
-- **S9 `kit.xml`** (tiers Q9). `XmlReader.open(Untrusted<string> text)` with `moveNext()` over start/end/text events,
-  `name`, `attribute(name) → string?`; no DTDs, five entities, no external entities. Confirm `kit` placement and scope.
-- **S10 `install-textmate.ps1`.** Port to `bayan run` (Windows users then need only `bayan`), keep as PowerShell, or a
-  `.sh`? Proposal: Bayān, using S4.
-- **S11 `docs/assets/artifact.js`.** Browser code synced from `~/.claude/tools/html/`. Proposal: Keep, added to the Keep
-  list (it is not tooling and runs in no build).
-- **S12 Base64 module** (tiers Q3): `std.encoding` proposed. Needed only by `replay`.
+| # | Decision |
+| --- | --- |
+| S1 | **Wait for self-hosting (option B).** Library source, `import std.x` and new runtime builtins land after 012 passes (A1). Prep now: this spec, the CI chore (§5.1), shell-only ports, parity baselines (`tests/parity/`). Revisit option A (a narrow A1 exception) if 011 + 012 run past 4 weeks; see *Timing* below. |
+| S2 | `Untrusted<string>? Env.get(string name) uses env` (absent → `none`); no `set`. `run` takes `env:` (S6). |
+| S3 | `std.regex`, RE2-style: classes, `\d\s\w`, anchors, groups, `?*+{m,n}`, alternation, lazy quantifiers; no backreferences or lookaround; linear time. Members as proposed: `Regex.parse(pattern) fails RegexError`, `matches`, `find → Match?`, `findAll`, `replaced(text, by:)`, `Match.group(i)`, `Match.span`, `Regex.escaped(text)`. |
+| S4 | Path strings now, under `uses fs`: `bool exists(string path)`, `void createDirectory(string path, bool parents = true) fails IoError`, `void rename(string from, string to) fails IoError`, `string canonical(string path) fails IoError` (symlinks resolved). The same verbs later on capability `Dir` handles. |
+| S5 | `List<string> glob(string pattern) uses fs` in `std.fs` (`**`, `*`, `?`, `[…]`, `{a,b}`; sorted; `/` separators); pure `bool Glob.matches(string pattern, string path)` in `std.path`. |
+| S6 | Named arguments on `run`: `run(program, args, directory: string? = none, input: ReadOnlySpan<u8>? = none, env: Map<string, string>? = none)`. The environment is inherited; `env:` entries are added over it (assumed; confirm at the `replay` port). No `Command` builder. |
+| S7 | `std.json` in layers: a pull reader first, the tree (`JsonValue`: null, bool, number as `f64` plus its text, string, list, object in key order) built on the reader, `Json.encode(JsonValue v, i32 indent = 0)`; struct derivation later, on the reader. Decoded values are `Untrusted`. |
+| S8 | Parity on float fields compares numbers, not bytes; `tests/quality-baseline.json` changes once when its writer moves (`1.0` → `1`). Measured on the pinned build: `5.0 / 6.0` → `0.8333333333333334`, `0.1 + 0.2` → `0.30000000000000004` (both as Python), `1.0` → `1`, `1e21` → `1e21` (Python `1e+21`). `1.0 → 1` is logged for round 4 (`docs/bayan-design-round-4-draft.md` §3). |
+| S9 | `kit.xml` only if the known-failures script outlives the C# test suite; confirm with the user before building it. Both XML readers (`known-failures.py` over `.trx`, `cobertura_to_quality.py` over coverlet output) serve the C# suite, which self-hosting retires. |
+| S10 | `install-textmate.ps1` is ported to Bayān (Windows then needs only `bayan`), using S4. |
+| S11 | `docs/assets/artifact.js` is on the Keep list. |
+| S12 | `Base64` lives in `std.encoding` with `Hex` (settles tiers Q3). |
+| D1 | The macOS 10x timing test stays as it is (green three runs running). |
+| D2 | The .NET SDK stays pinned exactly (10.0.403, sha512) with a monthly reminder to bump the patch. |
+| D3 | The `bayan new --ci github` template moves to `actions/checkout@v5` now: the scaffolder is CLI code that 010 does not port, so this is an A1 exception the user granted. |
+| D4 | Script mode imports `kit` explicitly; no auto-import (tiers Q10 dropped). |
+
+### Timing
+010 finished on 2026-11-01 (`Status: done`). A1 holds until 012 passes, so porting waits for 011 (lowering and the C
+emitter: about 4,580 C# lines, matched on 269 `run/` goldens; spec drafted, no plan yet) and 012 (driver and bootstrap;
+not yet specified). 010 took 6 days for 40 tasks. Estimate: 011 in 7–10 days, 012 in 5–7, so porting starts around
+2026-11-20 to 2026-11-23, about 3 weeks out, under the 4-week bound. Check on 2026-11-16: if 011 has not landed, put
+option A back to the user.
 
 ## Parity plan
 One check per port, run before it lands: old script and port on the same inputs, comparing exit code, stdout, stderr and
@@ -208,8 +201,13 @@ every file written.
 | gen-lowercase | `UnicodeData.txt` 16.0.0 (the script's `UNICODE_VERSION`) from `tmp/ucd-16.0.0/`; then a fresh download | regenerated `bayan-rt.c` bytes |
 | install-textmate | a scratch `USERPROFILE` | file tree and bytes |
 
-The parity runner is a shell script per group (`scripts/parity/<group>.sh`), deleted with the old script in the port's
-commit (R5); its last run's output goes into this spec's port record.
+Baselines are recorded now, while the originals run (S1 prep): `tests/parity/<tool>/<case>/` holds a case's inputs and
+the original's exit code, stdout, stderr and resulting files; `scripts/parity/run.sh <tool> [--impl '<port>']` replays
+them (`--record` writes them, from the original only), and `scripts/parity/run.test.sh` in CI keeps them true against the
+originals. A port passes `--impl "$(scripts/pinned-bayan.sh) run tools/<name>.byn"`; its commit deletes the original and
+its `impl` line points at the port (R5). The last run's output goes into this spec's port record. `replay` (needs built
+mutants), `gen-lowercase` (needs the Unicode download), the report-paths and manifest blocks (not runnable alone) and
+`install-textmate` are recorded at their port.
 
 ## Acceptance criteria
 - Given the repo after port 14, when searching by extension and shebang, then only the Keep list remains non-Bayān,
@@ -223,7 +221,8 @@ commit (R5); its last run's output goes into this spec's port record.
   only until the original is deleted, so a parity check, not a law.
 
 ## Open questions
-- S1–S12 above. S1 (library location and imports) gates everything else.
+- S9: does `known-failures` (and `cobertura-to-quality`) outlive the C# suite? If not, both retire with it and
+  `kit.xml` is not built.
 - Conflicts found: the handoff's paths `GRAMMAR.md`, `HANDOFF.md`, `bootstrap/`, `npm run lsp`, `npm run grammar` and
   `tests/lsp-regress.js` do not exist here (the first two are `docs/bayan-grammar.md`, `docs/bayan-handoff.md`; the
   rest have no counterpart, so nothing to port).

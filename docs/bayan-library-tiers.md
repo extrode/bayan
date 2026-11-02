@@ -6,7 +6,7 @@ Nov 2, 2026
 
 This doc is the single source of truth for where every Bayān library API lives: `core`, `std`, `kit`, an official package, or the ecosystem. It has two jobs:
 
-1. **Now:** guide spec 014, which replaces the repo's Node, Python, Deno and other non-Bayān tooling with Bayān or shell, adding library code only in its proper home.
+1. **Now:** guide spec 015, which replaces the repo's Node, Python, Deno and other non-Bayān tooling with Bayān or shell, adding library code only in its proper home.
 2. **Later:** be the reference for building the libraries themselves.
 
 It consolidates the stdlib chat (Oct 22), round 3 and revisions 0002, 0003, 0007 and 0015, the packages, concurrency, codegen and markup designs (Nov 1), and the tooling decisions of Nov 2.
@@ -87,9 +87,9 @@ The v0.1 set is deliberately small. Everything else in revision 0003 (words, gra
 
 ## 5. `std` catalog
 
-The **014** column marks modules the tooling ports are expected to need first; they grow only as far as a port requires (§12).
+The **015** column marks modules the tooling ports are expected to need first; they grow only as far as a port requires (§12).
 
-| Module | Contents (full intended scope) | Effect | Status | 014 |
+| Module | Contents (full intended scope) | Effect | Status | 015 |
 | --- | --- | --- | --- | --- |
 | `std.alloc` | `General` (default for `main`), `Arena`, `Pool`, `FixedBuffer`, leak-checking test allocator | `alloc` | spec | |
 | `std.collections` | `List`, `Map`, `Set`, `Deque`, `PriorityQueue`, `BitSet`, inline/small-buffer list (`InlineList<T, N>` needs const generics); members `append`/`prepend`, `add` for sets, `get(at:)` behind `[]` (traps), `tryGet(at:)`, `remove(at:)`, `remove(from:until:)`/`(from:through:)`, `replace(at:by:)`, stable `sort`; map literals | `alloc` | v0.1 in part | yes |
@@ -125,7 +125,7 @@ The **014** column marks modules the tooling ports are expected to need first; t
 
 `kit` ships with the toolchain and is versioned separately. Every module here can revise its API without an edition bump.
 
-| Module | Contents | Depends on | Status | 014 |
+| Module | Contents | Depends on | Status | 015 |
 | --- | --- | --- | --- | --- |
 | `kit.http` | HTTP/1.1 and HTTP/2 client and server, routing primitives, timeouts required, resilience (timeout, retry, circuit breaker); `HeaderValue` sink type; per-worker connection ownership | `kit.tls`, `kit.mime` | spec | yes (see §12.5) |
 | `kit.tls` | TLS client and server; the CA root store ships here, not frozen | `std.crypto` | spec; backend Open (Q8) | indirectly |
@@ -217,7 +217,7 @@ In `package.byn`, a dependency gets `uses:` grants; a consumer's grant must cove
 
 ## 9. Priority order
 
-Ordered by what unblocks what: language and `core` first, then `std` for scripts and CLIs (the fastest dogfooding path, and what spec 014 needs), then `std` services, then `kit`. Within a tier, real consumers pull work forward; nothing is built speculatively.
+Ordered by what unblocks what: language and `core` first, then `std` for scripts and CLIs (the fastest dogfooding path, and what spec 015 needs), then `std` services, then `kit`. Within a tier, real consumers pull work forward; nothing is built speculatively.
 
 **P0: language and `core`**
 
@@ -229,7 +229,7 @@ Ordered by what unblocks what: language and `core` first, then `std` for scripts
 | 4 | Text | `core` strings and `format`, then `std.text`, `std.regex` | Commons Lang, regex, memchr |
 | 5 | Platform and FFI | `std.c` | libc, windows-sys, System.Memory shims |
 
-**P1: `std` for scripts and CLIs (spec 014 lives here)**
+**P1: `std` for scripts and CLIs (spec 015 lives here)**
 
 | # | Category | Home | Replaces |
 | --- | --- | --- | --- |
@@ -280,7 +280,7 @@ Ordered by what unblocks what: language and `core` first, then `std` for scripts
 | 35 | Arrays | official ndarray package | NumPy |
 | 36 | Cloud SDKs | ecosystem | AWSSDK, boto3 |
 
-Spec 014 pulls a few P3 and P4 items forward (`kit.xml` for test reports, possibly `kit.http`). They keep their `kit` home; only their timing changes.
+Spec 015 pulls a few P3 and P4 items forward (`kit.xml` for test reports, possibly `kit.http`). They keep their `kit` home; only their timing changes.
 
 ## 10. Interop strategy (Decided)
 
@@ -293,7 +293,7 @@ C is the only first-class, live interop, through `std.c`. Everything else goes t
 | .NET libraries used live | export from NativeAOT with `[UnmanagedCallersOnly(EntryPoint = …)]` and call through `std.c` | any time | fills early library gaps at the edges, accepting the .NET runtime cost there |
 | Python | no embedding and no lowering | — | numpy, pandas and similar are written against the CPython API |
 | What Python libraries wrap | bind the native engine directly: BLAS/LAPACK (numpy linalg), Apache Arrow and DuckDB (pandas, polars), ONNX Runtime and llama.cpp (inference), SQLite, zlib, OpenSSL; PyTorch via ONNX export | as needed | no Python dependency |
-| Your own Python, Deno, Node scripts | rewrite in Bayān or shell (spec 014) | after 010 | better result than any automatic conversion |
+| Your own Python, Deno, Node scripts | rewrite in Bayān or shell (spec 015) | after 010 | better result than any automatic conversion |
 
 The C# translator converts the clean subset (structs, records, static methods, `Span`, `stackalloc`, pattern matching, most LINQ, `async` with coloring dropped) automatically. Exceptions translate only partly, since `fails` needs to know which errors flow where. Zero-allocation, span-based C# translates best; Jaunty and the user's other libraries are the first test corpus.
 
@@ -326,7 +326,7 @@ The download rankings (NuGet, crates.io, PyPI, Maven, npm, Go modules; researche
 
 Further design points from the same research, all adopted or proposed above: effects replace mocking libraries; effects plus `provide` replace DI containers; one derivation serves many formats through `std.codec`; every `std` signature shows its allocation contract; capability-based filesystem; `std` is the grammar reference; no micro-packages; a `kit` lifecycle policy.
 
-## 12. Spec 014: replacing non-Bayān tooling
+## 12. Spec 015: replacing non-Bayān tooling
 
 Goal: every script and tool in the repo is Bayān or shell, except where a host platform requires another language. Library additions land in their proper home from the start, even if that home stays incomplete.
 
@@ -336,7 +336,7 @@ Goal: every script and tool in the repo is Bayān or shell, except where a host 
 | --- | --- | --- | --- |
 | T1 | Std scope | **Per port, homes fixed now.** Add only what the script being ported needs, in the module this doc names. Each new public API goes to the user as a spec question. | Smallest surface, nothing built ahead of need, nothing thrown away (no hand-parsed XML) |
 | T2 | Which `bayan` runs the tooling | **Pinned build.** Build `bayan` from the last `dev` merge into a cache keyed by that commit; gates (guard, land) and tooling use it, never the working tree. | A broken compiler change cannot disable the gate meant to catch it |
-| T3 | Timing | **Write spec 014 now; port after 010 lands.** 014 does not interrupt 013 T19. | Std additions are then written once, in Bayān, instead of in C# and ported again in 010 |
+| T3 | Timing | **Write spec 015 now; port after 010 lands.** 015 does not interrupt 013 T19. | Std additions are then written once, in Bayān, instead of in C# and ported again in 010 |
 | T4 | CI JS actions | **Replace now:** `actions/checkout` → `git clone`/`fetch` in a shell step; `actions/setup-dotnet` → pinned `dotnet-install.sh`. Keep `upload-artifact`/`download-artifact`. | Removes 2 of 4 Node actions; GitHub artifacts need the official actions |
 
 Conditions on T4: authenticate `git` with `GITHUB_TOKEN` when the repo is private and set the fetch depth explicitly; verify `dotnet-install.sh` by SHA-256 (or vendor it) instead of piping a live download into the shell.
@@ -350,7 +350,7 @@ Conditions on T4: authenticate `git` with `GITHUB_TOKEN` when the repo is privat
 | VS Code extension | TypeScript/JavaScript | VS Code loads extensions only as JS |
 | Visual Studio provider | C# | Visual Studio SDK |
 | `upload-artifact`, `download-artifact` | GitHub JS actions | no supported shell equivalent |
-| C# compiler and its tests until 012 | C# | self-hosting replaces them; out of 014's scope |
+| C# compiler and its tests until 012 | C# | self-hosting replaces them; out of 015's scope |
 
 Everything else is a candidate. Tests and generators around the editor tooling (for example `npm run lsp`, `npm run grammar`, `tests/lsp-regress.js`) are candidates, since they only need `std.process`, `std.json` and `std.fs`.
 
@@ -378,7 +378,7 @@ Everything else is a candidate. Tests and generators around the editor tooling (
 
 ### 12.5 The HTTP gap
 
-A native `kit.tls` is a large job and must not block 014. Until it exists, a ported script that fetches over HTTPS calls `curl` through `std.process`, and the port records that as a tracked todo. The alternative, backing `kit.tls` with a C library through `std.c` first, is a separate decision (Q8).
+A native `kit.tls` is a large job and must not block 015. Until it exists, a ported script that fetches over HTTPS calls `curl` through `std.process`, and the port records that as a tracked todo. The alternative, backing `kit.tls` with a C library through `std.c` first, is a separate decision (Q8).
 
 ### 12.6 Pinned build details
 
@@ -397,14 +397,14 @@ The agent asks before touching any of these.
 | --- | --- | --- | --- |
 | Q1 | Database module names | Round 3: `std.db`. Stdlib chat: `kit.sql` + `kit.sqlite`, `kit.postgres`. Packages doc: `kit.db.pg`. | Interfaces in `std.db` (rule 4: facades in `std`); drivers as `kit.db.sqlite`, `kit.db.pg`. Retire `kit.sql`. |
 | Q2 | Crypto scope in `std` | Stdlib chat put all of it in `std` but left it open. | Hashes, HMAC and CSPRNG in `std` (frozen algorithms). Decide AEAD, signatures and Argon2 before P2 #19. |
-| Q3 | Byte-codec module name | Stdlib chat: `std.encoding`. Round 3 (J83): "`Hex` and `Base64` are `std` codecs", no module named. | One module, `std.encoding`, holding `Hex`, `Base64`, varint; `Utf16` stays in `std.text`, `Utf8` in `core`. |
+| Q3 | Byte-codec module name (settled Nov 2: `std.encoding`) | Stdlib chat: `std.encoding`. Round 3 (J83): "`Hex` and `Base64` are `std` codecs", no module named. | One module, `std.encoding`, holding `Hex`, `Base64`, varint; `Utf16` stays in `std.text`, `Utf8` in `core`. |
 | Q4 | Unicode case tables | Rev 0003: full case mapping in `std.text` after v0.1. Rev 0015: `lowercased()` with tables from `UnicodeData.txt`, added to the compiler now. | Tables generated into `core` (classification and simple case mapping); folding, special casing and normalization in `std.text`. Confirm rev 0015's scope. |
 | Q5 | Legacy encodings | Rev 0003: "`kit` (`kit.intl`, `Latin1` and other encodings)". | Separate `kit.encoding`; culture and encodings are different concerns. |
 | Q6 | `kit.template` | Stdlib chat proposed it; Nov 1 markup design covers HTML through markup and content files through generators. | Drop `kit.template`. |
 | Q7 | `Event<T>` home | Spec §16, spec-only, no module. | `core` if it needs no allocator; otherwise `std.event`. Decide when implemented. |
 | Q8 | `kit.tls` backend | Not discussed. | Native Bayān long-term. Short-term, decide between a C library via `std.c` (fast, adds a `.native` dependency) and `curl` shell-outs (§12.5). |
-| Q9 | `kit.xml` | New on Nov 2. | Confirm `kit` placement and the pull-reader-first scope. |
-| Q10 | Script mode auto-imports `kit` | Proposed in the stdlib chat, never confirmed. | Confirm or drop. |
+| Q9 | `kit.xml` | New on Nov 2. Spec 015 S9 (Nov 2): build it only if the known-failures script outlives the C# test suite; confirm first. | Confirm `kit` placement and the pull-reader-first scope. |
+| Q10 | Script mode auto-imports `kit` (dropped Nov 2: scripts import explicitly) | Proposed in the stdlib chat, never confirmed. | Confirm or drop. |
 | Q11 | `std.config` | Proposed; overlaps with `std.cli` and `std.env`. | Keep as a thin binder over both; confirm before P1 #13. |
 | Q12 | Operator forms, const generics, SIMD | Needed by ndarray, `InlineList<T, N>`, crypto blocks. | Round 4 or later; spec text not settled. |
 
@@ -414,7 +414,8 @@ Newest first.
 
 | Date | Decision | Source |
 | --- | --- | --- |
-| Nov 2 | Spec 014 decisions T1–T4 (§12.1); `kit.xml` proposed | this doc |
+| Nov 2 | Spec 015 answers S1–S12, D1–D4: ports wait for 012; `std.env`, `std.regex` (RE2-style), `std.fs` path-string verbs (`createDirectory`, `canonical`), `run(directory:, input:, env:)`, layered `std.json`; Q3 settled (`std.encoding`), Q10 dropped, Q9 conditional | `docs/specs/015-tooling/015-spec.md` *Decisions* |
+| Nov 2 | Spec 015 decisions T1–T4 (§12.1); `kit.xml` proposed | this doc |
 | Nov 1 | `markup` blocks and `@element` are a generic language feature; HTML and UI vocabularies live in `kit.web`, `kit.ui`; `markup` reserved in round 4 | markup design |
 | Nov 1 | Packages: `uses:` grants per dependency, `.native`, versioned modules from `kit`, update cooldown, lockfile hashes | packages design |
 | Nov 1 | Concurrency: thread-per-core, `scope`/`spawn`, implicit cancellation, `ISendable`/`IShareable`, no lock across suspend, `@blocking` and compute offload; v0.2 | concurrency design |
