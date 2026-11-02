@@ -7,7 +7,7 @@
 #              e.g. --impl "$(scripts/pinned-bayan.sh) run tools/mutation-exempt.byn"
 #   --record   write expected/ from this run instead of comparing (only ever with the original script)
 # A case is tests/parity/<tool>/<case>/ holding:
-#   args       arguments, one per line (optional); `$ROOT` in a line becomes the repo root
+#   args       arguments, one per line (optional); `$ROOT` and `$WORK` in a line become the repo root and the work directory
 #   in/        inputs; copied to a scratch directory that becomes the working directory (files in in/bin/ made executable)
 #   stdin      bytes fed on stdin (optional)
 #   env        KEY=VALUE lines added to the environment (optional); `$ROOT`, `$WORK` and `$PATH` expand, so
@@ -50,7 +50,7 @@ for c in "${cases[@]}"; do
   [ -d "$case_dir/in" ] && cp -R "$case_dir/in/." "$work/"
   [ -d "$work/bin" ] && chmod +x "$work/bin"/*  # stubs, whatever mode the checkout gave them
   argv=()
-  if [ -f "$case_dir/args" ]; then while IFS= read -r a || [ -n "$a" ]; do argv+=("${a//\$ROOT/$root}"); done < "$case_dir/args"; fi
+  if [ -f "$case_dir/args" ]; then while IFS= read -r a || [ -n "$a" ]; do a="${a//\$ROOT/$root}"; argv+=("${a//\$WORK/$work}"); done < "$case_dir/args"; fi
   envv=()
   if [ -f "$case_dir/env" ]; then while IFS= read -r e || [ -n "$e" ]; do
     [ -n "$e" ] || continue; e="${e//\$ROOT/$root}"; e="${e//\$WORK/$work}"; envv+=("${e//\$PATH/$PATH}")
