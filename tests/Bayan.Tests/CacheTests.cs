@@ -10,12 +10,7 @@ public sealed class CacheTests
     private static string Root(string name)
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "cache-tests", name);
-        if (Directory.Exists(dir))
-        {
-            // git writes its objects read-only; on Windows Directory.Delete refuses a read-only file, so a second run could not clear the first's repo.
-            foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
-            Directory.Delete(dir, recursive: true);
-        }
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         return dir;
     }

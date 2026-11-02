@@ -19,7 +19,7 @@ public sealed partial class OutputTests
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "output", name);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         var project = Path.Combine(dir, "tally");
         var (exit, _, err) = Run(["new", project, "--vcs", "none", .. options]);

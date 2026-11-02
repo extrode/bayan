@@ -17,7 +17,7 @@ public sealed class ScaffoldTests
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "scaffold", name);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -196,7 +196,7 @@ public sealed class ScaffoldTests
         }
         finally
         {
-            if (Directory.Exists(outside)) Directory.Delete(outside, recursive: true);
+            TestDirs.Delete(outside);
         }
     }
 
