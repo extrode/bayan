@@ -14,7 +14,9 @@ mkdir -p scripts/cleanup tests/Bayan.Tests
 cp "$root/scripts/cleanup/018-superseded-branches.sh" "$root/scripts/cleanup/merged-worktree-backlog.sh" scripts/cleanup/
 printf '    [Fact(Skip = "T28 enables it")]\n    public void A() {}\n' > tests/Bayan.Tests/SelfhostSemanticsTests.cs
 printf 'tmp/\n.worktrees/\n' > .gitignore && git add . && g commit -q -m base
-g branch feat/010-self-hosted-semantics && g worktree add -q .worktrees/feat-010-self-hosted-semantics feat/010-self-hosted-semantics
+gnow() { git -c user.email=t@t -c user.name=t "$@"; }
+# Moved today: only CLEANUP_RECENT_HOURS=0 lets the backlog script take it.
+gnow branch feat/010-self-hosted-semantics && gnow worktree add -q .worktrees/feat-010-self-hosted-semantics feat/010-self-hosted-semantics
 g worktree add -q --detach tmp/wt/t28survey dev
 for f in a.txt b.txt C.txt copy.bin empty.bin input.bin; do echo x > ".worktrees/feat-010-self-hosted-semantics/$f"; done
 s=tmp/wt/t28survey/tests/Bayan.Tests/SelfhostSemanticsTests.cs
@@ -40,4 +42,10 @@ printf '    [Fact]\n    public void A() {}\n' > "$s"
 out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" || fail "clean run failed"
 [ ! -d tmp/wt/t28survey ] || fail "t28survey not removed"
 out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" || fail "a run with nothing left to do failed"
+# A listed name that git tracks and that was changed is not scratch.
+g switch -q -c side && echo x > a.txt && git add a.txt && g commit -q -m tracked && g switch -q dev && g merge -q --no-ff side -m ms
+g worktree add -q .worktrees/feat-010-self-hosted-semantics side && echo changed > .worktrees/feat-010-self-hosted-semantics/a.txt
+out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" && fail "a tracked change was not a failure"
+echo "$out" | grep -q "^refuse: .worktrees/feat-010-self-hosted-semantics/a.txt is not untracked" || fail "tracked change not refused"
+grep -q changed .worktrees/feat-010-self-hosted-semantics/a.txt || fail "a tracked change was discarded"
 cd "$root"; echo ok
