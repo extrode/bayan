@@ -2,6 +2,6 @@ void main() {
     var sb = StrBuf()
     sb.append("a")
     let s = sb.finish()
-    sb.append("b")
+    sb.clear()
     print(s)
 }

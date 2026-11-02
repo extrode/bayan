@@ -479,10 +479,6 @@ internal sealed class RegionAnalysis
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.StrBufInsert or BuiltinMember.ArenaReset:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
-            // Appending may grow the buffer's storage, which `finish()` and `view` point into.
-            case BuiltinMember.StrBufAppend or BuiltinMember.StrBufAppendRepeated:
-                Mutate(b.Receiver, b.Syntax.Span);
-                return Borrow.None;
             default:
                 return args.Aggregate(receiver, (acc, a) => acc.Union(a));
         }
