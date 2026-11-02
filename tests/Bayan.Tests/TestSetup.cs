@@ -36,6 +36,18 @@ internal static class TestSetup
     }
 }
 
+/// <summary>Test scratch directories.</summary>
+internal static class TestDirs
+{
+    /// <summary>Deletes <paramref name="dir"/> if it exists. git writes its objects read-only, and on Windows <c>Directory.Delete</c> refuses a read-only file, so a second run could not clear a repo the first one left.</summary>
+    internal static void Delete(string dir)
+    {
+        if (!Directory.Exists(dir)) return;
+        foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
+        Directory.Delete(dir, recursive: true);
+    }
+}
+
 /// <summary>Child-process text. Only on Windows, where the C runtime's text-mode stdout turns every <c>\n</c> into <c>\r\n</c> (Q742), is <c>\r\n</c> read as <c>\n</c> (the <c>Golden.Compare</c> rule); elsewhere the bytes are kept, so a lost or added <c>\r</c> is still caught.</summary>
 internal static class ProcessText
 {

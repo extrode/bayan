@@ -54,7 +54,7 @@ public sealed partial class CliEnvironmentTests
     private static string Fresh(string name)
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-env", name);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         return dir;
     }

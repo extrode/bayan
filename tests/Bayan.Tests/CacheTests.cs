@@ -10,7 +10,7 @@ public sealed class CacheTests
     private static string Root(string name)
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "cache-tests", name);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        TestDirs.Delete(dir);
         Directory.CreateDirectory(dir);
         return dir;
     }
