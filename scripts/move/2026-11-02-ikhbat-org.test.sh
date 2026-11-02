@@ -185,7 +185,7 @@ SAVE_CH=$CLAUDE_HOME
 CLAUDE_HOME=$EXP mk_claude_state "$NEW_REPO" "$NKEY"
 # the queue transcript paths name CLAUDE_HOME, which the builder wrote as $EXP: normalize
 sed "s|$EXP|$SAVE_CH|g" "$EXP/lessons/queue.jsonl" > "$EXP/q.tmp" && mv "$EXP/q.tmp" "$EXP/lessons/queue.jsonl"
-diff -r -x backups "$CLAUDE_HOME" "$EXP" > /tmp/move-diff.out 2>&1 || { fail "claude home differs from expected:"; head -30 /tmp/move-diff.out; }
+diff -r -x backups "$CLAUDE_HOME" "$EXP" > "$ROOT/tmp/move-diff.out" 2>&1 || { fail "claude home differs from expected:"; head -30 "$ROOT/tmp/move-diff.out"; }
 mk_claude_json "$EXP.json" "$NEW_REPO" ikhbat-org/bayan
 cmp -s "$EXP.json" "$CLAUDE_JSON" || fail ".claude.json differs from expected"
 [ -f "$CLAUDE_HOME/backups/bayan-move-2026-11-02/undo.sh" ] || fail "no undo.sh"
@@ -222,7 +222,7 @@ H0=$(tree_hash)
 run_mv --execute
 [ "$RC" -eq 0 ] || fail "execute before undo: $OUT"
 for i in 1 2; do
-  bash "$CLAUDE_HOME/backups/bayan-move-2026-11-02/undo.sh" > /tmp/move-undo.out 2>&1 || { fail "undo $i failed"; cat /tmp/move-undo.out; }
+  bash "$CLAUDE_HOME/backups/bayan-move-2026-11-02/undo.sh" > "$ROOT/tmp/move-undo.out" 2>&1 || { fail "undo $i failed"; cat "$ROOT/tmp/move-undo.out"; }
   [ "$(tree_hash)" = "$H0" ] || fail "undo $i: tree differs from the start"
   [ -d "$OLD_REPO" ] && [ ! -e "$NEW_REPO" ] || fail "undo $i: repo not back"
   [ "$(git -C "$OLD_REPO" remote get-url origin)" = file:///nonexistent/extrode-bayan.git ] || fail "undo $i: origin not restored"
