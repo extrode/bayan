@@ -433,3 +433,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 013 T27: some T27 reasons may be stale: calls.byn has ported bindCall (Q616), so check the Q607 bindCall and Q616 reasons when T20 closes.
 - wp1 upgraded to zig 0.17.0 on 2026-11-02 (old 0.16.0-dev kept at C:/home/lang/zig-0.16.0-dev.2682, cleanup 016). wlt1 dropped as a T19 host.
 - review 95a0276..91dc882 LOW (confirmed by audit): scripts/ci/known-failures.py a test host crash that leaves only the tests run so far in the trx still exits 0; listed tests that did not run print "not run" only. Decide whether a run-level check (ResultSummary/Counters) should fail it once a real crashed-run trx is in hand.
+- LOW tests/Bayan.Tests/TestSetup.cs WarmUp (review 9bc60735..3bc80e96): on Windows the warm-ups still build `// os: unix` cases the theories skip, spending gate slots; and `Lazy` ExecutionAndPublication caches a transient zig spawn failure as a permanent theory failure (no retry).
