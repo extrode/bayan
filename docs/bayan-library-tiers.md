@@ -293,7 +293,7 @@ C is the only first-class, live interop, through `std.c`. Everything else goes t
 | .NET libraries used live | export from NativeAOT with `[UnmanagedCallersOnly(EntryPoint = …)]` and call through `std.c` | any time | fills early library gaps at the edges, accepting the .NET runtime cost there |
 | Python | no embedding and no lowering | — | numpy, pandas and similar are written against the CPython API |
 | What Python libraries wrap | bind the native engine directly: BLAS/LAPACK (numpy linalg), Apache Arrow and DuckDB (pandas, polars), ONNX Runtime and llama.cpp (inference), SQLite, zlib, OpenSSL; PyTorch via ONNX export | as needed | no Python dependency |
-| Your own Python, Deno, Node scripts | rewrite in Bayān or shell (spec 015) | after 010 | better result than any automatic conversion |
+| Your own Python, Deno, Node scripts | rewrite in Bayān or shell (spec 015) | after 012 passes (015 S1) | better result than any automatic conversion |
 
 The C# translator converts the clean subset (structs, records, static methods, `Span`, `stackalloc`, pattern matching, most LINQ, `async` with coloring dropped) automatically. Exceptions translate only partly, since `fails` needs to know which errors flow where. Zero-allocation, span-based C# translates best; Jaunty and the user's other libraries are the first test corpus.
 
@@ -336,7 +336,7 @@ Goal: every script and tool in the repo is Bayān or shell, except where a host 
 | --- | --- | --- | --- |
 | T1 | Std scope | **Per port, homes fixed now.** Add only what the script being ported needs, in the module this doc names. Each new public API goes to the user as a spec question. | Smallest surface, nothing built ahead of need, nothing thrown away (no hand-parsed XML) |
 | T2 | Which `bayan` runs the tooling | **Pinned build.** Build `bayan` from the last `dev` merge into a cache keyed by that commit; gates (guard, land) and tooling use it, never the working tree. | A broken compiler change cannot disable the gate meant to catch it |
-| T3 | Timing | **Write spec 015 now; port after 010 lands.** 015 does not interrupt 013 T19. | Std additions are then written once, in Bayān, instead of in C# and ported again in 010 |
+| T3 | Timing | **Write spec 015 now; port after 012 passes** (015 S1, 2026-11-02; first said after 010). 015 does not interrupt 013 T19. | Std additions are then written once, in Bayān, instead of in C# and ported again in 010 |
 | T4 | CI JS actions | **Replace now:** `actions/checkout` → `git clone`/`fetch` in a shell step; `actions/setup-dotnet` → pinned `dotnet-install.sh`. Keep `upload-artifact`/`download-artifact`. | Removes 2 of 4 Node actions; GitHub artifacts need the official actions |
 
 Conditions on T4: authenticate `git` with `GITHUB_TOKEN` when the repo is private and set the fetch depth explicitly; verify `dotnet-install.sh` by SHA-256 (or vendor it) instead of piping a live download into the shell.

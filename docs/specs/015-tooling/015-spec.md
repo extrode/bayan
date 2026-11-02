@@ -109,7 +109,7 @@ the rest is sequencing.
 
 ## APIs per port
 Status: **Exists** = v0.1 builtin in the compiler today; **Spec-only** = in the language spec, not built; **New** = in
-neither, needs a question below; **014-path** = specified by spec 014 (`Path`), built there.
+neither, settled under *Decisions*; **014-path** = specified by spec 014 (`Path`), built there.
 
 | API | Module (tiers doc) | Status | First port |
 | --- | --- | --- | --- |
@@ -122,9 +122,9 @@ neither, needs a question below; **014-path** = specified by spec 014 (`Path`), 
 | `Path.combine`, `fileName`, `directoryName`, `isRooted`, `fullPath`, `relative` | `std.path` | 014-path (spec 014) | `review-brief` |
 | environment variable read | `std.env` | New (S2) | `wave-brief` |
 | regex match, search, find-all, replace, escape | `std.regex` | New (S3) | `mutation-exempt` |
-| file exists, mkdir, rename, real path (symlinks resolved) | `std.fs` | Spec-only, API New (S4) | `wave-brief` |
+| `exists`, `createDirectory`, `rename`, `canonical` (symlinks resolved) | `std.fs` | Spec-only, API New (S4) | `wave-brief` |
 | recursive glob / walk; shell-style pattern match (`fnmatch`) | `std.fs` | Spec-only, API New (S5) | `mutate-plan` |
-| `run` with working directory, stdin bytes, inherited env | `std.process` | New (S6) | `replay` |
+| `run` with `directory:`, `input:` bytes, `env:` over the inherited env | `std.process` | New (S6) | `replay` |
 | JSON read (decode to a struct or a tree) and write (2-space indent, Python's `json.dumps(indent=2)` layout) | `std.json` | Spec-only (decoders, §11), API New (S7) | `quality-baseline` |
 | `Base64.decode` | byte codecs, module Open (Q3) | Spec-only (J83) | `replay` |
 | XML pull reader (.trx, Cobertura) | `kit.xml` | New, placement Open (Q9) | `known-failures` |
@@ -146,11 +146,11 @@ Easiest first; each New API arrives with the first port that needs it. Group by 
 | 7 | `mutate-plan.byn`, `report-paths.byn`, manifest listing | the 3 inline blocks | `std.fs` glob/walk |
 | 8 | `coverage-gate.byn` | `coverage-gate.py` | — |
 | 9 | `stryker-to-quality.byn` | `stryker_to_quality.py` | `f64` formatting (S8) |
-| 10 | `replay.byn` | `replay.py` | `run` with cwd/stdin/env, `Base64` |
+| 10 | `replay.byn` | `replay.py` | `run` with `directory:`/`input:`/`env:`, `Base64` |
 | 11 | `known-failures.byn` | `known-failures.py` | `kit.xml` |
 | 12 | `cobertura-to-quality.byn` | `cobertura_to_quality.py` | — |
 | 13 | `gen-lowercase.byn` | `gen-lowercase.py` (Python leaves, R7) | `curl` shell-out (R8) |
-| 14 | shell or Bayān | `install-textmate.ps1` (PowerShell leaves) | per S10 |
+| 14 | Bayān | `install-textmate.ps1` (PowerShell leaves) | per S10 |
 
 ## Decisions (user, 2026-11-02)
 The questions S1–S12 and D1–D4 were answered on 2026-11-02. Signatures are the approved shapes; names follow the house
@@ -158,7 +158,7 @@ rule of no abbreviations. Nothing below is built before its first port (R4 now r
 
 | # | Decision |
 | --- | --- |
-| S1 | **Wait for self-hosting (option B).** Library source, `import std.x` and new runtime builtins land after 012 passes (A1). Prep now: this spec, the CI chore (§5.1), shell-only ports, parity baselines (`tests/parity/`). Revisit option A (a narrow A1 exception) if 011 + 012 run past 4 weeks; see *Timing* below. |
+| S1 | **Wait for self-hosting (option B).** Library source, `import std.x` and new runtime builtins land after 012 passes (A1). Prep now: this spec, the CI chore (handoff §5.1), shell-only ports, parity baselines (`tests/parity/`). Revisit option A (a narrow A1 exception) if 011 + 012 run past 4 weeks; see *Timing* below. |
 | S2 | `Untrusted<string>? Env.get(string name) uses env` (absent → `none`); no `set`. `run` takes `env:` (S6). |
 | S3 | `std.regex`, RE2-style: classes, `\d\s\w`, anchors, groups, `?*+{m,n}`, alternation, lazy quantifiers; no backreferences or lookaround; linear time. Members as proposed: `Regex.parse(pattern) fails RegexError`, `matches`, `find → Match?`, `findAll`, `replaced(text, by:)`, `Match.group(i)`, `Match.span`, `Regex.escaped(text)`. |
 | S4 | Path strings now, under `uses fs`: `bool exists(string path)`, `void createDirectory(string path, bool parents = true) fails IoError`, `void rename(string from, string to) fails IoError`, `string canonical(string path) fails IoError` (symlinks resolved). The same verbs later on capability `Dir` handles. |
@@ -170,7 +170,7 @@ rule of no abbreviations. Nothing below is built before its first port (R4 now r
 | S10 | `install-textmate.ps1` is ported to Bayān (Windows then needs only `bayan`), using S4. |
 | S11 | `docs/assets/artifact.js` is on the Keep list. |
 | S12 | `Base64` lives in `std.encoding` with `Hex` (settles tiers Q3). |
-| D1 | The macOS 10x timing test stays as it is (green three runs running). |
+| D1 | The macOS 10x timing test stays as it is (green three runs in a row). |
 | D2 | The .NET SDK stays pinned exactly (10.0.403, sha512) with a monthly reminder to bump the patch. |
 | D3 | The `bayan new --ci github` template moves to `actions/checkout@v5` now: the scaffolder is CLI code that 010 does not port, so this is an A1 exception the user granted. |
 | D4 | Script mode imports `kit` explicitly; no auto-import (tiers Q10 dropped). |
