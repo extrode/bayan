@@ -1,0 +1,17 @@
+string pick(string s) {
+    return s
+}
+
+void pass(string s, to out string g) {
+    g = pick(s)
+}
+
+void main() {
+    var kept = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        pass(name, to: out kept)
+    }
+    print(kept)
+}

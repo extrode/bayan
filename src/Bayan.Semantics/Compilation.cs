@@ -1432,6 +1432,7 @@ public sealed partial class Compilation
         EffectAnalysis.Analyze(this);
         CheckMutation();
         CheckRequires();
+        RegionAnalysis.Summarize(this);
         foreach (var module in Modules)
             foreach (var fn in module.AllFunctions)
             {
@@ -1877,6 +1878,12 @@ public sealed partial class Compilation
 
     /// <summary>The fields of <c>this</c> each <c>ref this</c> method changes structurally, for region analysis.</summary>
     internal Dictionary<FunctionSymbol, HashSet<FieldSymbol>> ChangedFields { get; } = new();
+
+    /// <summary>
+    /// For each template with a body, what it may store from a parameter (or <c>this</c>, -1) into a <c>ref</c>/<c>out</c> parameter
+    /// (or its <c>ref this</c> receiver), with the first place it does, for region analysis.
+    /// </summary>
+    internal Dictionary<FunctionSymbol, Dictionary<(int Source, int Target), TextSpan>> StoreSummaries { get; } = new();
 
     /// <summary>
     /// A method is mutating when it is declared <c>ref this</c>. Every call of one needs a writable

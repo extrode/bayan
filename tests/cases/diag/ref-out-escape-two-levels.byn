@@ -1,0 +1,17 @@
+void g(string s, to ref string t) {
+    t = s
+}
+
+void f(string s, to ref string t) {
+    g(s, to: ref t)
+}
+
+void main() {
+    var kept = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        f(name, to: ref kept)
+    }
+    print(kept)
+}

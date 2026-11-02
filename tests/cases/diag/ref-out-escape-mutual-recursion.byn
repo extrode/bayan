@@ -1,0 +1,17 @@
+void f(string s, to ref string t, at i64 n) {
+    if n > 0 { g(s, to: ref t, at: n - 1) }
+}
+
+void g(string s, to ref string t, at i64 n) {
+    if n > 0 { f(s, to: ref t, at: n - 1) } else { t = s }
+}
+
+void main() {
+    var kept = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        f(name, to: ref kept, at: 2)
+    }
+    print(kept)
+}
