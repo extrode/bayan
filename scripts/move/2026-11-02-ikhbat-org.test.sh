@@ -305,15 +305,76 @@ NEW_REMOTE=$FX/missing.git run_mv --execute
 [ "$RC" -eq 0 ] || fail "fetch failure aborted: exit $RC: $OUT"
 case "$OUT" in *"warn: "*"fetch"*"ok: verified"*) ;; *) fail "fetch failure: no warn: line or no ok: verified: $OUT" ;; esac
 
-# --- F14: a transcript gaining an old cwd after step 2 is not rewritten unlisted
+# --- G6: a transcript gaining an old cwd after step 2 is backed up, listed and rewritten; undo restores it
 build_fixture
 STOP_AFTER=2 run_mv --execute
 [ "$RC" -eq 99 ] || fail "stop after 2: exit $RC: $OUT"
 printf '{"cwd":"%s"}\n' "$OLD_REPO" > "$CLAUDE_HOME/projects/$OKEY/late.jsonl"
+LATE0=$(shasum < "$CLAUDE_HOME/projects/$OKEY/late.jsonl")
 run_mv --execute
-[ "$RC" -ne 0 ] || fail "unlisted transcript: expected a refusal"
-case "$OUT" in *"refuse: "*"late.jsonl"*"backup list"*"resume: "*) ;; *) fail "unlisted transcript: no refusal with resume: $OUT" ;; esac
-grep -qF "\"cwd\":\"$OLD_REPO\"" "$CLAUDE_HOME/projects/$NKEY/late.jsonl" || fail "unlisted transcript was rewritten"
+[ "$RC" -eq 0 ] || fail "late transcript: exit $RC: $OUT"
+case "$OUT" in *"note: "*"late.jsonl"*"ok: verified"*) ;; *) fail "late transcript: no note: line: $OUT" ;; esac
+grep -qF "\"cwd\":\"$NEW_REPO\"" "$CLAUDE_HOME/projects/$NKEY/late.jsonl" || fail "late transcript not rewritten"
+[ -f "$CLAUDE_HOME/backups/bayan-move-2026-11-02/files/projects/$OKEY/late.jsonl" ] || fail "late transcript not backed up"
+grep -qF "$CLAUDE_HOME/projects/$NKEY/late.jsonl" "$CLAUDE_HOME/backups/bayan-move-2026-11-02/written.sha256" || fail "late transcript: no write hash"
+run_undo
+[ "$RC" -eq 0 ] || fail "undo after late transcript: exit $RC: $OUT"
+[ "$(shasum < "$CLAUDE_HOME/projects/$OKEY/late.jsonl" 2>/dev/null)" = "$LATE0" ] || fail "undo did not restore the late transcript"
+
+# --- G6: an unreadable transcript under the old key refuses at preflight, naming it
+build_fixture
+chmod 000 "$CLAUDE_HOME/projects/$OKEY/s2.jsonl"
+expect_refuse "unreadable transcript" "s2.jsonl"
+case "$OUT" in *"preflight failed"*) ;; *) fail "unreadable transcript: not refused at preflight: $OUT" ;; esac
+chmod 644 "$CLAUDE_HOME/projects/$OKEY/s2.jsonl"
+
+# --- G3: a projects key under NEW_REPO refuses at preflight
+build_fixture
+jq --arg n "$NEW_REPO/sub" '.projects[$n] = {trust:true}' "$CLAUDE_JSON" > "$FX/c.tmp" && mv "$FX/c.tmp" "$CLAUDE_JSON"
+expect_refuse "projects key under NEW_REPO" "under $NEW_REPO"
+case "$OUT" in *"preflight failed"*) ;; *) fail "projects key under NEW_REPO: not refused at preflight: $OUT" ;; esac
+
+# --- G1 (a): undo before step 9 keeps a history row appended after step 6
+build_fixture
+STOP_AFTER=6 run_mv --execute
+[ "$RC" -eq 99 ] || fail "stop after 6 (G1): exit $RC: $OUT"
+printf '{"display":"later","project":"%s","ts":9}\n' "$NEW_REPO" >> "$CLAUDE_HOME/history.jsonl"
+run_undo
+[ "$RC" -ne 0 ] || fail "undo after stop 6 and a later row: expected a refusal"
+case "$OUT" in *"refuse: "*"history.jsonl"*) ;; *) fail "undo after stop 6: history.jsonl not listed: $OUT" ;; esac
+grep -q '"later"' "$CLAUDE_HOME/history.jsonl" || fail "undo after stop 6: row lost"
+[ -d "$NEW_REPO" ] && [ ! -e "$OLD_REPO" ] || fail "undo after stop 6: repo moved"
+
+# --- G2 (b): a row appended between a mid-run stop and the resume makes undo refuse
+build_fixture
+STUB_FROM=5 STUB_ARGS="-fl /claude/versions/" STUB_OUT="4242 /x/claude/versions/2.1" run_mv --execute
+[ "$RC" -ne 0 ] && [ "$RC" -ne 99 ] || fail "G2 mid-run process: exit $RC: $OUT"
+rm -f "$STUB_COUNT"
+printf '{"display":"later","project":"%s","ts":9}\n' "$OLD_REPO" >> "$CLAUDE_HOME/history.jsonl"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "G2 resume: exit $RC: $OUT"
+run_undo
+[ "$RC" -ne 0 ] || fail "undo after a row before the resume: expected a refusal"
+case "$OUT" in *"refuse: "*"history.jsonl"*) ;; *) fail "undo after a row before the resume: history.jsonl not listed: $OUT" ;; esac
+grep -q '"later"' "$CLAUDE_HOME/history.jsonl" || fail "undo after a row before the resume: row lost"
+
+# --- G4: undo refuses while a Claude process runs
+build_fixture
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "execute before G4 undo: $OUT"
+HB=$(tree_hash all)
+STUB_ARGS="-fl bin/claude" STUB_OUT="4242 /x/bin/claude" run_undo
+[ "$RC" -ne 0 ] || fail "undo with a Claude process: expected a refusal"
+case "$OUT" in *"refuse: "*"bin/claude"*) ;; *) fail "undo with a Claude process: no refusal: $OUT" ;; esac
+[ "$(tree_hash all)" = "$HB" ] || fail "undo with a Claude process changed the tree"
+
+# --- G5: undo refuses when the moved checkout has a linked worktree
+git -C "$NEW_REPO" worktree add -q -b wt2 "$FX/linked2"
+HB=$(tree_hash all)
+run_undo
+[ "$RC" -ne 0 ] || fail "undo with a linked worktree: expected a refusal"
+case "$OUT" in *"refuse: "*"linked worktree"*"linked2"*) ;; *) fail "undo with a linked worktree: not named: $OUT" ;; esac
+[ "$(tree_hash all)" = "$HB" ] && [ -d "$NEW_REPO" ] || fail "undo with a linked worktree changed the tree"
 
 # --- F1: undo refuses to run git in a dir that is not a checkout's top
 build_fixture
