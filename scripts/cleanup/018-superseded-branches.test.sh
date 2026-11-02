@@ -15,8 +15,11 @@ cp "$root/scripts/cleanup/018-superseded-branches.sh" "$root/scripts/cleanup/mer
 printf '    [Fact(Skip = "T28 enables it")]\n    public void A() {}\n' > tests/Bayan.Tests/SelfhostSemanticsTests.cs
 printf 'tmp/\n.worktrees/\n' > .gitignore && git add . && g commit -q -m base
 gnow() { git -c user.email=t@t -c user.name=t "$@"; }
-# Moved today: only CLEANUP_RECENT_HOURS=0 lets the backlog script take it.
-gnow branch feat/010-self-hosted-semantics && gnow worktree add -q .worktrees/feat-010-self-hosted-semantics feat/010-self-hosted-semantics
+ago3h="$(( $(date +%s) - 10800 )) +0000"
+g3h() { GIT_COMMITTER_DATE="$ago3h" GIT_AUTHOR_DATE="$ago3h" git -c user.email=t@t -c user.name=t "$@"; }
+# Moved 3h ago: the default 24h window would keep it, 018's 1h window does not. One cut just now stays.
+g3h branch feat/010-self-hosted-semantics && g3h worktree add -q .worktrees/feat-010-self-hosted-semantics feat/010-self-hosted-semantics
+gnow branch fresh && gnow worktree add -q .worktrees/fresh fresh
 g worktree add -q --detach tmp/wt/t28survey dev
 for f in a.txt b.txt C.txt copy.bin empty.bin input.bin; do echo x > ".worktrees/feat-010-self-hosted-semantics/$f"; done
 s=tmp/wt/t28survey/tests/Bayan.Tests/SelfhostSemanticsTests.cs
@@ -48,4 +51,19 @@ g worktree add -q .worktrees/feat-010-self-hosted-semantics side && echo changed
 out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" && fail "a tracked change was not a failure"
 echo "$out" | grep -q "^refuse: .worktrees/feat-010-self-hosted-semantics/a.txt is not untracked" || fail "tracked change not refused"
 grep -q changed .worktrees/feat-010-self-hosted-semantics/a.txt || fail "a tracked change was discarded"
+[ -d .worktrees/fresh ] && git rev-parse -q --verify fresh >/dev/null || fail "a worktree cut in the last hour was removed"
+# On another branch, or bigger than the run cases write: not the leftover.
+echo x > .worktrees/feat-010-self-hosted-semantics/b.txt
+out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" && fail "a file on another branch was not a failure"
+echo "$out" | grep -q "^refuse: .worktrees/feat-010-self-hosted-semantics/b.txt is not the run-case leftover (branch side" || fail "other branch not refused"
+[ -f .worktrees/feat-010-self-hosted-semantics/b.txt ] || fail "a file on another branch was removed"
+git worktree remove --force .worktrees/feat-010-self-hosted-semantics
+g branch feat/010-self-hosted-semantics && g worktree add -q .worktrees/feat-010-self-hosted-semantics feat/010-self-hosted-semantics
+echo 'more than six bytes' > .worktrees/feat-010-self-hosted-semantics/C.txt
+out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" && fail "a large file was not a failure"
+echo "$out" | grep -q "^refuse: .worktrees/feat-010-self-hosted-semantics/C.txt is not the run-case leftover" || fail "large file not refused"
+[ -f .worktrees/feat-010-self-hosted-semantics/C.txt ] || fail "a large file was removed"
+rm .worktrees/feat-010-self-hosted-semantics/C.txt && mkdir .worktrees/feat-010-self-hosted-semantics/empty.bin && touch .worktrees/feat-010-self-hosted-semantics/empty.bin/x
+out="$(bash scripts/cleanup/018-superseded-branches.sh -e --discard-worktree-changes)" && fail "a directory was not a failure"
+echo "$out" | grep -q "^refuse: .worktrees/feat-010-self-hosted-semantics/empty.bin/\? is not the run-case leftover" || fail "directory not refused"
 cd "$root"; echo ok
