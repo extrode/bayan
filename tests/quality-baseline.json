@@ -1,6 +1,16 @@
 {
   "version": 1,
   "files": {
+    "selfhost/parser/recover.byn": {
+      "mutation": null,
+      "coverage": 0.8652,
+      "branches": 0.7566
+    },
+    "selfhost/parser/stmts.byn": {
+      "mutation": null,
+      "coverage": 0.9206,
+      "branches": 0.767
+    },
     "selfhost/semantics/bound.byn": {
       "mutation": null,
       "coverage": 0.7762,
