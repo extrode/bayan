@@ -438,6 +438,9 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     [InlineData("braceless-error-body", "if (a) )\n")]
     [InlineData("braceless-error-body-while", "while (a) ]\nf()\n")]
     [InlineData("braceless-nested-fix", "if (a) if (b) f()\n")]
+    [InlineData("primitive-module-path", "import a.int\n")]
+    [InlineData("braceless-else-body", "if (a) else\n")]
+    [InlineData("braceless-goto-case-body", "while (a) goto case 1\nf()\n")]
     public void BodyAndNameEdgesDumpAsTheCSharpParser(string name, string source) => DumpsAsTheCSharpParser("body-name", name, source);
 
     /// <summary><paramref name="source"/>, written under <c>tmp/parser-&lt;kind&gt;/</c>, dumps as the C# parser dumps it (written under
