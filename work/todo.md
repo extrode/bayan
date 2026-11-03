@@ -304,7 +304,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `List<string>` and `List<Symbol>` cannot be formatted in an interpolation hole (BYN2225) (pre-existing; 008 review, 2026-10-25).
 - A struct literal cannot name its type through a module: `lexer.TextSpan { … }` is BYN1001 (Q431) (009 T1, 2026-10-26).
 - C# `ParseStatement` builds `WhileLetStmt` and `LabeledStmt` with `SpanFrom(start)` evaluated before `ParseBlock()`/`ParseStatement()`, so their spans end before the body; `stmts.byn` matches it (009 T7, 2026-10-26).
-- C# `IsParenthesizedCondition` reads `_tokens[next]` with `next == _count` when a `(` is unclosed (`void f() { if (x`); it does not throw today, and `stmts.byn` clamps the index like `KindAt`, with the same result (009 T7, 2026-10-26).
 - C# `ParseFunctionType` builds `FailsClause`/`UsesClause` with `SpanFrom(start)` before `ParseClauseList` runs, so in a function type the clause spans only the keyword (Parser.cs 2006/2011; declarations at 1144/1152 span the list); `types.byn` matches it (009 T6, 2026-10-26).
 - C# parser spans end early where `SpanFrom` is an argument before the parse it should cover: a block-bodied `LambdaExpr` ends at `=>`, a `MapEntryExpr` at `:`, a named format spec's `Argument` at `:`; matched in `exprs2.byn` (009 T10, 2026-10-26).
 - run cases `io-list-dir`, `io-invalid-utf8`, `io-copy-file` (tests/cases/run/) leave `a.txt b.txt C.txt bad.txt copy.bin empty.bin input.bin` in the repo root after a full suite; not gitignored (found in 009 T15 gate)
