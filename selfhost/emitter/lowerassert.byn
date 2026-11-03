@@ -4,5 +4,5 @@
 import semantics
 
 /// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
-public void lowerAssert(ref Ctx c, ref LCtx l, BStmt s) {
+public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
 }

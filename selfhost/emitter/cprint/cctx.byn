@@ -7,6 +7,10 @@
 
 import semantics
 
+public type Ctx = semantics.Ctx
+public type Type = semantics.Type
+public type BExpr = semantics.BExpr
+
 /// A generated helper function: prototype and definition (`_helpers` value).
 public struct CHelper {
     public string proto
@@ -45,7 +49,7 @@ public struct CCtx {
 const symbolMark: u32 = 1
 
 /// `CKeywords`: C keywords and identifiers a C name must avoid.
-public List<string> cKeywords() {
+public List<string> cKeywords() uses alloc {
     var k = List<string>()
     for w in ["auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern",
         "float", "for", "goto", "if", "inline", "int", "long", "register", "restrict", "return", "short", "signed",
@@ -63,8 +67,7 @@ public struct CFunc {
     public semantics.FuncId fn = -1
     /// `_names`: a local's C name.
     public Map<semantics.LocalId, string> names = Map<semantics.LocalId, string>()
-    /// `_sb`.
-    public StrBuf sb = StrBuf()
+    /// `_sb` is not a field: a struct cannot hold a `StrBuf` (BYN3001), so the emitting functions take a `ref StrBuf`.
     /// `_file`.
     public string file = ""
     /// `_linePath`: the path `#line` maps to, a C string literal; null when the function has no file.

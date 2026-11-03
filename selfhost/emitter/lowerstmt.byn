@@ -4,5 +4,5 @@
 import semantics
 
 /// Lowerer.cs:352 `Statement`: lowers `s`, appending to the current output list.
-public void lowerStatement(ref Ctx c, ref LCtx l, BStmt s) {
+public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) {
 }

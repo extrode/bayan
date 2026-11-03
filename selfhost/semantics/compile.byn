@@ -9,19 +9,19 @@ import lexer
 import parser
 
 /// The C# `CompilationOptions` record.
-struct CompilationOptions {
-    bool includeTests = false
-    bool library = false
-    bool skipOwnershipCheck = false
-    List<string>? capabilities = null
-    string? packageName = null
+public struct CompilationOptions {
+    public bool includeTests = false
+    public bool library = false
+    public bool skipOwnershipCheck = false
+    public List<string>? capabilities = null
+    public string? packageName = null
 }
 
 
 /// The C# `_testCases` value: the arguments of the test's first `@cases` attribute (`attribute`) that are cases.
-struct TestCases {
-    i64 attribute
-    List<i64> args
+public struct TestCases {
+    public i64 attribute
+    public List<i64> args
 }
 
 /// The identity of top-level declaration `declIndex` of `file` (the C# `Decl` reference, as a map key).
@@ -31,7 +31,7 @@ i64 declKey(FileId file, at i64 declIndex) => (file << 32) | declIndex
 
 /// Compiles a file or a directory. A file's module is its directory, but only that file is read unless
 /// `wholeDirectory` is set. `path` must be absolute: Bayan has no current directory (Q571).
-Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory = true) {
+public Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory = true) uses alloc, clock, fs {
     let full = t11FullPath(path)
     let isDir = t11DirectoryExists(full)
     let dir = isDir ? full : t11DirectoryName(full)
@@ -51,7 +51,7 @@ Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory 
 
 /// Compiles a project: the entry module is `src/<entryModule>/`, imports resolve under `src/`, and with tests
 /// every `tests/*.test.byn` joins the entry module. Files are named relative to the project root.
-Ctx fromProject(string root, for string entryModule, by in CompilationOptions options) {
+public Ctx fromProject(string root, for string entryModule, by in CompilationOptions options) uses alloc, clock, fs {
     let src = t11Combine(root, by: "src")
     let entry = t11Combine(src, by: entryModule)
     var files = List<string>()
@@ -74,7 +74,7 @@ Ctx fromProject(string root, for string entryModule, by in CompilationOptions op
 // ── Compilation.cs:100 Create ───────────────────────────────────────────────────
 
 /// Compiles `entryFiles` as the entry module; imports resolve under `packageRoot`.
-Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, by in CompilationOptions options, string? displayRoot = null) {
+public Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, by in CompilationOptions options, string? displayRoot = null) uses alloc, clock, fs {
     var capabilities: List<string>? = null
     if (options.capabilities is { } caps) { capabilities = copyStrings(in caps) }
     var c = Ctx {

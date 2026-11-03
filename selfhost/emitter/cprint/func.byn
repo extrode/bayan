@@ -2,9 +2,9 @@
 // Header only (T1): final signatures.
 
 import semantics
-import emitter
+import emitter.ltree
 
 /// CEmitter.cs:1173 `FunctionEmitter.Emit`: the C definition of `f`.
-public string emitFunction(ref CCtx cc, ref Ctx c, in LCtx l, in LoweredFunction f) {
+public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f) {
     return ""
 }

@@ -4,6 +4,6 @@
 import semantics
 
 /// Lowerer.cs:899 `Expr`: the lowered form of `e`, with its statements appended to the current output list.
-public BExpr lowerExpr(ref Ctx c, ref LCtx l, BExpr e) {
+public BExpr lowerExpr(ref Ctx c, through ref LCtx l, for BExpr e) {
     return e
 }

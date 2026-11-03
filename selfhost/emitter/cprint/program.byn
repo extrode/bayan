@@ -2,9 +2,9 @@
 // Header only (T1): the entry point with its final signature. `Run()`'s section order is one function here.
 
 import semantics
-import emitter
+import emitter.ltree
 
-/// CEmitter.cs:61 `Emit`: the C translation unit for `program`. The lowered nodes are in `l`.
-public string emit(ref Ctx c, in LCtx l, in LoweredProgram program, bool ownershipChecks) {
+/// CEmitter.cs:61 `Emit`: the C translation unit for `program`. The lowered nodes are in `t`.
+public string emit(ref Ctx c, from in ltree.LTree t, through in ltree.LoweredProgram program, by bool ownershipChecks) {
     return ""
 }

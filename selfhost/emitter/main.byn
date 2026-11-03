@@ -51,6 +51,6 @@ i32 main(ReadOnlySpan<string> args) {
     unless ok { return semantics.t26Failed(in o, from: in reported, by: in symbols) }
     var l = LCtx {}
     let program = lower(ref c, to: ref l)
-    Io.stdout.write(cprint.emit(ref c, in l, in program, ownershipChecks: mode == "debug"))
+    Io.stdout.write(cprint.emit(ref c, from: in l.tree, through: in program, by: mode == "debug"))
     return exitOk
 }

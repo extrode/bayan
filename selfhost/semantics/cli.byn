@@ -16,29 +16,29 @@ const errorLimit: i64 = 20
 const noLimit: i64 = 2147483647
 
 /// The `Symbols` members the CLI prints (Style.cs:59-60).
-struct T26Symbols {
-    string dot
-    string cross
-    string ellipsis
+public struct T26Symbols {
+    public string dot
+    public string cross
+    public string ellipsis
 }
 
 /// The `BuildOptions` subset `check` and `types` read (CliApp.cs:149).
-struct T26Options {
-    string path
-    bool json = false
-    bool all = false
-    bool spans = false
+public struct T26Options {
+    public string path
+    public bool json = false
+    public bool all = false
+    public bool spans = false
 }
 
 /// A reported diagnostic as `Failed` reads it: its sort key (path, start), code and severity.
-struct T26Reported {
-    string path
-    i64 start
-    string code
-    bool isWarning
+public struct T26Reported {
+    public string path
+    public i64 start
+    public string code
+    public bool isWarning
 }
 
-T26Symbols t26Symbols(bool ascii) =>
+public T26Symbols t26Symbols(bool ascii) =>
     ascii ? T26Symbols { dot: "*", cross: "x", ellipsis: "..." } : T26Symbols { dot: "◆", cross: "✗", ellipsis: "…" }
 
 /// The C# `File.Exists`: `path` reads and is not a directory.
@@ -50,7 +50,7 @@ bool t26FileExists(string path) {
 
 /// CliApp.cs:151 `ParseBuildOptions` (`allowOutput: false`): `--`, `--mode`, `--diagnostics`, `--all`, and
 /// bayan-check's `--spans`. Null after reporting.
-T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) {
+public T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) uses alloc, console, fs {
     var path: string? = null
     var json = false
     var all = false
@@ -116,7 +116,7 @@ Ctx t26EmptyCtx() => Ctx {
 /// CliApp.cs:259 `Compile`: a project directory (one with `package.byn`), a script (a file starting with
 /// `#!`, compiled alone) or a file or directory (the whole directory is the entry module). Prints
 /// diagnostics and adds them to `reported`; `ok` is false where C# returns null.
-Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reported> reported, through ref bool ok) {
+public Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reported> reported, through ref bool ok) uses alloc, clock, console, fs {
     ok = false
     let manifestPath = t11Combine(o.path, by: "package.byn")
     if t11DirectoryExists(o.path) && t26FileExists(manifestPath) {
@@ -221,7 +221,7 @@ string t26Seconds(i64 nanos) {
 /// CliApp.cs:513 `Failed`: the footer after a failed compile; nothing in JSON mode, or when no error caused
 /// the failure. The first error is the first of `DiagnosticRenderer.Sort` (path ordinal, then start; ties
 /// keep order).
-i32 t26Failed(in T26Options o, from in List<T26Reported> reported, by in T26Symbols symbols) {
+public i32 t26Failed(in T26Options o, from in List<T26Reported> reported, by in T26Symbols symbols) uses alloc, console {
     if o.json { return exitFailure }
     var first: i64 = -1
     var errors: i64 = 0
