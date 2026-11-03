@@ -76,9 +76,10 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
     /// </summary>
     private static readonly string[] KnownCSharpThrows =
     [
-        "random/05931.byn", // Q662: ArgumentOutOfRangeException, SourceText.GetText < Parser.ReportBraceless
-        "random/06266.byn", // Q662: same
-        "random/09723.byn", // Q662: same
+        "random/00800.byn", // Q662: ArgumentOutOfRangeException, SourceText.GetText < Parser.ReportBraceless
+        "random/04393.byn", // Q662: same
+        "random/05382.byn", // Q662: same
+        "random/07933.byn", // Q662: same
     ];
 
     private sealed class Totals
