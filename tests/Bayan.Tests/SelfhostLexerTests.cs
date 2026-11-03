@@ -347,12 +347,12 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     [Fact]
     public void RunOnStdinRunsAPromptProgramOnce()
     {
-        var (program, args) = OperatingSystem.IsWindows() ? ("cmd", new[] { "/c", "sort" }) : ("cat", Array.Empty<string>());
-        var (exit, stdout, _, timedOut, attempts) = RunOnStdin(program, args, "b\n"u8.ToArray(), 30_000);
+        var input = "x\n"u8.ToArray();
+        var (exit, stdout, _, timedOut, attempts) = RunOnStdin(Built, ["--json"], input, 30_000);
         Assert.False(timedOut);
         Assert.Equal(1, attempts);
         Assert.Equal(0, exit);
-        Assert.Equal("b\n", Encoding.UTF8.GetString(stdout).TrimStart());
+        Assert.Equal(TokenDump.ToJson(Lexer.Lex(new SourceText("<stdin>", input))), Encoding.UTF8.GetString(stdout));
     }
 
     /// <summary>Law L001: on every corpus input and <c>lex/</c> case, <c>bayan-lex --json</c> on stdin prints exactly <see cref="TokenDump.ToJson"/>.</summary>
