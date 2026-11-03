@@ -1,1 +1,35 @@
-{ "version": 1, "files": {} }
+{
+  "version": 1,
+  "files": {
+    "selfhost/semantics/bound.byn": {
+      "mutation": null,
+      "coverage": 0.7762,
+      "branches": 0.3864
+    },
+    "selfhost/semantics/calls2.byn": {
+      "mutation": null,
+      "coverage": 0.8652,
+      "branches": 0.7282
+    },
+    "selfhost/semantics/ctx.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 0.9167
+    },
+    "selfhost/semantics/generics.byn": {
+      "mutation": null,
+      "coverage": 0.8576,
+      "branches": 0.7886
+    },
+    "selfhost/semantics/region.byn": {
+      "mutation": null,
+      "coverage": 0.9897,
+      "branches": 0.9537
+    },
+    "selfhost/semantics/region2.byn": {
+      "mutation": null,
+      "coverage": 0.9661,
+      "branches": 0.8775
+    }
+  }
+}
