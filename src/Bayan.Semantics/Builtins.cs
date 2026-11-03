@@ -114,6 +114,9 @@ public sealed class Builtins
         HexDecode.ErrorSets.Add(ParseError);
         SymbolIntern = Make("intern", BuiltinFunction.SymbolIntern, BuiltinType.Symbol, ("text", PrimitiveType.String));
         StringInvalidUtf8At = Make("invalidUtf8At", BuiltinFunction.StringInvalidUtf8At, new OptionalType(PrimitiveType.I64), bytes);
+        PathIsRooted = Make("isRooted", BuiltinFunction.PathIsRooted, PrimitiveType.Bool, ("path", PrimitiveType.String));
+        PathRelative = Make("relative", BuiltinFunction.PathRelative, PrimitiveType.String, ("from", PrimitiveType.String), ("to", PrimitiveType.String));
+        PathFileName = Make("fileName", BuiltinFunction.PathFileName, PrimitiveType.String, ("path", PrimitiveType.String));
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
         var iterationFile = new FileContext(Module, SyntaxTree.Parse(SourceText.FromString("<builtin>", IterationSource)));
@@ -246,6 +249,24 @@ public sealed class Builtins
 
     /// <summary><c>Symbol Symbol.intern(string text)</c>: the symbol for <c>text</c>, copied into runtime-owned storage when new (spec 008 R3).</summary>
     public FunctionSymbol SymbolIntern { get; }
+
+    /// <summary><c>bool Path.isRooted(string path)</c>: as .NET <c>Path.IsPathRooted</c> on this OS.</summary>
+    public FunctionSymbol PathIsRooted { get; }
+
+    /// <summary><c>string Path.relative(string from, string to)</c>: as .NET <c>Path.GetRelativePath</c> on this OS, a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathRelative { get; }
+
+    /// <summary><c>string Path.fileName(string path)</c>: as .NET <c>Path.GetFileName</c> on this OS, a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathFileName { get; }
+
+    /// <summary>A static member of <c>Path</c>, or null.</summary>
+    public FunctionSymbol? FindPath(string name) => name switch
+    {
+        "isRooted" => PathIsRooted,
+        "relative" => PathRelative,
+        "fileName" => PathFileName,
+        _ => null,
+    };
 
     /// <summary>A static member of <c>string</c>, or null.</summary>
     public FunctionSymbol? FindString(string name) => name switch

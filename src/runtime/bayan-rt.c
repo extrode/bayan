@@ -1613,6 +1613,244 @@ byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to) {
     return (byn_str){out, n * 2};
 }
 
+/* ── Path ────────────────────────────────────────────────────────────────── */
+
+/* .NET's `System.IO.Path` algorithms (`Path.cs`, `PathInternal.cs` and their Windows and Unix halves), over UTF-8 bytes
+ * instead of UTF-16 units; every separator, `.`, `:` and drive letter is ASCII, so the indexes agree. */
+
+#ifdef _WIN32
+#define BYN_PATH_SEP '\\'
+static bool byn_path_sep(uint8_t c) { return c == '\\' || c == '/'; }
+#else
+#define BYN_PATH_SEP '/'
+static bool byn_path_sep(uint8_t c) { return c == '/'; }
+#endif
+
+/* `PathInternal.IsCaseSensitive` is false on Windows and Apple platforms (measured on macOS); only ASCII letters fold. */
+static bool byn_path_char_eq(uint8_t a, uint8_t b) {
+    if (a == b) return true;
+#if defined(_WIN32) || defined(__APPLE__)
+    if (a >= 'a' && a <= 'z') a = (uint8_t)(a - 32);
+    if (b >= 'a' && b <= 'z') b = (uint8_t)(b - 32);
+    return a == b;
+#else
+    return false;
+#endif
+}
+
+#ifdef _WIN32
+static bool byn_path_drive(uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+
+/* `PathInternal.IsExtended`: `\\?\` or `\??\`. */
+static bool byn_path_extended(const uint8_t* p, int64_t n) {
+    return n >= 4 && p[0] == '\\' && (p[1] == '\\' || p[1] == '?') && p[2] == '?' && p[3] == '\\';
+}
+
+/* `PathInternal.IsDevice`: extended, or `\\.\` / `\\?\` with either separator. */
+static bool byn_path_device(const uint8_t* p, int64_t n) {
+    return byn_path_extended(p, n) || (n >= 4 && byn_path_sep(p[0]) && byn_path_sep(p[1]) && (p[2] == '.' || p[2] == '?') && byn_path_sep(p[3]));
+}
+
+/* `PathInternal.GetRootLength` (Windows): device, UNC (`\\server\share`), `\`, or a drive (`C:`, `C:\`). */
+static int64_t byn_path_root_length(const uint8_t* p, int64_t n) {
+    int64_t i = 0;
+    bool device = byn_path_device(p, n);
+    bool unc = device && n >= 8 && byn_path_sep(p[7]) && p[4] == 'U' && p[5] == 'N' && p[6] == 'C';
+    if ((!device || unc) && n > 0 && byn_path_sep(p[0])) {
+        if (unc || (n > 1 && byn_path_sep(p[1]))) {
+            i = unc ? 8 : 2;
+            int skip = 2;
+            while (i < n && (!byn_path_sep(p[i]) || --skip > 0)) i++;
+        } else {
+            i = 1;
+        }
+    } else if (device) {
+        i = 4;
+        while (i < n && !byn_path_sep(p[i])) i++;
+        if (i < n && i > 4 && byn_path_sep(p[i])) i++;
+    } else if (n >= 2 && p[1] == ':' && byn_path_drive(p[0])) {
+        i = 2;
+        if (n > 2 && byn_path_sep(p[2])) i++;
+    }
+    return i;
+}
+#else
+static int64_t byn_path_root_length(const uint8_t* p, int64_t n) { return n > 0 && p[0] == '/' ? 1 : 0; }
+#endif
+
+bool byn_path_is_rooted(byn_str s) {
+#ifdef _WIN32
+    return (s.len >= 1 && byn_path_sep(s.ptr[0])) || (s.len >= 2 && byn_path_drive(s.ptr[0]) && s.ptr[1] == ':');
+#else
+    return s.len >= 1 && s.ptr[0] == '/';
+#endif
+}
+
+byn_str byn_path_file_name(byn_str s, byn_alloc* to) {
+    if (s.len == 0) return (byn_str){NULL, 0};
+    int64_t root = byn_path_root_length(s.ptr, s.len);
+    int64_t i = s.len - 1;
+    while (i >= 0 && !byn_path_sep(s.ptr[i])) i--;
+    int64_t start = i < root ? root : i + 1;
+    return byn_str_copy((byn_str){s.ptr + start, s.len - start}, to);
+}
+
+typedef struct {
+    uint8_t* p;
+    int64_t n, cap;
+} byn_path_buf;
+
+static void byn_path_put(byn_path_buf* b, const void* s, int64_t n) {
+    if (b->n + n > b->cap) {
+        int64_t cap = b->cap < 64 ? 64 : b->cap * 2;
+        while (cap < b->n + n) cap *= 2;
+        uint8_t* q = (uint8_t*)realloc(b->p, (size_t)cap);
+        if (!q) byn_panic("out of memory", NULL, 0);
+        b->p = q;
+        b->cap = cap;
+    }
+    if (n > 0) memcpy(b->p + b->n, s, (size_t)n);
+    b->n += n;
+}
+
+/* `Path.GetFullPath`: on Windows `GetFullPathNameW`, as .NET calls it (an extended `\\?\` path is already full); elsewhere the
+ * working directory joined to a relative path, then `PathInternal.RemoveRelativeSegments`, and `/` for an empty result. */
+static byn_path_buf byn_path_full(byn_str s, const char* file, int line) {
+    byn_path_buf out = {0};
+#ifdef _WIN32
+    if (byn_path_extended(s.ptr, s.len)) {
+        byn_path_put(&out, s.ptr, s.len);
+        return out;
+    }
+    int wn = MultiByteToWideChar(CP_UTF8, 0, (const char*)s.ptr, (int)s.len, NULL, 0);
+    wchar_t* w = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)(wn + 1));
+    if (!w) byn_panic("out of memory", NULL, 0);
+    MultiByteToWideChar(CP_UTF8, 0, (const char*)s.ptr, (int)s.len, w, wn);
+    w[wn] = 0;
+    DWORD need = GetFullPathNameW(w, 0, NULL, NULL);
+    if (need == 0) byn_panic("Path.relative: the path cannot be made full", file, line);
+    wchar_t* full = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)need);
+    if (!full) byn_panic("out of memory", NULL, 0);
+    DWORD got = GetFullPathNameW(w, need, full, NULL);
+    if (got == 0 || got >= need) byn_panic("Path.relative: the path cannot be made full", file, line);
+    int un = WideCharToMultiByte(CP_UTF8, 0, full, (int)got, NULL, 0, NULL, NULL);
+    out.p = (uint8_t*)malloc((size_t)(un > 0 ? un : 1));
+    if (!out.p) byn_panic("out of memory", NULL, 0);
+    out.cap = un;
+    out.n = WideCharToMultiByte(CP_UTF8, 0, full, (int)got, (char*)out.p, un, NULL, NULL);
+    free(full);
+    free(w);
+    return out;
+#else
+    byn_path_buf in = {0};
+    if (s.ptr[0] != '/') {
+        char* cwd = getcwd(NULL, 0);
+        if (!cwd) byn_panic("Path.relative: the working directory cannot be read", file, line);
+        int64_t cn = (int64_t)strlen(cwd);
+        byn_path_put(&in, cwd, cn);
+        if (cn == 0 || cwd[cn - 1] != '/') byn_path_put(&in, "/", 1);
+        free(cwd);
+    }
+    byn_path_put(&in, s.ptr, s.len);
+    const uint8_t* p = in.p;
+    int64_t n = in.n;
+    int64_t skip = byn_path_root_length(p, n);
+    if (skip > 0 && byn_path_sep(p[skip - 1])) skip--;
+    if (skip > 0) byn_path_put(&out, p, skip);
+    for (int64_t i = skip; i < n; i++) {
+        uint8_t c = p[i];
+        if (byn_path_sep(c) && i + 1 < n) {
+            if (byn_path_sep(p[i + 1])) continue;
+            if ((i + 2 == n || byn_path_sep(p[i + 2])) && p[i + 1] == '.') {
+                i++;
+                continue;
+            }
+            if (i + 2 < n && (i + 3 == n || byn_path_sep(p[i + 3])) && p[i + 1] == '.' && p[i + 2] == '.') {
+                int64_t k;
+                for (k = out.n - 1; k >= skip; k--) {
+                    if (byn_path_sep(out.p[k])) {
+                        out.n = (i + 3 >= n && k == skip) ? k + 1 : k;
+                        break;
+                    }
+                }
+                if (k < skip) out.n = skip;
+                i += 2;
+                continue;
+            }
+        }
+        byn_path_put(&out, &c, 1);
+    }
+    free(in.p);
+    if (out.n == 0) byn_path_put(&out, "/", 1);
+    (void)file;
+    (void)line;
+    return out;
+#endif
+}
+
+/* `PathInternal.IsEffectivelyEmpty`: empty, or on Windows only spaces. */
+static bool byn_path_effectively_empty(byn_str s) {
+#ifdef _WIN32
+    for (int64_t i = 0; i < s.len; i++)
+        if (s.ptr[i] != ' ') return false;
+    return true;
+#else
+    return s.len == 0;
+#endif
+}
+
+/* `Path.GetRelativePath` after both paths are full: the target when the roots differ or nothing is shared, `.` for the
+ * same path, otherwise a `..` per segment of `f` past the common part, then the rest of `p` (its trailing separator kept). */
+static void byn_path_relative_into(byn_path_buf* sb, const uint8_t* f, int64_t fn, const uint8_t* p, int64_t pn) {
+    static const uint8_t sep = BYN_PATH_SEP;
+    int64_t root = byn_path_root_length(f, fn);
+    bool same_root = root == byn_path_root_length(p, pn);
+    for (int64_t i = 0; same_root && i < root; i++) same_root = byn_path_char_eq(f[i], p[i]);
+    /* `GetCommonPathLength`. */
+    int64_t common = 0;
+    while (common < fn && common < pn && byn_path_char_eq(f[common], p[common])) common++;
+    if (common != 0 && !(common == fn && (common == pn || byn_path_sep(p[common]))) && !(common == pn && byn_path_sep(f[common])))
+        while (common > 0 && !byn_path_sep(f[common - 1])) common--;
+    if (!same_root || common == 0) {
+        byn_path_put(sb, p, pn);
+        return;
+    }
+    int64_t from_len = byn_path_sep(f[fn - 1]) ? fn - 1 : fn;
+    bool trailing = byn_path_sep(p[pn - 1]);
+    int64_t path_len = trailing ? pn - 1 : pn;
+    if (from_len == path_len && common >= from_len) {
+        byn_path_put(sb, ".", 1);
+        return;
+    }
+    if (common < from_len) {
+        byn_path_put(sb, "..", 2);
+        for (int64_t i = common + 1; i < from_len; i++)
+            if (byn_path_sep(f[i])) {
+                byn_path_put(sb, &sep, 1);
+                byn_path_put(sb, "..", 2);
+            }
+    } else if (byn_path_sep(p[common])) {
+        common++;
+    }
+    int64_t diff = path_len - common + (trailing ? 1 : 0);
+    if (diff > 0) {
+        if (sb->n > 0) byn_path_put(sb, &sep, 1);
+        byn_path_put(sb, p + common, diff);
+    }
+}
+
+byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line) {
+    if (byn_path_effectively_empty(from) || byn_path_effectively_empty(path)) byn_panic("Path.relative: the path is empty", file, line);
+    if (memchr(from.ptr, 0, (size_t)from.len) || memchr(path.ptr, 0, (size_t)path.len)) byn_panic("Path.relative: the path has a NUL byte", file, line);
+    byn_path_buf f = byn_path_full(from, file, line), p = byn_path_full(path, file, line), sb = {0};
+    byn_path_relative_into(&sb, f.p, f.n, p.p, p.n);
+    byn_str result = byn_str_copy((byn_str){sb.p, sb.n}, to);
+    free(sb.p);
+    free(f.p);
+    free(p.p);
+    return result;
+}
+
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc) {
     if (need <= *cap) return;
     int64_t grown = *cap < 4 ? 4 : *cap * 2;

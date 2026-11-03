@@ -1,0 +1,6 @@
+// `Path.isRooted` takes no effect: `rooted` declares none.
+bool rooted(string p) => Path.isRooted(p)
+
+for p in ["/", "/a", "/a/b/", "//a", "a", "a/b", "./a", "../a", ".", "", " "] {
+    print($"[{p}] {rooted(p)}")
+}

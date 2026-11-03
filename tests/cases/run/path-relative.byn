@@ -1,0 +1,10 @@
+// os: unix
+// `Path.relative` on absolute paths, so the working directory does not matter; Windows rules are in StdPathTests.
+string rel(string from, to string target) uses alloc => Path.relative(from: from, to: target)
+
+let pairs = [("/a/b", "/a/b/c"), ("/a/b", "/a/c"), ("/a/b", "/x"), ("/a/b/", "/a/b"), ("/a/b", "/a/b/"), ("/a/b", "/a/b"),
+    ("/a", "/a/./b/../c"), ("/a//b", "/a/b/c"), ("/", "/a"), ("/a", "/"), ("/a/b", "/a/bc"), ("/a/bc", "/a/b"), ("/a/b", "/a/b/c/"),
+    ("/a/b/c", "/a"), ("/..", "/a"), ("/a/./b", "/a/b/../d")]
+for (from, to) in pairs {
+    print($"{from} -> {to}: {rel(from, to: to)}")
+}

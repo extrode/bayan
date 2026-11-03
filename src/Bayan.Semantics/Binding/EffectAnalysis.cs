@@ -264,7 +264,7 @@ internal static class EffectAnalysis
         BuiltinFunction.IoMonotonicNanos => ["clock"],
         BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver or BuiltinFunction.ArenaNew
             or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
-            or BuiltinFunction.SymbolIntern => ["alloc"],
+            or BuiltinFunction.SymbolIntern or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName => ["alloc"],
         _ => [],
     };
 

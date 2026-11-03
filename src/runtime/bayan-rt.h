@@ -314,6 +314,13 @@ bool byn_float_parse(byn_str s, bool single, double* out);
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to);
 /* `Hex.decode`: -1 and the bytes in `*out`, or the offset of the first non-hex digit (the length for an odd count). */
 int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to);
+/* `Path.isRooted`: .NET `Path.IsPathRooted` on this OS (on Windows a leading `\` or `/`, or a drive letter and `:`). */
+bool byn_path_is_rooted(byn_str p);
+/* `Path.fileName`: .NET `Path.GetFileName` on this OS, copied into `to`. */
+byn_str byn_path_file_name(byn_str p, byn_alloc* to);
+/* `Path.relative(from, to)`: .NET `Path.GetRelativePath(from, to)` on this OS, copied into `to`; both paths are made full against
+   the working directory first. Panics on an empty path or one with a NUL byte, where .NET throws `ArgumentException`. */
+byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line);
 
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);
