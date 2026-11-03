@@ -26,6 +26,7 @@ public sealed class SelfhostEmitterT2Tests
         import emitter.ltree
 
         type CCtx = cprint.CCtx
+        type BMove = semantics.BMove
         type CFunc = cprint.CFunc
         type CompilationOptions = semantics.CompilationOptions
         type LAssignExpr = ltree.LAssignExpr
@@ -320,6 +321,14 @@ public sealed class SelfhostEmitterT2Tests
             items.append(ltree.addLNever(ref l.tree, from: LNever { span: t2At(in c, at: g, for: "w"), type: i64Type }))
             items.append(ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: t2At(in c, at: g, for: "hv"), function: h, env: -1, functionType: c.locals[t2Var(in c, at: g, for: "hv")].type }))
             items.append(ltree.addLVoid(ref l.tree, from: LVoid { span: t2At(in c, at: g, for: "f") }))
+            // A tuple element; a move of a lowered node and of a field; assignments whose target, or neither side, reads `s`.
+            items.append(t2Init(in c, at: g, for: "f"))
+            let movedOptional = ltree.addLOptionalValue(ref l.tree, from: LOptionalValue { span: t2At(in c, at: g, for: "o"), optional: t2Read(ref c, at: g, for: "o"), type: i64Type })
+            c.bMoves.append(BMove { span: t2At(in c, at: g, for: "o"), operand: movedOptional, type: i64Type })
+            items.append(semantics.makeBound(.moveExpr, at: c.bMoves.length - 1))
+            items.append(semantics.addMove(ref c, from: BMove { span: t2At(in c, at: g, for: "e"), operand: t2Init(in c, at: g, for: "e") }))
+            items.append(ltree.addLAssignExpr(ref l.tree, from: LAssignExpr { span: t2At(in c, at: g, for: "a"), target: localExpr(ref c, at: t2At(in c, at: g, for: "a"), for: s), value: t2Init(in c, at: g, for: "b") }))
+            items.append(ltree.addLAssignExpr(ref l.tree, from: LAssignExpr { span: t2At(in c, at: g, for: "a"), target: t2Read(ref c, at: g, for: "a"), value: t2Init(in c, at: g, for: "b") }))
             for x in c.bBlocks[c.functions[g].body & 0xFFFFFFFF].statements {
                 if !ltree.isLowered(x) && semantics.boundKind(x) == .assign { items.append(c.bAssigns[x & 0xFFFFFFFF].target) }
             }
@@ -438,6 +447,23 @@ public sealed class SelfhostEmitterT2Tests
             lv4.append(true)
             lv4.append(false)
             sb.append(t2Operands(ref c, through: ref l, for: in ops4, as: in lv4))
+            var ops5 = List<BExpr>()
+            ops5.append(localExpr(ref c, at: at, for: k))
+            ops5.append(cInit)
+            ops5.append(cInit)
+            sb.append(t2Operands(ref c, through: ref l, for: in ops5, as: in List<bool>()))
+
+            // Key and CType of the builtin and text view types no corpus signature has.
+            var cc = CCtx {}
+            var builtins = List<Type>()
+            builtins.append(semantics.builtinType(.io))
+            builtins.append(semantics.builtinType(.hex))
+            builtins.append(semantics.builtinType(.utf8))
+            builtins.append(semantics.builtinType(.ioStream))
+            builtins.append(semantics.builtinType(.ioInput))
+            builtins.append(semantics.builtinType(.path))
+            builtins.append(semantics.textViewType(.runes))
+            for t in builtins { sb.append($"type {cprint.key(ref c, for: t)} {cprint.cType(ref cc, from: ref c, for: t)}\n") }
 
             sb.append($"guard {captureGuard(ref c, through: ref l, for: empty) == empty}\n")
 
@@ -898,6 +924,11 @@ public sealed class SelfhostEmitterT2Tests
             new LNever(At("w"), i64),
             new LFunctionValue(At("hv"), functions.First(f => f.Name == "h"), null, (FunctionType)Var("hv").Type),
             new LVoid(At("f")),
+            Init("f"),
+            new BoundMove(At("o"), new LOptionalValue(At("o"), Read("o"), i64)),
+            new BoundMove(At("e"), Init("e")),
+            new LAssignExpr(At("a"), new BoundLocal(At("a"), s), Init("b")),
+            new LAssignExpr(At("a"), Read("a"), Init("b")),
         };
         items.AddRange(g.Body.Statements.OfType<BoundAssign>().Select(a => a.Target));
         foreach (var x in items)
@@ -988,6 +1019,10 @@ public sealed class SelfhostEmitterT2Tests
         lines.Add(Operands([dInit, new BoundLocal(at, s)], null));
         lines.Add(Operands([Init("yi"), Init("c"), Init("c")], i => i == 0));
         lines.Add(Operands([new BoundLocal(at, k), Init("c")], i => i == 0));
+        lines.Add(Operands([new BoundLocal(at, k), Init("c"), Init("c")], null));
+
+        foreach (TypeSymbol t in new TypeSymbol[] { BuiltinType.Io, BuiltinType.Hex, BuiltinType.Utf8, BuiltinType.IoStream, BuiltinType.IoInput, BuiltinType.Path, TextViewType.Runes })
+            lines.Add($"type {emitter.Key(t)} {emitter.CType(t)}");
 
         lines.Add($"guard {Flag(ReferenceEquals(Do(fl, "CaptureGuard", empty), empty))}");
 
