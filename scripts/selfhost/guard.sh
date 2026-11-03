@@ -7,7 +7,8 @@
 # 3 build 0 warnings, 4 tests pass with 0 skipped, and coverage (spec 013 T26): when the branch changes selfhost .byn files the
 # tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
 # holds a line added or changed against the merge base with --base; a new function counts) must be covered, each missed one
-# named (coverage-gate.py); each file's other functions get one info line, never a FAIL. The guard makes no baseline check of
+# named (coverage-gate.py; `// coverage-exempt:` for code dead in the C#, `// coverage-blocked: Qnnn T<k> <fn>` for code
+# behind sibling T<k>'s stub while T<k> is open and not --task); each file's other functions get one info line, never a FAIL. The guard makes no baseline check of
 # coverage: it leaves the report at tmp/guard-run/coverage/bayan-quality.json, and land.sh records it (raise-only) in
 # tests/quality-baseline.json. 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
 # mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
@@ -26,7 +27,7 @@ while [ $# -gt 0 ]; do case "$1" in
 [ -n "$BASE" ] && [ -n "$FILTER" ] || { echo "need --base and --filter"; exit 2; }
 ROW=$(awk -F'\t' -v s="$SPEC" 'NR>1 && $1==s' "$(dirname "$0")/specs.tsv")
 [ -n "$ROW" ] || { echo "no row for spec $SPEC in specs.tsv"; exit 2; }
-IFS=$'\t' read -r _ _ _ _ _ SHARED _ PREFIX _ <<< "$ROW"
+IFS=$'\t' read -r _ SDIR STASKS _ _ SHARED BYDIR PREFIX _ <<< "$ROW"
 FAIL=(); note() { FAIL+=("$1"); }
 mkdir -p "$PWD/tmp/guard-run"; LOG=$PWD/tmp/guard-run
 
@@ -73,7 +74,8 @@ if [ $TX = 0 ] && [ -n "$COVER" ]; then
   if [ ! -f "$COV/bayan-quality.json" ]; then
     note "coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter '$FILTER' builds a selfhost program with $COVER"
   else
-    out=$(python3 -I "$(dirname "$0")/coverage-gate.py" "$(git merge-base "$BASE" HEAD)" "$COV/bayan-quality.json" "$COV/functions.json" 2> "$LOG/coverage-gate.txt") \
+    out=$(python3 -I "$(dirname "$0")/coverage-gate.py" "$(git merge-base "$BASE" HEAD)" "$COV/bayan-quality.json" "$COV/functions.json" \
+      "$SDIR/$STASKS" "$TASK" "$BYDIR" 2> "$LOG/coverage-gate.txt") \
       || note "coverage: $(tail -1 "$LOG/coverage-gate.txt")"
     while read -r l; do case "$l" in "- "*) note "${l#- }";; ?*) echo "$l";; esac; done <<< "$out"
   fi
