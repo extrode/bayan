@@ -435,6 +435,36 @@ public sealed class SelfhostSemanticsT41Tests
                 print(make(Arena()))
             }
             """)]),
+        ("trust-span", [("main.byn", """
+            void main() {
+                let xs: u8[2] = [1, 2]
+                let u = Untrusted(xs.span)
+                let s = u.trustUnchecked() because "ok"
+                print($"{s.length}")
+            }
+            """)]),
+        ("generic-iface-default", [("main.byn", """
+            interface IBox<T> {
+                T get()
+
+                T twice() {
+                    return get()
+                }
+            }
+
+            struct Box : IBox<string> {
+                string s
+
+                string get() => s
+            }
+
+            void main() {
+                var b = Box { s: "a" }
+                let d: dyn ref IBox<string> = b
+                let t = d.twice()
+                print(t)
+            }
+            """)]),
         ("tests-no-main", [("main.byn", """
             void helper() {}
             """)]),
