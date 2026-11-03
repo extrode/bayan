@@ -1190,6 +1190,8 @@ Spec order (numbers are provisional; a spec may split):
     - lower.byn:305, `isTrivial`'s leaf case returning `false`.
     - common.byn:206, `mapLine`'s `==` changed to `!=`.
     - common.byn:171, `helper` returning `proto` for a name it already has.
+||||||| ca5894f9
+818. **Coverage of lines behind a sibling's stub (2026-11-04; resolved: user decision).** A wave task's line that runs only once a sibling task ports its stub (011 T2's `operands` needs T4's `lowerExpr`; `lowerFunction` and `lowerBecome` need T3's `lowerStatement`) is not dead in the C#, so `// coverage-exempt:` does not fit it, and the guard's 100% coverage would hold every wave task on its siblings. User decision: such a line takes `// coverage-blocked: Qnnn T<k> <fn>` (or `… through N`), where the Question cites the `.byn` line and the stub. `scripts/selfhost/coverage-gate.py` accepts it only while T<k> is unticked in the spec's tasks file and is not the task under guard. Any marker in the spec's selfhost directory that names the guarded task, or a ticked one, is a guard failure. So T<k> covers the lines and removes the marker before it lands, and integration (011 T13, after T2–T12) finds none left. Rejected: landing stub-coupled tasks as a stacked group (it serialises the wave), and holding T2 until T3/T4.
 
 ## Progress log
 
