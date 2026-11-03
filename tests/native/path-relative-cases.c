@@ -1,6 +1,7 @@
 /* Runs `byn_path_relative` on every case read from stdin and prints one line per case: the result in hex. A case is
  * one line of two space-separated hex fields, from then to. Hex carries bytes that are not UTF-8, which no Bayan
- * string holds, so the runtime's U+FFFD handling is checked against .NET here. */
+ * string holds, so the runtime's U+FFFD handling is checked against .NET here. With `from` on a root `to` does not share, the
+ * result is `to`'s full path, which is how StdPathTests.ShortNamesExpandAsDotNet shows each short-name expansion. */
 #include "bayan-rt.h"
 #include <stdio.h>
 #include <string.h>
