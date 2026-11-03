@@ -5,7 +5,11 @@
 4:5 NumericSuffix `s`
 5:1 IntegerLiteral `0b1`
 5:4 NumericSuffix `ms`
-6:1 EndOfFile
+6:1 IntegerLiteral `0x_`
+7:1 IntegerLiteral `0b__`
+8:1 IntegerLiteral `1__`
+9:1 IntegerLiteral `0xF__`
+10:1 EndOfFile
 
 error BYN0010: invalid numeric literal: expected digits after `0x`
 
@@ -38,3 +42,29 @@ error BYN0011: unit suffix `ms` is not allowed on a binary literal
     │    ^^
     │
   help: write the value in decimal, or wrap it with a cast to the unit type
+
+error BYN0010: invalid numeric literal: expected digits after `0x`
+
+  6 │ 0x_
+    │ ^^^
+
+error BYN0010: invalid numeric literal: expected digits after `0b`
+
+  7 │ 0b__
+    │ ^^^^
+
+error BYN0010: invalid numeric literal: `_` must sit between digits
+
+  8 │ 1__
+    │  ^^
+    │
+    │ 8 │ 1__
+    │   │  --
+
+error BYN0010: invalid numeric literal: `_` must sit between digits
+
+  9 │ 0xF__
+    │    ^^
+    │
+    │ 9 │ 0xF__
+    │   │    --

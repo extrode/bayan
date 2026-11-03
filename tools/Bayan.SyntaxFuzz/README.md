@@ -28,7 +28,3 @@ It prints each distinct failure once, with the input in base64, and exits 1 when
 `LexerTests`; the selfhost law tests drop inputs the C# parser throws on, so a C# crash fix exposes
 those inputs to the port (see the 2026-11-03 progress log entry).
 
-## Known failure
-
-`fix does not fix BYN0010`: on `0x_` the BYN0010 fix (`_` must sit between digits) deletes the `_`,
-leaving `0x`, which is BYN0010 again (expected digits after `0x`). Every seed finds it.
