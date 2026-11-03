@@ -516,6 +516,15 @@ public sealed class SelfhostSemanticsT41Tests
     }
 
     /// <summary>
+    /// <c>checkOutlives</c> (region2.byn), T37's entry point, which T41 made a wrapper of <c>t41CheckOutlives</c>: no
+    /// program reaches it, so T37's own oracle cases for it run here too, under T41's filter.
+    /// </summary>
+    [Theory]
+    [InlineData("outlives")]
+    [InlineData("outlives.none")]
+    public void CheckOutlivesIsTheCSharps(string name) => new SelfhostSemanticsT37Tests().CaseMatches(name);
+
+    /// <summary>
     /// The diagnostics in order, then the summary lines sorted: the selfhost prints them by function id, the C#
     /// dictionaries hold them by insertion. A return summary is a set (the C# <c>HashSet</c>), so its indices are sorted too.
     /// </summary>
