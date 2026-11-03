@@ -275,7 +275,7 @@ public sealed class Parser
             var text = Text(token);
             // SPEC §2.4: a C# primitive name is a type, never a declared name; a member after `.` only refers to one.
             // Not through Report: the name parsed in full, so no recovery is needed.
-            if (Keywords.IsCSharpPrimitive(text) && KindAt(_pos - 2) != TokenKind.Dot)
+            if (Keywords.IsCSharpPrimitive(text) && (_pos < 2 || KindAt(_pos - 2) != TokenKind.Dot))
                 _diagnostics.Report(DiagnosticCodes.ReservedKeyword, _source, token.Span, [text],
                     label: "a C# primitive type name", help: "choose another name");
             return new Name(token.Span, text);
@@ -2423,8 +2423,11 @@ public sealed class Parser
         var gapStart = _prevEnd;
         var errors = ErrorCount;
         var seen = _diagnostics.Items.Count;
+        var bodyPos = _pos;
         var body = ParseStatement();
         if (ErrorCount != errors && body is ErrorStmt) return body;
+        // At the end of the file the statement takes no token: there is no text to wrap in braces.
+        if (_pos == bodyPos) return body;
         // Only an inner fix overlaps the braces fix; a diagnostic without one (e.g. BYN1006) leaves it applicable.
         header = ReportBraceless(keyword, gapStart, body, _diagnostics.Items.Skip(seen).All(d => d.Fix is null), header);
         return body;
@@ -2498,7 +2501,7 @@ public sealed class Parser
         if (Kind != TokenKind.OpenParen || InGroup(_pos, TokenKind.Comma)) return false;
         var next = MatchingClose(_pos) + 1;
         var kind = KindAt(next);
-        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon || _tokens[next].HasNewlineBefore) return true;
+        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon || _tokens[Math.Min(next, _count - 1)].HasNewlineBefore) return true;
         if (kind is TokenKind.Identifier) return true;
         if (kind.IsKeyword())
             return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword or TokenKind.InKeyword);
