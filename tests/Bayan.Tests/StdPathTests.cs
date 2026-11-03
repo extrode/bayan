@@ -196,6 +196,44 @@ public sealed class StdPathTests
         }
         Assert.True(expected.Count > 400, $"only {expected.Count} cases");
 
+        var actual = await RunDriver(input.ToString());
+        Assert.Equal(expected.Count + 1, actual.Length);
+        for (var i = 0; i < expected.Count; i++)
+        {
+            var got = Encoding.UTF8.GetString(Convert.FromHexString(actual[i]));
+            Assert.True(expected[i] == got, $"case {i + 1}: {shown[i]}\n.NET: [{expected[i]}]\nruntime: [{got}] ({actual[i]})");
+        }
+    }
+
+    /// <summary>
+    /// <c>byn_path_full</c> on 8.3 short names gives <c>Path.GetFullPath</c>, step by step: an existing short name, one under a
+    /// non-existent tail (the trimmed retry of <c>PathHelper.TryExpandShortFileName</c>), a <c>\\.\</c> device path and one past
+    /// 260 units. <c>relative</c> from a root no target shares returns the target's full path, on both sides, so the driver shows it.
+    /// Short names are Windows-only, and elsewhere every absolute path shares the root <c>/</c>.
+    /// </summary>
+    [Fact]
+    public async Task ShortNamesExpandAsDotNet()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        const string elsewhere = "\\\\?\\Z:\\";
+        string[] paths =
+        [
+            "C:\\PROGRA~1\\a", "C:\\PROGRA~1", "C:\\PROGRA~1\\NOPE~1\\x", "C:\\NOPE~1\\a", "\\\\.\\C:\\PROGRA~1\\a",
+            "C:\\PROGRA~1\\" + string.Join("\\", Enumerable.Repeat("abcdefghij", 30)),
+        ];
+        static string Hex(string s) => Convert.ToHexStringLower(Encoding.UTF8.GetBytes(s));
+        var actual = await RunDriver(string.Concat(paths.Select(p => Hex(elsewhere) + " " + Hex(p) + "\n")));
+        Assert.Equal(paths.Length + 1, actual.Length);
+        var steps = paths.Select((p, i) => (Path: p, Full: Path.GetFullPath(p), Relative: Relative(elsewhere, p),
+            Runtime: Encoding.UTF8.GetString(Convert.FromHexString(actual[i])))).ToList();
+        var report = string.Join("\n", steps.Select(s => $"{s.Path}\n  GetFullPath: [{s.Full}]\n  runtime:     [{s.Runtime}]"));
+        Assert.True(steps.All(s => s.Relative == s.Full), "GetRelativePath from another root is not GetFullPath:\n" + report);
+        Assert.True(steps.All(s => s.Runtime == s.Full), report);
+    }
+
+    /// <summary>Runs <c>tests/native/path-relative-cases.c</c> on <paramref name="input"/> and returns its output lines.</summary>
+    private static async Task<string[]> RunDriver(string input)
+    {
         var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "path-relative-cases.c"));
         var build = Toolchain.Build(driver, BuildMode.Debug);
         Assert.True(build.Succeeded, build.Errors);
@@ -210,18 +248,12 @@ public sealed class StdPathTests
         using var proc = Process.Start(psi)!;
         var stderr = proc.StandardError.ReadToEndAsync();
         var stdout = proc.StandardOutput.ReadToEndLfAsync();
-        proc.StandardInput.Write(input.ToString());
+        proc.StandardInput.Write(input);
         proc.StandardInput.Close();
         var output = await stdout;
         Assert.True(proc.WaitForExit(120_000), "driver timed out after 120 s");
         Assert.True(proc.ExitCode == 0, await stderr);
-        var actual = output.Split('\n');
-        Assert.Equal(expected.Count + 1, actual.Length);
-        for (var i = 0; i < expected.Count; i++)
-        {
-            var got = Encoding.UTF8.GetString(Convert.FromHexString(actual[i]));
-            Assert.True(expected[i] == got, $"case {i + 1}: {shown[i]}\n.NET: [{expected[i]}]\nruntime: [{got}] ({actual[i]})");
-        }
+        return output.Split('\n');
     }
 
     // The casing .NET's path comparisons use. `OrdinalCasing.ToUpper` (a unit outside a surrogate pair) and `CharUnicodeInfo.ToUpper`
@@ -233,8 +265,10 @@ public sealed class StdPathTests
     private static readonly Func<uint, uint> ScalarUpper = typeof(CharUnicodeInfo)
         .GetMethod("ToUpper", BindingFlags.Static | BindingFlags.NonPublic, [typeof(uint)])!.CreateDelegate<Func<uint, uint>>();
 
-    private const string TablesBegin = "/* BEGIN path case tables";
-    private const string TablesEnd = "/* END path case tables */";
+    // One block per OS whose .NET folds case in paths, since their casing differs; Linux compares ordinally and has none.
+    private static readonly string TablesOs = OperatingSystem.IsWindows() ? "Windows" : "macOS";
+    private static readonly string TablesBegin = $"/* BEGIN path case tables ({TablesOs})";
+    private static readonly string TablesEnd = $"/* END path case tables ({TablesOs}) */";
 
     /// <summary><c>{first, last, step, delta}</c> runs (step 1 or 2) of the values in <paramref name="from"/>..<paramref name="to"/> that <paramref name="map"/> moves.</summary>
     private static List<int[]> Runs(int from, int to, Func<int, int> map)
@@ -311,10 +345,12 @@ public sealed class StdPathTests
     /// <summary>
     /// The runtime's case tables (<c>src/runtime/bayan-rt.c</c>) give <c>char.ToUpperInvariant</c> and <c>OrdinalCasing.ToUpper</c> for
     /// every one of the 65,536 UTF-16 units, and <c>CharUnicodeInfo.ToUpper</c> for every scalar above U+FFFF, as this .NET does.
+    /// Only the block for the running OS is checked and, with <c>BAYAN_UPDATE=1</c>, rewritten; the other is left as it is.
     /// </summary>
     [Fact]
     public void CaseTablesMatchDotNet()
     {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
         var path = Path.Combine(Golden.RepoRoot, "src", "runtime", "bayan-rt.c");
         var text = File.ReadAllText(path);
         var begin = text.IndexOf(TablesBegin, StringComparison.Ordinal);
