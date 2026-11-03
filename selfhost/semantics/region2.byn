@@ -214,7 +214,8 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `Utf8.decode` return (Q29).
     var seenList = List<Type>()
     if r.contexts.length > 0 && (containsList(ref c, for: callType, by: ref seenList) || builtin == .ioReadText || builtin == .ioRun || builtin == .ioRunBatch || builtin == .strBufGrow || builtin == .strBufOver
-            || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .hexEncode) {
+            || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .hexEncode
+            || builtin == .pathRelative || builtin == .pathFileName) {
         @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
         result = unionBorrow(in result, by: in r.contexts[r.contexts.length - 1])
     }
@@ -281,7 +282,7 @@ bool t41IsBroad(Ctx c, for FuncId fn) =>
 bool t41BuiltinFresh(BuiltinFunction builtin) =>
     builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
         || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .stringInvalidUtf8At || builtin == .hexEncode || builtin == .hexDecode
-        || builtin == .symbolIntern
+        || builtin == .symbolIntern || builtin == .pathRelative || builtin == .pathFileName
 
 string t41ParameterName(Ctx c, for FuncId fn, at i64 index) => index == regionThis ? "this" : c.locals[c.functions[fn].parameters[index]].name
 

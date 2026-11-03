@@ -133,6 +133,9 @@ ModId t9Create(ref Ctx c) {
     t9Fails(ref c, for: hexDecode, by: parseError)
     let _ = t9Make(ref c, by: m, for: "intern", as: .symbolIntern, to: builtinType(.symbol), from: t9One("text", as: prim(.string)), at: "Symbol.intern")
     let _ = t9Make(ref c, by: m, for: "invalidUtf8At", as: .stringInvalidUtf8At, to: internOptional(ref c, by: prim(.i64)), from: t9One("bytes", as: roBytes), at: "string.invalidUtf8At")
+    let _ = t9Make(ref c, by: m, for: "isRooted", as: .pathIsRooted, to: prim(.bool), from: t9One("path", as: prim(.string)), at: "Path.isRooted")
+    let _ = t9Make(ref c, by: m, for: "relative", as: .pathRelative, to: prim(.string), from: t9Two("from", as: prim(.string), for: "to", to: prim(.string)), at: "Path.relative")
+    let _ = t9Make(ref c, by: m, for: "fileName", as: .pathFileName, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fileName")
 
     // The iteration interfaces are declared from source too; the declare pass declares their members like a user interface's.
     let iteration = t9Parse(ref c, for: iterationSource, by: m)
@@ -278,6 +281,14 @@ InterfaceId findInterface(ref Ctx c, for string name) {
 FuncId findString(ref Ctx c, for string name) {
     switch name {
         case "invalidUtf8At": return t9Function(ref c, for: "string.invalidUtf8At")
+    }
+    return -1
+}
+
+/// A static member of `Path`, or -1.
+FuncId findPath(ref Ctx c, for string name) {
+    switch name {
+        case "isRooted" or "relative" or "fileName": return t9Function(ref c, for: $"Path.{name}")
     }
     return -1
 }

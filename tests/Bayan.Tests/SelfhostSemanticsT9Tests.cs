@@ -51,6 +51,9 @@ public sealed class SelfhostSemanticsT9Tests
         ("Utf8.decode(invalid)", "t9Function(ref c, for: \"Utf8.decode(invalid)\")", B.Utf8DecodeReplace),
         ("Hex.encode", "t9Function(ref c, for: \"Hex.encode\")", B.HexEncode),
         ("Hex.decode", "t9Function(ref c, for: \"Hex.decode\")", B.HexDecode),
+        ("path isRooted", "findPath(ref c, for: \"isRooted\")", B.FindPath("isRooted")),
+        ("path relative", "findPath(ref c, for: \"relative\")", B.FindPath("relative")),
+        ("path fileName", "findPath(ref c, for: \"fileName\")", B.FindPath("fileName")),
         ("Symbol.intern", "t9Function(ref c, for: \"Symbol.intern\")", B.SymbolIntern),
     ];
 
