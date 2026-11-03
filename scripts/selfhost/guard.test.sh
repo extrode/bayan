@@ -10,7 +10,9 @@
 # branch adds g: g fully covered passes with f uncovered (f an info line); each missed or unknown line and branch of g fails by
 # file:line, none of f's; a deleted line in f makes f gated, and a file new since --base is gated throughout; no coverage
 # baseline check runs and no quality-coverage.json is left (F2); no report fails, a malformed report fails naming it, and a
-# red test run is not checked for coverage. A changed file whose name has a space is reported by its full name.
+# red test run is not checked for coverage. The tests run with VSTEST_TESTHOST_SHUTDOWN_TIMEOUT of at least 60 s: the stub
+# writes no report without it, as vstest kills the test host before its exit handler merges ~1,100 counter files (T41).
+# A changed file whose name has a space is reported by its full name.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/guard-test"; aux="$root/tmp/guard-test-aux"  # stubs and logs live outside the fixture repo
@@ -38,7 +40,8 @@ if [ -n "${BAYAN_SNAPSHOT:-}" ]; then
 fi
 if [ -n "${BAYAN_COVERAGE:-}" ]; then
   echo "$BAYAN_COVERAGE_FILES" > $AUX/cover.txt
-  [ -f $AUX/nocov ] || { mkdir -p "$BAYAN_COVERAGE"; cp $AUX/cov.json "$BAYAN_COVERAGE/bayan-quality.json"; cp $AUX/fns.json "$BAYAN_COVERAGE/functions.json"; }
+  # as the real test host: the report is written at process exit, which vstest cuts short unless the guard lengthens the wait
+  [ -f $AUX/nocov ] || [ "${VSTEST_TESTHOST_SHUTDOWN_TIMEOUT:-0}" -lt 60000 ] || { mkdir -p "$BAYAN_COVERAGE"; cp $AUX/cov.json "$BAYAN_COVERAGE/bayan-quality.json"; cp $AUX/fns.json "$BAYAN_COVERAGE/functions.json"; }
 fi
 [ -f $AUX/testfail ] && { printf '  Failed T99\n  Error Message:\n   oracle differs\n'; exit 1; }
 exit 0
