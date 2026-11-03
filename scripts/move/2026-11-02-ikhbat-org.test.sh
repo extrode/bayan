@@ -86,6 +86,7 @@ EOF
 {"transcript":"$CLAUDE_HOME/projects/$K/s1.jsonl","cwd":"$P","project":"$K","repoTop":"$P"}
 {"transcript":"$CLAUDE_HOME/projects/$K--worktrees-w1/s1.jsonl","cwd":"$P/.worktrees/w1","project":"$K extra"}
 {"transcript":"x","cwd":"$O-x","project":"${OK}x","note":"$P"}
+{"transcript":"y","a":"/Volumes/bk$O/x","a2":"/mnt/$O/x","b":"x$OK","b2":"x-$OK","c":"$P/x","d":"$K","e":"l1\\n$P/x","f":"file://$P/docs/x.md","g":"/$P"}
 EOF
   cat > "$CLAUDE_HOME/history.jsonl" <<EOF
 {"display":"fix $O/foo","project":"$P","ts":1}
@@ -224,6 +225,11 @@ expect_refuse "target project dir exists" "exists"
 build_fixture
 mkdir -p "$(dirname "$OLD_REPO")/bayan-x"
 expect_refuse "sibling bayan-x" "sibling"
+# M3: git status failing (a corrupt index) refuses instead of passing as clean
+build_fixture
+echo garbage > "$OLD_REPO/.git/index"
+expect_refuse "corrupt index" "cannot check $OLD_REPO"
+case "$OUT" in *"preflight failed"*) ;; *) fail "corrupt index: not refused at preflight: $OUT" ;; esac
 
 # --- full execute (boundary cases are inside the fixture and the expected tree)
 build_fixture
@@ -247,6 +253,10 @@ cmp -s "$EXP.json" "$CLAUDE_JSON" || fail ".claude.json differs from expected"
 [ "$(fstat "$CLAUDE_HOME/projects/$NKEY/s1.jsonl")" = "$(fstat "$REF2020")" ] || fail "rewritten transcript lost its 2020-01-01 mtime"
 # F7: queue rows rewrite every string value
 [ "$(jq -r 'select(.repoTop) | .repoTop' "$CLAUDE_HOME/lessons/queue.jsonl")" = "$NEW_REPO" ] || fail "queue repoTop not rewritten"
+# M4: a match needs a left boundary too (not [A-Za-z0-9._-], for paths not / either; a \n escape is one)
+GOT=$(jq -c 'select(.transcript == "y") | [.a, .a2, .b, .b2, .c, .d, .e, .f, .g]' "$CLAUDE_HOME/lessons/queue.jsonl")
+WANT=$(jq -cn --arg o "$OLD_REPO" --arg ok "$OKEY" --arg n "$NEW_REPO" --arg nk "$NKEY" '["/Volumes/bk"+$o+"/x", "/mnt/"+$o+"/x", "x"+$ok, "x-"+$ok, $n+"/x", $nk, "l1\n"+$n+"/x", "file://"+$n+"/docs/x.md", "/"+$n]')
+[ "$GOT" = "$WANT" ] || fail "queue left boundary: got $GOT, want $WANT"
 # F10: the ended roster worker is rewritten
 [ "$(jq -r '.workers.w9.cwd' "$CLAUDE_HOME/daemon/roster.json")" = "$NEW_REPO" ] || fail "ended roster worker not rewritten"
 HREF=$(tree_hash all)
@@ -320,6 +330,102 @@ grep -qF "$CLAUDE_HOME/projects/$NKEY/late.jsonl" "$CLAUDE_HOME/backups/bayan-mo
 run_undo
 [ "$RC" -eq 0 ] || fail "undo after late transcript: exit $RC: $OUT"
 [ "$(shasum < "$CLAUDE_HOME/projects/$OKEY/late.jsonl" 2>/dev/null)" = "$LATE0" ] || fail "undo did not restore the late transcript"
+
+# --- M1: a project and a lesson dir at the old key created after step 2 (or 6) are renamed, rewritten, undone
+for n in 2 6; do
+  build_fixture
+  STOP_AFTER=$n run_mv --execute
+  [ "$RC" -eq 99 ] || fail "late dir: stop after $n: exit $RC: $OUT"
+  LD=$CLAUDE_HOME/projects/$OKEY--worktrees-new LL=$CLAUDE_HOME/lessons/$OKEY--worktrees-new
+  mkdir -p "$LD" "$LL"
+  printf '{"cwd":"%s/.worktrees/new"}\n' "$OLD_REPO" > "$LD/t.jsonl"
+  echo "lesson n" > "$LL/n.md"
+  LATE0=$(shasum < "$LD/t.jsonl")
+  run_mv --execute
+  [ "$RC" -eq 0 ] || fail "late dir after $n: exit $RC: $OUT"
+  case "$OUT" in *"note: $LD is at the old key"*"ok: verified"*) ;; *) fail "late dir after $n: no note: line: $OUT" ;; esac
+  [ ! -e "$LD" ] && [ ! -e "$LL" ] && [ -f "$CLAUDE_HOME/lessons/$NKEY--worktrees-new/n.md" ] || fail "late dir after $n: not renamed"
+  grep -qF "\"cwd\":\"$NEW_REPO/.worktrees/new\"" "$CLAUDE_HOME/projects/$NKEY--worktrees-new/t.jsonl" || fail "late dir after $n: cwd not rewritten"
+  run_undo
+  [ "$RC" -eq 0 ] || fail "undo after late dir ($n): exit $RC: $OUT"
+  [ "$(shasum < "$LD/t.jsonl" 2>/dev/null)" = "$LATE0" ] && [ -f "$LL/n.md" ] || fail "undo after late dir ($n): not restored"
+  [ ! -e "$CLAUDE_HOME/projects/$NKEY--worktrees-new" ] && [ ! -e "$CLAUDE_HOME/lessons/$NKEY--worktrees-new" ] || fail "undo after late dir ($n): new dirs left"
+done
+# M1: a late dir whose target exists refuses at preflight, naming both
+build_fixture
+STOP_AFTER=2 run_mv --execute
+[ "$RC" -eq 99 ] || fail "late dir with target: stop after 2: exit $RC: $OUT"
+mkdir -p "$CLAUDE_HOME/projects/$OKEY--worktrees-new" "$CLAUDE_HOME/projects/$NKEY--worktrees-new"
+expect_refuse "late dir with target" "$CLAUDE_HOME/projects/$OKEY--worktrees-new was created after step 2 and its target $CLAUDE_HOME/projects/$NKEY--worktrees-new exists"
+case "$OUT" in *"preflight failed"*) ;; *) fail "late dir with target: not refused at preflight: $OUT" ;; esac
+
+# --- N2: a step-2 rename moved back after step 5 refuses; N4: a late lessons dir after step 6 rewrites INDEX.md
+build_fixture
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "N2: full run: exit $RC: $OUT"
+mv "$CLAUDE_HOME/projects/$NKEY--worktrees-w1" "$CLAUDE_HOME/projects/$OKEY--worktrees-w1"
+H0=$(tree_hash all)
+run_mv --execute
+[ "$RC" -ne 0 ] || fail "N2: expected a refusal"
+case "$OUT" in *"refuse: step 5 is recorded but $CLAUDE_HOME/projects/$NKEY--worktrees-w1 is missing or $CLAUDE_HOME/projects/$OKEY--worktrees-w1 exists"*) ;; *) fail "N2: no step 5 refusal: $OUT" ;; esac
+[ "$(tree_hash all)" = "$H0" ] || fail "N2: tree changed"
+build_fixture
+STOP_AFTER=6 run_mv --execute
+[ "$RC" -eq 99 ] || fail "N4: stop after 6: exit $RC: $OUT"
+LL=$CLAUDE_HOME/lessons/$OKEY--worktrees-new
+mkdir -p "$LL"; echo "lesson n" > "$LL/n.md"
+echo "- late $OKEY--worktrees-new/n.md" >> "$CLAUDE_HOME/lessons/INDEX.md"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "N4: resume: exit $RC: $OUT"
+grep -qxF -- "- late $NKEY--worktrees-new/n.md" "$CLAUDE_HOME/lessons/INDEX.md" || fail "N4: INDEX.md not rewritten"
+if grep -qF "$OKEY--worktrees-new" "$CLAUDE_HOME/lessons/INDEX.md"; then fail "N4: old key left in INDEX.md"; fi
+run_undo
+[ "$RC" -ne 0 ] || fail "N4: undo restored over a line added after the move"
+run_undo --discard-changes-since-move
+[ "$RC" -eq 0 ] || fail "N4: undo: exit $RC: $OUT"
+if grep -qF "$NKEY" "$CLAUDE_HOME/lessons/INDEX.md" || ! grep -qF "$OKEY" "$CLAUDE_HOME/lessons/INDEX.md"; then fail "N4: undo did not restore INDEX.md"; fi
+[ -f "$LL/n.md" ] && [ ! -e "$CLAUDE_HOME/lessons/$NKEY--worktrees-new" ] || fail "N4: undo did not reverse the late lessons dir"
+
+# --- N5: the late lessons dir's INDEX.md rewrite survives a resume interrupted in between
+build_fixture
+STOP_AFTER=6 run_mv --execute
+[ "$RC" -eq 99 ] || fail "N5: stop after 6: exit $RC: $OUT"
+mkdir -p "$CLAUDE_HOME/projects/$OKEY--worktrees-new" "$CLAUDE_HOME/lessons/$OKEY--worktrees-new"
+printf '{"cwd":"%s/.worktrees/new"}\n' "$OLD_REPO" > "$CLAUDE_HOME/projects/$OKEY--worktrees-new/t.jsonl"
+echo "lesson n" > "$CLAUDE_HOME/lessons/$OKEY--worktrees-new/n.md"
+echo "- late $OKEY--worktrees-new/n.md" >> "$CLAUDE_HOME/lessons/INDEX.md"
+STOP_AFTER_MV=$CLAUDE_HOME/projects/$NKEY--worktrees-new/t.jsonl run_mv --execute
+[ "$RC" -eq 99 ] || fail "N5: interrupted resume: exit $RC: $OUT"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "N5: second resume: exit $RC: $OUT"
+grep -qxF -- "- late $NKEY--worktrees-new/n.md" "$CLAUDE_HOME/lessons/INDEX.md" || fail "N5: INDEX.md not rewritten after the interrupted resume"
+
+# --- N3: a git stderr warning on exit 0 is not "not clean"
+build_fixture
+mkdir -p "$FX/gitshim"
+REALGIT=$(command -v git)
+cat > "$FX/gitshim/git" <<GITEOF
+#!/bin/sh
+for a; do [ "\$a" = status ] && { echo "warning: untracked cache disabled" >&2; exit 0; }; done
+exec "$REALGIT" "\$@"
+GITEOF
+chmod +x "$FX/gitshim/git"
+OUT=$(PATH="$FX/gitshim:$PATH" bash "$SCRIPT" 2>&1) && RC=0 || RC=$?
+[ "$RC" -eq 0 ] || fail "N3: stderr warning refused: $OUT"
+case "$OUT" in *"not clean"*) fail "N3: warning read as not clean: $OUT" ;; esac
+
+# --- M2: an interrupt right after a rewrite's mv leaves its write hash recorded; undo needs no flag
+for f in "$CLAUDE_HOME/projects/$NKEY/s2.jsonl" "$CLAUDE_JSON"; do
+  build_fixture
+  H0=$(tree_hash)
+  STOP_AFTER_MV=$f run_mv --execute
+  [ "$RC" -eq 99 ] || fail "stop after the mv of $f: exit $RC: $OUT"
+  run_mv --execute
+  [ "$RC" -eq 0 ] || fail "resume after the mv of $f: exit $RC: $OUT"
+  run_undo
+  [ "$RC" -eq 0 ] || fail "undo after a stop after the mv of $f: exit $RC: $OUT"
+  [ "$(tree_hash)" = "$H0" ] || fail "undo after a stop after the mv of $f: tree differs from the start"
+done
 
 # --- G6: an unreadable transcript under the old key refuses at preflight, naming it
 build_fixture
@@ -424,6 +530,34 @@ for i in 1 2; do
   [ -d "$OLD_REPO" ] && [ ! -e "$NEW_REPO" ] || fail "undo $i: repo not back"
   [ "$(git -C "$OLD_REPO" remote get-url origin)" = file:///nonexistent/extrode-bayan.git ] || fail "undo $i: origin not restored"
 done
+
+# --- M5: 016 --delete-remote refuses the run script on a host whose new checkout has no .git yet (ssh stubbed)
+C16=$FX/c016
+mkdir -p "$C16" "$FX/bin"
+git -C "$C16" init -q -b dev; git -C "$C16" commit -q --allow-empty -m init
+cat > "$FX/bin/ssh" <<'EOF'
+#!/bin/sh
+for a; do last=$a; done
+case "$last" in
+  *"Test-Path '/home/code/ikhbat.org/bayan/.git'"*) echo "${STUB_GIT:-no}" ;;
+  *Test-Path*) echo no ;;
+esac
+exit 0
+EOF
+printf '#!/bin/sh\nexit 1\n' > "$FX/bin/docker"
+chmod +x "$FX/bin/ssh" "$FX/bin/docker"
+run016() { OUT=$(cd "$C16" && PATH="$FX/bin:$PATH" bash "$ROOT/scripts/cleanup/016-spec-013-and-011-draft.sh" --execute --delete-remote 2>&1) && RC=0 || RC=$?; }
+run016
+[ "$RC" -eq 1 ] || fail "016 without a checkout: exit $RC: $OUT"
+for h in wp1 wlt1; do
+  case "$OUT" in *"refuse: $h: /home/code/ikhbat.org/bayan is not a checkout yet (move step 9 first). Left alone."*) ;; *) fail "016: no refusal for $h: $OUT" ;; esac
+  case "$OUT" in *"skip:  $h:C:/Users/Sy/bcl.bundle already gone"*) ;; *) fail "016: other paths on $h not checked: $OUT" ;; esac
+done
+case "$OUT" in *"tmp-t19-run.ps1 already gone"*|*"removed: "*) fail "016 without a checkout: run script reported: $OUT" ;; esac
+STUB_GIT=yes run016
+[ "$RC" -eq 0 ] || fail "016 with a checkout: exit $RC: $OUT"
+case "$OUT" in *"not a checkout yet"*) fail "016 with a checkout: refused: $OUT" ;; esac
+case "$OUT" in *"skip:  wp1:/home/code/ikhbat.org/bayan/tmp-t19-run.ps1 already gone"*) ;; *) fail "016 with a checkout: run script not checked: $OUT" ;; esac
 
 rm -rf "$FX" "$EXP" "$EXP.json" "$STUB_COUNT" "$REF2020"
 # F1: no git command reached the enclosing repo
