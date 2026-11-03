@@ -21,7 +21,7 @@ keeps redirecting.
 ## User decisions (2026-11-02)
 
 - Finish worktree business before the move, so no linked worktree moves. Done: `docs/011-plan`
-  merged (52f5c35e), `.worktrees/worker-plan-011` removed by the user's cleanup run; `git worktree
+  merged (735a6688), `.worktrees/worker-plan-011` removed by the user's cleanup run; `git worktree
   list` shows the main checkout only.
 - Transcripts: rewrite the recorded `cwd` so `claude --resume` at the new path accepts old sessions.
 - `~/.claude/history.jsonl`: rewrite `project`, with a backup.
@@ -36,11 +36,11 @@ keeps redirecting.
   Release `v0.1.0` has 7 assets (6 archives + SHA256SUMS). GitHub branches: `dev`, `main`.
 - GitHub transfer moves issues, releases, tags, Actions history and settings, and redirects the old
   web and git URLs for as long as no new `extrode/bayan` is created.
-- `origin/dev` = 52f5c35e (pushed by the user); local `dev` = 64ed9dba (011 rev 4 merged since).
+- `origin/dev` = 735a6688 (pushed by the user); local `dev` = 9a698381 (011 rev 4 merged since).
   Local branches with commits not on any remote: `dev`, `docs/011-rev4` (in dev), `fix/q745` (in
   flight; its worktree lands or is removed before step 7), `docs/ikhbat-move-plan` (merges in step 1). Local refs move with
   the directory, so nothing depends on pushing them, but the transfer check compares `dev`.
-- Review watermark: local config `review.reviewedthrough` = e27f0daf (no `refs/review/reviewed`
+- Review watermark: local config `review.reviewedthrough` = 174401e0 (no `refs/review/reviewed`
   locally or on origin). It lives in `.git/config` and moves with the checkout.
 - Tracked files naming the old path: `docs/misc/b-trees.md` (three `file:///…` links),
   `scripts/cleanup/016-spec-013-and-011-draft.sh` (`/home/code/extrode.com/bayan`).
@@ -80,7 +80,7 @@ keeps redirecting.
 - Vault (`~/dotfiles/claude-vault`, keyed by git remote): no bayan entry. The slug for the new
   remote is `github.com--ikhbat-org--bayan`.
 - wp1 and wlt1: checkout at `C:\home\code\extrode.com\bayan` on `feat/013-test-tooling` at
-  fbecfff1 (in dev; not a GitHub branch), `origin` = a local bundle, nothing unpushed, no stash,
+  be54c0a0 (in dev; not a GitHub branch), `origin` = a local bundle, nothing unpushed, no stash,
   one untracked file `tmp-t19-run.ps1`. No bayan Claude state. `C:\home\code\ikhbat.org` exists
   on wp1 only.
 - `~/.claude` worktrees `.worktrees/feat/agy-shell-class` and `.worktrees/fix/agy-session-settings`
@@ -301,7 +301,7 @@ keeps redirecting.
    first)`) and leaves it alone; the other section-5 paths are unaffected.
 10. **Post-move checks** (new session, new path): `dotnet build -v q`, `dotnet test -v q`,
     `laws-check.js --run`, `structure-audit.js`, `bash scripts/release/package.test.sh`, `bash
-    scripts/ci/install-dotnet.test.sh`, `review-nudge.js --watermark` prints e27f0daf or later; a
+    scripts/ci/install-dotnet.test.sh`, `review-nudge.js --watermark` prints 174401e0 or later; a
     CI run on `ikhbat-org/bayan` after the user's next push is green.
 11. **Records**: handoff progress log; memory note that the project moved (old key retired per
     `docs/memory-supersession.md`).

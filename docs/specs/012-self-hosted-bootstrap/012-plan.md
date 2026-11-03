@@ -2,7 +2,7 @@
 
 > Brought to dev 2026-11-02 from `feat/009-selfhost-parser` (written 2026-10-22 as `docs/specs/012-selfhost-bootstrap/`). It predates design round 3 and specs 009-011 as built: it names their draft paths and commits (spec 011 is now `docs/specs/011-self-hosted-emitter/`). Realign it with 011 as built before work on 012 starts.
 Spec: ./012-spec.md
-Written 2026-10-22 against `d462122` (spec 010's docs on top of dev), with spec 011's docs read from the `worker-011-docs` worktree. Line numbers below are at that commit; round-3 steps 5.2b and 5.5 move `CliApp.cs` and `Messages.cs`, and T1 re-reads and re-sizes them.
+Written 2026-10-22 against `244edc1` (spec 010's docs on top of dev), with spec 011's docs read from the `worker-011-docs` worktree. Line numbers below are at that commit; round-3 steps 5.2b and 5.5 move `CliApp.cs` and `Messages.cs`, and T1 re-reads and re-sizes them.
 
 ## Approach
 

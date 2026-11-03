@@ -97,7 +97,7 @@ I read both ports method by method against `src/Bayan.Semantics/Binding/Binder.c
     - No test for these failure paths: the `asValue` variant group, literal-out-of-range and distinct in `convert`, and `ReportMismatch` help/fix.
 
 19. **MEDIUM – Q598 and Q604 break-test line references are false, and Q603 misdescribes `fits`.**
-    - Q598 cites `binder2.byn:488` "exit code range", :273 "bindFor local decl" and :556 "narrowedBegin". At commit c63bd1b and now, those lines are a `}`, `isBorrowedPlace` and `narrowedEnd`.
+    - Q598 cites `binder2.byn:488` "exit code range", :273 "bindFor local decl" and :556 "narrowedBegin". At commit 9d092c9 and now, those lines are a `}`, `isBorrowedPlace` and `narrowedEnd`.
     - Q604 cites `express.byn:1131` as `suggest`, but that line is in `constrain`; `suggest` is at :1239. :901 is `t17CheckedIntegerLiteral`, not `fits`.
     - Q603 claims `fits` does per-kind `asI64()` checks. It is a two-line `range()` comparison (:1172-1175).
     - Q596's codes are correct (I checked BYN2408, BYN2772, BYN2775, BYN3209 and BYN2226 against `DiagnosticCodes.cs`).

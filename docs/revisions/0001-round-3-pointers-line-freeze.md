@@ -25,8 +25,8 @@ Prefix pointers in the Sūq drafts (`suq/fail/drop-ref-this.byn:4` `*mut u8`) be
 
 ## Effect on work already done
 - BYN1030 retirement: done on `chore/worker-r3-q140` (gate pending); tombstone text aligned to the wording above.
-- SPEC §18 pointer bullet (`4c5b222`): matches; BYN1066 replaces "allocated when pointer types are parsed".
-- 5.2b (`affed85`): unchanged; the plan now also gives it BYN1030, which the q140 step covers.
+- SPEC §18 pointer bullet (`3f92bdf`): matches; BYN1066 replaces "allocated when pointer types are parsed".
+- 5.2b (`d3f50d8`): unchanged; the plan now also gives it BYN1030, which the q140 step covers.
 - C# names as reserved words: the lexer does not reserve them yet (work/todo.md).
 
 ## Diff
@@ -146,8 +146,8 @@ Prefix pointers in the Sūq drafts (`suq/fail/drop-ref-this.byn:4` `*mut u8`) be
 @@ -1,6 +1,6 @@
  # Design round 3 — Plan
  
--Input: `docs/bayan-design-round-3.md` (HANDOFF round 3; wins over round 2), `docs/bayan-design-round-2.md`, `docs/plans/2026-10-21-001-design-round-2.md`, `docs/suq-agent-brief.md` Parts A–B (§22, §23; wins over the round-3 docs). Tree: `735996c`. O1–O10 are resolved in the HANDOFF ("Resolved 2026-10-22"). The HANDOFF signature review (2026-10-23) changes §2, §3, §8, §11–§15, §17, §20 and adds §24–§31; those changes are marked **R** below, with steps 5.1e and 5.3g, J55–J90, C28–C46. O11–O15 are resolved. Size is `length`; `count(p)` is a predicate count only. Status: approved 2026-10-23.
-+Input: `docs/bayan-design-round-3.md` (HANDOFF round 3; wins over round 2), `docs/bayan-design-round-2.md`, `docs/plans/2026-10-21-001-design-round-2.md`, `docs/suq-agent-brief.md` Parts A–B (§22, §23; wins over the round-3 docs). Tree: `735996c`. O1–O10 are resolved in the HANDOFF ("Resolved 2026-10-22"). The HANDOFF signature review (2026-10-23) changes §2, §3, §8, §11–§15, §17, §20 and adds §24–§32; those changes are marked **R** below, with steps 5.1e and 5.3g, J55–J94, C28–C47. O11–O15 are resolved. Size is `length`; `count(p)` is a predicate count only. Status: approved 2026-10-23; J91–J94, C47 and §32 adopted 2026-10-24 (user, revision 0001).
+-Input: `docs/bayan-design-round-3.md` (HANDOFF round 3; wins over round 2), `docs/bayan-design-round-2.md`, `docs/plans/2026-10-21-001-design-round-2.md`, `docs/suq-agent-brief.md` Parts A–B (§22, §23; wins over the round-3 docs). Tree: `e60ab6f`. O1–O10 are resolved in the HANDOFF ("Resolved 2026-10-22"). The HANDOFF signature review (2026-10-23) changes §2, §3, §8, §11–§15, §17, §20 and adds §24–§31; those changes are marked **R** below, with steps 5.1e and 5.3g, J55–J90, C28–C46. O11–O15 are resolved. Size is `length`; `count(p)` is a predicate count only. Status: approved 2026-10-23.
++Input: `docs/bayan-design-round-3.md` (HANDOFF round 3; wins over round 2), `docs/bayan-design-round-2.md`, `docs/plans/2026-10-21-001-design-round-2.md`, `docs/suq-agent-brief.md` Parts A–B (§22, §23; wins over the round-3 docs). Tree: `e60ab6f`. O1–O10 are resolved in the HANDOFF ("Resolved 2026-10-22"). The HANDOFF signature review (2026-10-23) changes §2, §3, §8, §11–§15, §17, §20 and adds §24–§32; those changes are marked **R** below, with steps 5.1e and 5.3g, J55–J94, C28–C47. O11–O15 are resolved. Size is `length`; `count(p)` is a predicate count only. Status: approved 2026-10-23; J91–J94, C47 and §32 adopted 2026-10-24 (user, revision 0001).
  
  ## 1. Per section
  
