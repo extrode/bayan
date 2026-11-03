@@ -842,13 +842,14 @@ internal sealed class RegionAnalysis
         _ => null,
     };
 
-    /// <summary>Whether <paramref name="e"/> names storage of <c>this</c> (<c>this</c>, <c>f</c>, <c>f[i]</c> of an array or list field).</summary>
+    /// <summary>Whether <paramref name="e"/> names storage of <c>this</c> (<c>this</c>, <c>f</c>, <c>f[i]</c> of an array or list field, <c>f[k]</c> or <c>f.slot(k)</c> of a map field).</summary>
     private static bool IsThisRooted(BoundExpr e) => e switch
     {
         BoundThis => true,
         BoundField f => IsThisRooted(f.Receiver),
         BoundTupleElement t => IsThisRooted(t.Receiver),
         BoundIndex i when i.Target.Type is ArrayType or ListType => IsThisRooted(i.Target),
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => IsThisRooted(b.Receiver),
         _ => false,
     };
 
