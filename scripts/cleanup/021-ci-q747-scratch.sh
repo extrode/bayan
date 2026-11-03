@@ -5,6 +5,7 @@
 set -euo pipefail
 
 execute=0
+failed=0
 for a in "$@"; do
   case "$a" in
     --execute|-e) execute=1 ;;
@@ -26,7 +27,7 @@ for t in tmp/wt-scratch tmp/claim1 tmp/claim4 tmp/claim4-base-check tmp/claim4-c
          tmp/wp1-3500eca5.out tmp/wp1-73104cb2.out tmp/try; do
   if [ ! -e "$t" ]; then printf 'skip:  %s (absent)\n' "$t"; continue; fi
   if git ls-files --error-unmatch "$t" >/dev/null 2>&1; then printf 'refuse: %s is tracked\n' "$t"; continue; fi
-  if [ $execute -eq 1 ]; then rm -rf "$t" && printf 'removed: %s\n' "$t"
+  if [ $execute -eq 1 ]; then { rm -rf "$t" && printf 'removed: %s\n' "$t"; } || { printf 'failed: %s\n' "$t"; failed=1; }
   else printf 'would: rm -rf %s (%s)\n' "$t" "$(du -sh "$t" | cut -f1)"; fi
 done
 
@@ -38,8 +39,10 @@ for t in C:/home/code/extrode.com/bayan/tmp/win-3500eca5 C:/home/code/extrode.co
     printf 'skip:  wp1:%s (absent or wp1 unreachable)\n' "$t"; continue
   fi
   if [ $execute -eq 1 ]; then
-    ssh -o BatchMode=yes wp1 "Remove-Item -Recurse -Force '$t'" 2>/dev/null && printf 'removed: wp1:%s\n' "$t"
+    ssh -o BatchMode=yes wp1 "Remove-Item -Recurse -Force '$t'" 2>/dev/null \
+      && printf 'removed: wp1:%s\n' "$t" || { printf 'failed: wp1:%s\n' "$t"; failed=1; }
   else printf 'would: remove wp1:%s\n' "$t"; fi
 done
 
 printf '\nleft in tmp/: %s entries\n' "$(ls tmp | wc -l | tr -d ' ')"
+exit $failed
