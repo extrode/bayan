@@ -1,3 +1,5 @@
+using Bayan.Backend.C;
+using Bayan.Cli;
 using Bayan.Semantics;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Text;
@@ -50,5 +52,47 @@ public static class SelfhostEmitterHarness
             var al = i < a.Length ? a[i] : "<end>";
             if (el != al) Assert.Fail($"{name}: line {i + 1} differs\nexpected: {el}\nactual:   {al}");
         }
+    }
+
+    /// <summary>A golden case copied to <c>tmp/t12-tests/&lt;slug&gt;/</c> (a directory case whole), so the CLIs see it alone; returns its entry file.</summary>
+    public static string Isolate(string name)
+    {
+        var source = Path.Combine(Golden.CasesRoot, name);
+        var caseDir = Path.GetDirectoryName(source)!;
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t12-tests", name.Replace('/', '_'));
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        if (Path.GetFileName(source) != "main.byn") File.Copy(source, Path.Combine(dir, Path.GetFileName(source)));
+        else
+        {
+            foreach (var file in Directory.EnumerateFiles(caseDir, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(dir, Path.GetRelativePath(caseDir, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
+        }
+        return Path.Combine(dir, Path.GetFileName(source));
+    }
+
+    /// <summary>The mode the C# run harness builds <paramref name="path"/> in: its <c>// mode:</c> first line, else <c>safe</c> (RunTests.cs:75-78).</summary>
+    public static string ModeOf(string path)
+    {
+        var first = File.ReadLines(path).FirstOrDefault() ?? "";
+        if (first.StartsWith("// mode: ", StringComparison.Ordinal) && Toolchain.TryParseMode(first["// mode: ".Length..].Trim(), out var mode))
+            return CliApp.ModeName(mode);
+        return "safe";
+    }
+
+    /// <summary><c>CliApp.Run(cli)</c> against <c>bayan-emit self</c>: stdout and stderr by <see cref="AssertSame"/>, then the exit code.</summary>
+    public static void SameAsCli(string name, string[] cli, string[] self)
+    {
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var exit = CliApp.Run(cli, stdout, stderr);
+        var (actualExit, actualOut, actualErr) = Run(self);
+        AssertSame($"{name} stderr", stderr.ToString(), actualErr);
+        AssertSame($"{name} stdout", stdout.ToString(), actualOut);
+        Assert.True(exit == actualExit, $"{name}: exit {actualExit}, expected {exit}");
     }
 }
