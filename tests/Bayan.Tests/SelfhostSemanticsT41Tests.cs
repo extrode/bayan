@@ -303,6 +303,138 @@ public sealed class SelfhostSemanticsT41Tests
                 S.g()
             }
             """)]),
+        ("loop-alloc", [("main.byn", """
+            interface ISink {
+                void put(ref this, string v)
+            }
+
+            struct Box : ISink {
+                string s
+
+                void put(ref this, string v) {}
+            }
+
+            struct Boxes : IIndexable {
+                type Item = Box
+                i64 count => 1
+                Box get(i64 index) => Box { s: "" }
+            }
+
+            string make(Arena a) => "x".copy(to: a)
+
+            string make3(i64 n, by Arena a) => make(a)
+
+            string both(bool f, by Arena a, at Arena b) => make(f ? a : b)
+
+            void use(Arena a) {
+                let s = "y".copy(to: a)
+                print(s)
+            }
+
+            void consume(List<i64> xs) {}
+
+            void main() {
+                let bs = Boxes()
+                for d: dyn ref ISink in bs {
+                    d.put("a")
+                }
+                var m = Map<string, Box>()
+                for d: dyn ref ISink in m {
+                    d.put("a")
+                }
+                var sb = StrBuf()
+                let fv: i64 -> i64 = x => x
+                sb.append(fv)
+                var xs = List<i64>()
+                consume(move (xs))
+                let t = make(Arena())
+                print(t)
+            }
+            """)]),
+        ("iface-default", [("main.byn", """
+            interface IGrow {
+                void grow(ref this, to ref string t)
+
+                void twice(ref this, to ref string t) {
+                    grow(to: ref t)
+                }
+            }
+
+            struct G : IGrow {
+                string s
+
+                void grow(ref this, to ref string t) {
+                    t = s
+                }
+            }
+
+            struct C {
+                string s
+                string name => s
+            }
+
+            enum Color {
+                red
+                green
+            }
+
+            string make(Arena a) => "x".copy(to: a)
+
+            string pair(Arena a, by Arena b) => make(b)
+
+            void main() {
+                var g = G { s: "" }
+                var kept = ""
+                g.twice(to: ref kept)
+                let c = C { s: "a" }
+                let k = Color.fromOrdinal(0)
+                let q = Color.parse("red")
+                {
+                    using let a1 = Arena()
+                    using let a2 = Arena()
+                    kept = pair(a1, by: a2)
+                }
+                print($"{kept}{c.name}")
+            }
+            """)]),
+        ("alloc-roots", [("main.byn", """
+            interface IPoke {
+                void grow(ref this)
+
+                void twice(ref this) {
+                    poke(ref this)
+                }
+            }
+
+            struct G : IPoke {
+                string s
+
+                void grow(ref this) {}
+            }
+
+            struct H {
+                Arena arena
+            }
+
+            void poke<T>(ref T x) where T : IPoke {}
+
+            string make(Arena a) => "x".copy(to: a)
+
+            void use2(Arena a) {
+                let s = make(a)
+                print(s)
+            }
+
+            string viaField(in H h) => make(h.arena)
+
+            void main() {
+                var g = G { s: "" }
+                g.twice()
+                using let arena = Arena()
+                use2(arena)
+                print(make(Arena()))
+            }
+            """)]),
         ("tests-no-main", [("main.byn", """
             void helper() {}
             """)]),
