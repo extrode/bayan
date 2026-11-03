@@ -588,6 +588,27 @@ public sealed class SelfhostSemanticsT41Tests
                 print($"{bx.get(1)}{bx.pick(2)}{ee}{ff}")
             }
             """)]),
+        ("state-fields", [("main.byn", """
+            struct Order {
+                i64 id
+                states {
+                    draft
+                    paid(i64 payment)
+                }
+
+                i64 amount(this is .paid) => payment
+
+                i64 viaLambda(this is .paid) {
+                    let f: () -> i64 = () => payment
+                    return f()
+                }
+            }
+
+            void main() {
+                let o = Order.paid { id: 1, payment: 2 }
+                print($"{o.amount()}{o.viaLambda()}")
+            }
+            """)]),
         ("no-files", []),
     ];
 
