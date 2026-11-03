@@ -558,6 +558,7 @@ struct Ctx {
     // ── T40 state
     /// The C# span of each `for try` synthetic name (Binder.cs:1110-1115, `f.Iterable.Span`), beside `syntheticNames`.
     List<TextSpan> syntheticSpans = List<TextSpan>()
+    // ── T41 state
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
