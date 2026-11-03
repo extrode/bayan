@@ -460,3 +460,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Q828 blind spot (user 2026-11-03): `CInventoryTests` scans literals one at a time, so `({` built across literals (`"(" + "{"`, `.Append('(').Append('{')`) is unseen; add a secondary scan of the C generated for the `run/` corpus (spec 012).
 - 011 T1 (2026-11-03): `selfhost/semantics/*.byn` public API is curated by hand (Q758); a later pass may replace the list with a rule the checker enforces (e.g. every function a `selfhost/emitter` file calls).
 - 011 T2/T5: `selfhost/emitter/lctx.byn` has no counterpart for `Lowerer.cs:41` `_builtins` yet (T1 gate note, 2026-11-03); the task that first reads it ports it.
+- `scripts/selfhost/mutate-batch.test.sh:120` still expects `persist-credentials: false` in `.github/workflows/mutation.yml`, which spec 015 T4 moved to shell checkout; the test fails on dev too (found by 011 P1, 2026-11-03).
