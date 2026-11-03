@@ -150,6 +150,18 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.Contains(Path.Combine(Golden.RepoRoot, "selfhost", "nope.byn") + " matches no compiled source", e.Message);
     }
 
+    /// <summary>An imported module's file is compiled under a path relative to the compilation's <c>DisplayRoot</c>;
+    /// <c>SnapshotSkip</c> resolves it against the root it is given, not the working directory.
+    /// Break-test: resolve with <c>Path.GetFullPath(p)</c> again.</summary>
+    [Fact]
+    public void RelativeModulePathsResolveAgainstTheRoot()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "selfhost");
+        string[] compiled = [Path.Combine(root, "emitter", "a.byn"), "emitter/cprint/common.byn"];
+        var none = new HashSet<string>(StringComparer.Ordinal);
+        Assert.Equal([compiled[0]], SelfhostSemanticsHarness.SnapshotSkip(compiled, none, "selfhost/emitter/cprint/common.byn", root: root));
+    }
+
     /// <summary>A recording whose <c>dotnet test</c> fails (here every build throws on an unknown
     /// <c>BAYAN_SNAPSHOT_FILES</c> entry) is not a recording: <see cref="Record"/> fails on the exit code.
     /// Break-test (F3): drop <see cref="Record"/>'s exit-code assert.</summary>
