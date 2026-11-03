@@ -76,3 +76,4 @@ Bayan.Tests.SelfhostSemanticsTests.TypesAgree(name: "typed/rune.byn")
 Bayan.Tests.SelfhostSemanticsTests.TypesBindingKinds
 Bayan.Tests.SelfhostSemanticsTests.TypesIsCliJson
 Bayan.Tests.SelfhostSemanticsTests.TypesModuleOrder
+Bayan.Tests.WarmUpTests.NoMoreBuildsRunAtOnceThanTheGateAllows
