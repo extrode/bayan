@@ -62,8 +62,8 @@ public sealed class StdPathTests
             ("C:\\x", "C:\\y"), ("C:\\x", "c:\\X\\y"), ("C:\\x", "D:\\x"), ("C:x", "C:y"), ("\\\\server\\share\\a", "\\\\server\\share\\b"),
             ("\\\\server\\share\\a", "\\\\SERVER\\Share\\a\\b"), ("\\\\s1\\share\\a", "\\\\s2\\share\\a"), ("C:/a/b", "C:\\a\\c"), ("/..", "/a"),
             // Letters that differ only by case beyond ASCII: `char.ToUpperInvariant` per UTF-16 unit for the common part, and
-            // `OrdinalIgnoreCase` for a Windows root, where `ſ` and a surrogate pair fold differently. Bayan text is always valid
-            // UTF-8 (literals, `Utf8.decode`, arguments and `Io` all check), so U+FFFD stands in for an invalid byte.
+            // `OrdinalIgnoreCase` for a Windows root, where `ſ` and a surrogate pair fold differently. Bytes that are not UTF-8 are
+            // in InvalidUtf8MatchesDotNet, since no Bayan string holds them.
             ("/é/a", "/É/b"), ("/É/a", "/é/b"), ("/ß/a", "/ẞ/b"), ("/ı/a", "/I/b"), ("/i/a", "/İ/b"), ("/ς/a", "/Σ/b"), ("/σ/a", "/Σ/b"),
             ("/ſ/a", "/S/b"), ("/ǅ/a", "/ǆ/b"), ("/ɐ/a", "/Ɐ/b"), ("/\U00010428/a", "/\U00010400/b"), ("/\U00010400/a", "/\U00010400/b"),
             ("/a\U00010428", "/a\U00010400"), ("/\uFFFD/a", "/\uFFFD/b"), ("/é", "/É"), ("/éa/b", "/Éa"), ("/a/é/", "/A/É"),
@@ -145,6 +145,83 @@ public sealed class StdPathTests
         var source0 = source.ToString().Split('\n');
         for (var i = 0; i < expected.Count; i++)
             Assert.True(expected[i] == actual[i], $"line {i + 1}: {source0[i]}\n.NET: [{expected[i]}]\nBayan: [{actual[i]}]");
+    }
+
+    /// <summary>
+    /// <c>byn_path_relative</c> on bytes that are not UTF-8 gives what <c>Path.GetRelativePath</c> gives on their
+    /// <c>Encoding.UTF8</c> decoding (each maximal invalid subpart one U+FFFD). Bayan text is always valid UTF-8 (literals,
+    /// <c>Utf8.decode</c>, arguments and <c>Io</c> all check), so a native driver (<c>tests/native/path-relative-cases.c</c>)
+    /// calls the runtime directly.
+    /// </summary>
+    [Fact]
+    public async Task InvalidUtf8MatchesDotNet()
+    {
+        byte[][] bad =
+        [
+            [0xFF], [0xC0, 0xAF], [0xE2, 0x82], [0xED, 0xA0, 0x80], [0xE0, 0x80], [0xF4, 0x90], [0xF0, 0x90, 0x90], [0x80, 0x80],
+            [0xC3], [0xFE, 0xC3, 0xA9],
+        ];
+        byte[][] good = [[], "a"u8.ToArray(), "é"u8.ToArray(), "É"u8.ToArray(), "\U00010428"u8.ToArray(), "\U00010400"u8.ToArray()];
+        static byte[] Cat(params byte[][] parts) => parts.SelectMany(p => p).ToArray();
+        var cwd = Encoding.UTF8.GetBytes(Directory.GetCurrentDirectory());
+        var pairs = new List<(byte[] From, byte[] To)>();
+        foreach (var b in bad)
+            foreach (var g in good)
+            {
+                var seg = Cat(b, g);
+                pairs.Add((Cat("/"u8.ToArray(), seg, "/a"u8.ToArray()), Cat("/"u8.ToArray(), seg, "/b"u8.ToArray())));
+                pairs.Add((Cat("/"u8.ToArray(), g, b, "/a"u8.ToArray()), Cat("/"u8.ToArray(), g, "/b"u8.ToArray())));
+                pairs.Add((Cat("/x/"u8.ToArray(), seg), Cat("/x/"u8.ToArray(), g, b, "/y"u8.ToArray())));
+                pairs.Add((Cat("/x"u8.ToArray(), b), Cat("/x"u8.ToArray(), b, "/"u8.ToArray(), g)));
+                pairs.Add((Cat(seg, "/a"u8.ToArray()), Cat(seg, "/b"u8.ToArray())));
+                pairs.Add((Cat(cwd, "/"u8.ToArray(), b), Cat(b, "/"u8.ToArray(), g, "c"u8.ToArray())));
+                pairs.Add((Cat("C:\\"u8.ToArray(), seg, "\\a"u8.ToArray()), Cat("c:\\"u8.ToArray(), seg, "\\b"u8.ToArray())));
+                pairs.Add((Cat("\\\\"u8.ToArray(), seg, "\\s\\a"u8.ToArray()), Cat("\\\\"u8.ToArray(), seg, "\\s\\b"u8.ToArray())));
+            }
+        // Different bytes that decode to the same U+FFFD count are the same segment to .NET.
+        foreach (var b1 in bad)
+            foreach (var b2 in bad)
+                pairs.Add((Cat("/"u8.ToArray(), b1, "/a"u8.ToArray()), Cat("/"u8.ToArray(), b2, "/b"u8.ToArray())));
+
+        var input = new StringBuilder();
+        var expected = new List<string>();
+        var shown = new List<string>();
+        foreach (var (from, to) in pairs)
+        {
+            // .NET throws on an empty path (and on Windows a blank one); the runtime panics there, so neither is a case.
+            if (Relative(Encoding.UTF8.GetString(from), Encoding.UTF8.GetString(to)) is not { } r) continue;
+            input.Append(Convert.ToHexStringLower(from)).Append(' ').Append(Convert.ToHexStringLower(to)).Append('\n');
+            expected.Add(r);
+            shown.Add($"{Convert.ToHexStringLower(from)} -> {Convert.ToHexStringLower(to)}");
+        }
+        Assert.True(expected.Count > 400, $"only {expected.Count} cases");
+
+        var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "path-relative-cases.c"));
+        var build = Toolchain.Build(driver, BuildMode.Debug);
+        Assert.True(build.Succeeded, build.Errors);
+        var psi = new ProcessStartInfo(build.ExecutablePath!)
+        {
+            WorkingDirectory = Directory.GetCurrentDirectory(),
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        using var proc = Process.Start(psi)!;
+        var stderr = proc.StandardError.ReadToEndAsync();
+        var stdout = proc.StandardOutput.ReadToEndLfAsync();
+        proc.StandardInput.Write(input.ToString());
+        proc.StandardInput.Close();
+        var output = await stdout;
+        Assert.True(proc.WaitForExit(120_000), "driver timed out after 120 s");
+        Assert.True(proc.ExitCode == 0, await stderr);
+        var actual = output.Split('\n');
+        Assert.Equal(expected.Count + 1, actual.Length);
+        for (var i = 0; i < expected.Count; i++)
+        {
+            var got = Encoding.UTF8.GetString(Convert.FromHexString(actual[i]));
+            Assert.True(expected[i] == got, $"case {i + 1}: {shown[i]}\n.NET: [{expected[i]}]\nruntime: [{got}] ({actual[i]})");
+        }
     }
 
     // The casing .NET's path comparisons use. `OrdinalCasing.ToUpper` (a unit outside a surrogate pair) and `CharUnicodeInfo.ToUpper`
