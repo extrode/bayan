@@ -294,31 +294,66 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         // sequential: concurrent Process.Start calls leak stdin pipe ends into each other's children, which then never see EOF
         Parallel.For(0, inputs.Length, new ParallelOptions { MaxDegreeOfParallelism = 1 }, i =>
         {
-            var psi = new ProcessStartInfo(built) { RedirectStandardInput = true, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
-            psi.ArgumentList.Add("--json");
+            var (exit, stdout, stderr, timedOut, _) = RunOnStdin(built, ["--json"], inputs[i], 30_000);
+            runs[i] = (inputs[i], exit, stdout, stderr, timedOut);
+        });
+        return runs;
+    });
+
+    /// <summary>Runs <paramref name="program"/> with <paramref name="input"/> on stdin. A run that misses <paramref name="timeoutMs"/>
+    /// is killed and tried once more: a Windows CI runner once stalled one tiny input past 30 s (CI run 41612215707) that lexes in
+    /// milliseconds everywhere else, so only a second timeout counts as a hang.</summary>
+    internal static (int Exit, byte[] Out, string Err, bool TimedOut, int Attempts) RunOnStdin(string program, string[] args, byte[] input, int timeoutMs)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var psi = new ProcessStartInfo(program) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardErrorEncoding = Encoding.UTF8, UseShellExecute = false };
+            foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
             var stdout = new MemoryStream();
             var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
             var stderr = p.StandardError.ReadToEndLfAsync();
             try
             {
-                p.StandardInput.BaseStream.Write(inputs[i]);
+                p.StandardInput.BaseStream.Write(input);
                 p.StandardInput.Close();
             }
             catch (IOException)
             {
-                // the lexer died before reading everything; its exit code says so
+                // the program died before reading everything; its exit code says so
             }
-            var done = p.WaitForExit(30_000);
+            var done = p.WaitForExit(timeoutMs);
             if (!done) p.Kill(entireProcessTree: true);
             p.WaitForExit();
             copy.Wait();
-            runs[i] = (inputs[i], done ? p.ExitCode : -1, ProcessText.Lf(stdout.ToArray()), stderr.Result, !done);
-        });
-        return runs;
-    });
+            if (done || attempt == 2) return (done ? p.ExitCode : -1, ProcessText.Lf(stdout.ToArray()), stderr.Result, !done, attempt);
+        }
+    }
 
     private static string Hex(byte[] bytes) => Convert.ToHexString(bytes);
+
+    [Fact]
+    public void RunOnStdinTriesAStalledRunOnceMoreThenReportsTheTimeout()
+    {
+        var (program, args) = OperatingSystem.IsWindows()
+            ? ("powershell", new[] { "-NoProfile", "-Command", "Start-Sleep -Seconds 30" })
+            : ("sleep", new[] { "30" });
+        var (exit, _, _, timedOut, attempts) = RunOnStdin(program, args, [], 300);
+        Assert.True(timedOut);
+        Assert.Equal(2, attempts);
+        Assert.Equal(-1, exit);
+    }
+
+    [Fact]
+    public void RunOnStdinRunsAPromptProgramOnce()
+    {
+        var input = "x\n"u8.ToArray();
+        var (exit, stdout, _, timedOut, attempts) = RunOnStdin(Built, ["--json"], input, 30_000);
+        Assert.False(timedOut);
+        Assert.Equal(1, attempts);
+        Assert.Equal(0, exit);
+        Assert.Equal(TokenDump.ToJson(Lexer.Lex(new SourceText("<stdin>", input))), Encoding.UTF8.GetString(stdout));
+    }
 
     /// <summary>Law L001: on every corpus input and <c>lex/</c> case, <c>bayan-lex --json</c> on stdin prints exactly <see cref="TokenDump.ToJson"/>.</summary>
     [Fact]
