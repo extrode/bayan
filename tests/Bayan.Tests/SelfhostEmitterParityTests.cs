@@ -152,6 +152,37 @@ public sealed class SelfhostEmitterHarnessTests
         SelfhostEmitterHarness.SameAsCli("-- args", ["build", "--emit-c", many, "--", "x"], [many, "--", "x"]);
     }
 
+    /// <summary>
+    /// A project directory (<c>package.byn</c> with a valid manifest) whose sources have errors, as <c>t26Compile</c>'s project branch
+    /// compiles it: an app and a library, with and without capabilities, without its entry module, with a test file the <c>--tests</c> run
+    /// (<c>CliApp.Test</c>, includeTests) reports and the plain run does not, and a directory with no manifest.
+    /// </summary>
+    [Fact]
+    public void ProjectDirectoriesAgree()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "tmp", "t12-tests", "project-dirs");
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        foreach (var (dir, kind, capabilities, entry) in new[]
+        {
+            ("app", ".app", "", "app"), ("app-net", ".app", "    capabilities: [.net],\n", "app"),
+            ("lib", ".lib", "", "lib"), ("app-no-entry", ".app", "", "other"), ("lib-no-entry", ".lib", "", "other"),
+        })
+        {
+            var project = Path.Combine(root, dir);
+            Directory.CreateDirectory(Path.Combine(project, "src", entry));
+            File.WriteAllText(Path.Combine(project, "package.byn"), $"Package {{\n    name: \"local/{dir}\",\n    version: \"0.1.0\",\n    edition: 2027,\n    kind: {kind},\n{capabilities}}}\n");
+            File.WriteAllText(Path.Combine(project, "src", entry, "main.byn"), "let x: i32 = \"s\"\n");
+            File.WriteAllText(Path.Combine(project, "src", entry, "a.test.byn"), "let y: bool = 1\n");
+            SelfhostEmitterHarness.SameAsCli(dir, ["build", "--emit-c", project], [project]);
+            SelfhostEmitterHarness.SameAsCli($"{dir} --tests", ["test", project], ["--tests", project]);
+        }
+        var plain = Path.Combine(root, "plain");
+        Directory.CreateDirectory(plain);
+        File.WriteAllText(Path.Combine(plain, "main.byn"), "let x: i32 = \"s\"\n");
+        SelfhostEmitterHarness.SameAsCli("no manifest", ["build", "--emit-c", plain], [plain]);
+        SelfhostEmitterHarness.SameAsCli("no manifest --tests", ["test", plain], ["--tests", plain]);
+    }
+
     /// <summary><c>--time</c> and <c>--mode</c> on an input the C# rejects fail as <c>build --emit-c</c> does.</summary>
     [Fact]
     public void ModeAndTimeFailLikeBuildOnAnErrorInput()
