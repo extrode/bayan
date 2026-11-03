@@ -73,14 +73,9 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
     /// C# counterexamples (Q662): the corpus inputs on which the C# checker itself throws, as
     /// <c>&lt;corpus&gt;/&lt;input&gt;</c>. Each is replaced by an empty input; the test asserts the list exactly, so a
     /// new C# throw fails it. The indices follow <see cref="FlatGoldens"/>'s ordinal file order, so they are the same on every file system.
+    /// Empty since T44: the four Q662 inputs were the <c>Parser.ReportBraceless</c> throw, fixed in C# and in the port.
     /// </summary>
-    private static readonly string[] KnownCSharpThrows =
-    [
-        "random/00800.byn", // Q662: ArgumentOutOfRangeException, SourceText.GetText < Parser.ReportBraceless
-        "random/04393.byn", // Q662: same
-        "random/05382.byn", // Q662: same
-        "random/07933.byn", // Q662: same
-    ];
+    private static readonly string[] KnownCSharpThrows = [];
 
     private sealed class Totals
     {
