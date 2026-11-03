@@ -1,0 +1,6 @@
+error BYN2003: `fileNme` is not a member of `Path`
+
+  2 │ print(Path.fileNme("x"))
+    │            ^^^^^^^
+    │
+  help: did you mean `fileName`?

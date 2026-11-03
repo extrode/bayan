@@ -1,0 +1,2 @@
+panic: Path.relative: the path has a NUL byte
+  at path-relative-nul.byn:3
