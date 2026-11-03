@@ -13,8 +13,9 @@
 # --backup (default ~/Developer/backups/bayan-pre-rewrite-2026-11-03.git; refuses if it exists), rewrites
 # every ref in place, restores the origin URL, maps review.reviewedthrough, rewrites old SHAs cited in
 # tracked .md files with one commit on chore/history-sha-refs merged into dev, and prints the force-push
-# commands; it pushes nothing. Undo: the backup is a full mirror (see the end of the run's output).
-# Exit 0 done, 1 refused or a check failed (nothing changed in the repository), 2 usage.
+# commands; it pushes nothing. Undo: the backup is a full mirror (the run prints the command).
+# Exit 0 done, 1 refused or a check failed (nothing changed in the repository), 2 usage, 3 failed after the
+# rewrite began (the repository is changed: run the printed undo).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd -P)
 REPO=$(cd "$HERE/../.." && pwd -P)
@@ -43,6 +44,7 @@ git filter-repo --version >/dev/null 2>&1 || refuse "git filter-repo not found (
 if [ -f "$REPL" ]; then
   n=$(grep -c '==>' "$REPL"); [ "$n" -gt 0 ] || refuse "no old==>new lines in $REPL"
   if grep -v '==>' "$REPL" | grep -q '[^[:space:]]'; then refuse "$REPL has a line without ==>"; fi
+  if grep -qE '^(regex|glob):' "$REPL"; then refuse "$REPL has a regex:/glob: line; the leftover scan checks literal phrases only"; fi
   case "$(cd "$(dirname "$REPL")" && pwd -P)/" in "$REPO"/tmp/*) ;; "$REPO"/*) refuse "$REPL is inside the repository's tracked tree" ;; esac
 fi
 [ -x "$CHECK" ] || [ -f "$CHECK" ] || refuse "missing $CHECK"
@@ -77,9 +79,10 @@ verify() {
   for r in $(git --git-dir="$g" for-each-ref --format='%(refname)' refs/heads refs/tags); do
     out=$(GIT_DIR=$g bash "$CHECK" "$r" 2>&1) || { say "fail: $r: ${out##*$'\n'}"; fails=1; }
   done
-  if git --git-dir="$g" log --all -p --format= | grep -F -f "$LHS" | head -3 | grep -q .; then
+  # --text: filter-repo leaves blobs with a NUL byte untouched, so binary files are scanned too
+  if git --git-dir="$g" log --all -p --text --format= | grep -aF -f "$LHS" | head -3 | grep -q .; then
     say "fail: a replaced phrase is still in the history:"
-    git --git-dir="$g" log --all -p --format= | grep -F -f "$LHS" | head -3 | cut -c1-160 | sed 's/^/  /'
+    git --git-dir="$g" log --all -p --text --format= | grep -aF -f "$LHS" | head -3 | cut -c1-160 | sed 's/^/  /'
     fails=1
   fi
   if git --git-dir="$g" log --all --format=%B | grep -F -f "$LHS" | grep -q .; then say "fail: a replaced phrase is in a message"; fails=1; fi
@@ -151,24 +154,36 @@ git clone -q --mirror "$REPO" "$BACKUP" || { say "fail: backup clone; nothing ch
 git config --get review.reviewedthrough > "$BACKUP/review-reviewedthrough" 2>/dev/null || true
 [ "$(git --git-dir="$BACKUP" rev-list --all | wc -l | tr -d ' ')" = "$BEFORE" ] || { say "fail: backup incomplete; nothing changed"; exit 1; }
 BR=$(git symbolic-ref --short HEAD)
+UNDO="GIT_ALLOW_PROTECTED=1 git fetch --force --prune --update-head-ok $BACKUP '+refs/*:refs/*' && git reset --hard"
+W0=$(cat "$BACKUP/review-reviewedthrough")
+[ -z "$W0" ] || UNDO="$UNDO && git config review.reviewedthrough $W0"
+restore_origin() {
+  if [ -n "$ORIGIN" ] && ! git remote get-url origin >/dev/null 2>&1; then git remote add origin "$ORIGIN"; say "run: origin restored ($ORIGIN)"; fi
+}
+# after filter-repo starts the repository is changed: restore origin, print the undo, exit 3
+changed_fail() {
+  say "fail: $*"; restore_origin
+  say "the repository is changed and nothing is pushed. Undo: git checkout -f $BR, then"
+  say "  $UNDO"; exit 3
+}
 say "run: git filter-repo --force (every ref)"
-git filter-repo --force --quiet "${FILTER[@]}" || { say "fail: filter-repo; restore from $BACKUP (below)"; exit 1; }
+git filter-repo --force --quiet "${FILTER[@]}" || changed_fail "filter-repo"
 GD=$(git rev-parse --git-dir)
 MAP=$GD/filter-repo/commit-map
-if [ -n "$ORIGIN" ] && ! git remote get-url origin >/dev/null 2>&1; then git remote add origin "$ORIGIN"; say "run: origin restored ($ORIGIN)"; fi
+restore_origin
 W=$(git config --get review.reviewedthrough 2>/dev/null || true)
 if [ -n "$W" ]; then
   NW=$(awk -v o="$W" '$1 == o { print $2 }' "$MAP")
   [ -n "$NW" ] && git config review.reviewedthrough "$NW" && say "run: review.reviewedthrough $W -> $NW"
 fi
-verify "$GD" || { say "fail: rewritten repository does not verify; restore from $BACKUP (below)"; exit 1; }
-git checkout -q dev && git checkout -q -b chore/history-sha-refs || { say "fail: cannot create chore/history-sha-refs off dev (exists?); history is rewritten, SHA references not; fix and run the remap by hand"; exit 1; }
+verify "$GD" || changed_fail "rewritten repository does not verify"
+git checkout -q dev && git checkout -q -b chore/history-sha-refs || changed_fail "cannot create chore/history-sha-refs off dev (exists?); history is rewritten, SHA references not"
 FILES=$(git ls-files '*.md')
 N=$(remap "$MAP" $FILES | tail -1)
 for f in $FILES; do [ -f "$f.remap" ] || continue; if cmp -s "$f" "$f.remap"; then rm -f "$f.remap"; else mv "$f.remap" "$f"; fi; done
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-  git commit -qam "docs: point SHA references at the rewritten history ($N references)"
-  git checkout -q dev && git merge -q --no-ff chore/history-sha-refs -m "Merge branch 'chore/history-sha-refs' into dev"
+  git commit -qam "docs: point SHA references at the rewritten history ($N references)" || changed_fail "commit of the SHA references on chore/history-sha-refs refused"
+  { git checkout -q dev && git merge -q --no-ff chore/history-sha-refs -m "Merge branch 'chore/history-sha-refs' into dev"; } || changed_fail "merge of chore/history-sha-refs into dev"
   say "run: $N SHA reference(s) rewritten, merged into dev"
 else git checkout -q dev; say "run: no SHA references to rewrite"; fi
 git checkout -q "$BR" 2>/dev/null || true
@@ -176,4 +191,4 @@ say "ok: history rewritten; $CHANGED commits have new SHAs. Nothing pushed. Push
 say "  git push --force origin $(git for-each-ref --format='%(refname:short)' refs/heads | grep -xE 'dev|main' | tr '\n' ' ')"
 say "  git push --force --tags origin"
 say "  git ls-remote --heads origin   # any other remote branch still has the old history: push it with --force or delete it"
-say "undo (before pushing): GIT_ALLOW_PROTECTED=1 git fetch --force --update-head-ok $BACKUP '+refs/*:refs/*' && git reset --hard"
+say "undo (before pushing): $UNDO"

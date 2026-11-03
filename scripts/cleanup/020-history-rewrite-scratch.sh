@@ -18,9 +18,10 @@ if [ "$(git branch --show-current)" != "dev" ]; then
   printf 'refuse: run from the main checkout on dev (on %s); the scratch is in its tmp/.\n' "$(git branch --show-current)"; exit 1
 fi
 
-# 1. rehearsal clones and probe repos
+# 1. rehearsal clones, probe repos, and the rewrite's generated lists (lhs.txt names the removed phrases)
 printf '== 1. rehearsal scratch\n'
-for t in tmp/hr-test tmp/history-rewrite/trial.git tmp/probe-rev tmp/probe-rev2; do
+for t in tmp/hr-test tmp/history-rewrite/trial.git tmp/probe-rev tmp/probe-rev2 \
+         tmp/history-rewrite/lhs.txt tmp/history-rewrite/mailmap tmp/history-rewrite/tip; do
   if [ ! -e "$t" ]; then printf 'skip:  %s (absent)\n' "$t"; continue; fi
   if git ls-files --error-unmatch "$t" >/dev/null 2>&1; then printf 'refuse: %s is tracked\n' "$t"; continue; fi
   if [ $execute -eq 1 ]; then rm -rf "$t" && printf 'removed: %s\n' "$t"
