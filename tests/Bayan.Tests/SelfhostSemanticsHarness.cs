@@ -195,7 +195,11 @@ public static class SelfhostSemanticsHarness
             static string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
             File.WriteAllText(wrapper, $"#!/bin/sh\nBAYAN_COVERAGE={Quote(prefix)} exec {Quote(binary)} \"$@\"\n");
             File.SetUnixFileMode(wrapper, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            CoverageBuilds.Add((dir, map, prefix, functions));
+            // An imported module's file is compiled under a path relative to DisplayRoot (Compilation.cs:209); the report
+            // and functions.json name it by its full path, as CliApp.cs:1027 resolves it, so the guard finds it in git.
+            string Full(string p) => Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(c.DisplayRoot, p));
+            CoverageBuilds.Add((dir, map with { Counters = map.Counters.Select(k => k with { File = Full(k.File) }).ToList() }, prefix,
+                functions.Select(f => (Full(f.Path), f.Item2, f.Item3)).ToList()));
             return build with { ExecutablePath = wrapper };
         }
     }
