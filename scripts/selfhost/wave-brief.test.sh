@@ -34,5 +34,25 @@ python3 -I scripts/selfhost/wave-brief.py . T33 > /dev/null
 grep -q "guard.sh --base [^ ]* --allow 'docs/bayan-handoff.md,CHANGELOG.md,work/todo.md,docs/specs/010-self-hosted-semantics/010-spec.md,docs/specs/010-self-hosted-semantics/010-tasks.md' --filter 'FullyQualifiedName~SelfhostSemanticsApiTests' --task T33" tmp/010-t33/prompt.md || { echo "FAIL: a docs task's guard lacks its root and spec files once each, or runs no test"; grep guard.sh tmp/010-t33/prompt.md; exit 1; }
 python3 -I scripts/selfhost/review-brief.py . T33 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostSemanticsApiTests"`' tmp/010-t33/review.md || { echo "FAIL: a docs task's review runs no test"; exit 1; }
+# Row 011 (specs.tsv): bare .byn names resolve under selfhost/emitter/, the guard line takes the row's base, test class and --spec, the brief goes to tmp/011-<t>/.
+python3 -I scripts/selfhost/wave-brief.py . T3 --spec 011 > /dev/null
+grep -q "^bash scripts/selfhost/guard.sh --base feat/011-self-hosted-emitter --allow 'selfhost/emitter/lowerstmt.byn,tests/Bayan.Tests/SelfhostEmitterT3Tests.cs,docs/bayan-handoff.md,docs/specs/011-self-hosted-emitter/011-tasks.md' --filter 'FullyQualifiedName~SelfhostEmitterT3Tests' --task T3 --spec 011\$" tmp/011-t3/prompt.md || { echo "FAIL: the 011 guard line"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t3/prompt.md; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T3 --spec 011 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostEmitterT3Tests"`' tmp/011-t3/review.md || { echo "FAIL: the 011 review filter"; exit 1; }
+# Row 010 is byte-for-byte what it was before specs.tsv: the briefs of the commit before the row table (8dae45cc) against this tree's, for T43
+# (skipped when that commit is not in this clone, e.g. a depth-1 checkout).
+old=8dae45cc
+if git cat-file -e $old:scripts/selfhost/wave-brief.py 2> /dev/null; then
+  mkdir -p tmp/wave-brief-old
+  here="$PWD/scripts/selfhost"
+  git show $old:scripts/selfhost/wave-brief.py | sed "s|^HERE = .*|HERE = '$here'|" > tmp/wave-brief-old/wave-brief.py
+  git show $old:scripts/selfhost/review-brief.py > tmp/wave-brief-old/review-brief.py
+  python3 -I tmp/wave-brief-old/wave-brief.py . T43 > /dev/null; python3 -I tmp/wave-brief-old/review-brief.py . T43 > /dev/null
+  cp tmp/010-t43/prompt.md tmp/wave-brief-old/prompt.md; cp tmp/010-t43/review.md tmp/wave-brief-old/review.md
+  python3 -I scripts/selfhost/wave-brief.py . T43 > /dev/null; python3 -I scripts/selfhost/review-brief.py . T43 > /dev/null
+  cmp -s tmp/wave-brief-old/prompt.md tmp/010-t43/prompt.md || { echo "FAIL: the 010 T43 writer brief changed"; exit 1; }
+  cmp -s tmp/wave-brief-old/review.md tmp/010-t43/review.md || { echo "FAIL: the 010 T43 review brief changed"; exit 1; }
+  rm -rf tmp/wave-brief-old
+fi
 bash -n scripts/selfhost/guard.sh
 echo PASS
