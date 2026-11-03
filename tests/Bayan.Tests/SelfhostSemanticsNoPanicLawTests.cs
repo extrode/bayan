@@ -17,7 +17,14 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
 {
-    private const int RandomCorpusSize = 10_000;
+    private const int FullRandomCorpusSize = 10_000;
+
+    /// <summary>The quick tier's random inputs (Q748): the first 1,000 of the full corpus, which the seeded generator
+    /// writes in the same order whatever its size. <c>BAYAN_LAW_TIER=full</c> runs all of <see cref="FullRandomCorpusSize"/>.</summary>
+    private const int QuickRandomCorpusSize = 1_000;
+
+    private static int RandomCorpusSize =>
+        Environment.GetEnvironmentVariable("BAYAN_LAW_TIER") == "full" ? FullRandomCorpusSize : QuickRandomCorpusSize;
 
     private const ulong RandomSeed = 0x9E3779B97F4A7C15;
 
@@ -62,7 +69,7 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
                          + $"{clock.ElapsedMilliseconds} ms");
         Assert.True(totals.Panicked.Count == 0, $"bayan-check panicked:\n{string.Join("\n", totals.Panicked)}");
         Assert.Equal(totals.Inputs, totals.Compared);
-        Assert.Equal(KnownCSharpThrows, totals.Replaced);
+        Assert.Equal(KnownCSharpThrows.Where(t => !t.StartsWith("random/", StringComparison.Ordinal) || int.Parse(t[7..12]) < RandomCorpusSize), totals.Replaced);
 
         clock.Restart();
         var checkedPaths = CheckCli(flat);

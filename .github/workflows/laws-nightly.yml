@@ -1,0 +1,44 @@
+# Nightly and on-demand full tier of every enacted law (spec 011 D11): scripts/selfhost/pre-push-laws.sh runs each enacted
+# law's proof with BAYAN_LAW_TIER=full, the whole corpus where the merge gate runs a fixed seeded subset. It only measures: it never
+# commits or pushes.
+name: laws-nightly
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: laws-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  laws:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      # Replaces actions/checkout (spec 015 handoff, T4): the exact commit at depth 1. The repo is public, so no token.
+      - name: Checkout
+        shell: bash
+        run: |
+          git init -q .
+          git fetch -q --depth=1 --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
+      # Replaces actions/setup-dotnet: the SDK pinned in install-dotnet.sh, sha512-checked.
+      - name: Install .NET SDK
+        shell: bash
+        run: |
+          dotnet_root="$(bash scripts/ci/install-dotnet.sh "$RUNNER_TEMP/dotnet")"
+          echo "DOTNET_ROOT=$dotnet_root" >> "$GITHUB_ENV"
+          echo "$dotnet_root" >> "$GITHUB_PATH"
+      # The proofs cross-compile (OutputTests) and `bayan doctor` expects zig; no runner image has it.
+      - name: Install zig
+        shell: bash
+        run: bash scripts/ci/install-zig.sh "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+      - name: Build
+        run: dotnet build Bayan.slnx
+      - name: Laws (full tier)
+        run: bash scripts/selfhost/pre-push-laws.sh
