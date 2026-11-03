@@ -808,6 +808,7 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
     if b.thisType != -1 {
         // A default cloned onto a struct sees only the interface's members through `this`.
         var visible = true
+        // coverage-exempt: Q746
         if host != -1 && c.functions[host].template != -1 && c.functions[c.functions[host].template].iface != -1 {
             @unobservable because "Q600: declare2.byn is a stub; add a function cloned from an interface default when T38 lands"
             let cloneOf = c.functions[c.functions[host].template].iface
