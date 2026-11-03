@@ -40,12 +40,12 @@ public static class SelfhostEmitterHarness
     /// <summary>Runs the built <c>bayan-emit</c> with <paramref name="args"/>.</summary>
     public static (int Exit, string Out, string Err) Run(params string[] args) => SelfhostParserTests.Run(Build(), args);
 
-    /// <summary>Fails with the first line where <paramref name="actual"/> differs from <paramref name="expected"/>.</summary>
+    /// <summary>Fails with the first line where <paramref name="actual"/> differs from <paramref name="expected"/>, CRLF read as LF.</summary>
     public static void AssertSame(string name, string expected, string actual)
     {
-        if (expected == actual) return;
-        var e = expected.Split('\n');
-        var a = actual.Split('\n');
+        // The C# CLI on Windows ends some lines with Environment.NewLine; the self-hosted runtime writes LF (Q816).
+        var e = expected.Replace("\r\n", "\n").Split('\n');
+        var a = actual.Replace("\r\n", "\n").Split('\n');
         for (var i = 0; i < Math.Max(e.Length, a.Length); i++)
         {
             var el = i < e.Length ? e[i] : "<end>";

@@ -128,6 +128,14 @@ public sealed class SelfhostEmitterHarnessTests
 
     /// <summary>A project without its entry module, an app and a library; a script with an error; the cap on reported errors.</summary>
     [Fact]
+    public void AssertSameReadsCrlfAsLf()
+    {
+        SelfhostEmitterHarness.AssertSame("crlf", "a\r\n\r\nb\n", "a\n\nb\n");
+        var e = Assert.ThrowsAny<Exception>(() => SelfhostEmitterHarness.AssertSame("crlf", "a\r\nb\n", "a\nc\n"));
+        Assert.Contains("crlf: line 2 differs", e.Message);
+    }
+
+    [Fact]
     public void ProjectAndScriptErrorsAgree()
     {
         var root = Path.Combine(Golden.RepoRoot, "tmp", "t12-tests", "projects");
