@@ -91,6 +91,7 @@ enum BuiltinKind {
     panic
     formatSpec
     symbol
+    path
 }
 
 // ── Handles ─────────────────────────────────────────────────────────────────────
@@ -170,7 +171,8 @@ BuiltinKind builtinKindOf(i64 i) {
         case 7: return .processResult
         case 8: return .panic
         case 9: return .formatSpec
-        default: return .symbol
+        case 10: return .symbol
+        default: return .path
     }
 }
 
@@ -596,7 +598,8 @@ string builtinName(BuiltinKind k) {
         case .processResult: return "ProcessResult"
         case .panic: return "Panic"
         case .formatSpec: return "FormatSpec"
-        default: return "Symbol"
+        case .symbol: return "Symbol"
+        default: return "Path"
     }
 }
 
