@@ -6,3 +6,8 @@ import semantics
 /// Lowerer.cs:352 `Statement`: lowers `s`, appending to the current output list.
 public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) {
 }
+
+/// Lowerer.cs:862 `Lvalue` (Q841): the lowered place `e` names, with its statements appended to the current output list.
+public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) {
+    return e
+}

@@ -12,3 +12,13 @@ public string cType(ref CCtx cc, from ref Ctx c, for Type t) {
 public string helper(ref CCtx cc, for string name, from string proto, as string body) {
     return name
 }
+
+/// CEmitter.cs:593-595 `Helper` (D5, Q840): reserves helper `name` before its body is built; false when it is registered.
+public bool helperReserve(ref CCtx cc, for string name, from string proto) uses alloc {
+    return false
+}
+
+/// CEmitter.cs:596-597 `Helper` (D5, Q840): fills reserved helper `name` with `body` and returns its name.
+public string helperFill(ref CCtx cc, for string name, from string proto, as string body) uses alloc {
+    return name
+}
