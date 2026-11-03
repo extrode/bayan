@@ -176,4 +176,4 @@ say "ok: history rewritten; $CHANGED commits have new SHAs. Nothing pushed. Push
 say "  git push --force origin $(git for-each-ref --format='%(refname:short)' refs/heads | grep -xE 'dev|main' | tr '\n' ' ')"
 say "  git push --force --tags origin"
 say "  git ls-remote --heads origin   # any other remote branch still has the old history: push it with --force or delete it"
-say "undo (before pushing): git fetch --force $BACKUP '+refs/*:refs/*' && git reset --hard"
+say "undo (before pushing): GIT_ALLOW_PROTECTED=1 git fetch --force --update-head-ok $BACKUP '+refs/*:refs/*' && git reset --hard"
