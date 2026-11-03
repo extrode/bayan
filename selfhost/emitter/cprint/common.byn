@@ -208,3 +208,13 @@ public void mapLine(ref StrBuf sb, from in Ctx c, through ref CFunc f, at semant
     sb.append($"#line {n} {path}\n")
     f.lastLineEnd = sb.length
 }
+
+/// CEmitter.cs:593-595 `Helper` (D5, Q840): reserves helper `name` before its body is built; false when it is registered.
+public bool helperReserve(ref CCtx cc, for string name, from string proto) uses alloc {
+    return false
+}
+
+/// CEmitter.cs:596-597 `Helper` (D5, Q840): fills reserved helper `name` with `body` and returns its name.
+public string helperFill(ref CCtx cc, for string name, from string proto, as string body) uses alloc {
+    return name
+}
