@@ -1,0 +1,22 @@
+interface IThing {
+    i64 get()
+}
+
+struct S : IThing {
+    i64 n = 0
+
+    i64 get() => n
+}
+
+struct Bag {
+    Map<i64, S> items
+
+    dyn ref IThing entry(ref this, i64 k) => items.slot(k)
+}
+
+void main() {
+    var b = Bag { items: Map<i64, S>() }
+    b.items[1] = S { n: 7 }
+    let d: dyn ref IThing = b.entry(1)
+    print($"{d.get()}")
+}
