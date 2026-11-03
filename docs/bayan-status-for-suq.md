@@ -1,6 +1,6 @@
 # Bayan status for porting Sūq
 
-Commit: `f797e578735ddaf85fa9c126546bb5313913c6bc` (`feat/design-round-2`) — snapshot 2026-10-22 ~14:00; branches move after that
+Commit: `af964b51e36bf17ffc5d5ea2597a2323112a478b` (`feat/design-round-2`) — snapshot 2026-10-22 ~14:00; branches move after that
 
 Test run (`dotnet test -v q`): `Failed!  - Failed: 1, Passed: 1315, Skipped: 0, Total: 1316, Duration: 22 m 35 s`. The failure is `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray`, an allocation-count test, on a machine loaded by other test runs; re-run alone it passes (1/1).
 
@@ -47,8 +47,8 @@ let p = Point { x = 1, y: 2 };
 | 004 | port friction: implied/swapped argument names, contextual keywords, literal inference, `string.from`, `catch { }`, `removeRange`, `toHex` | Implemented (`diag/argument-implied-name`, `run/string-from`, `run/to-hex`) |
 | 005 | terminal style for CLI output | Implemented (`tests/cases/style/`) |
 | 006 | interfaces and iterators | In progress on `feat/006-interfaces-iterators`: T1–T4 of 13 landed (parse, symbols, declarations, `dyn ref` type rules); T5 (conformance) in progress on `chore/worker-006-t5`, not merged; dispatch, `for … in` user types, codegen not landed |
-| 007 | delegates and lambdas | In progress on `feat/007-lambdas` (spec, plan and tasks only, revised for round 3 at `2b14e26`; no compiler code) |
-| 008 | `HashMap` and `Symbol` interning | Not started in code; spec, plan and tasks on `feat/008-hashmap-symbols` (`ce85b5a`) |
+| 007 | delegates and lambdas | In progress on `feat/007-lambdas` (spec, plan and tasks only, revised for round 3 at `c27ec58`; no compiler code) |
+| 008 | `HashMap` and `Symbol` interning | Not started in code; spec, plan and tasks on `feat/008-hashmap-symbols` (`3911393`) |
 | 009 | parser in Bayan | Not started in code; spec docs being written on `feat/009-selfhost-parser` |
 | 010 | semantics in Bayan, binder-equivalence law | Not started |
 | 011 | lowering and C emitter in Bayan | Not started |
@@ -61,7 +61,7 @@ let p = Point { x = 1, y: 2 };
 | Round 1 (`bayan-handoff.md`, addendum 001) | Applied |
 | Addendum 002 (laws, contracts, parallel iterators) | Partial: §1 keyword reservation only; `law` declarations, `bayan laws`, `ensures`, `.par()` not started |
 | Round 2 (`bayan-design-round-2.md`) | Partial *(round 2, unmerged)*, per section below |
-| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`735996c`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md updated there too (`bf345fb`). Code alignment of plan and GRAMMAR to the spec merged (`7cff9b9`) |
+| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`e60ab6f`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md updated there too (`76583ce`). Code alignment of plan and GRAMMAR to the spec merged (`b538763`) |
 
 Round 2 per section *(round 2, unmerged)*:
 
@@ -87,9 +87,9 @@ Round 2 per section *(round 2, unmerged)*:
 | 18 STYLE / `style` in `package.byn` | Partial: manifest field validated, read by nothing; no formatter | `tests/cases/manifest/style-invalid.byn` |
 | 19 Derivations | Spec only | — |
 
-Review fixes for round 2 (findings 1–6, 8, 10) are merged here at `f797e57` *(round 2, unmerged)*: `for try` over a `var` sequence advances that variable, `defer failing(x);` calls a function named `failing` instead of opening a `defer failing` block, `requires n > Limit {}` parses the block as the body, conditions may start with a parenthesis (`if (i32)big > 3`, `if (a) in 0..=3`, `for (x) in xs`), and the new BYN2615 (a `defer panicking` body reads a local moved after it). Evidence: `run/for-try-var`, `run/defer-call-named-failing`, `parse/requires-bare-condition`, `run/condition-cast`, `run/condition-paren-in`, `run/for-paren-single-variable`, `diag/panic-handler-reads-moved`.
+Review fixes for round 2 (findings 1–6, 8, 10) are merged here at `af964b5` *(round 2, unmerged)*: `for try` over a `var` sequence advances that variable, `defer failing(x);` calls a function named `failing` instead of opening a `defer failing` block, `requires n > Limit {}` parses the block as the body, conditions may start with a parenthesis (`if (i32)big > 3`, `if (a) in 0..=3`, `for (x) in xs`), and the new BYN2615 (a `defer panicking` body reads a local moved after it). Evidence: `run/for-try-var`, `run/defer-call-named-failing`, `parse/requires-bare-condition`, `run/condition-cast`, `run/condition-paren-in`, `run/for-paren-single-variable`, `diag/panic-handler-reads-moved`.
 
-Round-3 sections not applied in code: all of them, §1–§21. Docs status on `feat/design-round-3`: HANDOFF and plan written; GRAMMAR and STYLE updated for §1, §5, §12, §13, §15; SPEC updated (`bf345fb`). The request's "audit fixes" did not match a named section in the round-3 docs; "audit" there means the `bayan audit` command (§4) and the Sūq naming audit in the friction log.
+Round-3 sections not applied in code: all of them, §1–§21. Docs status on `feat/design-round-3`: HANDOFF and plan written; GRAMMAR and STYLE updated for §1, §5, §12, §13, §15; SPEC updated (`76583ce`). The request's "audit fixes" did not match a named section in the round-3 docs; "audit" there means the `bayan audit` command (§4) and the Sūq naming audit in the friction log.
 
 ## 2. Toolchain
 

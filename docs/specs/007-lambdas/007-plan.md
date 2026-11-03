@@ -1,6 +1,6 @@
 # 007 — Plan
 Spec: ./007-spec.md
-Written 2026-10-22 against dev at `bbb0c44` (round 2 applied; spec §3.16 is round 2 §8, `docs/plans/2026-10-21-001-design-round-2.md`). Revised 2026-10-22 for design round 3 (`docs/bayan-design-round-3.md`, plan `docs/plans/2026-10-22-002-design-round-3.md`; round 3 wins on conflict). Revised 2026-10-25 against dev at 123e9ff (round 3, revisions 0002–0011 and spec 006 merged): files and methods re-located there; line citations dropped, so locate by method name.
+Written 2026-10-22 against dev at `0a5b502` (round 2 applied; spec §3.16 is round 2 §8, `docs/plans/2026-10-21-001-design-round-2.md`). Revised 2026-10-22 for design round 3 (`docs/bayan-design-round-3.md`, plan `docs/plans/2026-10-22-002-design-round-3.md`; round 3 wins on conflict). Revised 2026-10-25 against dev at 58cfad9 (round 3, revisions 0002–0011 and spec 006 merged): files and methods re-located there; line citations dropped, so locate by method name.
 
 ## Approach
 
@@ -16,7 +16,7 @@ Written 2026-10-22 against dev at `bbb0c44` (round 2 applied; spec §3.16 is rou
 
 **Effects ride on the type; checking goes in the effect pass.** `FunctionType.Uses` is resolved from a `UsesClause` as declarations' `uses` are, compared in identity (R3) and shown in `DisplayName`. Function-typed parameters are effect-polymorphic (round 3 §13: a function taking a closure inherits its effects): a call through a parameter charges nothing to its function, and a call that passes a `BoundFunctionRef` or `BoundLambda` to a function-typed parameter charges that argument's effects to the caller (a forwarded parameter charges nothing). Elsewhere (a local, Q359) the conversion checks the effects against the type's `uses` bound (BYN6005) and a call through the value charges that `uses`. All of it hooks into `EffectAnalysis.cs` (round-3 step 5.3d) in T5.
 
-**Depends on dev at 123e9ff (round 3 and spec 006 merged).** 007's grammar extends round 3's (semicolon-free termination, `let`/`var` local bindings, type-first declarations (J54), the `->` token, `uses`, particles); 007 adds cases and members, never reorders round-3 or 006 code. 006's cases in the switches both specs extend (`Conversions.Implicit`'s `ToDynRef`, `TypeParameterType.Occurs`, `Unify`, `CEmitter.CType`/`Key`/`Conversion`) stay in place; 007's go last in each switch.
+**Depends on dev at 58cfad9 (round 3 and spec 006 merged).** 007's grammar extends round 3's (semicolon-free termination, `let`/`var` local bindings, type-first declarations (J54), the `->` token, `uses`, particles); 007 adds cases and members, never reorders round-3 or 006 code. 006's cases in the switches both specs extend (`Conversions.Implicit`'s `ToDynRef`, `TypeParameterType.Occurs`, `Unify`, `CEmitter.CType`/`Key`/`Conversion`) stay in place; 007's go last in each switch.
 
 ## Tech / dependencies
 

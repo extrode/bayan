@@ -6,9 +6,9 @@ This document tracks progress made since the 2026-10-28 addendum: landing of T15
 
 | Branch / Worktree | Commit | State |
 |---|---|---|
-| `dev` | `bf1f0b3` | Merged `feat/010-self-hosted-semantics` with T15, T13, and T11 redos landed. Working tree clean. |
-| `feat/010-self-hosted-semantics` | `5389d81` | **The base.** T1–T11, T13, T15 ticked. Tasks T12, T14, T16–T39 open. |
-| `feat/010-t18` (`tmp/wt/t18`) | `856c21e` | **Active task.** Method-for-method port of `BinderExpressions.cs:600–1155` into `selfhost/semantics/express2.byn`. 27/27 oracle tests pass. Guard passed all checks except 5 surviving mutations. Working tree clean. |
+| `dev` | `0c472cd` | Merged `feat/010-self-hosted-semantics` with T15, T13, and T11 redos landed. Working tree clean. |
+| `feat/010-self-hosted-semantics` | `08d9b24` | **The base.** T1–T11, T13, T15 ticked. Tasks T12, T14, T16–T39 open. |
+| `feat/010-t18` (`tmp/wt/t18`) | `c56a7eb` | **Active task.** Method-for-method port of `BinderExpressions.cs:600–1155` into `selfhost/semantics/express2.byn`. 27/27 oracle tests pass. Guard passed all checks except 5 surviving mutations. Working tree clean. |
 | `feat/010-t12-redo`, `t14-redo`, `t16-redo`, `t17-redo` | remote heads | Not started; pending redos per the 2026-10-28 review findings. |
 
 ---
@@ -19,23 +19,23 @@ This document tracks progress made since the 2026-10-28 addendum: landing of T15
    - Review 1 MEDIUM findings resolved (captured type map once via `t15CaptureTypes` so lambda bodies keep outer map; oracle test for body-less functions; citations updated).
    - Guard passed with all mutations killed.
    - Review passed (`docs/specs/010-self-hosted-semantics/reviews/T15.md`).
-   - Landed via `land.sh T15 feat/010-t15-redo` (`b628d39`), ticked (`b70ac7b`).
+   - Landed via `land.sh T15 feat/010-t15-redo` (`618094b`), ticked (`5c07606`).
 
 2. **T13 redo** (`feat/010-t13-redo`):
    - Applied review rulings: used Q714 shared state (`c.exitCodes`, `c.mainStatements`, `c.testBodies`).
    - Drained exit codes, main statements, and test bodies in `bindAll`.
    - Guard passed with 15/15 tests passing against C# oracle.
    - Review passed (`docs/specs/010-self-hosted-semantics/reviews/T13.md`).
-   - Landed via `land.sh T13 feat/010-t13-redo` (`16712b7`), ticked (`3d459ce`).
+   - Landed via `land.sh T13 feat/010-t13-redo` (`df97559`), ticked (`c746100`).
 
 3. **T11 redo** (`feat/010-t11-redo`):
    - Wired Q714 shared fields: `includeTests`, `skipOwnershipCheck`, `mainStatementsFn`/`mainStatements`, `testBodies`.
    - Handled `afterMembersDeclared` and `runWork` constraint dispatch (`t13RunConstraint`).
    - Guard passed with 24/24 oracle tests passing.
    - Review passed (`docs/specs/010-self-hosted-semantics/reviews/T11.md`).
-   - Landed via `land.sh T11 feat/010-t11-redo` (`027cccf`), ticked (`5389d81`).
+   - Landed via `land.sh T11 feat/010-t11-redo` (`e31d788`), ticked (`08d9b24`).
 
-4. **Merge to `dev`** (`bf1f0b3`):
+4. **Merge to `dev`** (`0c472cd`):
    - Merged `feat/010-self-hosted-semantics` into `dev` with `--no-ff`.
 
 ---
@@ -59,7 +59,7 @@ The task is in worktree `tmp/wt/t18` on branch `feat/010-t18`.
 - Index and slice expressions, from-end indexing (`^k`), bounds checking, and string indexer diagnostics (BYN2201).
 - 27 unit tests in `tests/Bayan.Tests/SelfhostSemanticsT18Tests.cs` comparing directly against C# oracle in-process. All 27 pass.
 - Handoff Questions 605–609 documented and resolved; Progress log entry written.
-- Working tree committed and clean at `856c21e`.
+- Working tree committed and clean at `c56a7eb`.
 
 ### What remains for T18:
 Running `bash scripts/selfhost/guard.sh --base feat/010-self-hosted-semantics --allow 'selfhost/semantics/express2.byn,tests/Bayan.Tests/SelfhostSemanticsT18Tests.cs' --filter 'FullyQualifiedName~SelfhostSemanticsT18Tests' --mutate selfhost/semantics/express2.byn` currently reports 5 surviving mutations:

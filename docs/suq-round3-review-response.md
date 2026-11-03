@@ -85,7 +85,7 @@ Where the docs had decided an item differently, the brief's decision was applied
 - Recorded in:
   - plan legend `:7`, §5 (c) `:36`, C25, J27 `:207`, J34 `:214`, §7 total `:293` ("2 retired (1032, 1049)");
   - SPEC §21.5 `:1692`.
-- BYN1049 was never raised, so it has no golden. It keeps a `RetiredUnlessNot` descriptor and a "No longer reported" page (`docs/diagnostics/BYN1049.md`, fc0b460).
+- BYN1049 was never raised, so it has no golden. It keeps a `RetiredUnlessNot` descriptor and a "No longer reported" page (`docs/diagnostics/BYN1049.md`, 15fda4c).
 
 **Other new codes.** These come from Part B and are listed in plan §23 (`:141-145`).
 - BYN7005 `StateLiteralNeedsState`: J37, step 5.3c.
@@ -207,7 +207,7 @@ Those branches are not merged, so the list is copied here. The conservative choi
 | Q118 | What may lambda parameters carry? | Names only; types, modifiers, particles and defaults are parse errors; arity is BYN2820; no expected type is BYN2218. Amended | 007 |
 | Q119 | How do lambdas interact with inference? | Bound after type arguments are inferred and never contribute; a type parameter only they could fix is BYN2740. Kept | 007 |
 | Q120 | `fails` on function types? | Parsed, typed and callable with `try`/`catch`; conversion needs equal error sets. Kept | 007 |
-| Q121 | Grammar corners of `->`? | Right-associative; `?` and `[N]` bind tighter; `=>` in a function type is BYN1055 `FatArrowFunctionType` with a fix to `->` (round-3 plan C26; 007 docs updated in feat/007-lambdas 1efbd8f; BYN1050 is round-3 `RequiresValue`). Amended | 007 |
+| Q121 | Grammar corners of `->`? | Right-associative; `?` and `[N]` bind tighter; `=>` in a function type is BYN1055 `FatArrowFunctionType` with a fix to `->` (round-3 plan C26; 007 docs updated in feat/007-lambdas ba89acd; BYN1050 is round-3 `RequiresValue`). Amended | 007 |
 | Q122 | Generic aliases? | None; `type Predicate<T> = T -> bool` waits for them. Kept | 007 |
 | Q123 | Which named functions are values? | Module-level non-generic functions only; others are BYN2824 with a wrap-in-a-lambda help. Kept | 007 |
 | Q124 | Who registers BYN1028 and BYN1050? | 007's parser unless round 2 or round-3 5.2a registers them first (same collision as Q121, C26). Amended | 007 |

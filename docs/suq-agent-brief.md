@@ -1,6 +1,6 @@
 # Sūq → Bayan: round-3 review input and Sūq-0 goldens
 
-From Sy, for the compiler agent. This follows `docs/bayan-status-for-suq.md` (commit `f797e57`, `feat/design-round-2`).
+From Sy, for the compiler agent. This follows `docs/bayan-status-for-suq.md` (commit `af964b5`, `feat/design-round-2`).
 
 The round-3 plan (J1–J25) is awaiting Sy's approval. This document feeds Sūq's findings into that plan before approval, and adds a first compilable slice of Sūq as golden tests.
 
@@ -90,7 +90,7 @@ Full text is in `docs/bayan-reference-app-friction.md`. For each item, give the 
 
 ## Part C — Round-3 audit fixes to verify
 
-These came out of an audit of the round-3 HANDOFF before it reached you, and should be in the version with O1–O10 resolved (`735996c`). For each, cite the GRAMMAR/SPEC line, or say how the docs differ.
+These came out of an audit of the round-3 HANDOFF before it reached you, and should be in the version with O1–O10 resolved (`e60ab6f`). For each, cite the GRAMMAR/SPEC line, or say how the docs differ.
 
 1. Waqf termination: a newline ends a statement unless the line ends with a binary operator, or the next line starts with `.`, `?.`, `??`, `except` or `requires`. A blank line always ends one.
 2. Head-first declarations: `struct unique`, `type distinct`, `union error X { … }`, and `union error S = A, B` for composition. No `unique struct`, `error enum` or `error set`.
@@ -121,7 +121,7 @@ These came out of an audit of the round-3 HANDOFF before it reached you, and sho
 
 ## Part D — Sūq-0 goldens (current syntax)
 
-Four programs and one test file, written in the round-2 syntax the compiler implements at `f797e57`. They cover what compiles today: pricing, money, packing and the order lifecycle. Units, distinct types, typestate and `requires` on fields aren't implemented, so the slices use `i64` grams and basis points, runtime state checks, and explicit validation. Every expected output was generated from Sūq's C# baseline, which has 37 passing tests, including against PostgreSQL. The programs aren't guesses about the domain; they're a port.
+Four programs and one test file, written in the round-2 syntax the compiler implements at `af964b5`. They cover what compiles today: pricing, money, packing and the order lifecycle. Units, distinct types, typestate and `requires` on fields aren't implemented, so the slices use `i64` grams and basis points, runtime state checks, and explicit validation. Every expected output was generated from Sūq's C# baseline, which has 37 passing tests, including against PostgreSQL. The programs aren't guesses about the domain; they're a port.
 
 ### Rules
 
@@ -171,7 +171,7 @@ These are taken from the status report. Where a detail is wrong, D3 applies.
 
 ```csharp
 // suq-money.byn — Sūq-0 slice 1: currency-safe money, formatting, error enums
-// Written in round-2 syntax (what the compiler implements at f797e57).
+// Written in round-2 syntax (what the compiler implements at af964b5).
 
 public enum Currency { myr, sgd, usd }
 
