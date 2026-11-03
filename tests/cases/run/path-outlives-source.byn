@@ -1,0 +1,11 @@
+// `Path.fileName` and `Path.relative` return fresh copies, so their results outlive the `StrBuf` they were read from.
+void main() {
+    var buf = StrBuf(capacity: 16)
+    buf.append("/a/b.txt")
+    let name = Path.fileName(buf.view)
+    let rel = Path.relative(from: "/a", to: buf.view)
+    buf.clear()
+    buf.append("/other")
+    print(name)
+    print(rel)
+}
