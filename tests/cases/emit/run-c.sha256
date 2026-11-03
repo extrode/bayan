@@ -35,6 +35,7 @@ aae6507922cd9ef8c051e2b96583266f5b25ff04fe1f830b76170075129badd6  run/dyn-ref-li
 c4a6c818399cbf757bb4fe67f2e9b8b6a27919f6b3cd8e8f201546a51e990554  run/dyn-ref-readonly-this-argument.byn
 c28d4870a40fcd0183e261bdc9f494e3c5dcf5fb024dc7cafccb0deaaf4fdb17  run/dyn-ref-this-field.byn
 ed7728937b83de673670e1fc9c06abfb78febac26640d2801f9ed154eba57860  run/dyn-ref-this-list-field.byn
+9e4f40ec377477e85020be791e74f88eefa4675ccd8b2889f96339230c975ab2  run/dyn-ref-this-map-slot.byn
 c06e9d95e01d8d2a155827034586badf264dd9a608fae407199abc13a6b6c362  run/dyn-ref-this-region.byn
 5b55a65f54f75943a8ebd63f44056f10d615fa0f823c34b03951cee04e433528  run/dyn-ref-unique.byn
 f53a377bdf183da011b4a5f3199a94717b03551af7fa7170f2c18bb247d7aeef  run/enums.byn
