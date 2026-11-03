@@ -559,6 +559,11 @@ struct Ctx {
     /// The C# span of each `for try` synthetic name (Binder.cs:1110-1115, `f.Iterable.Span`), beside `syntheticNames`.
     List<TextSpan> syntheticSpans = List<TextSpan>()
     // ── T41 state
+    /// C# `Compilation.StoreSummaries`: for each template with a body, what it may store from a parameter (or `this`, -1)
+    /// into a `ref`/`out` parameter (or its `ref this` receiver), with the first place it does, in insertion order.
+    Map<FuncId, List<StorePair>> storeSummaries = []
+    /// C# `Compilation.ReturnSummaries`: for each template with a body, the parameters (or `this`, -1) its result may borrow.
+    Map<FuncId, List<i64>> returnSummaries = []
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────

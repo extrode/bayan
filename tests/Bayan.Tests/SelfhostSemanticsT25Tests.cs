@@ -630,6 +630,7 @@ public sealed class SelfhostSemanticsT25Tests
             for fn in fns {
                 if !functionIsInstance(ref c, by: fn) { bindFunction(ref c, for: fn) }
             }
+            summarizeRegions(ref c)
             return move c
         }
 
