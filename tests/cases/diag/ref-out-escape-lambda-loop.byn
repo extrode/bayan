@@ -1,0 +1,11 @@
+void pass((i64 -> i64) f, to out (i64 -> i64) g) {
+    g = f
+}
+
+void main() {
+    var last: i64 -> i64 = x => x
+    for i in 0..3 {
+        pass(x => x + i, to: out last)
+    }
+    print($"{last(1)}")
+}

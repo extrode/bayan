@@ -1,0 +1,22 @@
+// finish() on an element or a field of a local is a loan on that local (Q745).
+void element() {
+    var xs = List<StrBuf>()
+    xs.append(StrBuf())
+    xs[0].append("a")
+    let s = xs[0].finish()
+    xs[0].clear()
+    print(s)
+}
+
+void field() {
+    var t = (buf: StrBuf(), n: 1)
+    t.buf.append("a")
+    let s = t.buf.finish()
+    t.buf.clear()
+    print(s)
+}
+
+void main() {
+    element()
+    field()
+}

@@ -1,7 +1,7 @@
-error BYN3002: `sb` does not live as long as `text`, which borrows it
+error BYN3002: arena `arena` does not live as long as `text`, which borrows it
 
   10 │             text = sb.finish()
-     │                    ^^^^^^^^^^^ `sb` is freed at the end of its block
+     │                    ^^^^^^^^^^^ arena `arena` is freed at the end of its block
      │
   help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough
 

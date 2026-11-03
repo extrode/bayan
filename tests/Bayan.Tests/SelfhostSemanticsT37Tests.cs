@@ -319,8 +319,11 @@ public sealed class SelfhostSemanticsT37Tests
     private static object? Get(object o, string member) =>
         o.GetType().GetField(member, Any) is { } f ? f.GetValue(o) : o.GetType().GetProperty(member, Any)!.GetValue(o);
 
-    private static object? Invoke(object? target, string method, params object?[] args) =>
-        RA.GetMethod(method, Any)!.Invoke(target, args);
+    private static object? Invoke(object? target, string method, params object?[] args)
+    {
+        var m = RA.GetMethods(Any).Single(m => m.Name == method && m.GetParameters().Length >= args.Length && m.GetParameters().Skip(args.Length).All(p => p.IsOptional));
+        return m.Invoke(target, [.. args, .. m.GetParameters().Skip(args.Length).Select(p => p.DefaultValue)]);
+    }
 
     private static string Diag(Diagnostic d)
     {
@@ -365,7 +368,7 @@ public sealed class SelfhostSemanticsT37Tests
         return parts[1] == "r" ? call.Receiver! : call.Arguments[int.Parse(parts[1][1..])];
     }
 
-    private static object NewRegion(int depth, string name) => Activator.CreateInstance(Nested("Region"), depth, name)!;
+    private static object NewRegion(int depth, string name) => Activator.CreateInstance(Nested("Region"), depth, name, int.MinValue)!;
 
     private static object Borrow(FunctionSymbol fn, string spec)
     {
@@ -408,7 +411,7 @@ public sealed class SelfhostSemanticsT37Tests
         // Compilation.Create already ran the analysis; start the per-method cache afresh, as the Bayan side does.
         ((IDictionary)typeof(Compilation).GetProperty("ChangedFields", Any)!.GetValue(c)!).Clear();
         var fn = Function(c, fnName);
-        var ra = Activator.CreateInstance(RA, Any, null, [c, fn], null)!;
+        var ra = Activator.CreateInstance(RA, Any, null, [c, fn, false], null)!;
         RA.GetField("_reporting", Any)!.SetValue(ra, true);
         var mark = c.Diagnostics.Items.Count;
         var lines = new List<string>();

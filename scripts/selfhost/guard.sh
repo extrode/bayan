@@ -47,7 +47,9 @@ W=$(grep -cE ' warning [A-Z]+[0-9]+' "$LOG/build.txt"); E=$(grep -cE ' error [A-
 
 # 4 tests
 if [ "$E" = 0 ]; then
-  ( [ -n "$COVER" ] && export BAYAN_COVERAGE=$COV BAYAN_COVERAGE_FILES=$COVER
+  # the harness writes the coverage report in a ProcessExit handler; vstest kills the test host shortly after the run unless
+  # given longer, and merging ~1,100 counter files (L022 under coverage, T41) takes more than its default
+  ( [ -n "$COVER" ] && export BAYAN_COVERAGE=$COV BAYAN_COVERAGE_FILES=$COVER VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=600000
     dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" ) > "$LOG/test.txt" 2>&1; TX=$?
   R=$(grep -E 'Total tests:|^ *(Passed|Failed|Skipped): *[0-9]+' "$LOG/test.txt" | tr -s ' \n' ' ')
   [ $TX = 0 ] || note "tests: FAIL ($R) — first failure: $(grep -m1 -A8 'Error Message' "$LOG/test.txt" | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"

@@ -366,7 +366,9 @@ BExpr bindBuiltinMethodCall(ref Binder b, through ref Ctx c, for in parser.CallE
     } else if m.member == .ioReadAll {
         returns = internResult(ref c, by: m.returns, to: t9Type(ref c, for: "IoError"))
     }
-    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: m.member, receiver: target, arguments: move args, type: returns })
+    let n = addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: m.member, receiver: target, arguments: move args, type: returns })
+    setSyntaxFlags(ref c, for: n, to: syntaxCall)
+    return n
 }
 
 /// BinderCalls.cs:858 IsDefaultable: whether `map.slot` can insert a default `t`: numbers, `bool`, `rune`, `string`,
