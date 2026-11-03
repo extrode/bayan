@@ -386,6 +386,26 @@ run_undo --discard-changes-since-move
 if grep -qF "$NKEY" "$CLAUDE_HOME/lessons/INDEX.md" || ! grep -qF "$OKEY" "$CLAUDE_HOME/lessons/INDEX.md"; then fail "N4: undo did not restore INDEX.md"; fi
 [ -f "$LL/n.md" ] && [ ! -e "$CLAUDE_HOME/lessons/$NKEY--worktrees-new" ] || fail "N4: undo did not reverse the late lessons dir"
 
+# --- D4: CLAUDE_HOME with regex characters still rewrites INDEX.md for a late lessons dir; none, no write
+SAVED_CLAUDE_HOME=$CLAUDE_HOME
+export CLAUDE_HOME=$HOME_FX/.cl[a]u.de
+build_fixture
+STOP_AFTER=6 run_mv --execute
+[ "$RC" -eq 99 ] || fail "D4: stop after 6: exit $RC: $OUT"
+I0=$(shasum < "$CLAUDE_HOME/lessons/INDEX.md")
+STOP_AFTER=7 run_mv --execute
+[ "$(shasum < "$CLAUDE_HOME/lessons/INDEX.md")" = "$I0" ] || fail "D4: INDEX.md changed with no late lessons dir"
+build_fixture
+STOP_AFTER=6 run_mv --execute
+[ "$RC" -eq 99 ] || fail "D4: stop after 6 (late): exit $RC: $OUT"
+LL=$CLAUDE_HOME/lessons/$OKEY--worktrees-new
+mkdir -p "$LL"; echo "lesson n" > "$LL/n.md"
+echo "- late $OKEY--worktrees-new/n.md" >> "$CLAUDE_HOME/lessons/INDEX.md"
+run_mv --execute
+[ "$RC" -eq 0 ] || fail "D4: resume: exit $RC: $OUT"
+grep -qxF -- "- late $NKEY--worktrees-new/n.md" "$CLAUDE_HOME/lessons/INDEX.md" || fail "D4: INDEX.md not rewritten under a CLAUDE_HOME with regex characters"
+export CLAUDE_HOME=$SAVED_CLAUDE_HOME
+
 # --- N5: the late lessons dir's INDEX.md rewrite survives a resume interrupted in between
 build_fixture
 STOP_AFTER=6 run_mv --execute

@@ -533,7 +533,9 @@ adopt_dirs() {
   done < <(renames)
   # step 6 already rewrote INDEX.md; a late lessons dir's key in it is rewritten here the same way (read
   # from the manifest, so an interrupted resume still does it on the next one; no hits writes nothing)
-  if grep -q "^rename-late${TAB}$CLAUDE_HOME/lessons/" "$MANIFEST" && [ -f "$CLAUDE_HOME/lessons/INDEX.md" ]; then
+  # literal prefix match: $CLAUDE_HOME may hold regex characters ([ * . backslash); ENVIRON, as awk -v unescapes backslashes
+  if P="$CLAUDE_HOME/lessons/" awk -F"$TAB" '$1 == "rename-late" && index($2, ENVIRON["P"]) == 1 { f = 1 } END { exit !f }' "$MANIFEST" \
+    && [ -f "$CLAUDE_HOME/lessons/INDEX.md" ]; then
     rewrite_listed "$CLAUDE_HOME/lessons/INDEX.md" text "" "" keyonly
   fi
 }
