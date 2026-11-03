@@ -32,5 +32,20 @@ fresh; person git -C "$FX" commit -q --allow-empty -m "docs: mention the Claude 
 fresh; check no-such-rev
 [ "$RC" -eq 2 ] || fail "bad rev: exit $RC: $OUT"
 
+fresh; person git -C "$FX" commit -q --allow-empty -m "feat: second"
+first=$(git -C "$FX" rev-parse HEAD~1); rm -f "$FX/.git/objects/${first:0:2}/${first:2}"; check
+[ "$RC" -eq 2 ] || fail "git log failure after the rev check: exit $RC: $OUT"
+
+# the workflow's own run lines, against a fixture "server": they must find the script in the fetched tree
+SRV=$ROOT/tmp/check-authors-srv; rm -rf "$SRV"; mkdir -p "$SRV/run"
+fresh; mkdir -p "$FX/scripts/ci"; cp "$HERE/check-authors.sh" "$FX/scripts/ci/"; git -C "$FX" add scripts
+person git -C "$FX" commit -q -m "ci: script"; git clone -q --bare "$FX" "$SRV/src.git"
+steps=$(awk '/run: \|/ { b = 1; next } b && /^          / { sub(/^          /, ""); print; next } { b = 0 } /run: bash/ { sub(/.*run: /, ""); print }' "$ROOT/.github/workflows/authors.yml")
+OUT=$(cd "$SRV/run" && GIT_CONFIG_GLOBAL=/dev/null GITHUB_SERVER_URL="file://$SRV" GITHUB_REPOSITORY=src \
+  GITHUB_SHA=$(git -C "$FX" rev-parse HEAD) bash -c "set -e; $steps" 2>&1); RC=$?
+[ "$RC" -eq 0 ] || fail "workflow steps: exit $RC: $OUT"
+case "$OUT" in *"clean (2 commits)"*) ;; *) fail "workflow steps: $OUT" ;; esac
+rm -rf "$SRV"
+
 rm -rf "$FX"
 [ "$fails" -eq 0 ] && echo PASS || { echo "$fails failure(s)"; exit 1; }

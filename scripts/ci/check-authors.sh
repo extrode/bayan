@@ -2,7 +2,7 @@
 # Refuses a history with a Claude/Anthropic author or committer, or an AI attribution trailer.
 # Usage: check-authors.sh [<rev>]   (default HEAD; scans every commit reachable from it)
 # Exit 0 clean, 1 offending commits listed on stderr, 2 usage or git error.
-set -u
+set -uo pipefail
 rev=${1:-HEAD}
 git rev-parse -q --verify "$rev^{commit}" >/dev/null || { echo "check-authors: not a commit: $rev" >&2; exit 2; }
 id_re='[Cc]laude|[Aa]nthropic'
