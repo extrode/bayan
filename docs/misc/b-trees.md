@@ -82,7 +82,7 @@ To evaluate the fit for Bayan, we have to look across three distinct areas: the 
 
 #### B. Standard Library Collections: Direct Spec Conflict
 * **Bayan Principle 3 ("Brief but complete. One spelling per construct"):** 
-  Bayan explicitly avoids collection synonym bloat. As defined in [bayan-spec.md](file:///Users/sy/Developer/extrode.com/bayan/docs/bayan-spec.md#L284):
+  Bayan explicitly avoids collection synonym bloat. As defined in [bayan-spec.md](../bayan-spec.md#L284):
   > *"`Map` preserves insertion order and is the only hash map. `HashMap<K, V>` is BYN2830 with a fix to `Map<K, V>`... An unordered `HashMap` would iterate in seed order; whether to add one later is HANDOFF Question 371."*
 * Bayan does not currently specify a `BTreeMap` or `SortedMap`.
 * If Bayan eventually introduces an ordered collection for range queries (e.g., `SortedMap<K, V>`), an unsync B-tree with cache-line-sized nodes would be a solid algorithmic candidate. However, making it concurrent via version locks would conflict with Bayan’s ownership and borrow model (`ref`, `move`, unique references), because optimistic concurrency cannot safely issue borrowed references (`ref V`).
@@ -99,7 +99,7 @@ To evaluate the fit for Bayan, we have to look across three distinct areas: the 
 While the full `bbtree` structure is not a fit for Bayan, **two specific low-level engineering ideas from that post are directly applicable to Bayan's runtime (`bayan-rt`)**:
 
 #### 1. Umbra-style Strings / Truncated Inline Keys for `string` Lookups
-In [bayan-rt.h](file:///Users/sy/Developer/extrode.com/bayan/src/runtime/bayan-rt.h#L27), `byn_str` is defined as:
+In [bayan-rt.h](../../src/runtime/bayan-rt.h#L27), `byn_str` is defined as:
 ```c
 typedef struct byn_str {
     const uint8_t* ptr;
@@ -120,7 +120,7 @@ typedef struct byn_str_prefix {
 Then `byn_map_find` compares `prefix` as an integer register compare before ever touching `ptr`. If the prefixes don't match, the pointer is never dereferenced, saving an entire DRAM/L3 cache line pull.
 
 #### 2. Cache-Conscious Dense Tables (Already Partially Realized)
-Bayan’s `Map<K, V>` in [bayan-rt.h](file:///Users/sy/Developer/extrode.com/bayan/src/runtime/bayan-rt.h#L324) already uses a dense array of keys and values in insertion order with a separate open-addressed `index` table. Ensuring that the index table and hash array are packed into contiguous 64-byte blocks for linear probe bursts follows the exact cache-locality principle emphasized in `bbtree`.
+Bayan’s `Map<K, V>` in [bayan-rt.h](../../src/runtime/bayan-rt.h#L324) already uses a dense array of keys and values in insertion order with a separate open-addressed `index` table. Ensuring that the index table and hash array are packed into contiguous 64-byte blocks for linear probe bursts follows the exact cache-locality principle emphasized in `bbtree`.
 
 ---
 
