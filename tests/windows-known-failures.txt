@@ -1,4 +1,4 @@
-# Windows-only test failures expected until spec 014 (std Path module, handoff Q743) lands.
+# Windows-only test failures expected until spec 014 (std Path module, handoff Q743) lands, except the entry under its own comment at the end.
 # Measured on wp1, 2026-11-02, test/win-combined-1102 (83ed4a17), zig 0.17.0: 78 failed of 6051; the 2 not listed are fixed separately.
 Bayan.Tests.SelfhostSemanticsEquivalenceLawTests.BayanCheckEqualsTheCCheckerOnEveryCleanParse
 Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/capability-exceeded/main.byn")
@@ -76,4 +76,5 @@ Bayan.Tests.SelfhostSemanticsTests.TypesAgree(name: "typed/rune.byn")
 Bayan.Tests.SelfhostSemanticsTests.TypesBindingKinds
 Bayan.Tests.SelfhostSemanticsTests.TypesIsCliJson
 Bayan.Tests.SelfhostSemanticsTests.TypesModuleOrder
+# Not a spec 014 failure: a timing flake on loaded Windows runners (peak 2 of 3, CI run 41584619911, 2026-11-03); see work/todo.md.
 Bayan.Tests.WarmUpTests.NoMoreBuildsRunAtOnceThanTheGateAllows
