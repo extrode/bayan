@@ -39,9 +39,10 @@ for t in args[1:]:
     law = re.findall(r'`docs/laws/(\d{3})-[^`]*\.md`', head)  # a law-enact task's gate is its law's proof
     filt = f'Law=L{law[0]}' if law and not own_tests else f'FullyQualifiedName~{test_class}'
     if SPEC == '010' and not law and not own_tests and not byns: filt = 'FullyQualifiedName~SelfhostSemanticsApiTests'  # a docs-only task
+    shared = '`ctx.byn`' if SPEC == '010' else ' and '.join('`'+c+'`' for c in row['shared'].split(','))
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))
-    s = f"""You are the independent reviewer for task {t} of spec {SPEC} (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). You did not write this code. Your job is to find where the port is not the C#. Do not edit any file except the review file below; do not run git commands that change state.
+    s = f"""You are the independent reviewer for task {t} of spec {SPEC} ({'the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`' if SPEC == '010' else 'the Bayan lowering and C emitter ported from C# `src/Bayan.Lowering/` and `src/Bayan.Backend.C/` into Bayan under `selfhost/emitter/`'}). You did not write this code. Your job is to find where the port is not the C#. Do not edit any file except the review file below; do not run git commands that change state.
 
 Read: `AGENTS.md`, `scripts/selfhost/bayan-cheatsheet.md`, the task below, the C# it names (whole methods), the port {', '.join('`'+b+'`' for b in byns)}, the tests {', '.join('`'+x+'`' for x in tests)}, and Questions {('Q'+q.group(1)+'–Q'+q.group(2)) if q else 'for this task'} in `docs/bayan-handoff.md`.
 
@@ -54,8 +55,8 @@ Read: `AGENTS.md`, `scripts/selfhost/bayan-cheatsheet.md`, the task below, the C
 ## The bar (a task fails if any of these is not met)
 1. **Method for method.** Every C# method in the task's range exists, in C# order, with every branch, diagnostic code, message, label, help, fix span and report order. Logic that is not in the C# is a finding, however reasonable it looks.
 2. **No stand-ins.** A call to a sibling's entry point goes to that entry point even while it is a stub. A fallback for when the sibling returns a default (`-1`, `false`, empty), a re-implementation of a sibling's function, a fake handle (`body = 0`), or a guard that skips a sibling call is HIGH.
-3. **No silent gaps.** A C# field or state with no home in `Ctx`/`Binder` goes in the task's own `// ── {t} state` section of `ctx.byn`. Dropping it, approximating it (scope depth for scope identity, a path prefix for a loading list, a field scan for a dictionary), or leaving a function empty without `(blocked: Qnnn)` is HIGH.
-4. **Oracle tests.** Every ported function has a test whose expected lines come from running the C# implementation in-process on the same input (see `SelfhostSemanticsT10Tests.Expected`), including a failure/diagnostic path; diagnostics compare as `code line:col message`. Hand-typed expectations, or expectations that hold only because a sibling is a stub, are MEDIUM each (HIGH if they encode behaviour that differs from the C#).
+3. **No silent gaps.** A C# field or state with no home in `Ctx`/`Binder` goes in the task's own `// ── {t} state` section of {shared}. Dropping it, approximating it (scope depth for scope identity, a path prefix for a loading list, a field scan for a dictionary), or leaving a function empty without `(blocked: Qnnn)` is HIGH.
+4. **Oracle tests.** Every ported function has a test whose expected lines come from running the C# implementation in-process on the same input (see `{'SelfhostSemanticsT10Tests.Expected' if SPEC == '010' else 'SelfhostEmitterHarness.AssertSame'}`), including a failure/diagnostic path; diagnostics compare as `code line:col message`. Hand-typed expectations, or expectations that hold only because a sibling is a stub, are MEDIUM each (HIGH if they encode behaviour that differs from the C#).
 5. **True docs.** Each Question in the task's range says what the code does; each break-test line citation points at the line it names. A false claim is MEDIUM.
 
 Verify each finding in the code before you write it: name the Bayan `file:line` and the C# `file:line`. Run the task's tests (`dotnet test -v q --filter "{filt}"`) once; you may add a probe under `tmp/review-{t.lower()}/` to confirm a behaviour.

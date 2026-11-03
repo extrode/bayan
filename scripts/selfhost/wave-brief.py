@@ -58,6 +58,11 @@ def qrange(block):
     return (m.group(1), m.group(2)) if m else None
 
 
+LANDED11 = f"Landed and callable: see `{row['dir']}/{row['api']}` and the task's `after:` list; the 010 checker modules under `selfhost/semantics/` are public to you."
+LANDED = '''Landed and callable: `ctx.byn` (T1), `codes.byn`/`diag.byn` (T2: `report`, `addDiag`, `pushBag`, `popBag`), `symbols.byn`/`types.byn` (T3), `bound.byn` (T4: `add<Kind>`, `children`, `exprType`, `Constant`), `bigint.byn` (T5: labels `bigCmp(a, as: b)`, `bigAdd(a, by: b)`, `bigFits(n, to: bits, signed: s)`; see Q540).'''
+HARNESS = '''`tests/Bayan.Tests/SelfhostSemanticsHarness.cs`: `SelfhostSemanticsHarness.RunSections(mainSource)` builds `selfhost/semantics` with your generated `main.byn` (a C# string) and returns its output split at lines `== <section>`; `SelfhostSemanticsHarness.AssertSection(sections, "<section>", expectedLines)` names the first differing line. Build once per class (`static readonly Lazy<…>`). The oracle is the C# implementation: run the same input through `Bayan.Semantics` in-process (`Compilation.Create`, or the C# class directly when it is public/internal-visible) and print the same lines. Every ported function gets a compared case including a failure/diagnostic path; diagnostics compare as `code line:col message`.'''
+HARNESS11 = f'''`tests/Bayan.Tests/SelfhostEmitterHarness.cs`: `SelfhostEmitterHarness.Build` compiles `selfhost/emitter/**/*.byn` once per run in `fast` mode and `Run(input, mode, tests)` starts the binary and returns stdout/stderr/exit; `AssertSame(name, expected, actual)` reports the first differing line. Unit tests of a wave task run the task's functions through a generated `main` with the C# as oracle (`CliApp.EmitC(Compilation.Create([source], dir), mode)`). Every ported function gets a compared case including a failure path. If the harness file is not landed yet, read `{row['dir']}/{row['plan']}` (Test harness).'''
+
 for t in args[1:]:
     block = task_block(t)
     assert block, t
@@ -78,8 +83,11 @@ for t in args[1:]:
     filt = f'Law=L{law[0]}' if law and not tests else f'FullyQualifiedName~{test_class}'
     # a docs-only task: its gate is the test that keeps 010-api.md and the code in step
     if SPEC == '010' and not law and not tests and not byns: filt = 'FullyQualifiedName~SelfhostSemanticsApiTests'
-    proto = '\n'.join(protocol[2:]).replace('SelfhostSemanticsT3Tests', test_class).replace('restore with `git checkout -- <file>`', 'restore by copying back a copy you took first (`cp f tmp/f.orig` … `cp tmp/f.orig f`; never `git checkout`, which reverts to the stub and loses your work)').replace('Skeleton by turn 12', 'Skeleton by turn 15')
-    s = f"""You are doing task {t} of spec {SPEC} (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). Other writers port the sibling files in parallel; every cross-file function already exists as a compiling stub with its final signature, so you call real names and never write stand-ins. A separate reviewer compares your port with the C# line by line before it lands; invented logic, sibling fallbacks and hand-typed test expectations fail that review.
+    sharedx = ' and '.join('`'+c+'`' for c in SHARED)
+    proto = '\n'.join(protocol[2:])
+    if SPEC != '010': proto = proto.replace('`selfhost/semantics/ctx.byn`', sharedx).replace('nothing else in ctx.byn', 'nothing else in those files').replace('SelfhostSemanticsT10Tests.Expected', 'SelfhostEmitterHarness.AssertSame')
+    proto = proto.replace('SelfhostSemanticsT3Tests', test_class).replace('restore with `git checkout -- <file>`', 'restore by copying back a copy you took first (`cp f tmp/f.orig` … `cp tmp/f.orig f`; never `git checkout`, which reverts to the stub and loses your work)').replace('Skeleton by turn 12', 'Skeleton by turn 15')
+    s = f"""You are doing task {t} of spec {SPEC} ({'the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`' if SPEC == '010' else 'the Bayan lowering and C emitter ported from C# `src/Bayan.Lowering/` and `src/Bayan.Backend.C/` into Bayan under `selfhost/emitter/`'}). Other writers port the sibling files in parallel; every cross-file function already exists as a compiling stub with its final signature, so you call real names and never write stand-ins. A separate reviewer compares your port with the C# line by line before it lands; invented logic, sibling fallbacks and hand-typed test expectations fail that review.
 
 {proto}
 
@@ -103,10 +111,10 @@ Port method for method in C# order, keeping C# names lowerCamel. Read the C# ran
 
 ## Calling siblings
 `{row['dir']}/{row['api']}` lists every cross-file function with its exact signature and owner. Call those names as written. A sibling still a stub returns a default (`-1`, `errorType()`, empty list), so **test your functions on inputs that do not go through an unported sibling**, or build the sibling's output by hand (arenas and structs are module-visible). Never edit a sibling's file: if you need a function that is not in the index, write it as a private helper in your own file with a `{t}`-prefixed name (e.g. `{t.lower()}FindX`) and record it in a Question so integration (T28) can merge duplicates.
-Landed and callable: `ctx.byn` (T1), `codes.byn`/`diag.byn` (T2: `report`, `addDiag`, `pushBag`, `popBag`), `symbols.byn`/`types.byn` (T3), `bound.byn` (T4: `add<Kind>`, `children`, `exprType`, `Constant`), `bigint.byn` (T5: labels `bigCmp(a, as: b)`, `bigAdd(a, by: b)`, `bigFits(n, to: bits, signed: s)`; see Q540).
+{LANDED if SPEC == '010' else LANDED11}
 
 ## Tests: use the shared harness, do not write another build helper
-`tests/Bayan.Tests/SelfhostSemanticsHarness.cs`: `SelfhostSemanticsHarness.RunSections(mainSource)` builds `selfhost/semantics` with your generated `main.byn` (a C# string) and returns its output split at lines `== <section>`; `SelfhostSemanticsHarness.AssertSection(sections, "<section>", expectedLines)` names the first differing line. Build once per class (`static readonly Lazy<…>`). The oracle is the C# implementation: run the same input through `Bayan.Semantics` in-process (`Compilation.Create`, or the C# class directly when it is public/internal-visible) and print the same lines. Every ported function gets a compared case including a failure/diagnostic path; diagnostics compare as `code line:col message`.
+{HARNESS if SPEC == '010' else HARNESS11}
 
 ## Files you own
 {', '.join('`'+p+'`' for p in paths)}, `docs/bayan-handoff.md` (Questions {'Q'+q[0]+'–Q'+q[1] if q else 'in your range'} only, inserted in number order), your own `// ── {t} state` sections of {' and '.join('`'+c+'`' for c in SHARED)} (new fields with defaults only). Do not tick the task: after your guard passes, an independent reviewer checks the port against the C# (`scripts/selfhost/review-brief.py`) and `scripts/selfhost/land.sh` merges and ticks it only on `Verdict: PASS`.
