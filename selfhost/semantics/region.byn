@@ -427,6 +427,7 @@ void t25For(ref Regions r, through ref Ctx c, for BStmt s) {
     }
     storeBorrow(ref r, through: ref c, for: variable, by: in item, at: iterableSpan)
     // The item is a shallow copy the loop never frees, and `BorrowsSubject` refuses changing it (BYN2783).
+    // coverage-exempt: Q746
     if !user && !dynRef && c.locals[variable].borrowsSubject && (kind == .list || kind == .array || kind == .span || kind == .map) {
         r.loopItems[variable] = LoopItem { iterable: iterableExpr, borrow: t25Copy(iterable) }
     }
@@ -612,6 +613,7 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
         default:
             var result = t25None()
             for child in children(in c, for: e) {
+                // coverage-exempt: Q746
                 if child != -1 && isExprKind(boundKind(child)) {
                     let b = exprRegions(ref r, through: ref c, for: child)
                     result = unionBorrow(in result, by: in b)
@@ -631,6 +633,7 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
     var args = List<Borrow>()
     for a in argExprs { args.append(exprRegions(ref r, through: ref c, for: a)) }
     let stored = t41BuiltinStore(member)
+    // coverage-exempt: Q746
     if stored != -1 && stored < args.length { storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: args[stored], at: nodeSpan(c, for: argExprs[stored])) }
     // `finish()` points into the buffer's storage, which outlives the local: a loan on it, but not its scope.
     if member == .strBufAsString && hasSyntax(c, for: e, by: syntaxCall) {

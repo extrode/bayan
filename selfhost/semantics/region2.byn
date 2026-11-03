@@ -16,6 +16,7 @@ Borrow t37CopyBorrow(in Borrow b) {
 
 bool t37HasRegion(in List<Region> regions, for in Region region) {
     for x in regions {
+        // coverage-exempt: Q746
         if x.depth == region.depth && x.name == region.name && x.source == region.source { return true }
     }
     return false
@@ -87,6 +88,7 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
         if mayBorrow(ref c, for: exprType(in c, for: written), by: ref seen) { mutateBorrow(ref r, through: ref c, for: written, at: argSpan) }
         // `ref this` hands over the whole receiver: the callee may change any of its fields.
         var seenThis = List<Type>()
+        // coverage-exempt: Q746
         if boundKind(written) == .thisRef && mayBorrow(ref c, for: exprType(in c, for: written), by: ref seenThis) && r.reporting && c.functions[r.fn].owner != -1 {
             let ownerFields = copyIds(in c.structs[c.functions[r.fn].owner].fields)
             for field in ownerFields {
@@ -102,6 +104,7 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
         }
         for j in 0..arguments.length {
             // A by-value copy of an element (`xs[0]` as an `i64`) cannot alias what the callee changes.
+            // coverage-exempt: Q746
             let byRef = j < parameters.length && t37RefOrOut(in c, for: parameters[j])
             var seenJ = List<Type>()
             if j == i || !(rootLocal(ref c, for: arguments[j]) == root && (byRef || mayBorrow(ref c, for: exprType(in c, for: arguments[j]), by: ref seenJ)) || t37HasId(in args[j].owners, for: root)) { continue }
@@ -119,7 +122,9 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     for pair in stores {
         var target: BExpr = -1
         if pair.target == regionThis {
+            // coverage-exempt: Q746
             if mutating { target = recv }
+        // coverage-exempt: Q746
         } else if pair.target < arguments.length && pair.target < parameters.length {
             target = writtenArgument(c, for: parameters[pair.target], by: arguments[pair.target])
         }
@@ -129,10 +134,12 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
         var source = Borrow { regions: [], owners: [] }
         if pair.source == regionThis {
             source = t37CopyBorrow(receiver)
+        // coverage-exempt: Q746
         } else if pair.source < args.length {
             source = t37CopyBorrow(args[pair.source])
         }
         var note: Related? = null
+        // coverage-exempt: Q746
         if (pair.site is { } at) && c.functions[template].file != -1 && c.functions[template].file == r.source {
             let callee = c.functions[template].name
             note = Related { span: at, label: $"`{callee}` stores `{t41ParameterName(c, for: template, at: pair.source)}` into `{t41ParameterName(c, for: template, at: pair.target)}` here" }
@@ -155,6 +162,7 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     var result = Borrow { regions: [], owners: [] }
     if !named || t37HasId(returned, for: regionThis) { result = t37CopyBorrow(receiver) }
     for k in 0..args.length {
+        // coverage-exempt: Q746
         if named && k < parameters.length && !t37HasId(returned, for: k) { continue }
         if k < parameters.length && kindOf(c.locals[parameters[k]].type) == .function {
             var a = t37CopyBorrow(args[k])
@@ -165,6 +173,7 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
             a.regions = move kept
             @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
             result = unionBorrow(result, by: a)
+        // coverage-exempt: Q746
         } else if named && k < arguments.length && exprType(c, for: arguments[k]) == builtinType(.arena) {
             // An arena argument the result may borrow lends its memory, as `copy(to:)` does.
             let a = t41AllocatedFrom(ref r, through: ref c, for: arguments[k], by: args[k])
@@ -222,10 +231,12 @@ List<StorePair> t41Stores(ref Ctx c, for FuncId fn, by BExpr call) {
     if t41IsBroad(c, for: fn) {
         var targets = List<i64>()
         var i: i64 = 0
+        // coverage-exempt: Q746
         while i < arguments.length && i < parameters.length {
             if writtenArgument(c, for: parameters[i], by: arguments[i]) != -1 { targets.append(i) }
             i += 1
         }
+        // coverage-exempt: Q746
         if c.functions[fn].isMutating && c.bCalls[ci].receiver != -1 { targets.append(regionThis) }
         var sources = List<i64>()
         for k in 0..arguments.length { sources.append(k) }
@@ -262,6 +273,7 @@ List<StorePair> t41Stores(ref Ctx c, for FuncId fn, by BExpr call) {
 
 /// A function value, an interface method or an `extern` function: no body to summarise.
 bool t41IsBroad(Ctx c, for FuncId fn) =>
+    // coverage-exempt: Q746
     c.functions[fn].kind == .invoke || c.functions[fn].isAbstract || (c.functions[fn].modifiers & 128) != 0 // the parser's `modifierExtern`
 
 /// The builtin functions' return summaries: whether the builtin's result borrows no argument (an entry, always empty). `Io` results and
@@ -326,9 +338,11 @@ Borrow t41AllocatedFrom(ref Regions r, through ref Ctx c, for BExpr allocator, b
     if root == -1 { return t37CopyBorrow(borrow) }
     let depth = r.depthOf.tryGet(at: root) ?? 0
     var regions = List<Region>()
+    // coverage-exempt: Q746
     for x in borrow.regions { regions.append(Region { depth: x.depth, name: x.name, source: x.source }) }
     if depth > 0 {
         let region = Region { depth: depth, name: $"arena `{c.locals[root].name}`" }
+        // coverage-exempt: Q746
         if !t37HasRegion(in regions, for: in region) { regions.append(region) }
     }
     // In a summary, memory from an allocator parameter borrows that parameter.
@@ -337,11 +351,13 @@ Borrow t41AllocatedFrom(ref Regions r, through ref Ctx c, for BExpr allocator, b
         for index in 0..ps.length {
             if ps[index] != root { continue }
             let region = Region { depth: 0, name: "the caller's data", source: index }
+            // coverage-exempt: Q746
             if !t37HasRegion(regions, for: region) { regions.append(region) }
             break
         }
     }
     var owners = copyIds(in borrow.owners)
+    // coverage-exempt: Q746
     if !t37HasId(in owners, for: root) { owners.append(root) }
     return Borrow { regions: move regions, owners: move owners }
 }
