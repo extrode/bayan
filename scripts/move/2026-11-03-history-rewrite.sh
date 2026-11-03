@@ -188,7 +188,7 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 else git checkout -q dev; say "run: no SHA references to rewrite"; fi
 git checkout -q "$BR" 2>/dev/null || true
 say "ok: history rewritten; $CHANGED commits have new SHAs. Nothing pushed. Push (yours):"
-say "  git push --force origin $(git for-each-ref --format='%(refname:short)' refs/heads | grep -xE 'dev|main' | tr '\n' ' ')"
-say "  git push --force --tags origin"
+say "  GIT_ALLOW_PROTECTED=1 git push --force origin $(git for-each-ref --format='%(refname:short)' refs/heads | grep -xE 'dev|main' | tr '\n' ' ')"
+say "  GIT_ALLOW_PROTECTED=1 git push --force --tags origin"
 say "  git ls-remote --heads origin   # any other remote branch still has the old history: push it with --force or delete it"
 say "undo (before pushing): $UNDO"

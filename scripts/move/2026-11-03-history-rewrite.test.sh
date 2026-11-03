@@ -36,6 +36,8 @@ git -C "$R" log --all -p | grep -q oldword && fail "real run: phrase left in the
 grep -q "$OLD1" "$R/docs/x.md" && fail "real run: docs/x.md still cites the old SHA"
 [ "$(git -C "$R" remote get-url origin)" = git@example.invalid:fixture/repo.git ] || fail "real run: origin not restored"
 case "$OUT" in *"undo (before pushing): "*--prune*) ;; *) fail "real run: undo without --prune: $OUT" ;; esac
+printf '%s\n' "$OUT" | grep 'git push' | grep -qv '^  GIT_ALLOW_PROTECTED=1 git push --force' && fail "real run: a printed push line lacks GIT_ALLOW_PROTECTED=1: $OUT"
+printf '%s\n' "$OUT" | grep -q '^  GIT_ALLOW_PROTECTED=1 git push --force' || fail "real run: no push line printed: $OUT"
 UNDO=$(printf '%s\n' "$OUT" | sed -n 's/^undo (before pushing): //p')
 (cd "$R" && eval "$UNDO") >/dev/null 2>&1 || fail "undo: failed"
 [ "$(git -C "$R" rev-parse dev)" = "$OLDDEV" ] || fail "undo: dev not restored"
