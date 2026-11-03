@@ -301,7 +301,7 @@ keeps redirecting.
    first)`) and leaves it alone; the other section-5 paths are unaffected.
 10. **Post-move checks** (new session, new path): `dotnet build -v q`, `dotnet test -v q`,
     `laws-check.js --run`, `structure-audit.js`, `bash scripts/release/package.test.sh`, `bash
-    scripts/ci/install-dotnet.test.sh`, `review-nudge.js --watermark` prints 174401e0 or later; a
+    scripts/ci/install-dotnet.test.sh`, `review-nudge.js --watermark` prints 6ece74af or later (the history rewrite replaced 174401e0); a
     CI run on `ikhbat-org/bayan` after the user's next push is green.
 11. **Records**: handoff progress log; memory note that the project moved (old key retired per
     `docs/memory-supersession.md`).
