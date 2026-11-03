@@ -18,6 +18,25 @@ public sealed class SelfhostSemanticsT41Tests
     /// <summary>Each program: its name and its files, <c>main.byn</c> first, relative to its directory.</summary>
     private static readonly (string Name, (string Path, string Text)[] Files)[] Custom =
     [
+        ("ref-this-tuple-field", [("main.byn", """
+            struct Box {
+                (string a, i64 n) t
+
+                void put(ref this, string v) {
+                    t.a = v
+                }
+            }
+
+            void main() {
+                var b = Box { t: (a: "", n: 1) }
+                {
+                    using let arena = Arena()
+                    let name = "ann".copy(to: arena)
+                    b.put(name)
+                }
+                print(b.t.a)
+            }
+            """)]),
         ("broad", [("main.byn", """
             interface Sink {
                 void put(ref this, string v)

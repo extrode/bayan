@@ -643,7 +643,7 @@ LocalId rootLocal(ref Ctx c, for BExpr e) {
     }
 }
 
-/// Whether `e` names storage of `this` (`this`, `f`, `f[i]` of an array or list field).
+/// Whether `e` names storage of `this` (`this`, `f`, `f[i]` of an array or list field, `f[k]` or `f.slot(k)` of a map field).
 bool isThisRooted(in Ctx c, for BExpr e) {
     let i = boundIndex(e)
     switch boundKind(e) {
@@ -656,6 +656,10 @@ bool isThisRooted(in Ctx c, for BExpr e) {
         case .index:
             let k = kindOf(exprType(in c, for: c.bIndexes[i].target))
             if k == .array || k == .list { return isThisRooted(in c, for: c.bIndexes[i].target) }
+            return false
+        case .builtinCall:
+            let m = c.bBuiltinCalls[i].member
+            if m == .mapIndexSet || m == .mapSlot { return isThisRooted(in c, for: c.bBuiltinCalls[i].receiver) }
             return false
         default:
             return false
