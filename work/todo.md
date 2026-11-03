@@ -455,3 +455,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - LOW (review 22e4e844..e1b970c4, unverified) src/Bayan.Semantics/Binding/RegionAnalysis.cs:215-224 `Summarize` stops when a summary's pair count stops changing; sound only while each round's set is a superset of the last. Assert or compare contents.
 - LOW scripts/move/2026-11-03-history-rewrite.sh: printed push commands lack `GIT_ALLOW_PROTECTED=1`; the pre-push hook refuses them (2026-11-03).
 - LOW tests/Bayan.Tests/WarmUpTests.cs:21 NoMoreBuildsRunAtOnceThanTheGateAllows flakes on loaded Windows runners (peak 2 of 3, CI run 41584619911); listed in tests/windows-known-failures.txt until it waits reliably (2026-11-03)
+- LOW tests/Bayan.Tests/ToolchainSanitizerTests.cs ProbeKillsAndRejectsACandidateThatHangsAndTakesTheNextOne failed once under two concurrent full suites (fix/ci-after-move run, 1 of 7050), passes alone (4/4); timing-sensitive under load (2026-11-03)
