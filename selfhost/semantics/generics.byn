@@ -205,6 +205,7 @@ void bindAll(ref Ctx c) {
     analyzeEffects(ref c)
     checkMutation(ref c)
     checkRequires(ref c)
+    summarizeRegions(ref c)
     for m in 0..c.modules.length {
         let fns = copyIds(in c.modules[m].allFunctions)
         for fn in fns {
