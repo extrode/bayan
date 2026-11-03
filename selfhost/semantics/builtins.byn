@@ -277,18 +277,18 @@ InterfaceId findInterface(ref Ctx c, for string name) {
     return -1
 }
 
-/// A static member of `string`, or -1.
-FuncId findString(ref Ctx c, for string name) {
-    switch name {
-        case "invalidUtf8At": return t9Function(ref c, for: "string.invalidUtf8At")
-    }
-    return -1
-}
-
 /// A static member of `Path`, or -1.
 FuncId findPath(ref Ctx c, for string name) {
     switch name {
         case "isRooted" or "relative" or "fileName": return t9Function(ref c, for: $"Path.{name}")
+    }
+    return -1
+}
+
+/// A static member of `string`, or -1.
+FuncId findString(ref Ctx c, for string name) {
+    switch name {
+        case "invalidUtf8At": return t9Function(ref c, for: "string.invalidUtf8At")
     }
     return -1
 }
