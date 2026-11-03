@@ -6,6 +6,11 @@
       "coverage": 0.7762,
       "branches": 0.3864
     },
+    "selfhost/semantics/builtins.byn": {
+      "mutation": null,
+      "coverage": 0.9702,
+      "branches": 0.7679
+    },
     "selfhost/semantics/calls2.byn": {
       "mutation": null,
       "coverage": 0.8652,
@@ -16,10 +21,30 @@
       "coverage": 1.0,
       "branches": 0.9167
     },
+    "selfhost/semantics/effects.byn": {
+      "mutation": null,
+      "coverage": 0.8997,
+      "branches": 0.824
+    },
+    "selfhost/semantics/express.byn": {
+      "mutation": null,
+      "coverage": 0.8273,
+      "branches": 0.7556
+    },
+    "selfhost/semantics/express2.byn": {
+      "mutation": null,
+      "coverage": 0.8891,
+      "branches": 0.7808
+    },
     "selfhost/semantics/generics.byn": {
       "mutation": null,
       "coverage": 0.8576,
       "branches": 0.7886
+    },
+    "selfhost/semantics/ownership.byn": {
+      "mutation": null,
+      "coverage": 0.9429,
+      "branches": 0.8045
     },
     "selfhost/semantics/region.byn": {
       "mutation": null,
@@ -29,7 +54,17 @@
     "selfhost/semantics/region2.byn": {
       "mutation": null,
       "coverage": 0.9696,
-      "branches": 0.8782
+      "branches": 0.8798
+    },
+    "selfhost/semantics/symbols.byn": {
+      "mutation": null,
+      "coverage": 0.6651,
+      "branches": 0.6406
+    },
+    "selfhost/semantics/types.byn": {
+      "mutation": null,
+      "coverage": 0.8626,
+      "branches": 0.8081
     }
   }
 }
