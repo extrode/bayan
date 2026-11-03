@@ -82,7 +82,7 @@ verify() {
   # --text: filter-repo leaves blobs with a NUL byte untouched, so binary files are scanned too
   if git --git-dir="$g" log --all -p --text --format= | grep -aF -f "$LHS" | head -3 | grep -q .; then
     say "fail: a replaced phrase is still in the history:"
-    git --git-dir="$g" log --all -p --text --format= | grep -aF -f "$LHS" | head -3 | cut -c1-160 | sed 's/^/  /'
+    git --git-dir="$g" log --all -p --text --format= | grep -aF -f "$LHS" | head -3 | tr -d '\000' | cut -c1-160 | sed 's/^/  /'
     fails=1
   fi
   if git --git-dir="$g" log --all --format=%B | grep -F -f "$LHS" | grep -q .; then say "fail: a replaced phrase is in a message"; fails=1; fi
