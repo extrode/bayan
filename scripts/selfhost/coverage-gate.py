@@ -9,7 +9,7 @@
 # line to N) when Question Qnnn of docs/bayan-handoff.md cites <file>:L (or a range) inside that span, for code that is dead in
 # the C# too (the Question cites the C# line). A marker whose Question cites none of its span is a FAIL item and exempts nothing;
 # an unknown line is never exempt. The other functions of the file are one info line (covered/total), never a FAIL: the task's --filter tests are
-# not meant to cover other tasks' functions. An unreadable report or function file, or a failing git, exits 1 naming it.
+# not meant to cover other tasks' functions. A source file absent from the work tree has no markers. An unreadable report, function or source file, or a failing git, exits 1 naming it.
 import json, os, re, subprocess, sys
 
 WHY = {'missed': 'no test under --filter runs it; add a C# oracle case that does',
@@ -30,6 +30,8 @@ def changed(base, path):
 
 def exempt(path, handoff='docs/bayan-handoff.md'):
     """The lines of path its coverage-exempt markers exempt, and a FAIL message per marker that exempts nothing."""
+    if not os.path.exists(path):
+        return set(), []
     lines = open(path, encoding='utf-8').read().split('\n')
     if not any('// coverage-exempt:' in t for t in lines):
         return set(), []

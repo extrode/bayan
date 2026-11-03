@@ -499,8 +499,56 @@ public sealed class SelfhostSemanticsT41Tests
 
     public static TheoryData<string> Names() => new(All);
 
+    /// <summary>Argument characters of one run: each argument plus one separator.</summary>
+    private static int ArgChars(string name) => name.Length + Dir(name).Length + Flag(name).Length + 3;
+
+    /// <summary>Consecutive chunks of <see cref="All"/>; 29,000 leaves room under the 32,767 limit for the program path.</summary>
+    private static List<List<string>> Chunks()
+    {
+        var chunks = new List<List<string>> { new() };
+        var used = 0;
+        foreach (var n in All)
+        {
+            if (used + ArgChars(n) > 29_000 && chunks[^1].Count > 0)
+            {
+                chunks.Add(new());
+                used = 0;
+            }
+            chunks[^1].Add(n);
+            used += ArgChars(n);
+        }
+        return chunks;
+    }
+
     private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() =>
-        SelfhostSemanticsHarness.RunSections(MainSource(), All.SelectMany(n => new[] { n, Dir(n), Flag(n) }).ToArray()));
+    {
+        var merged = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var chunk in Chunks())
+        {
+            var part = SelfhostSemanticsHarness.RunSections(MainSource(), chunk.SelectMany(n => new[] { n, Dir(n), Flag(n) }).ToArray());
+            foreach (var (key, lines) in part)
+            {
+                if (key == "" && merged.TryGetValue("", out var preamble))
+                {
+                    Assert.Equal(preamble, lines);
+                    continue;
+                }
+                Assert.True(merged.TryAdd(key, lines), $"section '{key}' printed by two chunks");
+            }
+        }
+        return merged;
+    });
+
+    /// <summary>No single run's arguments reach 30,000 characters, and the chunks hold every case once, in order.</summary>
+    [Fact]
+    public void RunArgumentsStayUnderTheCommandLineLimit()
+    {
+        var chunks = Chunks();
+        Assert.True(chunks.Count > 1);
+        foreach (var chunk in chunks)
+            Assert.True(chunk.Sum(ArgChars) < 30_000, $"chunk of {chunk.Count} cases has {chunk.Sum(ArgChars)} argument characters");
+        Assert.Equal(All, chunks.SelectMany(c => c).ToArray());
+    }
 
     /// <summary>Every diagnostic of the program, with its notes, and every store and return summary, is the C#'s.</summary>
     [Theory]
