@@ -16,6 +16,7 @@ jobs:
         run: |
           git init -q .
           git fetch -q --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "+$GITHUB_SHA:refs/check/head"
+          git checkout -q refs/check/head
       - name: Check identities and trailers
         shell: bash
         run: bash scripts/ci/check-authors.sh refs/check/head
