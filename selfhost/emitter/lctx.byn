@@ -1,0 +1,81 @@
+// T1: Lowerer.cs 37-41 and 48-76 (the lowerer's state: `FunctionLowerer`'s fields, scopes and cleanups; 42-47 are D3's).
+//
+// The lowered tree itself (`LKind`, the `L*` records, `LTree`) is the `ltree` module (`emitter/ltree/`), which the
+// printer reads too. Each task's `LCtx` fields live in its own `// ── Tn state` section.
+
+import semantics
+import emitter.ltree
+
+public type Ctx = semantics.Ctx
+public type TextSpan = semantics.TextSpan
+public type Type = semantics.Type
+public type FuncId = semantics.FuncId
+public type LocalId = semantics.LocalId
+public type VariantId = semantics.VariantId
+public type TestId = semantics.TestId
+public type BExpr = semantics.BExpr
+public type BStmt = semantics.BStmt
+public type BPattern = semantics.BPattern
+public type BInterpolationPart = semantics.BInterpolationPart
+public type LNode = ltree.LNode
+public type LTree = ltree.LTree
+public type LoweredFunction = ltree.LoweredFunction
+public type LoweredProgram = ltree.LoweredProgram
+
+// ── Cleanups (Lowerer.cs:61-76) ────────────────────────────────────────────────
+
+/// `Cleanup`: `DeferCleanup`, `ErrdeferCleanup`, `RestoreContext`, `FreeArena`, `PopPanicHandler`.
+public union LCleanup {
+    deferCleanup(BStmt body)
+    errdeferCleanup(LocalId error, BStmt body)
+    restoreContext(TextSpan span, i64 slot)
+    freeArena(TextSpan span, LocalId arena)
+    popPanicHandler(TextSpan span, i64 slot)
+}
+
+/// `Scope`.
+public struct LScope {
+    public List<LCleanup> cleanups = List<LCleanup>()
+}
+
+/// `_targets` value: the break label, the continue label and the cleanup depth of a jump target.
+public struct LTarget {
+    public string breakLabel
+    public string? continueLabel = null
+    public i64 depth
+}
+
+// ── The lowerer's state ────────────────────────────────────────────────────────
+
+/// Everything the lowering reads and writes for one program: the arenas of the lowered kinds, then
+/// `FunctionLowerer`'s fields. Each task adds its fields in its own `// ── Tn state` section.
+public struct LCtx {
+    /// The lowered nodes built so far (arenas, one per `LKind`); the printer reads them.
+    public LTree tree = LTree {}
+
+    // ── T1 state: FunctionLowerer (Lowerer.cs:40-41, 48-59)
+    /// `_fn`.
+    public FuncId fn = -1
+    /// `_out` and the capture stack (D5): the current output list is the last; `captureBegin` pushes, `captureEnd` pops.
+    public List<List<BStmt>> outs = List<List<BStmt>>()
+    /// `_locals`: the locals used, in first-use order.
+    public List<LocalId> locals = List<LocalId>()
+    /// `_seen`.
+    public Map<LocalId, bool> seen = Map<LocalId, bool>()
+    /// `_scopes`.
+    public List<LScope> scopes = List<LScope>()
+    /// `_targets`, keyed by `JumpTarget.id` (D6).
+    public Map<i64, LTarget> targets = Map<i64, LTarget>()
+    /// `_labels`.
+    public i64 labelCount = 0
+    /// `_contextSlots`.
+    public i64 contextSlots = 0
+    /// `_panicSlots`.
+    public i64 panicSlots = 0
+    /// `_shown != null`: while an `assert` condition is lowered.
+    public bool showing = false
+    /// `_shown`: the sub-expressions the assert shows, each with its stored value once lowered (-1 before).
+    public Map<BExpr, BExpr> shown = Map<BExpr, BExpr>()
+    /// `_ran`: the shown sub-expressions that may not run (a lazy side), each with the flag set when it does.
+    public Map<BExpr, LocalId> ran = Map<BExpr, LocalId>()
+}

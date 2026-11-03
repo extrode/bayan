@@ -1,0 +1,9 @@
+// T8: CEmitter.cs 779-1046 (`Equal`, `KeyHash`, `KeyEq`, `MapMethod`, `Format`).
+// Header only (T1): final signatures.
+
+import semantics
+
+/// CEmitter.cs:779 `Equal`: the name of the equality helper for `t`, registering it.
+public string equalHelper(ref CCtx cc, from ref Ctx c, for Type t) {
+    return ""
+}

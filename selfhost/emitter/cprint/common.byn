@@ -1,0 +1,14 @@
+// T2: CEmitter.cs 397-476 (`CType`, `ErrorCType`, `Key`, `Named`), 588-599 (`Helper`), 1237-1253 (`Line`,
+// `LineOf`, `Loc`, `MapLine`). Header only (T1): final signatures. Registration order is byte-visible (D5).
+
+import semantics
+
+/// CEmitter.cs:397 `CType`: the C name of `t`, registering a named type in `_types`/`_typeOrder`.
+public string cType(ref CCtx cc, from ref Ctx c, for Type t) {
+    return ""
+}
+
+/// CEmitter.cs:588 `Helper` (D5): registers helper `name` (reserve, then fill) and returns its name.
+public string helper(ref CCtx cc, for string name, from string proto, as string body) {
+    return name
+}

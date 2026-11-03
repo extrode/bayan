@@ -1,0 +1,19 @@
+// T2: Lowerer.cs 11-35 (`Lowerer.Lower`), 78-93 (`FunctionLowerer.Lower`), 95-351 (helpers, cleanup).
+// Header only (T1): the entry point with its final signature.
+
+import semantics
+
+/// Lowerer.cs:18 `Lowerer.Lower` (D3: no `mutants`/`coverage`). The arenas of the lowered nodes are on `l`.
+public LoweredProgram lower(ref Ctx c, to ref LCtx l) uses alloc {
+    return LoweredProgram { functions: List<LoweredFunction>(), main: -1, tests: List<TestId>(), testFunctions: List<LoweredFunction>() }
+}
+
+/// Lowerer.cs:116 `Capture` (D5): later output goes to a fresh list.
+public void captureBegin(ref LCtx l) uses alloc {
+    l.outs.append(List<BStmt>())
+}
+
+/// Lowerer.cs:116 `Capture` (D5): the list `captureBegin` started, with output going back to the one below.
+public List<BStmt> captureEnd(ref LCtx l) {
+    return l.outs.removeLast()
+}

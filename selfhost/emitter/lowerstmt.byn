@@ -1,0 +1,8 @@
+// T3: Lowerer.cs 352-898 (`Statement`, `Provide`, `Assign`, `Return`, `If`, loops, `Switch`, `Lvalue`).
+// Header only (T1): the entry point with its final signature.
+
+import semantics
+
+/// Lowerer.cs:352 `Statement`: lowers `s`, appending to the current output list.
+public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) {
+}

@@ -1,0 +1,9 @@
+// T7: CEmitter.cs 682-778 (`StorageParts`, `OwnsStorage`, `OwnStatements`, `OwnClaim`, `OwnSet`, `OwnMove`, `OwnReturn`).
+// Header only (T1): final signatures.
+
+import semantics
+
+/// CEmitter.cs `OwnsStorage`: whether a value of `t` owns heap storage the ownership checker tracks.
+public bool ownsStorage(ref Ctx c, for Type t) {
+    return false
+}

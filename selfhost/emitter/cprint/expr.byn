@@ -1,0 +1,10 @@
+// T10: CEmitter.cs 1617-1939 (`Expr`, `Call`).
+// Header only (T1): final signatures.
+
+import semantics
+import emitter.ltree
+
+/// CEmitter.cs:1617 `FunctionEmitter.Expr`: the C text of expression `e`.
+public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at ltree.LNode e) {
+    return ""
+}

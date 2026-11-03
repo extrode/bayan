@@ -1,0 +1,8 @@
+// T5: Lowerer.cs 1376-1728 (`Printable`, `Assert`, `Write`, `SwitchExpr`, `TryFrom`).
+// Header only (T1): the entry point with its final signature.
+
+import semantics
+
+/// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
+public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
+}
