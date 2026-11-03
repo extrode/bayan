@@ -71,17 +71,85 @@ public sealed class SelfhostEmitterHarnessTests
 {
     public static TheoryData<string> DiagCases => Golden.Cases("diag");
 
+    public static TheoryData<string> CorpusCases
+    {
+        get
+        {
+            var data = new TheoryData<string>();
+            foreach (var kind in new[] { "lex", "parse", "typed", "diag-json" })
+                foreach (var name in Golden.Cases(kind)) data.Add(name);
+            return data;
+        }
+    }
+
+    public static TheoryData<string> ManifestCases => Golden.Cases("manifest");
+
+    private static void SameOnFailure(string name, string copy, params string[] options)
+    {
+        if (CliApp.Run(["check", copy], new StringWriter(), new StringWriter()) == CliApp.ExitOk) return;
+        SelfhostEmitterHarness.SameAsCli(name, ["build", "--emit-c", copy, .. options], [copy, .. options]);
+    }
+
     /// <summary>
     /// A diag input the C# compiler rejects: <c>CliApp.Run(["build", "--emit-c", copy])</c> against <c>bayan-emit copy</c>, stderr and exit
     /// (R1 errors). An input the C# accepts reaches the emitter proper and belongs to the skipped rows.
     /// </summary>
     [Theory]
     [MemberData(nameof(DiagCases))]
-    public void ErrorInputsAgree(string name)
+    public void ErrorInputsAgree(string name) => SameOnFailure(name, SelfhostEmitterHarness.Isolate(name));
+
+    /// <summary>The lexer, parser, typed and JSON-diagnostic goldens that the C# rejects, with the same comparison.</summary>
+    [Theory]
+    [MemberData(nameof(CorpusCases))]
+    public void CorpusErrorInputsAgree(string name) => SameOnFailure(name, SelfhostEmitterHarness.Isolate(name));
+
+    /// <summary><c>--diagnostics json</c> and <c>--all</c> on every diag input.</summary>
+    [Theory]
+    [MemberData(nameof(DiagCases))]
+    public void DiagnosticOptionsAgree(string name)
     {
         var copy = SelfhostEmitterHarness.Isolate(name);
-        if (CliApp.Run(["check", copy], new StringWriter(), new StringWriter()) == CliApp.ExitOk) return;
-        SelfhostEmitterHarness.SameAsCli(name, ["build", "--emit-c", copy], [copy]);
+        SameOnFailure($"{name} --diagnostics json", copy, "--diagnostics", "json");
+        SameOnFailure($"{name} --all", copy, "--all");
+    }
+
+    /// <summary>A manifest golden as the <c>package.byn</c> of a project with an entry module: its diagnostics are reported before anything compiles.</summary>
+    [Theory]
+    [MemberData(nameof(ManifestCases))]
+    public void ManifestErrorsAgree(string name)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t12-tests", "manifest-" + Path.GetFileNameWithoutExtension(name));
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(Path.Combine(dir, "src", "app"));
+        File.Copy(Path.Combine(Golden.CasesRoot, name), Path.Combine(dir, "package.byn"));
+        File.WriteAllText(Path.Combine(dir, "src", "app", "main.byn"), "void main() {\n    print(\"a\")\n}\n");
+        SameOnFailure(name, dir);
+    }
+
+    /// <summary>A project without its entry module, an app and a library; a script with an error; the cap on reported errors.</summary>
+    [Fact]
+    public void ProjectAndScriptErrorsAgree()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "tmp", "t12-tests", "projects");
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        foreach (var (dir, manifest) in new[] { ("app", "name: app\nkind: app\n"), ("lib", "name: lib\nkind: lib\n") })
+        {
+            Directory.CreateDirectory(Path.Combine(root, dir));
+            File.WriteAllText(Path.Combine(root, dir, "package.byn"), manifest);
+            SelfhostEmitterHarness.SameAsCli(dir, ["build", "--emit-c", Path.Combine(root, dir)], [Path.Combine(root, dir)]);
+        }
+        var script = Path.Combine(root, "script.byn");
+        File.WriteAllText(script, "#!/usr/bin/env bayan\nlet x: i32 = \"s\"\n");
+        SelfhostEmitterHarness.SameAsCli("script", ["build", "--emit-c", script], [script]);
+        var many = Path.Combine(root, "many.byn");
+        File.WriteAllText(many, string.Concat(Enumerable.Range(0, 30).Select(i => $"let a{i}: i32 = \"s\"\n")) + "\u00e9 \ttab\r\nlet y = 1\n");
+        SelfhostEmitterHarness.SameAsCli("many errors", ["build", "--emit-c", many], [many]);
+        SelfhostEmitterHarness.SameAsCli("many errors --all", ["build", "--emit-c", many, "--all"], [many, "--all"]);
+        SelfhostEmitterHarness.SameAsCli("many errors --diagnostics text", ["build", "--emit-c", many, "--diagnostics", "text"], [many, "--diagnostics", "text"]);
+        SelfhostEmitterHarness.SameAsCli("bad format", ["build", "--emit-c", many, "--diagnostics", "xml"], [many, "--diagnostics", "xml"]);
+        SelfhostEmitterHarness.SameAsCli("second path", ["build", "--emit-c", many, script], [many, script]);
+        SelfhostEmitterHarness.SameAsCli("no path", ["build", "--emit-c"], []);
+        SelfhostEmitterHarness.SameAsCli("-- args", ["build", "--emit-c", many, "--", "x"], [many, "--", "x"]);
     }
 
     /// <summary><c>--time</c> and <c>--mode</c> on an input the C# rejects fail as <c>build --emit-c</c> does.</summary>
@@ -141,21 +209,19 @@ public sealed class SelfhostEmitterHarnessTests
     }
 
     /// <summary>
-    /// An input the C# rejects exits 1 with nothing on stdout under <c>--package</c> and <c>--tests</c>, as <c>build --emit-c</c> does;
-    /// the diagnostics text waits for a public <c>renderAll</c> (Q813), so only stdout and the exit code are compared.
+    /// An input the C# rejects fails under <c>--package</c>, <c>--tests</c> and <c>--many</c> as <c>build --emit-c</c> and
+    /// <c>test</c> do: stderr (first differing line), stdout and exit code.
     /// </summary>
     [Fact]
     public void PackageAndTestsFailLikeBuildOnAnErrorInput()
     {
         var copy = SelfhostEmitterHarness.Isolate("diag/goto.byn");
-        var stdout = new StringWriter();
-        var exit = CliApp.Run(["build", "--emit-c", copy], stdout, new StringWriter());
-        Assert.Equal(CliApp.ExitFailure, exit);
-        foreach (var args in new[] { new[] { "--package", Path.GetDirectoryName(copy)!, copy }, ["--tests", copy] })
-        {
-            var (actualExit, output, _) = SelfhostEmitterHarness.Run(args);
-            Assert.True(actualExit == exit && output == stdout.ToString(), $"{string.Join(' ', args)}: exit {actualExit}, stdout {output.Length} bytes");
-        }
+        var dir = Path.GetDirectoryName(copy)!;
+        SelfhostEmitterHarness.SameAsCli("--package", ["build", "--emit-c", copy], ["--package", dir, copy], namedBy: dir);
+        SelfhostEmitterHarness.SameAsCli("--tests", ["test", copy], ["--tests", copy]);
+        var tests = SelfhostEmitterHarness.Isolate("diag/cases-type-mismatch.test.byn");
+        SelfhostEmitterHarness.SameAsCli("test.byn --tests", ["test", tests], ["--tests", tests]);
+        SelfhostEmitterHarness.SameAsCli("test.byn --package --tests", ["test", tests], ["--package", Path.GetDirectoryName(tests)!, "--tests", tests], namedBy: Path.GetDirectoryName(tests)!);
     }
 
     /// <summary>A flag without its value is an unexpected argument, an unknown mode and a missing input are the usage errors of <c>build --emit-c</c>.</summary>

@@ -84,15 +84,17 @@ public static class SelfhostEmitterHarness
         return "safe";
     }
 
-    /// <summary><c>CliApp.Run(cli)</c> against <c>bayan-emit self</c>: stdout and stderr by <see cref="AssertSame"/>, then the exit code.</summary>
-    public static void SameAsCli(string name, string[] cli, string[] self)
+    /// <summary><c>CliApp.Run(cli)</c> against <c>bayan-emit self</c> (with <paramref name="namedBy"/> stripped from the C# text): stdout and stderr by <see cref="AssertSame"/>, then the exit code.</summary>
+    public static void SameAsCli(string name, string[] cli, string[] self, string? namedBy = null)
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var exit = CliApp.Run(cli, stdout, stderr);
         var (actualExit, actualOut, actualErr) = Run(self);
-        AssertSame($"{name} stderr", stderr.ToString(), actualErr);
-        AssertSame($"{name} stdout", stdout.ToString(), actualOut);
+        // `namedBy`: a directory whose prefix the C# prints on a source's name, which `--package` gives as the file name alone (RunTests.cs:80).
+        string Named(string text) => namedBy is null ? text : text.Replace(namedBy.TrimEnd('/', '\\') + Path.DirectorySeparatorChar, "");
+        AssertSame($"{name} stderr", Named(stderr.ToString()), actualErr);
+        AssertSame($"{name} stdout", Named(stdout.ToString()), actualOut);
         Assert.True(exit == actualExit, $"{name}: exit {actualExit}, expected {exit}");
     }
 }

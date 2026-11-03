@@ -116,7 +116,7 @@ Ctx t26EmptyCtx() => Ctx {
 /// CliApp.cs:259 `Compile`: a project directory (one with `package.byn`), a script (a file starting with
 /// `#!`, compiled alone) or a file or directory (the whole directory is the entry module). Prints
 /// diagnostics and adds them to `reported`; `ok` is false where C# returns null.
-public Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reported> reported, through ref bool ok) uses alloc, clock, console, fs {
+public Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reported> reported, through ref bool ok, bool includeTests = false) uses alloc, clock, console, fs {
     ok = false
     let manifestPath = t11Combine(o.path, by: "package.byn")
     if t11DirectoryExists(o.path) && t26FileExists(manifestPath) {
@@ -132,14 +132,14 @@ public Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26
         }
         var capabilities: List<string>? = null
         if (manifest.capabilities is { } caps) { capabilities = copyStrings(in caps) }
-        let options = CompilationOptions { library: manifest.kind == .lib, capabilities: move capabilities, packageName: manifest.name }
+        let options = CompilationOptions { includeTests: includeTests, library: manifest.kind == .lib, capabilities: move capabilities, packageName: manifest.name }
         var c = fromProject(root, for: entry, by: in options)
         c.manifest = move manifest
         t26Report(in o, by: in symbols, for: ref c, to: ref reported)
         ok = !t11HasErrors(in c)
         return c
     }
-    let options = CompilationOptions {}
+    let options = CompilationOptions { includeTests: includeTests }
     var c = fromPath(o.path, by: in options, wholeDirectory: !t26IsScript(o.path))
     t26Report(in o, by: in symbols, for: ref c, to: ref reported)
     ok = !t11HasErrors(in c)
@@ -147,7 +147,7 @@ public Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26
 }
 
 /// CliApp.cs:298 `Report` for the compilation's diagnostics.
-void t26Report(in T26Options o, by in T26Symbols symbols, for ref Ctx c, to ref List<T26Reported> reported) {
+public void t26Report(in T26Options o, by in T26Symbols symbols, for ref Ctx c, to ref List<T26Reported> reported) uses alloc, console {
     for d in c.diagnostics {
         reported.append(T26Reported { path: pathOf(in c, for: in d), start: d.span.start, code: d.code, isWarning: d.isWarning })
     }

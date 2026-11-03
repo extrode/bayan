@@ -22,6 +22,7 @@ import semantics
 import emitter.cprint
 
 type CompilationOptions = semantics.CompilationOptions
+type T26Options = semantics.T26Options
 
 const exitOk: i32 = 0
 const exitFailure: i32 = 1
@@ -65,33 +66,34 @@ semantics.Ctx t12Compile(string dir, at move List<u8> bytes, for string file, by
     return semantics.create(from: move sources, at: dir, by: in options)
 }
 
-/// Emits `c` to stdout, or fails: `renderAll` and `t26Report` are not public in `semantics` (Q813).
-i32 t12Finish(ref semantics.Ctx c, by string mode) {
-    if t12HasErrors(in c) {
-        Io.stderr.write("bayan: the compilation has errors; rendering them needs a public renderAll (Q813)\n")
-        return exitFailure
-    }
+/// Reports `c` as `CliApp.Compile` does (CliApp.cs:298) and fails as `Failed` does (`build`), or with a bare exit 1 when
+/// `tests` (`Test`, CliApp.cs:605), or emits it to stdout.
+i32 t12Finish(ref semantics.Ctx c, for in T26Options o, by in semantics.T26Symbols symbols, through string mode, as bool tests) {
+    var reported = List<semantics.T26Reported>()
+    semantics.t26Report(in o, by: in symbols, for: ref c, to: ref reported)
+    if t12HasErrors(in c) { return tests ? exitFailure : semantics.t26Failed(in o, from: in reported, by: in symbols) }
     Io.stdout.write(t12Emit(ref c, by: mode))
     return exitOk
 }
 
-i32 t12Package(string dir, at string file, by bool tests, through string mode) {
+i32 t12Package(string dir, at string file, by bool tests, through string mode, for in semantics.T26Symbols symbols) {
     let bytes = Io.readFile(file) catch {
         Io.stderr.write($"bayan: not found: {file}\n")
         return exitFailure
     }
     var c = t12Compile(dir, at: move bytes, for: file, by: tests)
-    return t12Finish(ref c, by: mode)
+    let o = T26Options { path: file }
+    return t12Finish(ref c, for: in o, by: in symbols, through: mode, as: tests)
 }
 
 /// `--many`: every `*.byn` in `dir`, in name order; the shape of `bayan-check --many`. Exits 0: a `--package` run is 0 or 1.
-i32 t12Many(string dir, by string mode) {
+i32 t12Many(string dir, by string mode, for in semantics.T26Symbols symbols) {
     var names = Io.listDir(dir) catch return usage()
     names.sort()
     for name in names {
         unless name.endsWith(".byn") { continue }
         print($"== {name}")
-        let exit = t12Package(dir, at: $"{dir}/{name}", by: name.endsWith(".test.byn"), through: mode)
+        let exit = t12Package(dir, at: $"{dir}/{name}", by: name.endsWith(".test.byn"), through: mode, for: in symbols)
         if exit != exitOk { print($"exit {exit}") }
     }
     return exitOk
@@ -167,23 +169,17 @@ i32 main(ReadOnlySpan<string> args) {
         Io.stderr.write($"bayan: unknown mode `{mode}` (expected debug, safe or fast)\n")
         return exitUsage
     }
-    if (many is { } dir) { return rest.length == 0 ? t12Many(dir, by: mode) : usage() }
+    let symbols = semantics.t26Symbols(ascii)
+    if (many is { } dir) { return rest.length == 0 ? t12Many(dir, by: mode, for: in symbols) : usage() }
     if (time is { } path) { return rest.length == 0 ? t12Timed(path, by: mode, through: ascii) : usage() }
     if (package is { } root) {
-        return rest.length == 1 ? t12Package(root, at: rest[0], by: tests, through: mode) : usage()
+        return rest.length == 1 ? t12Package(root, at: rest[0], by: tests, through: mode, for: in symbols) : usage()
     }
-    let symbols = semantics.t26Symbols(ascii)
     let o = semantics.t26ParseBuildOptions(in rest, allowSpans: false) ?? return exitUsage
-    if tests {
-        // `Compile(o, includeTests: true)` (CliApp.cs:259); `t26Compile` has no such parameter (Q813).
-        let options = CompilationOptions { includeTests: true }
-        var c = semantics.fromPath(o.path, by: in options)
-        return t12Finish(ref c, by: mode)
-    }
     var reported = List<semantics.T26Reported>()
     var ok = false
-    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
-    unless ok { return semantics.t26Failed(in o, from: in reported, by: in symbols) }
+    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok, includeTests: tests)
+    unless ok { return tests ? exitFailure : semantics.t26Failed(in o, from: in reported, by: in symbols) }
     Io.stdout.write(t12Emit(ref c, by: mode))
     return exitOk
 }
