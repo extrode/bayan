@@ -417,6 +417,31 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
     }
 
+    /// <summary>T44: inputs the C# parser once threw on (<c>ParserTests.TruncatedInputReportsWithoutThrowing</c>) dump as the C# parser
+    /// dumps them, whose output is written under <c>tmp/parser-ref/</c>, and agree on the exit code.</summary>
+    [Theory]
+    [InlineData("first-primitive-name", "int()fails")]
+    [InlineData("first-primitive-name-group", "int(\"\"{])fails")]
+    [InlineData("if-comment-at-end", "if(/*")]
+    [InlineData("if-control-at-end", "if(\u0017")]
+    [InlineData("while-control-at-end", "while(\u0017")]
+    [InlineData("unless-unclosed-group", "unless ((((((((((((((((((()")]
+    public void TruncatedInputDumpsAsTheCSharpParser(string name, string source)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "parser-truncated");
+        Directory.CreateDirectory(dir);
+        var input = Path.Combine(dir, name + ".byn");
+        File.WriteAllText(input, source);
+        var tree = SyntaxTree.Parse(SourceText.FromFile(input));
+        var refPath = Path.Combine(Golden.RepoRoot, "tmp", "parser-ref", "truncated_" + name + ".ast");
+        Directory.CreateDirectory(Path.GetDirectoryName(refPath)!);
+        File.WriteAllText(refPath, AstDump.Dump(tree));
+        var (exit, stdout, stderr) = Run(Built, input);
+        output.WriteLine(stderr);
+        if (Golden.Compare(refPath, stdout, update: false).Failure is { } failure) Assert.Fail(failure);
+        Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
+    }
+
     /// <summary>Q511: C# takes these nodes' spans before it parses their last child (argument order), so the child
     /// lies outside its parent; the port's <c>checkSpans</c> reports the same child under L018.</summary>
     [Theory]
