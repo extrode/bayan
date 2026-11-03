@@ -14,10 +14,9 @@ done
 repo="$(git rev-parse --show-toplevel)"
 cd "$repo"
 
-case "$(git branch --show-current)" in
-  dev|chore/history-cleanup) ;;
-  *) printf 'refuse: run from dev or chore/history-cleanup (on %s).\n' "$(git branch --show-current)"; exit 1 ;;
-esac
+if [ "$(git branch --show-current)" != "dev" ]; then
+  printf 'refuse: run from the main checkout on dev (on %s); the scratch is in its tmp/.\n' "$(git branch --show-current)"; exit 1
+fi
 
 # 1. rehearsal clones and probe repos
 printf '== 1. rehearsal scratch\n'
