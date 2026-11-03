@@ -58,5 +58,10 @@ fresh; printf 'regex:old.*==>new\n' >> "$FX/repl.txt"; run
 [ "$RC" -eq 1 ] || fail "regex line: exit $RC"
 case "$OUT" in *"regex:/glob: line"*) ;; *) fail "regex line: $OUT" ;; esac
 
+# D. filter-repo skips a blob with a NUL byte; the leftover scan still finds the phrase in it
+fresh; printf 'x\000oldword\n' > "$R/bin.dat"; git -C "$R" add -A; me git -C "$R" commit -q -m "feat: binary"; run
+[ "$RC" -eq 1 ] || fail "binary blob: exit $RC"
+case "$OUT" in *"still in the history"*) ;; *) fail "binary blob: $OUT" ;; esac
+
 rm -rf "$FX"
 [ "$fails" -eq 0 ] && echo PASS || { echo "$fails failure(s)"; exit 1; }
