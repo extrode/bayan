@@ -1,0 +1,17 @@
+struct Bag {
+    List<string> items
+
+    void add(ref this, string v) {
+        items.append(v)
+    }
+}
+
+void main() {
+    var b = Bag { items: List<string>() }
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        b.add(name)
+    }
+    print(b.items[0])
+}

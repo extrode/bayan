@@ -1,0 +1,7 @@
+void main() {
+    var sb = StrBuf()
+    sb.append("a")
+    let s = sb.finish()
+    sb.clear()
+    print(s)
+}

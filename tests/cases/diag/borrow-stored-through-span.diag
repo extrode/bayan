@@ -1,13 +1,13 @@
-error BYN3002: `sb` does not live as long as `dst`, which borrows it
+error BYN3002: the `stackalloc` buffer on line 2 does not live as long as `dst`, which borrows it
 
   5 │     dst[0] = sb.finish()
-    │              ^^^^^^^^^^^ `sb` is freed at the end of its block
+    │              ^^^^^^^^^^^ the `stackalloc` buffer on line 2 is freed at the end of its block
     │
   help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough
 
-error BYN3002: `sb` does not live as long as `view`, which borrows it
+error BYN3002: the `stackalloc` buffer on line 12 does not live as long as `view`, which borrows it
 
   20 │     view[0] = sb.finish()
-     │               ^^^^^^^^^^^ `sb` is freed at the end of its block
+     │               ^^^^^^^^^^^ the `stackalloc` buffer on line 12 is freed at the end of its block
      │
   help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

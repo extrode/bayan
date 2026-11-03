@@ -1,0 +1,21 @@
+string viaLocal(string s) {
+    let t = s
+    return t
+}
+
+string viaCall(string s) {
+    return viaLocal(s)
+}
+
+void main() {
+    var kept = ""
+    var nested = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        kept = viaLocal(name)
+        nested = viaCall(name)
+    }
+    print(kept)
+    print(nested)
+}

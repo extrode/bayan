@@ -1,0 +1,6 @@
+error BYN3004: `sb` is modified while `s` still borrows it
+
+  5 │     sb.clear()
+    │     ^^^^^^^^^^ `s` is used again on line 6
+    │
+  help: finish using `s` first, or copy what it needs before changing `sb`

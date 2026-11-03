@@ -386,6 +386,8 @@ const syntaxUnary: i64 = 2
 const syntaxUntypedLiteral: i64 = 4
 /// `Syntax is DiscardPattern` (BinderCalls.cs:1590).
 const syntaxDiscard: i64 = 8
+/// `Syntax is CallExpr` on a builtin method call (RegionAnalysis.cs:451: `sb.finish()`, not `sb.view`).
+const syntaxCall: i64 = 16
 
 /// The `syntax…` bits recorded for `n` (0 when none were).
 i64 syntaxFlags(in Ctx c, for BNode n) => c.syntaxFlags.tryGet(at: n) ?? 0

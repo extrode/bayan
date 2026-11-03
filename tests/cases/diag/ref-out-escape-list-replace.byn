@@ -1,0 +1,14 @@
+void keep(ReadOnlySpan<string> ys, to ref List<string> xs) {
+    xs.replace(at: 0..0, by: ys)
+}
+
+void main() {
+    var kept = List<string>()
+    {
+        using let arena = Arena()
+        var ys = List<string>()
+        ys.append("ann".copy(to: arena))
+        keep(ys, to: ref kept)
+    }
+    print(kept[0])
+}

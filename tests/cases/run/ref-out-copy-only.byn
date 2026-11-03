@@ -1,0 +1,31 @@
+void put(string s, to ref StrBuf sb) {
+    sb.append(s)
+}
+
+void keep(string s, to out string g, from Arena a) {
+    g = s.copy(to: a)
+}
+
+struct Box {
+    i64 n
+    string s
+
+    void put(ref this, string v) {
+        n = v.length
+    }
+}
+
+using let outer = Arena()
+var sb = StrBuf()
+var kept = ""
+var b = Box { n: 0, s: "" }
+{
+    using let arena = Arena()
+    let name = "ann".copy(to: arena)
+    put(name, to: ref sb)
+    keep(name, to: out kept, from: outer)
+    b.put(name)
+}
+print(sb.finish())
+print(kept)
+print($"{b.n}")

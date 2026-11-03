@@ -133,6 +133,54 @@ public sealed class CacheTests
     }
 
     [Fact]
+    public void ACallerIsRecheckedWhenACalleeStartsOrStopsStoringAnArgument()
+    {
+        var root = Root("callee-summary");
+        var app = NewApp(root);
+        var callee = Path.Combine(app, "src", "keep", "keep.byn");
+        Directory.CreateDirectory(Path.GetDirectoryName(callee)!);
+        const string copies = "public void pass(string s, to ref string g) {\n    g = \"\"\n}\n";
+        const string stores = "public void pass(string s, to ref string g) {\n    g = s\n}\n";
+        File.WriteAllText(callee, copies);
+        File.WriteAllText(Path.Combine(app, "src", "app", "main.byn"),
+            "import keep\n\nvar kept = \"\"\n{\n    using let arena = Arena()\n    keep.pass(\"ann\".copy(to: arena), to: ref kept)\n}\nprint(kept)\n");
+        WithCache(root, () =>
+        {
+            Ok(Run("build", app));
+            File.WriteAllText(callee, stores);
+            var refused = Run("build", app);
+            Assert.Equal(CliApp.ExitFailure, refused.Exit);
+            Assert.Contains("BYN3002", refused.Out + refused.Err);
+            File.WriteAllText(callee, copies);
+            Ok(Run("build", app));
+        });
+    }
+
+    [Fact]
+    public void ACallerIsRecheckedWhenACalleeStartsOrStopsReturningAnArgument()
+    {
+        var root = Root("callee-return-summary");
+        var app = NewApp(root);
+        var callee = Path.Combine(app, "src", "keep", "keep.byn");
+        Directory.CreateDirectory(Path.GetDirectoryName(callee)!);
+        const string fresh = "public string pass(string s) {\n    return \"\"\n}\n";
+        const string returns = "public string pass(string s) {\n    return s\n}\n";
+        File.WriteAllText(callee, fresh);
+        File.WriteAllText(Path.Combine(app, "src", "app", "main.byn"),
+            "import keep\n\nvar kept = \"\"\n{\n    using let arena = Arena()\n    kept = keep.pass(\"ann\".copy(to: arena))\n}\nprint(kept)\n");
+        WithCache(root, () =>
+        {
+            Ok(Run("build", app));
+            File.WriteAllText(callee, returns);
+            var refused = Run("build", app);
+            Assert.Equal(CliApp.ExitFailure, refused.Exit);
+            Assert.Contains("BYN3002", refused.Out + refused.Err);
+            File.WriteAllText(callee, fresh);
+            Ok(Run("build", app));
+        });
+    }
+
+    [Fact]
     public void TheWorkingDirectoryDoesNotChangeTheCacheKey()
     {
         var root = Root("cwd");

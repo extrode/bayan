@@ -1,0 +1,22 @@
+name: authors
+
+# Every commit is authored and committed by a person: no Claude or Anthropic identity and no AI
+# attribution trailer anywhere in the history. Scans the whole history, so a new branch or a
+# force-push is checked as fully as a normal push.
+on:
+  push:
+  pull_request:
+
+jobs:
+  authors:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch full history
+        shell: bash
+        run: |
+          git init -q .
+          git fetch -q --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "+$GITHUB_SHA:refs/check/head"
+          git checkout -q refs/check/head
+      - name: Check identities and trailers
+        shell: bash
+        run: bash scripts/ci/check-authors.sh refs/check/head

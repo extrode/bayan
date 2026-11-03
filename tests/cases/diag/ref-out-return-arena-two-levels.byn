@@ -1,0 +1,16 @@
+string mk(string s, from Arena a) {
+    return s.copy(to: a)
+}
+
+string mk2(string s, from Arena a) {
+    return mk(s, from: a)
+}
+
+void main() {
+    var kept = ""
+    {
+        using let arena = Arena()
+        kept = mk2("ann", from: arena)
+    }
+    print(kept)
+}

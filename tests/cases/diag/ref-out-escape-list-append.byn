@@ -1,0 +1,13 @@
+void keep(string s, to ref List<string> xs) {
+    xs.append(s)
+}
+
+void main() {
+    var kept = List<string>()
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        keep(name, to: ref kept)
+    }
+    print(kept[0])
+}

@@ -1,8 +1,8 @@
 # Move Bayān to the Ikhbat Foundation
 
-Date: 2026-11-02. Tier: Standard. Status: rev 3c (reviews A, B and C folded in, the user's choices
-applied; rev 3b: move-script fix round 1, F1-F16; rev 3c: fix round 2, G1-G6), waiting for the
-user's approval.
+Date: 2026-11-02. Tier: Standard. Status: rev 3e (reviews A, B and C folded in, the user's choices
+applied; rev 3b: move-script fix round 1, F1-F16; rev 3c: fix round 2, G1-G6; rev 3d: session-end
+review fixes M1-M6; rev 3e: review loop 2, N1-N4), waiting for the user's approval.
 
 ## Goal
 
@@ -93,7 +93,7 @@ keeps redirecting.
 |---|---|---|---|
 | D1 | URL | `https://bayan.run`: registered, and it is the CLI verb | bayan.sh, bayan.build |
 | D2 | Old mb1 path | No symlink: a session started there would re-create the old key | symlink for a transition |
-| D3 | Transcripts | Rewrite only the `"cwd"` field, prefix-matched with a `/` or `"` boundary; clone backup first | leave as is (resume filter rejects); rewrite every mention |
+| D3 | Transcripts | Rewrite only the `"cwd"` field, matched at a boundary (step 2: the path ends at a char outside `[A-Za-z0-9._-]`, the key outside `[A-Za-z0-9._]`; both start at the string's start or after a char outside `[A-Za-z0-9._-]`, for the path not `/` either); clone backup first | leave as is (resume filter rejects); rewrite every mention |
 | D4 | wp1/wlt1 | Move the dir, set `origin` to GitHub, switch to `dev` | fresh clone |
 | D5 | GitHub transfer | The agent runs it after the user's "yes" in that turn | — |
 | D6 | bayan.run DNS | Out of scope; a Cloudflare redirect rule is the user's | — |
@@ -119,7 +119,14 @@ keeps redirecting.
      `…-bayan--worktrees-x`). A sibling repo `extrode.com/bayan<anything>` would get a key that
      this cannot tell apart, so preflight refuses when any entry of `OLD_REPO`'s parent is named
      `bayan` plus at least one more character (none exists today). INDEX.md has 16 `(key)` tags;
-     queue.jsonl has the key before `"` and space. Every `git -C <dir>` (script and `undo.sh`) first
+     queue.jsonl has the key before `"` and space.
+   - Left boundary (rev 3d), both forms: a match counts only at the start of the string or after
+     a char outside `[A-Za-z0-9._-]`; for the path, not after `/` either, so
+     `/Volumes/bk/Users/sy/…` and `x-Users-sy-…` stay. A run of `/` counts as one char (rev 3e): the
+     path matches after `file://` and `/` (`file:///Users/…`, `//Users/…`), not after `/a`. Inside JSON strings an escape such as `\n`
+     before the match counts as the char it stands for, a boundary.
+
+     Every `git -C <dir>` (script and `undo.sh`) first
      checks that `git rev-parse --show-toplevel` is `<dir>` itself and refuses otherwise, and both
      export `GIT_CEILING_DIRECTORIES` = the checkouts' parents, so git never reaches an enclosing
      repo. Each step prints `would:`/`run:`/`skip:`/`refuse:` and is idempotent: the
@@ -128,8 +135,11 @@ keeps redirecting.
    1. Preflight, all refusals before any change. With no manifest every check below applies. With
       a manifest (a resumed run) the checks a finished step made obsolete are replaced by the
       manifest's recorded state: after step 3, `NEW_REPO` must exist and `OLD_REPO` be absent;
-      after step 5, the recorded targets must exist and their sources be absent. Process checks
-      always apply.
+      for each recorded rename, its source and target are not both present and not both absent
+      (for renames step 2 recorded, once step 5 is done the target must exist and the source be
+      absent; after step 5 a present source with an absent target is a late dir's rename, 2.2,
+      recorded as a `rename-late` manifest line). Process
+      checks always apply.
       - no Claude process: `pgrep -fl` for `/claude/versions/`, `ClaudeCode.app`, `bin/claude`,
         and `pgrep -x claude` for a bare argv; the script prints each PID and command line and
         stops nothing itself; `pgrep` exit 1 means none, any other non-zero exit refuses. The
@@ -150,8 +160,11 @@ keeps redirecting.
         an error that refuses, naming the unreadable path; exit 1 = no match);
       - `~/.claude.json` (as backed up, on a resumed run) has no `projects` key equal to
         `NEW_REPO` or starting with `NEW_REPO/`;
-      - `NEW_REPO` and every target project/lesson dir absent;
-      - `OLD_REPO` clean, `git worktree list` shows the main checkout only;
+      - `NEW_REPO` and every target project/lesson dir absent; on a resumed run, a dir at the old
+        key that step 2 did not list (2.2) refuses when its target exists, naming both;
+      - `OLD_REPO` clean, `git worktree list` shows the main checkout only; `git status` or `git
+        worktree list` failing refuses (`cannot check <repo>: <git error>`), never passes as clean
+        or as no worktrees;
       - `git ls-remote "$NEW_REMOTE" refs/heads/dev` equals local `dev` (after step 3 a mismatch
         is a `warn:`: the checkout has moved, and the run goes on);
       - `jq` and `perl` present.
@@ -163,21 +176,32 @@ keeps redirecting.
       only listed files, and a file with old-path hits that is not listed refuses, except a
       transcript with an old `cwd` written after step 2 (found on a resumed run): it is backed up
       at that moment, appended to the list with a `note:` line naming it, and rewritten like the
-      others. `undo.sh` is written here already, so it exists whether or not step 9 runs.
+      others. Likewise a `projects/` or `lessons/` dir at the old key created after step 2 (rev
+      3d): right after step 2 on a resumed run it is appended to the manifest's renames with a
+      `note:` line (manifest tag `rename-late`), so `undo.sh` reverses it; when step 5 is already done it is renamed then, and
+      when step 6 is already done its transcripts with an old `cwd` are adopted and rewritten then
+      (otherwise steps 5 and 6 do it); a late `lessons/` dir after step 6 also gets `lessons/INDEX.md`
+      rewritten (key only, as step 6 does; decided from the manifest's `rename-late` lines, so a resume
+      after an interruption still does it; undo needs `--discard-changes-since-move` there, since the
+      file changed after its step 6 write). `undo.sh` is written here already, so it exists whether or
+      not step 9 runs.
    3. `mkdir -p` the parent; `mv OLD_REPO NEW_REPO`.
    4. In `NEW_REPO`: `git remote set-url origin "$NEW_REMOTE"`, `git -C "$NEW_REPO" fetch -q origin`;
       a failed fetch is a `warn:`, not an abort. From here on any failure prints the resume
       command, `bash <NEW_REPO>/scripts/move/2026-11-02-ikhbat-org.sh --execute`.
    5. Rename every `projects/` and `lessons/` dir starting with the old key prefix to the new
-      prefix (suffix kept); refuse the step on any existing target.
-   6. Transcripts in the renamed project dirs (`*.jsonl`, subagent files included): `perl -pi`
-      replacing `"cwd":"<OLD_REPO>` at a boundary with `"cwd":"<NEW_REPO>`. `lessons/INDEX.md`:
-      the key prefix. Line counts and byte sizes compared before/after (size changes by exactly
-      the path-length delta times the replacements); every rewrite keeps the file's mode and
-      mtime. Every rewrite in steps 6-8 (`.claude.json` included) appends `<sha256> <path>` of the file it just
-      wrote to the backup dir's `written.sha256`, right after the atomic `mv`; a file whose
-      content differed from its backup just before the rewrite gets no line (a `note:` says so),
-      so `undo.sh` lists it as changed. A transcript not in step 2's list is adopted as in 2.2.
+      prefix (suffix kept, late dirs of 2.2 included); refuse the step on any existing target.
+   6. Transcripts in the renamed project dirs (`*.jsonl`, subagent files included): `perl` writes
+      the file with `"cwd":"<OLD_REPO>` at a boundary replaced by `"cwd":"<NEW_REPO>` to a temp
+      file next to it, `touch -r` copies the mtime, an atomic `mv` replaces the file (never `perl
+      -pi`). `lessons/INDEX.md`: the key prefix. Line counts and byte sizes compared before/after
+      (size changes by exactly the path-length delta times the replacements); every rewrite keeps
+      the file's mode and mtime. Every rewrite in steps 6-8 (`.claude.json` included) appends
+      `<sha256> <path>` to the backup dir's `written.sha256`: the temp file's hash keyed by the
+      destination path, recorded before the atomic `mv` (rev 3d), so an interrupt leaves the file
+      equal to either its backup or its recorded hash; a file whose content differed from its
+      backup just before the rewrite gets no line (a `note:` says so), so `undo.sh` lists it as
+      changed. A transcript not in step 2's list is adopted as in 2.2.
       The dry run counts files with an old `cwd` and, apart, files naming the old path
       elsewhere only.
    7. `~/.claude.json` via `jq` to a temp file then `mv`: every `projects` key at `OLD_REPO` or
@@ -192,8 +216,10 @@ keeps redirecting.
       count unchanged), `daemon/roster.json` (ended workers; every string value, both rules),
       `jobs/*/state.json` (every string value, path and key rules both; today `cwd`,
       `linkScanPath` and `fan[].label`).
-   9. `undo.sh` in the backup dir reverses 3–8 from the manifest and backups; idempotent. Step 9
-      rewrites it from the final manifest. `undo.sh` checks, before changing anything: no Claude
+   9. `undo.sh` in the backup dir reverses 3–8 from the manifest and backups; idempotent. It reads
+      the manifest when it runs, so lines appended after step 2 (late transcripts and dirs) are
+      reversed too; step 9 writes the same text again, a no-op unless the file was removed or
+      edited. `undo.sh` checks, before changing anything: no Claude
       process and no live session (the preflight's `pgrep` rules; a live session's `cwd` at the
       old or new path), no rename source and target both present, no repo source and target
       both present, the checkout is a git top-level, the moved checkout has no linked worktree
@@ -213,16 +239,24 @@ keeps redirecting.
    `"state":"done"` that must not refuse; an unreadable working job; `pgrep` exiting 2; a live
    roster worker; a bad `history.jsonl` line; an existing `projects[NEW_REPO]` and a
    `NEW_REPO/sub` key; an unreadable transcript under the old key; dirty repo, linked
-   worktree, ls-remote mismatch, target exists; a sibling `bayan-x` dir next to `OLD_REPO`); boundary cases (paths `/…/bayan-x`,
+   worktree, ls-remote mismatch, target exists; a sibling `bayan-x` dir next to `OLD_REPO`; a
+   corrupt `.git/index`); boundary cases (paths `/…/bayan-x`,
    `/…/bayan.x`, `/…/bayan_x` untouched; key `-…-bayanx` untouched; `"cwd":"<old>/sub"`, `(key)`,
-   key before `-`, `"` and space rewritten); a full execute (repo moved, remote set, dirs
+   key before `-`, `"` and space rewritten; queue values `/Volumes/bk<old>/x`, `/mnt/<old>/x`,
+   `x<key>`, `x-<key>` untouched, `<old>/x`, `<key>` and `l1\n<old>/x` rewritten); a full execute (repo moved, remote set, dirs
    renamed with suffixes, transcripts' `cwd` rewritten and other bytes equal, INDEX,
    `.claude.json` keys moved and other keys byte-equal, registry, history with a `display` row
    left unchanged, queue.jsonl incl. `repoTop`, an ended roster worker, job state, transcript
    mtimes kept); `githubRepoPaths` merge; runs interrupted after steps 3, 4, 5, 6, 7 and 8, and by
    a Claude process appearing before step 6, each resumed to the same end tree as an
    uninterrupted run; a failed fetch after step 3 warns and finishes; a transcript gaining an old
-   `cwd` after step 2 is backed up, rewritten and restored by `undo.sh`; `undo.sh` restores the
+   `cwd` after step 2 is backed up, rewritten and restored by `undo.sh`; a project and a lesson dir
+   at the old key created after step 2 (and after step 6) are renamed, their transcript's `cwd`
+   rewritten and both restored by `undo.sh`, and one whose target exists refuses at preflight; a
+   run stopped right after the `mv` of a transcript and of `.claude.json` (`STOP_AFTER_MV`)
+   resumes and `undo.sh` restores the start without `--discard-changes-since-move`; `016
+   --delete-remote` (stub `ssh`) refuses the run script on a host with no new checkout and
+   checks it on one with; `undo.sh` restores the
    starting tree hash, twice, and refuses on an empty non-git `OLD_REPO`, on a file changed after
    the move (proceeding with the flag), on a history row appended after a stop at step 6 (no step
    9), on a row appended between a mid-run stop and the resume, on a rename source recreated
@@ -262,7 +296,9 @@ keeps redirecting.
    switch dev` (or `switch --track origin/dev` when no local dev). Verify `git -C <new> rev-parse
    HEAD origin/dev` equal and `tmp-t19-run.ps1` present. Only after this step, run
    `scripts/cleanup/016-spec-013-and-011-draft.sh --delete-remote`: its wp1/wlt1 section names
-   `/home/code/ikhbat.org/bayan`.
+   `/home/code/ikhbat.org/bayan`, and on a host where `/home/code/ikhbat.org/bayan/.git` does not
+   exist yet it refuses the run script (`refuse: <h>: … is not a checkout yet (move step 9
+   first)`) and leaves it alone; the other section-5 paths are unaffected.
 10. **Post-move checks** (new session, new path): `dotnet build -v q`, `dotnet test -v q`,
     `laws-check.js --run`, `structure-audit.js`, `bash scripts/release/package.test.sh`, `bash
     scripts/ci/install-dotnet.test.sh`, `review-nudge.js --watermark` prints e27f0daf or later; a

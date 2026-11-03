@@ -1,0 +1,17 @@
+struct Box {
+    string s
+}
+
+void pass(string s, to out string g) {
+    g = s
+}
+
+void main() {
+    var b = Box { s: "" }
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        pass(name, to: out b.s)
+    }
+    print(b.s)
+}

@@ -1,0 +1,13 @@
+void keep(string s, to ref Map<string, i64> m) {
+    m[s] = 1
+}
+
+void main() {
+    var kept = Map<string, i64>()
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        keep(name, to: ref kept)
+    }
+    print($"{kept}")
+}

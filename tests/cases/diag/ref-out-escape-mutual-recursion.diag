@@ -1,0 +1,9 @@
+error BYN3002: arena `arena` does not live as long as `kept`, which borrows it
+
+   2 │     if n > 0 { g(s, to: ref t, at: n - 1) }
+     │                -------------------------- `f` stores `s` into `t` here
+     │
+  14 │         f(name, to: ref kept, at: 2)
+     │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ arena `arena` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough
