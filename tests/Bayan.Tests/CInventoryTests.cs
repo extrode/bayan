@@ -158,7 +158,7 @@ public sealed partial class CInventoryTests
                 p += 2;
             }
             else if (interpolated && c == '{' && p + 1 < s.Length && s[p + 1] == '{') { o[p] = '{'; p += 2; }
-            else if (interpolated && c == '}' && p + 1 < s.Length && s[p + 1] == '}') { o[p] = '}'; p += 2; }
+            else if (interpolated && c == '}' && p + 1 < s.Length && s[p + 1] == '}') { o[p + 1] = '}'; p += 2; }
             else if (interpolated && c == '{') p = Hole(s, p + 1, 1);
             else { if (c != '\n') o[p] = c; p++; }
         }
@@ -244,6 +244,32 @@ public sealed partial class CInventoryTests
     public void DoubledBracesAreOneBrace()
     {
         var r = Literals("$\"({T}){{a}} ({{ b\"");
+        Assert.Single(Extensions().Matches(r));
+    }
+
+    private static string Collapsed(string s) => Regex.Replace(s, @"\s+", " ").Trim();
+
+    [Fact]
+    public void StatementExpressionInAnInterpolatedLiteralIsFound()
+    {
+        var r = Literals("$\"({{ int t = {x}; t; }})\"");
+        Assert.Equal("({ int t = ; t; })", Collapsed(r));
+        Assert.Single(Extensions().Matches(r));
+    }
+
+    [Fact]
+    public void OnlyRealHolesAreRemoved()
+    {
+        Assert.Equal("a b c", Collapsed(Literals("$\"a {x:X2} b {f(new { A = 1 }, \"}\")} c\"")));
+        Assert.Equal("{ a }", Collapsed(Literals("$\"{{ a }}\"")));
+    }
+
+    [Fact]
+    public void PlainLiteralWithAnEscapedQuoteStaysOneLiteral()
+    {
+        var r = Literals("f(\"a \\\" __asm__ \"); asm");
+        Assert.Contains("__asm__", r);
+        Assert.DoesNotContain("); asm", r);
         Assert.Single(Extensions().Matches(r));
     }
 
