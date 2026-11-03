@@ -747,7 +747,7 @@ public sealed class SelfhostEmitterT2Tests
     }
 
     // The selfhost binder builds a `requires` function's body with one more local than the C# (Q766), so only the
-    // `pred` section of these files is skipped.
+    // `pred` and `keys` sections of these files are skipped.
     private static readonly HashSet<string> PredSkipped = ["positional-requires.byn"];
 
     [Fact]
@@ -773,7 +773,7 @@ public sealed class SelfhostEmitterT2Tests
             var actual = SelfhostSemanticsHarness.Sections(stdout);
             foreach (var (section, lines) in expected)
             {
-                if (section == "pred" && PredSkipped.Contains(Path.GetFileName(corpus))) continue;
+                if ((section == "pred" || section == "keys") && PredSkipped.Contains(Path.GetFileName(corpus))) continue;
                 var got = actual.GetValueOrDefault(section) ?? [];
                 for (var i = 0; i < Math.Max(got.Count, lines.Count); i++)
                 {

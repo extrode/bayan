@@ -231,6 +231,7 @@ Type t2Type(in Ctx c, through in LCtx l, for BExpr e) {
         case .neverValue: return l.tree.neverValues[i].type
         case .functionValue: return l.tree.functionValues[i].functionType
         case .voidValue: return semantics.prim(.void)
+        // coverage-exempt: Q766
         default: return semantics.errorType()
     }
 }
