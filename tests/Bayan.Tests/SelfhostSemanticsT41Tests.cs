@@ -109,9 +109,226 @@ public sealed class SelfhostSemanticsT41Tests
                 print($"{f}{v}{t1}{t2}{t3}{e1}{ys.length}{ts.length}")
             }
             """)]),
+        ("builtin-arity", [("main.byn", """
+            struct unique U {
+                i64 fd
+            }
+
+            void main() {
+                var sb = StrBuf()
+                sb.append()
+                var m = Map<string, i64>()
+                sb.append(m)
+                var xs = List<string>()
+                xs.remove(from: 0)
+                xs.append()
+                m.slot()
+                let um = Map<U, i64>()
+                let uc = um.copy()
+                print(sb.finish())
+            }
+            """)]),
+        ("store-pairs", [("main.byn", """
+            struct Box {
+                string s
+
+                void give(to ref string t) {
+                    t = s
+                }
+
+                void fill(ref this, to Span<string> xs) {
+                    xs[0] = s
+                }
+            }
+
+            void many(string a, by string b, to ref string x, at ref string y) {
+                y = a
+                x = b
+                x = a
+                y = b
+            }
+
+            string make(Arena a) => "x".copy(to: a)
+
+            string make2(Arena a) => make(a)
+
+            void main() {
+                var kept = ""
+                var kept2 = ""
+                {
+                    using let arena = Arena()
+                    let n1 = "a".copy(to: arena)
+                    let n2 = "b".copy(to: arena)
+                    many(n1, by: n2, to: ref kept, at: ref kept2)
+                    let local = Box { s: n1 }
+                    local.give(to: ref kept)
+                    kept = make2(arena)
+                }
+                print($"{kept}{kept2}")
+            }
+            """)]),
+        ("call-arity", [("main.byn", """
+            void many(string a, by string b, to ref string x, at ref string y) {
+                y = a
+                x = b
+            }
+
+            ReadOnlySpan<string> pick(ref List<string> xs) => xs.span
+
+            void two(ref string a, to ref string b) {}
+
+            void pass(string s, to ref string t) {
+                t = s
+            }
+
+            void main() {
+                var kept = ""
+                var kept2 = ""
+                var xs = List<string>()
+                {
+                    using let arena = Arena()
+                    let n1 = "a".copy(to: arena)
+                    many(n1, by: n1, to: ref kept)
+                    many(n1, by: n1, to: ref kept, at: ref kept2, n1)
+                    let p = pick(ref xs, n1)
+                }
+                two(ref kept, to: ref kept)
+                pass(kept, to: ref kept)
+                print($"{kept}{kept2}")
+            }
+            """)]),
+        ("broad-ref", [("main.byn", """
+            interface IKeeper {
+                void keep(ref this, string v, to ref string t)
+            }
+
+            struct K : IKeeper {
+                string s
+
+                void keep(ref this, string v, to ref string t) {
+                    t = v
+                }
+            }
+
+            void viaDyn(dyn ref IKeeper k, by string v, to ref string t) {
+                k.keep(v, to: ref t)
+                k.keep(v, to: ref t, v)
+            }
+
+            void main() {
+                var k = K { s: "" }
+                var kept = ""
+                {
+                    using let arena = Arena()
+                    let name = "ann".copy(to: arena)
+                    viaDyn(k, by: name, to: ref kept)
+                    viaDyn(5, by: name, to: ref kept)
+                }
+                print(kept)
+            }
+            """)]),
+        ("context-builtins", [("main.byn", """
+            string runs(ReadOnlySpan<string> none) fails IoError {
+                using let arena = Arena()
+                provide allocator: arena {
+                    let r = try Io.run("true", none)
+                    let rb = try Io.runBatch("x.bat", none)
+                    print($"{r.exitCode}{rb.exitCode}")
+                }
+                return ""
+            }
+
+            string texts(ReadOnlySpan<u8> raw) fails Utf8Error {
+                using let arena = Arena()
+                provide allocator: arena {
+                    let a = try Utf8.decode(raw)
+                    let b = Utf8.tryDecode(raw) ?? ""
+                    let d = Utf8.decode(raw, invalid: .replace)
+                    let h = Hex.encode(raw)
+                    var buf = StrBuf.over(stackalloc u8[8])
+                    buf.append(a)
+                    print($"{a}{b}{d}{h}{buf.view}")
+                }
+                return ""
+            }
+
+            void main() {
+                let none = List<string>()
+                let raw = List<u8>()
+                let _ = runs(none.span) catch switch { _ => "" }
+                let _ = texts(raw.span) catch switch { _ => "" }
+            }
+            """)]),
+        ("multi-file", [("main.byn", """
+            import lib
+
+            void main() {
+                var kept = ""
+                {
+                    using let arena = Arena()
+                    let name = "ann".copy(to: arena)
+                    lib.keep(name, to: ref kept)
+                }
+                print(kept)
+            }
+            """), ("lib/lib.byn", """
+            public void keep(string s, to ref string t) {
+                t = s
+            }
+            """)]),
+        ("misc-shapes", [("main.byn", """
+            @positional
+            struct P {
+                i64 x
+                i64 y
+            }
+
+            void f(rest i64 x) {}
+
+            void main() {
+                let p = P(1, 2)
+                f(1)
+                var xs = List<i64>()
+                print($"{p.x}{xs.length}")
+            }
+            """)]),
+        ("static-ref-this", [("main.byn", """
+            struct S {
+                string s
+
+                static void g(ref this) {}
+            }
+
+            void main() {
+                S.g()
+            }
+            """)]),
+        ("tests-no-main", [("main.byn", """
+            void helper() {}
+            """)]),
+        ("library-no-main", [("main.byn", """
+            public void helper() {}
+            """)]),
+        ("skip-ownership", [("main.byn", """
+            void main() {
+                print("x")
+            }
+            """)]),
+        ("no-files", []),
     ];
 
-    /// <summary>The single-file diag goldens the region analysis reports on (BYN30xx), the Q745 ones among them.</summary>
+    /// <summary>The options a program compiles with on both sides, by the flag the generated main reads.</summary>
+    private static readonly Dictionary<string, string> Flags = new()
+    {
+        ["tests-no-main"] = "tests",
+        ["library-no-main"] = "library",
+        ["skip-ownership"] = "skip",
+        ["no-files"] = "empty",
+    };
+
+    private static string Flag(string name) => Flags.GetValueOrDefault(name, "-");
+
+    /// <summary>Every single-file diag and run golden: the Q745 diagnostics, and the summaries of programs that compile.</summary>
     private static readonly string[] Goldens = Directory.EnumerateFiles(Path.Combine(Golden.CasesRoot, "diag"), "*.byn")
         .Concat(Directory.EnumerateFiles(Path.Combine(Golden.CasesRoot, "run"), "*.byn"))
         .Select(f => Path.GetRelativePath(Golden.CasesRoot, f)[..^4].Replace('\\', '/')).Order(StringComparer.Ordinal).ToArray();
@@ -121,7 +338,7 @@ public sealed class SelfhostSemanticsT41Tests
     public static TheoryData<string> Names() => new(All);
 
     private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() =>
-        SelfhostSemanticsHarness.RunSections(MainSource(), All.SelectMany(n => new[] { n, Dir(n) }).ToArray()));
+        SelfhostSemanticsHarness.RunSections(MainSource(), All.SelectMany(n => new[] { n, Dir(n), Flag(n) }).ToArray()));
 
     /// <summary>Every diagnostic of the program, with its notes, and every store and return summary, is the C#'s.</summary>
     [Theory]
@@ -129,7 +346,7 @@ public sealed class SelfhostSemanticsT41Tests
     public void DiagnosticsAreTheCSharps(string name)
     {
         var section = $"diags.{name}";
-        var expected = Sorted(Expected(Dir(name)));
+        var expected = Sorted(Expected(Dir(name), Flag(name)));
         var actual = new Dictionary<string, List<string>> { [section] = Sorted(Sections.Value[section]) };
         // A program with no diagnostic and no summary prints nothing on either side.
         if (expected.Count == 0) Assert.Empty(actual[section]);
@@ -159,6 +376,7 @@ public sealed class SelfhostSemanticsT41Tests
         var files = Custom.Any(p => p.Name == name)
             ? Custom.Single(p => p.Name == name).Files
             : [("main.byn", File.ReadAllText(Path.Combine(Golden.CasesRoot, name + ".byn")))];
+        Directory.CreateDirectory(dir);
         foreach (var (path, text) in files)
         {
             var file = Path.Combine(dir, path);
@@ -168,10 +386,14 @@ public sealed class SelfhostSemanticsT41Tests
         return dir;
     }
 
-    /// <summary>The C# side: <c>DiagTests</c>' compilation of <c>main.byn</c> with its directory as root.</summary>
-    private static List<string> Expected(string dir)
+    /// <summary>
+    /// The C# side: <c>DiagTests</c>' compilation of <c>main.byn</c> with its directory as root, with the options
+    /// <paramref name="flag"/> names (<c>empty</c>: no entry file at all).
+    /// </summary>
+    private static List<string> Expected(string dir, string flag)
     {
-        var c = Compilation.Create([Golden.Load(Path.Combine(dir, "main.byn"))], dir, new CompilationOptions());
+        var options = new CompilationOptions(IncludeTests: flag == "tests", Library: flag == "library", SkipOwnershipCheck: flag == "skip");
+        var c = Compilation.Create(flag == "empty" ? [] : [Golden.Load(Path.Combine(dir, "main.byn"))], dir, options);
         var lines = new List<string>();
         foreach (var d in c.Diagnostics.Items)
         {
@@ -206,12 +428,13 @@ public sealed class SelfhostSemanticsT41Tests
 
         i32 main(ReadOnlySpan<string> args) {
             var i: i64 = 0
-            while i + 1 < args.length {
+            while i + 2 < args.length {
                 let name = args[i]
                 let dir = args[i + 1]
+                let flag = args[i + 2]
                 var sources = List<lexer.SourceText>()
-                sources.append(lexer.SourceText.create("main.byn", from: t11ReadAllBytes($"{dir}/main.byn")))
-                let options = CompilationOptions { capabilities: null, packageName: null }
+                if flag != "empty" { sources.append(lexer.SourceText.create("main.byn", from: t11ReadAllBytes($"{dir}/main.byn"))) }
+                let options = CompilationOptions { includeTests: flag == "tests", library: flag == "library", skipOwnershipCheck: flag == "skip", capabilities: null, packageName: null }
                 var c = create(from: move sources, at: dir, by: in options)
                 print($"== diags.{name}")
                 for d in c.diagnostics {
@@ -236,7 +459,7 @@ public sealed class SelfhostSemanticsT41Tests
                         print($"{sb.finish()}")
                     }
                 }
-                i += 2
+                i += 3
             }
             return 0
         }
