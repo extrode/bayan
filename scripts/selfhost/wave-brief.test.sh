@@ -39,6 +39,9 @@ python3 -I scripts/selfhost/wave-brief.py . T3 --spec 011 > /dev/null
 grep -q "^bash scripts/selfhost/guard.sh --base feat/011-self-hosted-emitter --allow 'selfhost/emitter/lowerstmt.byn,tests/Bayan.Tests/SelfhostEmitterT3Tests.cs,docs/bayan-handoff.md,docs/specs/011-self-hosted-emitter/011-tasks.md' --filter 'FullyQualifiedName~SelfhostEmitterT3Tests' --task T3 --spec 011\$" tmp/011-t3/prompt.md || { echo "FAIL: the 011 guard line"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t3/prompt.md; exit 1; }
 python3 -I scripts/selfhost/review-brief.py . T3 --spec 011 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostEmitterT3Tests"`' tmp/011-t3/review.md || { echo "FAIL: the 011 review filter"; exit 1; }
+# a .txt file in a task's files (T12's tests/windows-known-failures.txt) is in its allow list.
+python3 -I scripts/selfhost/wave-brief.py . T12 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md | grep -q ",tests/windows-known-failures.txt," || { echo "FAIL: a .txt task file is not in the guard's allow list"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md; exit 1; }
 # Row 010 is byte-for-byte what it was before specs.tsv: the briefs of the commit before the row table (8dae45cc) against this tree's, for T43
 # (skipped when that commit is not in this clone, e.g. a depth-1 checkout).
 old=8dae45cc
