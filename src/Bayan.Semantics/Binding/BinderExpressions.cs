@@ -548,6 +548,7 @@ internal sealed partial class Binder
         if (name == "Hex") return new BoundTypeRef(n, BuiltinType.Hex);
         if (name == "Symbol") return new BoundTypeRef(n, BuiltinType.Symbol);
         if (name == "Utf8") return new BoundTypeRef(n, BuiltinType.Utf8);
+        if (name == "Path") return new BoundTypeRef(n, BuiltinType.Path);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -703,6 +704,10 @@ internal sealed partial class Binder
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Utf8 } utf8 }:
                 if (_c.Builtins.FindUtf8(name) is { } decode) return new BoundMethodGroup(m, null, decode);
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, utf8.Name], help: Suggest(name, ["decode", "tryDecode"]) is { } nearest ? $"did you mean `{nearest}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Path } path }:
+                if (_c.Builtins.FindPath(name) is { } pathMember) return new BoundMethodGroup(m, null, pathMember);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, path.Name], help: Suggest(name, ["isRooted", "relative", "fileName"]) is { } nearPath ? $"did you mean `{nearPath}`?" : null);
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: PrimitiveType { IsString: true } str }:
             {

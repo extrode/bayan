@@ -1,0 +1,6 @@
+// `Path.isRooted` on Unix paths (that it takes no effect is pinned by `diag/path-needs-alloc`).
+bool rooted(string p) => Path.isRooted(p)
+
+for p in ["/", "/a", "/a/b/", "//a", "a", "a/b", "./a", "../a", ".", "", " "] {
+    print($"[{p}] {rooted(p)}")
+}

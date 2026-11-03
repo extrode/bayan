@@ -495,6 +495,120 @@ public sealed class SelfhostSemanticsT41Tests
                 print("x")
             }
             """)]),
+        ("builtin-names", [("main.byn", """
+            struct Money {
+                i64 cents
+
+                public void formatInto(ref StrBuf output, as FormatSpec spec) {
+                    let w: i64 = spec
+                }
+            }
+
+            void main() {
+                let a: i64 = Io
+                let b: i64 = Hex
+                let c: i64 = Utf8
+                let d: i64 = Panic
+                let e: i64 = Io.stdout
+                let f: i64 = Io.stdin
+                let g: i64 = Io.run("x", [])
+                let h = Io.rea
+                let i = Io.zzzzqq
+                let j = Hex.encod
+                let k = Hex.zzzzqq
+                let l = Utf8.decod
+                let m = Utf8.zzzzqq
+                let n = Path.relativ
+                let o = Path.zzzzqq
+                let q = string.invalidUtf8At
+                let r = string.invalidUtf8A
+                let s = string.zzzzqq
+                let t = string.from
+                let u = string.fromUtf8
+                let v = string.tryFrom
+            }
+            """)]),
+        ("type-names", [("main.byn", """
+            struct S {
+                i64 a
+                i64 p => a
+
+                void inst() {}
+                static void st() {}
+            }
+
+            void main() {
+                let a = List
+                let b = Map
+                let c = Span
+                let d = ReadOnlySpan
+                let e = Arena
+                let f = StrBuf
+                let g = IoError
+                let h = Utf8Error
+                let i = ParseError
+                let j = ValidationError
+                let k = ProcessResult
+                let l = IoError.Notfond
+                let m = IoError.zzzzqq
+                let n = S.inst
+                let o = S.a
+                let q = S.p
+                let r = S.zzzzqq
+                let s = S.st
+                let t = Symbol.inter
+                let u = Symbol.zzzzqq
+                let v = Symbol.intern
+                let w = Io.readFil
+                let x = Arena.x
+                let y = StrBuf.x
+            }
+            """)]),
+        ("name-shapes", [("main.byn", """
+            struct Box {
+                i64 v
+
+                T pick<T>(T x) => x
+                i64 get<T>(T x) => v
+            }
+
+            struct D {
+                i64 a = 1
+                i64 b = zzz
+            }
+
+            const k: i64[2] = [1, 2]
+
+            void main() {
+                const cc = k
+                let ee = cc
+                const dd = 3
+                let ff = dd
+                let bx = Box { v: 1 }
+                print($"{bx.get(1)}{bx.pick(2)}{ee}{ff}")
+            }
+            """)]),
+        ("state-fields", [("main.byn", """
+            struct Order {
+                i64 id
+                states {
+                    draft
+                    paid(i64 payment)
+                }
+
+                i64 amount(this is .paid) => payment
+
+                i64 viaLambda(this is .paid) {
+                    let f: () -> i64 = () => payment
+                    return f()
+                }
+            }
+
+            void main() {
+                let o = Order.paid { id: 1, payment: 2 }
+                print($"{o.amount()}{o.viaLambda()}")
+            }
+            """)]),
         ("no-files", []),
     ];
 

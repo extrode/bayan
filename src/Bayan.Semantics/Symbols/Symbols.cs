@@ -372,6 +372,9 @@ public enum BuiltinFunction
     IntParse,
     EnumFromOrdinal,
     EnumParse,
+    PathIsRooted,
+    PathRelative,
+    PathFileName,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }

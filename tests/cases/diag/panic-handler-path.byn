@@ -1,0 +1,10 @@
+// `Path.fileName` and `Path.relative` allocate, so a panic handler cannot call them (BYN2612); `Path.isRooted` does not allocate.
+void onCrash(Panic p) {
+    let rooted = Path.isRooted(p.message)
+    let name = Path.fileName(p.message)
+    let rel = Path.relative(from: "/", to: p.message)
+}
+
+void main() {
+    Panic.handler = onCrash
+}

@@ -563,7 +563,8 @@ internal sealed class RegionAnalysis
                 }
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `Utf8.decode` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver
-                or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode))
+                or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode
+                or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName))
             result = result.Union(_contexts.Peek());
         return result;
     }
@@ -609,6 +610,8 @@ internal sealed class RegionAnalysis
         [BuiltinFunction.HexEncode] = [],
         [BuiltinFunction.HexDecode] = [],
         [BuiltinFunction.SymbolIntern] = [],
+        [BuiltinFunction.PathRelative] = [],
+        [BuiltinFunction.PathFileName] = [],
     };
 
     private static string ParameterName(FunctionSymbol fn, int index) => index == This ? "this" : fn.Parameters[index].Name;

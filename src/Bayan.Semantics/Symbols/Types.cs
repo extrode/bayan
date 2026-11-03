@@ -503,6 +503,8 @@ public enum BuiltinKind
     FormatSpec,
     /// <summary>A 4-byte interned identifier: copyable, compared by ID, ordered by its text (spec §3.3).</summary>
     Symbol,
+    /// <summary>The static path functions <c>Path</c> (spec 014's slice); it has no values.</summary>
+    Path,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -532,6 +534,7 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType Panic = new(BuiltinKind.Panic, "Panic");
     public static readonly BuiltinType FormatSpec = new(BuiltinKind.FormatSpec, "FormatSpec");
     public static readonly BuiltinType Symbol = new(BuiltinKind.Symbol, "Symbol");
+    public static readonly BuiltinType Path = new(BuiltinKind.Path, "Path");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>

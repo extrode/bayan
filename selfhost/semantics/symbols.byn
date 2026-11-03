@@ -91,6 +91,9 @@ public enum BuiltinFunction {
     intParse
     enumFromOrdinal
     enumParse
+    pathIsRooted
+    pathRelative
+    pathFileName
 }
 
 // ── Symbols ─────────────────────────────────────────────────────────────────────
