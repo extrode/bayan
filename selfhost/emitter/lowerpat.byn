@@ -1,0 +1,9 @@
+// T4: Lowerer.cs 1799-1926 (`Match`, `Claim`, `Step`, `Equal`).
+// Header only (T1): the entry point with its final signature.
+
+import semantics
+
+/// Lowerer.cs:1799 `Match`: the condition that holds when `subject` matches `pattern`, binding as it goes.
+public BExpr lowerMatch(ref Ctx c, ref LCtx l, BPattern pattern, BExpr subject) {
+    return -1
+}

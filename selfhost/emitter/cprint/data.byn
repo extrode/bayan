@@ -1,0 +1,7 @@
+// T6: CEmitter.cs 1047-1147 (`Static`, `StaticArray`, `StringLiteral`, `Escape`, `Constant`, `FloatLiteral`).
+// Header only (T1): final signatures.
+
+/// CEmitter.cs:1100 `Escape`: `text` as the body of a C string literal.
+public string escape(string text) {
+    return ""
+}

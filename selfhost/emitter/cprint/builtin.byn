@@ -1,0 +1,9 @@
+// T11: CEmitter.cs 1940-2449 (`Builtin`, `Unary`, `Binary`, `Conversion`, `Index`, `Slice`).
+// Header only (T1): final signatures.
+
+import semantics
+
+/// CEmitter.cs:1940 `FunctionEmitter.Builtin`: the C text of builtin call `call`.
+public string emitBuiltin(ref CCtx cc, ref CFunc f, ref Ctx c, BExpr call) {
+    return ""
+}

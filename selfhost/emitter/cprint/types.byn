@@ -1,0 +1,9 @@
+// T7: CEmitter.cs 477-587 (`EmitTypes`), 600-681 (`SlotSignature`, `FunctionSignature`, `FunctionThunk`, `Vtable`).
+// Header only (T1): final signatures.
+
+import semantics
+
+/// CEmitter.cs:477 `EmitTypes`: the struct definitions of every registered type, in `_typeOrder`.
+public string emitTypes(ref CCtx cc, ref Ctx c) {
+    return ""
+}

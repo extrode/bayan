@@ -1,0 +1,10 @@
+// T9: CEmitter.cs 1173-1236 (constructor, `Signature`, `Emit`), 1254-1616 (statements, ownership checks).
+// Header only (T1): final signatures.
+
+import semantics
+import emitter
+
+/// CEmitter.cs:1173 `FunctionEmitter.Emit`: the C definition of `f`.
+public string emitFunction(ref CCtx cc, ref Ctx c, in LCtx l, in LoweredFunction f) {
+    return ""
+}

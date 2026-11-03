@@ -1,0 +1,7 @@
+// T5: PowerAssert.cs 1-78.
+// Header only (T1): the entry point with its final signature.
+
+/// PowerAssert.cs `Column`: the rune column of byte offset `offset` in `line`.
+public i64 powerAssertColumn(string line, i64 offset) {
+    return 0
+}

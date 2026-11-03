@@ -1,0 +1,9 @@
+// T4: Lowerer.cs 899-1088 (`Expr`, `LowerExpr`), 1173-1375 (`ShortCircuit` .. `Call`), 1729-1926 (failure).
+// Header only (T1): the entry point with its final signature.
+
+import semantics
+
+/// Lowerer.cs:899 `Expr`: the lowered form of `e`, with its statements appended to the current output list.
+public BExpr lowerExpr(ref Ctx c, ref LCtx l, BExpr e) {
+    return e
+}
