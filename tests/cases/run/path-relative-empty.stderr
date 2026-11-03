@@ -1,0 +1,2 @@
+panic: Path.relative: the path is empty
+  at path-relative-empty.byn:3
