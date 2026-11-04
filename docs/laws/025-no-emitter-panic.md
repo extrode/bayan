@@ -12,7 +12,7 @@ enacted: 2026-11-04
 
 ## Statement
 
-For every program in the corpus (every `tests/cases/run/` input, which includes `run/hello.byn`, the program `CliTests` passes to
+For every program in the corpus (every `tests/cases/run/` input, which includes `run/hello.byn`, byte-identical to `examples/hello/main.byn`, the program `CliTests` passes to
 `--emit-c`, and the 010 generator's programs on the fixed seeds, well-typed or
 corrupted) and every `BuildMode` (`debug`, `safe`, `fast` today), `bayan-emit` terminates and each input exits 0 or 1:
 it never panics, never exits through the runtime's trap paths, and no `bayan-emit --many` run (one mode, one batch) takes
