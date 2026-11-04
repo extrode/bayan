@@ -13,8 +13,8 @@ namespace Bayan.Tests;
 /// <summary>
 /// 011 T9: <c>selfhost/emitter/cprint/func.byn</c> (CEmitter.cs 1173-1236, 1254-1616) against the C#
 /// <c>FunctionEmitter</c> as an in-process oracle. Both sides build the same lowered bodies by hand from the fixture's
-/// bound nodes, so each statement kind is reached without a full lowering. The T10 stubs return "", so the C#
-/// text of each callee still a stub on feat (T10 <c>Expr</c>/<c>Call</c>) is masked to "" (Q802).
+/// bound nodes, so each statement kind is reached without a full lowering. T10 <c>Expr</c>/<c>Call</c> are real, so
+/// the C# text is compared whole (no Q802 masks).
 /// </summary>
 public sealed class SelfhostEmitterT9Tests
 {
@@ -46,6 +46,7 @@ public sealed class SelfhostEmitterT9Tests
         type LIndexUnchecked = ltree.LIndexUnchecked
         type LNextChar = ltree.LNextChar
         type LVoid = ltree.LVoid
+        type T10BDefault = semantics.BDefault
 
         i32 main(ReadOnlySpan<string> args) {
             var rest = List<string>()
@@ -138,7 +139,15 @@ public sealed class SelfhostEmitterT9Tests
                         calls.append(c.bTries[init & 0xFFFFFFFF].operand)
                     }
                 }
-                if k == .assign { assigns.append(s) }
+                if k == .assign {
+                    // `slot`'s default value is an argument lowering adds (Lowerer.cs:1589); `emitExpr` reads it.
+                    let target = c.bAssigns[s & 0xFFFFFFFF].target
+                    if semantics.boundKind(target) == .builtinCall && c.bBuiltinCalls[target & 0xFFFFFFFF].member == .mapSlot && c.bBuiltinCalls[target & 0xFFFFFFFF].arguments.length == 1 {
+                        let d = semantics.addDefault(ref c, from: T10BDefault { span: span, type: c.bBuiltinCalls[target & 0xFFFFFFFF].type })
+                        c.bBuiltinCalls[target & 0xFFFFFFFF].arguments.append(d)
+                    }
+                    assigns.append(s)
+                }
             }
             var params = List<LocalId>()
             for p in c.functions[fn].parameters { params.append(p) }
@@ -241,6 +250,10 @@ public sealed class SelfhostEmitterT9Tests
                 locals.append(c.locals.length - 1)
             }
             if c.functions[fn].name == "lm" { stmts.append(t9Lowered(ref c, through: ref t, at: span, for: xs[0], by: c.functions[fn].parameters[0])) }
+            // Claims after a call (an if's condition, a statement) and a local both read and moved in one statement.
+            if c.functions[fn].name == "oc" {
+                for s in original { if semantics.boundKind(s) == .ifStmt { stmts.append(s) } }
+            }
             stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span }))
         }
 
@@ -463,6 +476,25 @@ public sealed class SelfhostEmitterT9Tests
 
         void h(move List<i64> zl) { { { } } }
 
+        bool rl(ref List<i64> zl) { { { } } return true }
+
+        void rv(ref List<i64> zl) { { { } } }
+
+        void ow(i64 zn, from move List<i64> zm) { { { } } }
+
+        void ox(ref List<i64> zl, from move List<i64> zm) { { { } } }
+
+        void oc() {
+            { { } }
+            var zl = List<i64>()
+            var z2 = List<i64>()
+            if rl(ref zl) {
+                rv(ref zl)
+                ow(zl.length, from: move zl)
+                ox(ref z2, from: move z2)
+            }
+        }
+
         void main() {
             { { } }
             let k = 1
@@ -533,8 +565,8 @@ public sealed class SelfhostEmitterT9Tests
 
     private static FunctionEmitter Frame(CEmitter emitter, LoweredFunction f) => new(emitter, f);
 
-    /// <summary>The C# twin of the generated main's <c>t9Build</c>, collecting the text each stubbed callee gives in C#.</summary>
-    private static (List<BoundStmt> Stmts, List<LocalSymbol> Locals) Body(Compilation c, CEmitter emitter, FunctionSymbol fn, List<string> masks)
+    /// <summary>The C# twin of the generated main's <c>t9Build</c>.</summary>
+    private static (List<BoundStmt> Stmts, List<LocalSymbol> Locals) Body(Compilation c, FunctionSymbol fn)
     {
         var body = fn.Body!;
         var syn = body.Syntax;
@@ -561,14 +593,6 @@ public sealed class SelfhostEmitterT9Tests
         stmts.Add(new LPanic(syn, "boom"));
         stmts.Add(new LWrite(syn, WriteSink.Panic, null, [new BoundInterpolationPart("", null), new BoundInterpolationPart(null, null)]));
         stmts.AddRange(assigns);
-        var probe = Frame(emitter, new LoweredFunction(fn, locals, 1, 1, body));
-        string Expr(BoundExpr e) => (string)Call(probe, "Expr", e)!;
-        foreach (var a in assigns)
-        {
-            masks.Add(Expr(a.Target));
-            masks.Add(Expr(a.Value));
-        }
-        foreach (var x in xs) masks.Add(Expr(x));
         if (xs.Count > 0)
         {
             var q = xs[0];
@@ -585,14 +609,7 @@ public sealed class SelfhostEmitterT9Tests
         {
             stmts.Add(new LFailingCall(syn, locals[0], calls[0], locals[1]));
             stmts.Add(new LFailingCall(syn, locals[0], calls[1], null));
-            var names = (Dictionary<LocalSymbol, string>)Field(probe, "_names")!;
-            masks.Add((string)Call(probe, "Call", calls[0], "&" + names[locals[1]])!);
-            masks.Add((string)Call(probe, "Call", calls[1], null)!);
-            foreach (var call in calls.Skip(2))
-            {
-                stmts.Add(new LFailingCall(syn, locals[0], call, null));
-                masks.Add((string)Call(probe, "Call", call, null)!);
-            }
+            foreach (var call in calls.Skip(2)) stmts.Add(new LFailingCall(syn, locals[0], call, null));
         }
         if (xs.Count >= 7)
         {
@@ -629,8 +646,6 @@ public sealed class SelfhostEmitterT9Tests
             locals.Add(new LocalSymbol("t", null, PrimitiveType.Never, LocalKind.Temp));
             locals.Add(new LocalSymbol("pv", null, PrimitiveType.I64, LocalKind.PatternVariable));
             locals.Add(new LocalSymbol("pb", null, PrimitiveType.I64, LocalKind.PatternVariable) { BorrowsSubject = true });
-            masks.Add(Expr(fv));
-            masks.Add(Expr(owned));
         }
         if (fn.Name == "lm")
         {
@@ -644,23 +659,14 @@ public sealed class SelfhostEmitterT9Tests
                 new LIndexUnchecked(syn, q, q, PrimitiveType.I64), new LNextChar(syn, q, fn.Parameters[0]),
             ];
             stmts.Add(new LWrite(syn, WriteSink.Print, q, [.. lowered.Select(x => new BoundInterpolationPart(null, x) { Spec = new BoundFormatSpec(0, false, 1, 32, -1, -1) })]));
-            foreach (var x in lowered) masks.Add(Expr(x));
         }
+        // Claims after a call (an if's condition, a statement) and a local both read and moved in one statement.
+        if (fn.Name == "oc") stmts.AddRange(body.Statements.OfType<BoundIf>());
         stmts.Add(new LReturn(syn, null));
         return (stmts, locals);
     }
 
-    /// <summary><paramref name="text"/> with each mask (longest first) replaced by the stub's "".</summary>
-    private static string Mask(string text, List<string> masks)
-    {
-        foreach (var m in masks.Where(m => m.Length > 0).Distinct().OrderByDescending(m => m.Length)) text = text.Replace(m, "");
-        return text;
-    }
-
     private static List<string> Lines(string text) => text.Split('\n').Where(s => s.Length > 0).ToList();
-
-    // The helpers T9 and the T8 `format` register; the C# `Expr` (T10 `emitExpr`) and ownership (T7) register the rest, which the stubs do not.
-    private static bool T9Helper(string name) => name.StartsWith("bynh_w_", StringComparison.Ordinal) || name.StartsWith("bynh_debug_", StringComparison.Ordinal) || name.StartsWith("bynh_fmt_", StringComparison.Ordinal) || name.StartsWith("bynh_chk_", StringComparison.Ordinal);
 
     private static Dictionary<string, List<string>> EmitOracle(Compilation c, bool checks)
     {
@@ -671,35 +677,31 @@ public sealed class SelfhostEmitterT9Tests
         var emit = new List<string>();
         foreach (var fn in functions)
         {
-            var masks = new List<string>();
-            var (stmts, locals) = Body(c, emitter, fn, masks);
+            var (stmts, locals) = Body(c, fn);
             var f = new LoweredFunction(fn, locals, 1, 1, new BoundBlock(fn.Body!.Syntax, [.. stmts]));
             emit.Add($"fn {fn.Name}");
             emit.Add($"sig {Frame(emitter, f).Signature()}");
             var fe = Frame(emitter, f);
             var text = fe.Emit();
-            var signature = text[..text.IndexOf('\n')];
-            emit.AddRange(Lines(signature + Mask(text[text.IndexOf('\n')..], masks)));
+            emit.AddRange(Lines(text));
             var slots = Frame(emitter, f);
             foreach (var l in fn.Parameters.Concat<LocalSymbol>(locals))
                 emit.Add($"slot {((bool)Call(slots, "HasSlot", l)! ? "true" : "false")} {Call(slots, "Slot", l)}");
             if (fn.Name == "rq")
             {
                 var (zm, zr) = (new BoundLocal(fn.Body!.Syntax, fn.Parameters[1]), new BoundLocal(fn.Body!.Syntax, fn.Parameters[0]));
-                emit.Add($"store {Mask((string?)Call(slots, "CheckedStore", zm, zr, true) ?? "null", [(string)Call(slots, "Expr", zr)!])}");
+                emit.Add($"store {(string?)Call(slots, "CheckedStore", zm, zr, true) ?? "null"}");
             }
             if (fn.Name == "w") emit.AddRange(ClaimsOracle(emitter, slots, fn, locals));
         }
         var helpers = new List<string>();
         var order = (List<string>)Field(emitter, "_helperOrder")!;
         var bodies = (System.Collections.IDictionary)Field(emitter, "_helpers")!;
-        var t9Masks = new List<string>();
-        foreach (var fn in functions) Body(c, emitter, fn, t9Masks);
-        foreach (var n in order.Where(T9Helper))
+        foreach (var n in order)
         {
             var (proto, body) = ((string, string))bodies[n]!;
             helpers.Add($"{n} {proto}");
-            helpers.AddRange(Lines(Mask(body, t9Masks)));
+            helpers.AddRange(Lines(body));
         }
         return new() { ["emit"] = emit, ["helpers"] = helpers };
     }
@@ -711,8 +713,7 @@ public sealed class SelfhostEmitterT9Tests
         var p = (StructSymbol)locals[5].Type;
         var field = new BoundField(syn, new BoundLocal(syn, locals[5]), p.Fields[0]);
         var tuple = new BoundTupleElement(syn, new BoundLocal(syn, locals[0]), 0, PrimitiveType.I64);
-        var masks = new List<string>();
-        string Claimed(BoundExpr r) => Mask((string)Call(fe, "Claimed", "x()", r, syn)!, masks);
+        string Claimed(BoundExpr r) => (string)Call(fe, "Claimed", "x()", r, syn)!;
         var lines = new List<string> { $"claimed {Claimed(q)}", $"claimed {Claimed(field)}", $"claimed {Claimed(tuple)}" };
         Call(fe, "ClaimAfterCall", q, syn);
         Call(fe, "ClaimAfterCall", field, syn);
@@ -724,13 +725,12 @@ public sealed class SelfhostEmitterT9Tests
         var lv = new LVoid(syn);
         lines.Add($"store {(string?)Call(fe, "CheckedStore", lv, q, true) ?? "null"}");
         lines.Add($"store {(string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[^5]), q, true) ?? "null"}");
-        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[7]), q, false) ?? "null", [(string)Call(fe, "Expr", q)!])}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[7]), q, false) ?? "null"}");
         var mt = locals[7].Type;
         BoundExpr lix = new LOptionalValue(syn, q, mt);
         BoundExpr bix = new BoundIndex(syn, q, q, false, mt);
-        string Expr(BoundExpr e) => (string)Call(fe, "Expr", e)!;
-        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", lix, q, true) ?? "null", [Expr(lix), Expr(q)])}");
-        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", bix, q, false) ?? "null", [Expr(bix), Expr(q)])}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", lix, q, true) ?? "null"}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", bix, q, false) ?? "null"}");
         Call(fe, "ClaimAfterCall", new BoundLocal(syn, locals[7]), syn);
         foreach (var x in (List<string>)Field(fe, "_afterCalls")!) lines.Add($"afterc {x}");
         lines.Add($"claimed {Claimed(fn.Body.Statements.OfType<BoundAssign>().First().Target)}");

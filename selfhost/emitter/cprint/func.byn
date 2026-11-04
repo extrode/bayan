@@ -226,7 +226,6 @@ public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltre
 public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr place, to semantics.TextSpan span) uses alloc {
     unless cc.ownershipChecks { return }
     let r = ownerRoot(c, for: place)
-    // coverage-blocked: Q799 T10 emitExpr
     if r == -1 || f.moved.contains(r) { return }
     let type = ltree.typeOf(in c, through: in t, for: place)
     unless ownsStorage(ref c, for: type) { return }
@@ -270,7 +269,6 @@ void findUnsequenced(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree
     f.lastLineEnd = lastLineEnd
     var both = Map<LocalId, bool>()
     for (l, _) in f.reads {
-        // coverage-blocked: Q799 T10 emitExpr
         if f.moves.contains(l) { both[l] = true }
     }
     f.moved = f.moves.take()
@@ -403,11 +401,9 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree
                 afterCalls(ref sb, for: ref f, at: after)
                 block(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: c.bIfs[i].then)
                 let elseBranch = c.bIfs[i].elseBranch
-                // coverage-blocked: Q799 T10 call
                 if elseBranch != -1 || after.length > 0 {
                     line(ref sb, by: in f, for: "} else {")
                     afterCalls(ref sb, for: ref f, at: after)
-                    // coverage-blocked: Q799 T10 call
                     if elseBranch != -1 { block(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: elseBranch) }
                 }
                 line(ref sb, by: in f, for: "}")
@@ -416,7 +412,6 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree
             default: panic($"cannot emit {t9StmtNames()[i64(semantics.boundKind(s).ordinal) - i64(semantics.BoundKind.block.ordinal)]}")
         }
     }
-    // coverage-blocked: Q799 T10 call
     for x in f.afterCalls { line(ref sb, by: in f, for: x) }
     f.afterCalls = List<string>()
     // A statement with no C (a claim without ownership checks) keeps no `#line` either.
@@ -430,7 +425,6 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree
 /// CEmitter.cs:1474 `AfterCalls`: the claims after an if's condition, at the start of a branch.
 void afterCalls(ref StrBuf sb, for ref CFunc f, at List<string> claims) {
     f.indent += 1
-    // coverage-blocked: Q799 T10 call
     for x in claims { line(ref sb, by: in f, for: x) }
     f.indent -= 1
 }

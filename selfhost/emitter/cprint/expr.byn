@@ -1,15 +1,488 @@
-// T10: CEmitter.cs 1617-1939 (`Expr`, `Call`).
-// Header only (T1): final signatures.
+// T10: CEmitter.cs 1617-1944 (`Expr`, `Call`), minus D3's `LMutantIs`/`LCount` cases (:1696-1699).
 
 import semantics
 import emitter.ltree
 
+/// T10 (private): `string.Join(", ", parts)`.
+string t10Join(in List<string> parts) uses alloc {
+    var sb = StrBuf()
+    for k in 0..parts.length {
+        if k > 0 { sb.append(", ") }
+        sb.append(parts[k])
+    }
+    return $"{sb.finish()}"
+}
+
+/// T10 (private): the C# class name of a lowered node of kind `k`, `e.GetType().Name` at CEmitter.cs:1722.
+string t10LoweredName(ltree.LKind k) uses alloc {
+    let names = [
+        "LLabel", "LGoto", "LLoop", "LReturn", "LReturnError", "LFailingCall", "LWrite", "LPanic", "LSetContext", "LFreeArena",
+        "LPushPanicHandler", "LPopPanicHandler", "LClaim", "LOptionalHas", "LOptionalValue", "LUnionTag", "LUnionField",
+        "LErrorCode", "LErrorField", "LAssignExpr", "LSequence", "LIndexUnchecked", "LNextChar", "LNever", "LFunctionValue",
+        "LVoid"
+    ]
+    return $"{names[k.ordinal]}"
+}
+
+/// T10 (private): the C# class name of a bound node of kind `k`, `e.GetType().Name` at CEmitter.cs:1722.
+string t10BoundName(semantics.BoundKind k) uses alloc {
+    let names = [
+        "BoundLiteral", "BoundSymbolLiteral", "BoundDefault", "BoundLocal", "BoundThis", "BoundField", "BoundTupleElement",
+        "BoundCall", "BoundBuiltinCall", "BoundUnary", "BoundBinary", "BoundConversion", "BoundTryFrom", "BoundConditional",
+        "BoundCoalesce", "BoundStructLiteral", "BoundWith", "BoundTuple", "BoundCollection", "BoundSpread", "BoundIndex",
+        "BoundSlice", "BoundRange", "BoundIs", "BoundSwitchExpr", "BoundInterpolated", "BoundMove", "BoundTry", "BoundCatch",
+        "BoundJump", "BoundBlockExpr", "BoundErrorVariant", "BoundEnumMember", "BoundUnionNew", "BoundEnumValues",
+        "BoundStaticArray", "BoundStackalloc", "BoundErrorExpr", "BoundTypeRef", "BoundModuleRef", "BoundLambda",
+        "BoundFunctionRef", "BoundBlock", "BoundLocalDecl", "BoundExprStmt", "BoundAssign", "BoundReturn", "BoundFail",
+        "BoundBecome", "BoundBreak", "BoundContinue", "BoundIf", "BoundWhile", "BoundDoWhile", "BoundFor", "BoundSwitch",
+        "BoundDefer", "BoundAssert", "BoundErrdefer", "BoundPanicDefer", "BoundSetOnPanic", "BoundContext", "BoundErrorStmt",
+        "BoundConstantPattern", "BoundRelationalPattern", "BoundRangePattern", "BoundBindPattern", "BoundNotPattern",
+        "BoundBinaryPattern", "BoundPropertyPattern", "BoundUnionField", "BoundUnionPattern", "BoundErrorField",
+        "BoundErrorPattern", "BoundMethodGroup", "BoundVariantGroup", "BoundBuiltinGroup"
+    ]
+    return $"{names[k.ordinal]}"
+}
+
 /// CEmitter.cs:1617 `FunctionEmitter.Expr`: the C text of expression `e`.
-public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at ltree.LNode e) {
-    return ""
+public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at ltree.LNode e) uses alloc {
+    if (semantics.exprConstant(in c, for: e) is { } konst) {
+        let ty = ltree.typeOf(in c, through: in t, for: e)
+        var isParameter = false
+        if semantics.boundKind(e) == .local { isParameter = c.locals[c.bLocals[e & 0xFFFFFFFF].local].isParameter }
+        if semantics.kindOf(ty) == .primitive && !semantics.isVoid(ty) && !semantics.isNever(ty) && !isParameter {
+            return constant(ref cc, from: ref c, for: konst, as: ty)
+        }
+    }
+    let i = e & 0xFFFFFFFF
+    if ltree.isLowered(e) {
+        switch ltree.lKindOf(e) {
+            case .optionalHas:
+                return $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.optionalHass[i].optional)}.has"
+            case .unionTag:
+                return $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.unionTags[i].unionValue)}.tag"
+            case .errorCode:
+                return $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.errorCodes[i].error)}.code"
+            case .errorField:
+                let v = t.errorFields[i].variant
+                let owner = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.errorFields[i].error)
+                return $"{owner}.p.e{c.errorVariants[v].code}.{fieldName(c.locals[c.errorVariants[v].fields[t.errorFields[i].index]].name)}"
+            case .unionField:
+                let v = t.unionFields[i].variant
+                let owner = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.unionFields[i].unionValue)
+                return $"{owner}.u.{fieldName(c.unionVariants[v].name)}.{fieldName(c.locals[c.unionVariants[v].fields[t.unionFields[i].index]].name)}"
+            case .optionalValue:
+                return $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.optionalValues[i].optional)}.value"
+            case .assignExpr:
+                if (checkedStore(ref cc, for: ref f, from: ref c, through: t, at: t.assignExprs[i].target, to: t.assignExprs[i].value, claim: false) is { } stored) {
+                    return stored
+                }
+                let target = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.assignExprs[i].target)
+                let value = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.assignExprs[i].value)
+                return $"({target} = {value})"
+            case .sequence:
+                // `Append(Expr(s.Value))` runs before the lazy `Select(Expr)` over the effects.
+                let last = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.sequences[i].value)
+                var parts = List<string>()
+                for j in 0..t.sequences[i].effects.length {
+                    parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.sequences[i].effects[j]))
+                }
+                parts.append(last)
+                return $"({t10Join(in parts)})"
+            case .indexUnchecked:
+                let target = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.indexUncheckeds[i].target)
+                let index = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.indexUncheckeds[i].index)
+                if semantics.kindOf(ltree.typeOf(in c, through: in t, for: t.indexUncheckeds[i].target)) == .array {
+                    return $"{target}.v[{index}]"
+                }
+                return $"{target}.ptr[{index}]"
+            case .nextChar:
+                return $"byn_str_next({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.nextChars[i].text)}, &{f.names[t.nextChars[i].position]})"
+            // A named function goes through a thunk taking the environment; a lambda takes it already.
+            // Q1: round 4 redoes this (CEmitter.cs:1716-1720).
+            case .functionValue:
+                let fnType = t.functionValues[i].functionType
+                if c.functions[t.functionValues[i].function].kind == .lambda {
+                    let ctype = cType(ref cc, from: ref c, for: fnType)
+                    let name = functionName(ref cc, from: ref c, for: t.functionValues[i].function)
+                    let env = t.functionValues[i].env
+                    return $"(({ctype}){{{name}, {env == -1 ? "NULL" : $"&{f.names[env]}"}}})"
+                }
+                let ctype = cType(ref cc, from: ref c, for: fnType)
+                let thunk = functionThunk(ref cc, from: ref c, for: t.functionValues[i].function, as: fnType)
+                return $"(({ctype}){{{thunk}, NULL}})"
+            default:
+                panic($"cannot emit {t10LoweredName(ltree.lKindOf(e))}")
+        }
+    }
+    switch semantics.boundKind(e) {
+        case .literal:
+            let value = c.bLiterals[i].value
+            return constant(ref cc, from: ref c, for: value, as: c.bLiterals[i].type)
+        case .symbolLiteral:
+            return symbolLiteral(ref cc, for: c.bSymbolLiterals[i].text)
+        case .defaultValue:
+            return $"(({cType(ref cc, from: ref c, for: c.bDefaults[i].type)}){{0}})"
+        case .local:
+            let l = c.bLocals[i].local
+            if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
+                if f.hasDryRun { f.reads[l] = true }
+                let slotName = slot(ref cc, for: ref f, from: ref c, at: l)
+                let shown = cString(semantics.typeDisplay(ref c, by: c.bLocals[i].type))
+                return $"(*(byn_own_read(&{slotName}, {shown}, {loc(in c, by: in f, at: c.bLocals[i].span)}), &{f.names[l]}))"
+            }
+            if semantics.paramIsByRef(ref c, by: l) { return $"(*{f.names[l]})" }
+            return f.names[l]
+        case .thisRef:
+            return "(*self)"
+        case .moveExpr:
+            let operand = c.bMoves[i].operand
+            if semantics.boundKind(operand) == .local {
+                let l = c.bLocals[operand & 0xFFFFFFFF].local
+                if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
+                    if f.hasDryRun { f.moves[l] = true }
+                    let moveFn = ownMove(ref cc, from: ref c, for: c.bLocals[operand & 0xFFFFFFFF].type)
+                    var slotRef = "NULL"
+                    if !f.unsequenced.contains(l) { slotRef = $"&{slot(ref cc, for: ref f, from: ref c, at: l)}" }
+                    return $"(*{moveFn}(&{f.names[l]}, {slotRef}, {loc(in c, by: in f, at: c.bMoves[i].span)}))"
+                }
+            }
+            return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: operand)
+        case .field:
+            let receiver = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bFields[i].receiver)
+            return $"{receiver}.{fieldName(c.fields[c.bFields[i].field].name)}"
+        case .tupleElement:
+            let receiver = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bTupleElements[i].receiver)
+            return $"{receiver}.item{c.bTupleElements[i].index + 1}"
+        case .call:
+            return call(ref cc, for: ref f, from: ref c, through: t, at: e, to: null)
+        case .builtinCall:
+            return emitBuiltin(ref cc, for: ref f, from: ref c, through: t, at: e)
+        case .unary:
+            return unary(ref cc, for: ref f, from: ref c, through: t, at: e)
+        case .binary:
+            return binary(ref cc, for: ref f, from: ref c, through: t, at: e)
+        case .conversion:
+            return conversion(ref cc, for: ref f, from: ref c, through: t, at: e)
+        case .conditional:
+            let condition = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bConditionals[i].condition)
+            let whenTrue = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bConditionals[i].whenTrue)
+            let whenFalse = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bConditionals[i].whenFalse)
+            return $"({condition} ? {whenTrue} : {whenFalse})"
+        case .structLiteral:
+            let state = c.bStructLiterals[i].state
+            let structType = semantics.structTypeOf(c.bStructLiterals[i].structId)
+            if state != -1 {
+                // A state literal: the fields in order, then the tag and the state's payload by name.
+                var payload = ""
+                if c.bStructLiterals[i].payload.length > 0 {
+                    var items = List<string>()
+                    for k in 0..c.bStructLiterals[i].payload.length {
+                        items.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bStructLiterals[i].payload[k]))
+                    }
+                    payload = $".u.{fieldName(c.unionVariants[state].name)} = {{{t10Join(in items)}}}"
+                }
+                let ctype = cType(ref cc, from: ref c, for: structType)
+                var parts = List<string>()
+                for k in 0..c.bStructLiterals[i].fields.length {
+                    parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bStructLiterals[i].fields[k]))
+                }
+                parts.append($".tag = {c.unionVariants[state].tag}")
+                if c.bStructLiterals[i].payload.length > 0 { parts.append(payload) }
+                return $"(({ctype}){{{t10Join(in parts)}}})"
+            }
+            let ctype = cType(ref cc, from: ref c, for: structType)
+            if c.bStructLiterals[i].fields.length == 0 { return $"(({ctype}){{0}})" }
+            var parts = List<string>()
+            for k in 0..c.bStructLiterals[i].fields.length {
+                parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bStructLiterals[i].fields[k]))
+            }
+            return $"(({ctype}){{{t10Join(in parts)}}})"
+        case .tuple:
+            let ctype = cType(ref cc, from: ref c, for: c.bTuples[i].tupleType)
+            var parts = List<string>()
+            for k in 0..c.bTuples[i].elements.length {
+                parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bTuples[i].elements[k]))
+            }
+            return $"(({ctype}){{{t10Join(in parts)}}})"
+        case .unionNew:
+            let ctype = cType(ref cc, from: ref c, for: c.bUnionNews[i].type)
+            let variant = c.bUnionNews[i].variant
+            if c.bUnionNews[i].payload.length == 0 { return $"(({ctype}){{.tag = {c.unionVariants[variant].tag}}})" }
+            let fname = fieldName(c.unionVariants[variant].name)
+            var parts = List<string>()
+            for k in 0..c.bUnionNews[i].payload.length {
+                parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bUnionNews[i].payload[k]))
+            }
+            return $"(({ctype}){{.tag = {c.unionVariants[variant].tag}, .u.{fname} = {{{t10Join(in parts)}}}}})"
+        case .collection:
+            let ct = c.bCollections[i].type
+            switch semantics.kindOf(ct) {
+                case .list:
+                    return $"(({cType(ref cc, from: ref c, for: ct)}){{NULL, 0, 0, byn_context}})"
+                case .map:
+                    return $"(({cType(ref cc, from: ref c, for: ct)}){{{{.alloc = byn_context}}, NULL, NULL}})"
+                case .array:
+                    let ctype = cType(ref cc, from: ref c, for: ct)
+                    if c.bCollections[i].elements.length == 0 { return $"(({ctype}){{0}})" }
+                    var parts = List<string>()
+                    for k in 0..c.bCollections[i].elements.length {
+                        parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCollections[i].elements[k]))
+                    }
+                    return $"(({ctype}){{{{{t10Join(in parts)}}}}})"
+                default:
+                    panic("cannot emit BoundCollection")
+            }
+        case .index:
+            return index(ref cc, for: ref f, from: ref c, through: t, at: e)
+        case .slice:
+            return slice(ref cc, for: ref f, from: ref c, through: t, at: e)
+        case .errorVariant:
+            let ctype = errorCType(ref cc, from: ref c)
+            let code = c.errorVariants[c.bErrorVariants[i].variant].code
+            if c.bErrorVariants[i].payload.length == 0 { return $"(({ctype}){{ .code = UINT32_C({code}) }})" }
+            var parts = List<string>()
+            for k in 0..c.bErrorVariants[i].payload.length {
+                parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bErrorVariants[i].payload[k]))
+            }
+            return $"(({ctype}){{ .code = UINT32_C({code}), .p.e{code} = {{ {t10Join(in parts)} }} }})"
+        case .enumMember:
+            return $"(({cType(ref cc, from: ref c, for: c.bEnumMembers[i].type)}){c.enumMembers[c.bEnumMembers[i].member].ordinal})"
+        case .enumValues:
+            let enumId = c.bEnumValues[i].enumId
+            let ctype = cType(ref cc, from: ref c, for: c.bEnumValues[i].type)
+            let etype = cType(ref cc, from: ref c, for: semantics.enumTypeOf(enumId))
+            let values = enumValues(ref cc, from: ref c, for: enumId)
+            return $"(({ctype}){{({etype}*){values}, {c.enums[enumId].members.length}}})"
+        case .staticArray:
+            return staticArray(ref cc, from: ref c, for: c.bStaticArrays[i].constId)
+        default:
+            panic($"cannot emit {t10BoundName(semantics.boundKind(e))}")
+    }
 }
 
 /// CEmitter.cs:1726 `FunctionEmitter.Call` (Q845): the C text of call `e`, with `result` (C text, null for none) as its out argument.
-public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e, to string? result) {
-    return ""
+public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e, to string? result) uses alloc {
+    let n = e & 0xFFFFFFFF
+    let fn = c.bCalls[n].function
+    let argCount = c.bCalls[n].arguments.length
+    let outArg = result ?? "NULL"
+    var args = List<string>()
+    switch c.functions[fn].builtin {
+        case .print:
+            let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])
+            return $"byn_print({text}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .log:
+            let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])
+            return $"byn_log({text}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .panic:
+            let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"byn_panic_str({text}, {loc(in c, by: in f, at: c.bCalls[n].span)})"
+        case .todo:
+            let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"byn_todo_str({text}, {loc(in c, by: in f, at: c.bCalls[n].span)})"
+        case .arenaNew:
+            return "byn_arena_new()"
+        case .strBufNew:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let name = helper(ref cc, for: "bynh_strbuf", from: $"static byn_writer bynh_strbuf({span} s, const char* file, int line)",
+                as: "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_STRICT, file, line};\n}\n")
+            let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"{name}({text}, {loc(in c, by: in f, at: c.bCalls[n].span)})"
+        // `StrBuf.over(span)` writes into the span and spills to `context.allocator` when it is outgrown.
+        case .strBufOver:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let name = helper(ref cc, for: "bynh_strbuf_over", from: $"static byn_writer bynh_strbuf_over({span} s, const char* file, int line)",
+                as: "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_GROW, file, line, byn_context};\n}\n")
+            let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"{name}({text}, {loc(in c, by: in f, at: c.bCalls[n].span)})"
+        case .strBufGrow:
+            if argCount == 0 { return "byn_strbuf_grow(byn_context)" }
+            let name = helper(ref cc, for: "bynh_strbuf_capacity", from: "static byn_writer bynh_strbuf_capacity(int64_t n)",
+                as: "{\n    byn_writer w = byn_strbuf_grow(byn_context);\n    if (n > 0) {\n        w.buf = (uint8_t*)byn_context->resize(byn_context, NULL, 0, n);\n        w.cap = n;\n    }\n    return w;\n}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .ownedNew:
+            let inner = c.ownedTypes[c.bCalls[n].type & 0xFFFFFFFF]
+            let it = cType(ref cc, from: ref c, for: inner)
+            let name = $"bynh_own_{key(ref c, for: inner)}"
+            let _ = helper(ref cc, for: name, from: $"static {it}* {name}({it} v)",
+                as: $"{{\n    return ({it}*)byn_copy_bytes(&v, (int64_t)sizeof v, byn_context);\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .untrustedNew or .trust:
+            return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+        case .ioReadFile:
+            let list = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let name = helper(ref cc, for: "bynh_io_read_file", from: $"static uint32_t bynh_io_read_file(byn_str path, {list}* out)",
+                as: $"{{\n    uint8_t* p = NULL;\n    int64_t n = 0;\n    uint32_t err = byn_io_read(path, &p, &n, byn_context);\n    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, {outArg})"
+        case .ioReadText:
+            return $"byn_io_read_text({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, {outArg}, byn_context)"
+        case .ioWriteFile:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[1]].type)
+            let name = helper(ref cc, for: "bynh_io_write_file", from: $"static uint32_t bynh_io_write_file(byn_str path, {span} bytes)",
+                as: "{\n    return byn_io_write_file(path, bytes.ptr, bytes.len);\n}\n")
+            let path = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"{name}({path}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])})"
+        case .ioListDir:
+            let list = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let name = helper(ref cc, for: "bynh_io_list_dir", from: $"static uint32_t bynh_io_list_dir(byn_str path, {list}* out)",
+                as: $"{{\n    byn_str* p = NULL;\n    int64_t n = 0;\n    uint32_t err = byn_io_list_dir(path, &p, &n, byn_context);\n    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, {outArg})"
+        case .ioRun:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[1]].type)
+            let name = helper(ref cc, for: "bynh_io_run", from: $"static uint32_t bynh_io_run(byn_str program, {span} args, byn_process* out)",
+                as: "{\n    return byn_io_run(program, args.ptr, args.len, out, byn_context);\n}\n")
+            let program = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"{name}({program}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])}, {outArg})"
+        case .ioRunBatch:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[1]].type)
+            let name = helper(ref cc, for: "bynh_io_run_batch", from: $"static uint32_t bynh_io_run_batch(byn_str path, {span} args, byn_process* out)",
+                as: "{\n    return byn_io_run_batch(path, args.ptr, args.len, out, byn_context);\n}\n")
+            let path = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"{name}({path}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])}, {outArg})"
+        case .utf8Decode:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let code = c.errorVariants[c.errorSets[c.functions[fn].errorSets[0]].variants[0]].code
+            let errType = errorCType(ref cc, from: ref c)
+            let name = helper(ref cc, for: "bynh_utf8_decode", from: $"static {errType} bynh_utf8_decode({span} bytes, byn_str* out)",
+                as: $"{{\n    int64_t at = byn_utf8_invalid_at(bytes.ptr, bytes.len);\n    if (at >= 0) return ({errType}){{ .code = UINT32_C({code}), .p.e{code} = {{ at }} }};\n    if (out) *out = byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context);\n    return ({errType}){{0}};\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, {outArg})"
+        case .utf8TryDecode:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let opt = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let name = helper(ref cc, for: "bynh_utf8_try_decode", from: $"static {opt} bynh_utf8_try_decode({span} bytes)",
+                as: $"{{\n    if (byn_utf8_invalid_at(bytes.ptr, bytes.len) >= 0) return ({opt}){{0}};\n    return ({opt}){{true, byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context)}};\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .utf8DecodeReplace:
+            // `invalid:` has one value, `.replace`, so the argument is not passed.
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let name = helper(ref cc, for: "bynh_utf8_decode_replace", from: $"static byn_str bynh_utf8_decode_replace({span} bytes)",
+                as: "{\n    return byn_utf8_decode_replace(bytes.ptr, bytes.len, byn_context);\n}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .hexDecode:
+            let list = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let code = c.errorVariants[c.errorSets[c.functions[fn].errorSets[0]].variants[0]].code
+            let errType = errorCType(ref cc, from: ref c)
+            let name = helper(ref cc, for: "bynh_hex_decode", from: $"static {errType} bynh_hex_decode(byn_str text, {list}* out)",
+                as: $"{{\n    uint8_t* p = NULL;\n    int64_t at = byn_hex_decode(text, &p, byn_context);\n    if (at >= 0) return ({errType}){{ .code = UINT32_C({code}), .p.e{code} = {{ at }} }};\n    if (out) *out = ({list}){{p, text.len / 2, text.len / 2, byn_context}};\n    return ({errType}){{0}};\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, {outArg})"
+        case .intParse:
+            let rt = c.functions[fn].returnType
+            let bad = c.errorVariants[c.errorSets[c.functions[fn].errorSets[0]].variants[0]].code
+            let overflow = c.errorVariants[c.errorSets[c.functions[fn].errorSets[0]].variants[1]].code
+            let name = $"bynh_parse_{key(ref c, for: rt)}"
+            let errType = errorCType(ref cc, from: ref c)
+            let ctype = cType(ref cc, from: ref c, for: rt)
+            let signed = semantics.isSignedInteger(rt) ? "true" : "false"
+            let _ = helper(ref cc, for: name, from: $"static {errType} {name}(byn_str s, byn_builtin_Radix radix, {ctype}* out)",
+                as: $"{{\n    int64_t v = 0;\n    int64_t at = byn_int_parse_at(s, {semantics.primitiveBits(semantics.primKindOf(i64(rt & 0xFFFFFFFF)))}, {signed}, radix, &v);\n    if (at == -2) return ({errType}){{ .code = UINT32_C({overflow}) }};\n    if (at >= 0) return ({errType}){{ .code = UINT32_C({bad}), .p.e{bad} = {{ at }} }};\n    if (out) *out = ({ctype})v;\n    return ({errType}){{0}};\n}}\n")
+            let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"{name}({text}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])}, {outArg})"
+        case .symbolIntern:
+            return symbolIntern(ref cc, for: emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0]))
+        case .pathIsRooted:
+            return $"byn_path_is_rooted({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .pathRelative:
+            let base = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            let target = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])
+            return $"byn_path_relative({base}, {target}, byn_context, {loc(in c, by: in f, at: c.bCalls[n].span)})"
+        case .pathFileName:
+            return $"byn_path_file_name({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, byn_context)"
+        case .hexEncode:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let name = helper(ref cc, for: "bynh_hex_encode", from: $"static byn_str bynh_hex_encode({span} bytes)",
+                as: "{\n    return byn_hex_encode(bytes.ptr, bytes.len, byn_context);\n}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .stringInvalidUtf8At:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let opt = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let name = helper(ref cc, for: "bynh_string_invalid_utf8_at", from: $"static {opt} bynh_string_invalid_utf8_at({span} bytes)",
+                as: $"{{\n    int64_t i = byn_utf8_invalid_at(bytes.ptr, bytes.len);\n    return i < 0 ? ({opt}){{0}} : ({opt}){{true, i}};\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .ioMonotonicNanos:
+            return "byn_io_monotonic_nanos()"
+        case .ioStdout:
+            return "INT32_C(1)"
+        case .ioStderr:
+            return "INT32_C(2)"
+        case .ioStdin:
+            return "INT32_C(0)"
+        case .enumFromOrdinal:
+            let rt = c.functions[fn].returnType
+            let inner = c.optionalTypes[rt & 0xFFFFFFFF]
+            let members = c.enums[inner & 0xFFFFFFFF].members.length
+            let opt = cType(ref cc, from: ref c, for: rt)
+            let name = $"bynh_from_ordinal_{key(ref c, for: inner)}"
+            let proto = $"static {opt} {name}(int64_t i)"
+            if helperReserve(ref cc, for: name, from: proto) {
+                let enumType = cType(ref cc, from: ref c, for: inner)
+                let _ = helperFill(ref cc, for: name, from: proto,
+                    as: $"{{\n    if (i < 0 || i >= {members}) return ({opt}){{0}};\n    return ({opt}){{true, ({enumType})i}};\n}}\n")
+            }
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .enumParse:
+            let rt = c.functions[fn].returnType
+            let inner = c.optionalTypes[rt & 0xFFFFFFFF]
+            let members = c.enums[inner & 0xFFFFFFFF].members.length
+            let opt = cType(ref cc, from: ref c, for: rt)
+            let name = $"bynh_parse_{key(ref c, for: inner)}"
+            let names = enumNames(ref cc, from: ref c, for: inner & 0xFFFFFFFF)
+            let proto = $"static {opt} {name}(byn_str s)"
+            if helperReserve(ref cc, for: name, from: proto) {
+                let enumType = cType(ref cc, from: ref c, for: inner)
+                let _ = helperFill(ref cc, for: name, from: proto,
+                    as: $"{{\n    for (int32_t i = 0; i < {members}; i++)\n        if (byn_str_eq(s, {names}[i])) return ({opt}){{true, ({enumType})i}};\n    return ({opt}){{0}};\n}}\n")
+            }
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        default:
+            break
+    }
+    // Through `dyn ref` the conformer's method is the vtable slot; the receiver is a local, so naming it twice is safe.
+    let receiver = c.bCalls[n].receiver
+    var dyn: string? = null
+    if receiver != -1 && semantics.kindOf(ltree.typeOf(in c, through: in t, for: receiver)) == .dynRef {
+        dyn = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
+    }
+    // Through a function value: its code with its environment first; lowering leaves the receiver a local, so naming it twice is safe.
+    // Q1: round 4 redoes this (CEmitter.cs:1919).
+    var value: string? = null
+    if c.functions[fn].kind == .invoke {
+        value = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
+    }
+    if (dyn is { } d) {
+        args.append($"{d}.data")
+    // Q1: round 4 redoes this (CEmitter.cs:1924-1927).
+    } else if (value is { } v) {
+        args.append($"{v}.env")
+    } else if semantics.functionHasThis(ref c, by: fn) && c.functions[fn].kind != .constructor {
+        args.append($"&{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)}")
+        claimAfterCall(ref cc, for: ref f, from: ref c, through: t, at: receiver, to: c.bCalls[n].span)
+    }
+    for i in 0..argCount {
+        let param = c.functions[fn].parameters[i]
+        let argument = c.bCalls[n].arguments[i]
+        if semantics.paramIsByRef(ref c, by: param) { claimAfterCall(ref cc, for: ref f, from: ref c, through: t, at: argument, to: c.bCalls[n].span) }
+        // An `out` argument initializes a moved-from local again.
+        var outLocal: semantics.LocalId = -1
+        if c.locals[param].modifier == .outKeyword && semantics.boundKind(argument) == .local {
+            outLocal = c.bLocals[argument & 0xFFFFFFFF].local
+        }
+        if outLocal != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: outLocal) {
+            args.append($"({slot(ref cc, for: ref f, from: ref c, at: outLocal)}.line = 0, &{f.names[outLocal]})")
+        } else if semantics.paramIsByRef(ref c, by: param) {
+            args.append($"&{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: argument)}")
+        } else {
+            args.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: argument))
+        }
+    }
+    if (result is { } r) { args.append(r) }
+    // Q1: round 4 redoes this (CEmitter.cs:1943).
+    var callee = ""
+    if (dyn is { } d2) {
+        callee = $"{d2}.vt->{slotName(ref c, for: fn)}"
+    } else if (value is { } v2) {
+        callee = $"{v2}.fn"
+    } else {
+        callee = functionName(ref cc, from: ref c, for: fn)
+    }
+    return $"{callee}({t10Join(in args)})"
 }

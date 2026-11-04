@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Bayan.Backend.C;
 using Bayan.Lowering;
 using Bayan.Semantics;
@@ -15,10 +16,9 @@ namespace Bayan.Tests;
 /// 011 T11: <c>selfhost/emitter/cprint/builtin.byn</c> (CEmitter.cs 1946-2454: <c>Builtin</c>, <c>Unary</c>,
 /// <c>Binary</c>, <c>Conversion</c>, <c>Index</c>, <c>Slice</c>) against the C# <c>FunctionEmitter</c> run in-process.
 /// Every builtin call, unary, binary, conversion, index and slice of the unlowered bodies is numbered in
-/// <c>BoundTree.Descendants</c> order. A case whose children are all plain locals is emitted by both sides, with every
-/// local's C# name set to "" (the selfhost <c>emitExpr</c> is T10's stub, which returns ""), and the text, the helpers
-/// and the type order are compared. A case with another child, or one that reaches another task's stub, runs but is not
-/// compared (Q811).
+/// <c>BoundTree.Descendants</c> order. Each case is emitted by both sides with the locals named as the C#
+/// <c>FunctionEmitter</c> names them (the generated main's <c>t11Func</c>), and the full text, the helpers and the type
+/// order are compared (Q876).
 /// </summary>
 public sealed class SelfhostEmitterT11Tests
 {
@@ -42,19 +42,6 @@ public sealed class SelfhostEmitterT11Tests
             var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
             if args[0] == "cases" || args[0] == "errors" { Io.stdout.write(t11Cases(ref c, at: args[1], for: args[2], by: args[0] == "errors")) }
             return 0
-        }
-
-        /// `Lowerer.Lower`'s filter: the functions it lowers, in order.
-        List<FuncId> t11Functions(ref Ctx c) uses alloc {
-            var r = List<FuncId>()
-            for m in 0..c.modules.length {
-                for k in 0..c.modules[m].allFunctions.length {
-                    let fn = c.modules[m].allFunctions[k]
-                    if c.functions[fn].body == -1 || c.functions[fn].kind == .testKeyword || semantics.functionIsGeneric(ref c, by: fn) { continue }
-                    r.append(fn)
-                }
-            }
-            return r
         }
 
         string t11Case(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) uses alloc {
@@ -120,33 +107,63 @@ public sealed class SelfhostEmitterT11Tests
             return m == .textViewMore || m == .textViewNext || m == .mapSlotCount || m == .mapSlotLive || m == .mapSlotEntry
         }
 
+        /// The C# `FunctionEmitter` constructor's `_names` (CEmitter.cs:1179-1190): `p_` parameters, the captures read
+        /// through the environment, then the lowered locals numbered in order. The environment's type is named on `scratch`,
+        /// as the oracle compares only the types named after its emitters are built.
+        CFunc t11Func(ref CCtx scratch, from ref Ctx c, for in LoweredFunction lf, at string file) uses alloc {
+            let fn = lf.symbol
+            var f = CFunc { fn: fn, file: file }
+            for p in c.functions[fn].parameters { f.names[p] = $"p_{c.locals[p].name}" }
+            if c.functions[fn].captures.length > 0 {
+                var fields = List<TupleField>()
+                for x in c.functions[fn].captures { fields.append(TupleField { name: null, type: c.locals[x].type }) }
+                let env = cprint.cType(ref scratch, from: ref c, for: semantics.internTuple(ref c, for: in fields))
+                for i in 0..c.functions[fn].captures.length { f.names[c.functions[fn].captures[i]] = $"(({env}*)env)->item{i + 1}" }
+            }
+            var n: i64 = 0
+            for x in lf.locals {
+                f.names[x] = c.locals[x].kind == .temp ? $"t{n}" : $"l{n}_{c.locals[x].name}"
+                n += 1
+            }
+            // Q877: T4's lowerer leaves some of the C#'s locals out (a `switch` arm's bindings), so the binder's locals it
+            // left out are named after it; the oracle then compares those functions' text unnumbered.
+            for x in c.functions[fn].locals {
+                if f.names.contains(x) { continue }
+                f.names[x] = $"l{n}_{c.locals[x].name}"
+                n += 1
+            }
+            return f
+        }
+
         string t11Cases(ref Ctx c, at string file, for string flags, by bool errors) uses alloc {
             var cc = CCtx {}
             var scratch = CCtx {}
-            let t = LTree {}
+            // `Lowerer.Lower` first, as the oracle's emitters are built over its functions (its filter is `Functions`').
+            var l = LCtx {}
+            let p = lower(ref c, to: ref l)
             var sb = StrBuf()
             sb.append("== cases\n")
             var n: i64 = 0
-            for fn in t11Functions(ref c) {
+            for i in 0..p.functions.length {
                 if errors { break }
-                var f = CFunc { fn: fn, file: file }
+                let fn = p.functions[i].symbol
+                var f = t11Func(ref scratch, from: ref c, for: in p.functions[i], at: file)
                 for e in semantics.descendants(in c, for: c.functions[fn].body) {
                     let k = semantics.boundKind(e)
                     if !(k == .builtinCall || k == .unary || k == .binary || k == .conversion || k == .index || k == .slice) { continue }
                     let flag = n < flags.length ? flags[n..n + 1] : "0"
-                    if flag == "1" { sb.append($"{n} {t11Case(ref cc, for: ref f, from: ref c, through: t, at: e)}\n") }
-                    if flag == "2" { sb.append($"{n} {t11Case(ref scratch, for: ref f, from: ref c, through: t, at: e)}\n") }
+                    if flag == "1" { sb.append($"{n} {t11Case(ref cc, for: ref f, from: ref c, through: l.tree, at: e)}\n") }
+                    if flag == "2" { sb.append($"{n} {t11Case(ref scratch, for: ref f, from: ref c, through: l.tree, at: e)}\n") }
                     n += 1
                 }
             }
             // Then the builtin calls only the lowerer builds (Lowerer.cs:668-693), in the lowered bodies of the functions
             // with such a loop.
-            var l = LCtx {}
-            for fn in t11Functions(ref c) {
+            for i in 0..p.functions.length {
+                let fn = p.functions[i].symbol
                 unless t11Loops(ref c, through: in l.tree, for: fn, by: errors) { continue }
-                let lf = lowerFunction(ref c, through: ref l, for: fn)
-                var f = CFunc { fn: fn, file: file }
-                for e in t11Lowered(in c, through: in l.tree, for: lf.body) {
+                var f = t11Func(ref scratch, from: ref c, for: in p.functions[i], at: file)
+                for e in t11Lowered(in c, through: in l.tree, for: p.functions[i].body) {
                     unless t11LowererMember(in c, for: e, by: errors) { continue }
                     let flag = n < flags.length ? flags[n..n + 1] : "0"
                     if flag == "1" { sb.append($"{n} {t11Case(ref cc, for: ref f, from: ref c, through: l.tree, at: e)}\n") }
@@ -159,6 +176,16 @@ public sealed class SelfhostEmitterT11Tests
             for h in cc.helperOrder { sb.append($"{h} {cc.helpers[h].proto} | {cc.helpers[h].body}\n") }
             sb.append("== types\n")
             for x in cc.typeOrder { sb.append($"{x}\n") }
+            sb.append("== locals\n")
+            for i in 0..p.functions.length {
+                sb.append($"{c.functions[p.functions[i].symbol].name}:")
+                for j in 0..p.functions[i].locals.length {
+                    let x = p.functions[i].locals[j]
+                    sb.append(" ")
+                    sb.append(c.locals[x].kind == .temp ? "t" : c.locals[x].name)
+                }
+                sb.append("\n")
+            }
             return $"{sb.finish()}"
         }
         """;
@@ -227,38 +254,6 @@ public sealed class SelfhostEmitterT11Tests
         _ => null,
     };
 
-    /// <summary>Whether every child is a local the C# names "" (no constant, no by-ref parameter).</summary>
-    private static bool PlainChildren(BoundNode n)
-    {
-        if (n is BoundBuiltinCall { Receiver: null }) return false;
-        // `EnumField`'s argument is the field's index, read as a literal and never printed (CEmitter.cs:2275).
-        var children = n is BoundBuiltinCall { Member: BuiltinMember.EnumField } ef ? [ef.Receiver!] : BoundTree.Children(n);
-        return children.All(ch => ch is BoundLocal { Constant: null } l && l.Local is not ParameterSymbol { IsByRef: true });
-    }
-
-    private static readonly HashSet<BuiltinMember> StubMembers =
-    [
-        BuiltinMember.ListAdd, BuiltinMember.StrBufAppend, BuiltinMember.StrBufAppendRepeated, BuiltinMember.StrBufInsert,
-    ];
-
-    private static readonly HashSet<BinaryOp> SuffixOps =
-    [
-        BinaryOp.Add, BinaryOp.Sub, BinaryOp.Mul, BinaryOp.Div, BinaryOp.Rem, BinaryOp.AddWrap, BinaryOp.SubWrap, BinaryOp.MulWrap,
-        BinaryOp.AddSat, BinaryOp.SubSat, BinaryOp.MulSat, BinaryOp.Shl, BinaryOp.Shr,
-    ];
-
-    /// <summary>Whether the case calls a sibling stub (<c>IntSuffix</c>, <c>Claimed</c>, <c>Vtable</c>), so its text
-    /// cannot match yet (Q811).</summary>
-    private static bool ReachesStub(BoundNode n) => n switch
-    {
-        BoundBuiltinCall b => StubMembers.Contains(b.Member),
-        BoundUnary u => u.Op == UnaryOp.Negate && u.Type.IsInteger,
-        BoundBinary b => b.Left.Type.IsInteger && SuffixOps.Contains(b.Op),
-        BoundConversion c => c.Kind == ConversionKind.ToDynRef
-            || (c.Kind is ConversionKind.NumericCast or ConversionKind.CharToInteger && c.Type.IsInteger),
-        _ => false,
-    };
-
     /// <summary>The builtins only <c>Lowerer.cs</c> builds (the text-view and map <c>for</c> loops, Lowerer.cs:668-693).</summary>
     private static readonly HashSet<BuiltinMember> LowererMembers =
     [
@@ -286,11 +281,10 @@ public sealed class SelfhostEmitterT11Tests
     }
 
     private sealed record Oracle(string File, string Flags, int Count, Dictionary<int, string> Cases, List<int> Run, List<string> Helpers, List<string> Types,
-        HashSet<BuiltinMember> Emitted, HashSet<BuiltinMember> Compared);
+        HashSet<BuiltinMember> Emitted, HashSet<BuiltinMember> Compared, List<string> Locals, Dictionary<int, int> Owners);
 
-    /// <summary>Numbers the cases as the generated main does; a case is compared when its children are plain locals, it
-    /// reaches no stub and the C# does not throw; it is run only when it reaches a stub. <paramref name="force"/> marks one
-    /// more case to run, for the failure path.</summary>
+    /// <summary>Numbers the cases as the generated main does; a case is compared when the C# does not throw.
+    /// <paramref name="force"/> marks one more case to run, for the failure path.</summary>
     private static Oracle CSharp(Compilation c, Func<BoundNode, bool>? force = null, bool errors = false)
     {
         var p = Lowerer.Lower(c);
@@ -307,45 +301,24 @@ public sealed class SelfhostEmitterT11Tests
         var run = new List<int>();
         var emitted = new HashSet<BuiltinMember>();
         var compared = new HashSet<BuiltinMember>();
+        var order = p.Functions.Select((lf, i) => (lf.Symbol, i)).ToDictionary(x => x.Symbol, x => x.i);
+        var owners = new Dictionary<int, int>();
         string file = "-";
         void Case(FunctionSymbol fn, BoundNode n)
         {
             if (Method(n) is not { } method) return;
             var index = flags.Count;
             flags.Add('0');
+            owners[index] = order[fn];
             if (force?.Invoke(n) == true)
             {
                 flags[index] = '2';
                 return;
             }
-            var plain = PlainChildren(n);
-            foreach (var fe in new[] { emitters[fn], probes[fn] })
-            {
-                var names = (Dictionary<LocalSymbol, string>)Field(fe, "_names")!;
-                foreach (var ch in BoundTree.Children(n).OfType<BoundLocal>()) names[ch.Local] = "";
-            }
             var m = typeof(FunctionEmitter).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!;
             try { m.Invoke(probes[fn], [n]); }
             catch (TargetInvocationException) { return; }
             if (n is BoundBuiltinCall emittedCall) emitted.Add(emittedCall.Member);
-            // The error-code test: the C# text with its operands' text taken out, as the selfhost's stub `emitExpr` prints "".
-            if (errors && n is BoundBinary lowered)
-            {
-                var expr = typeof(FunctionEmitter).GetMethod("Expr", BindingFlags.Instance | BindingFlags.NonPublic)!;
-                var text = (string)m.Invoke(emitters[fn], [n])!;
-                foreach (var operand in new[] { lowered.Left, lowered.Right })
-                    text = text.Replace((string)expr.Invoke(emitters[fn], [operand])!, "");
-                flags[index] = '1';
-                cases[index] = text;
-                return;
-            }
-            // A child that is not a plain local is T10's `emitExpr`, still a stub, so the text cannot match yet (Q811).
-            if (!plain || ReachesStub(n))
-            {
-                flags[index] = '2';
-                run.Add(index);
-                return;
-            }
             flags[index] = '1';
             cases[index] = (string)m.Invoke(emitters[fn], [n])!;
             if (n is BoundBuiltinCall comparedCall) compared.Add(comparedCall.Member);
@@ -357,7 +330,7 @@ public sealed class SelfhostEmitterT11Tests
             foreach (var n in BoundTree.Descendants(fn.Body!)) Case(fn, n);
         }
         // Then the builtin calls only the lowerer builds (Lowerer.cs:668-693), in the lowered bodies of the functions with
-        // such a loop (only those are lowered by the generated main: T4's stubs cannot lower every body yet, Q811).
+        // such a loop.
         // In `errors` mode, instead, the failure tests of the functions with a `catch` (a lowered error code compared).
         foreach (var lf in p.Functions.Where(lf => errors
                 ? BoundTree.Descendants(lf.Symbol.Body!).OfType<BoundCatch>().Any()
@@ -371,14 +344,23 @@ public sealed class SelfhostEmitterT11Tests
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
         var helperLines = ((List<string>)Field(emitter, "_helperOrder")!).Select(h => $"{h} {helpers[h].Proto} | {helpers[h].Body}")
             .SelectMany(h => h.Split('\n')).Where(l => l.Length > 0).ToList();
-        return new(file, new string(flags.ToArray()), flags.Count, cases, run, helperLines, typeOrder.Skip(typeBase).ToList(), emitted, compared);
+        return new(file, new string(flags.ToArray()), flags.Count, cases, run, helperLines, typeOrder.Skip(typeBase).ToList(), emitted, compared,
+            p.Functions.Select(lf => lf.Symbol.Name + ":" + string.Concat(lf.Locals.Select(l => " " + (l.Kind == LocalKind.Temp ? "t" : l.Name)))).ToList(), owners);
     }
 
-    /// <summary>The differences between the selfhost run and <paramref name="o"/>, one line each.</summary>
-    private static List<string> Compare(Oracle o, string stdout)
+    /// <summary>The differences between the selfhost run and <paramref name="o"/>, one line each. When T4's lowerer gives
+    /// a function other locals than <c>Lowerer.cs</c> (Q877), the locals' numbers in its cases' text cannot match, so
+    /// those cases are compared with <c>l&lt;n&gt;_</c> and <c>t&lt;n&gt;</c> unnumbered and counted in
+    /// <paramref name="unnumbered"/>.</summary>
+    private static List<string> Compare(Oracle o, string stdout, out int unnumbered)
     {
         var sections = SelfhostSemanticsHarness.Sections(stdout);
         var failures = new List<string>();
+        var locals = sections.GetValueOrDefault("locals") ?? [];
+        if (locals.Count != o.Locals.Count) failures.Add($"locals: expected {o.Locals.Count} functions, actual {locals.Count}");
+        bool Differs(int i) => locals.Count != o.Locals.Count || locals[o.Owners[i]] != o.Locals[o.Owners[i]];
+        static string Unnumbered(string t) => Regex.Replace(t, @"\bl\d+_|\bt\d+\b", m => m.Value[0] == 'l' ? "l_" : "t");
+        unnumbered = o.Cases.Keys.Count(Differs);
         var got = new Dictionary<int, string>();
         var count = -1;
         foreach (var line in sections.GetValueOrDefault("cases") ?? [])
@@ -391,7 +373,7 @@ public sealed class SelfhostEmitterT11Tests
         foreach (var (i, text) in o.Cases)
         {
             if (!got.TryGetValue(i, out var a)) failures.Add($"case {i}: expected {text}, actual <missing>");
-            else if (a != text) failures.Add($"case {i}\n expected: {text}\n   actual: {a}");
+            else if (Differs(i) ? Unnumbered(a) != Unnumbered(text) : a != text) failures.Add($"case {i}\n expected: {text}\n   actual: {a}");
         }
         foreach (var i in o.Run)
             if (!got.ContainsKey(i)) failures.Add($"case {i}: run-only case missing");
@@ -415,8 +397,9 @@ public sealed class SelfhostEmitterT11Tests
         var o = CSharp(Compile(path), errors: errors);
         var (exit, stdout, stderr) = Run(path, o.File, o.Flags, errors);
         Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
-        var failures = Compare(o, stdout);
+        var failures = Compare(o, stdout, out var unnumbered);
         Assert.True(failures.Count == 0, string.Join('\n', failures.Take(8)));
+        Assert.True(unnumbered == 0, $"{unnumbered} cases in functions T4's lowerer gave other locals than the C#");
         return o;
     }
 
@@ -827,6 +810,7 @@ public sealed class SelfhostEmitterT11Tests
         var failures = new ConcurrentBag<string>();
         var compared = 0;
         var cases = 0;
+        var unnumberedCases = 0;
         var emitted = new HashSet<BuiltinMember>();
         var comparedMembers = new HashSet<BuiltinMember>();
         Build();
@@ -842,7 +826,9 @@ public sealed class SelfhostEmitterT11Tests
                 failures.Add($"{Path.GetFileName(corpus)}: exited {exit}: {stderr}");
                 return;
             }
-            foreach (var f in Compare(o, stdout)) failures.Add($"{Path.GetFileName(corpus)} {f}");
+            var differences = Compare(o, stdout, out var unnumbered);
+            foreach (var f in differences) failures.Add($"{Path.GetFileName(corpus)} {f}");
+            Interlocked.Add(ref unnumberedCases, unnumbered);
             lock (emitted)
             {
                 emitted.UnionWith(o.Emitted);
@@ -854,6 +840,8 @@ public sealed class SelfhostEmitterT11Tests
         Assert.True(compared > 100, $"only {compared} corpus files compared:\n{string.Join('\n', failures.Order(StringComparer.Ordinal).Take(4))}");
         Assert.True(failures.IsEmpty, $"{failures.Count} mismatches:\n{string.Join('\n', failures.Order(StringComparer.Ordinal).Take(8))}");
         Assert.True(cases > 100, $"only {cases} cases compared");
+        // Q877: the cases compared unnumbered; a fix in T4 lowers this, a new divergence raises it.
+        Assert.True(unnumberedCases <= 1116, $"{unnumberedCases} of {cases} cases compared unnumbered (Q877)");
         // The fixtures' own tests compare their text; here they add to the two sets.
         foreach (var fixture in new[] { Fixture, Fixture2, Fixture3 })
             WithFixture(fixture, path =>
@@ -868,12 +856,9 @@ public sealed class SelfhostEmitterT11Tests
         Assert.True(stale.Count == 0, $"excluded but compared: {string.Join(", ", stale)}");
     }
 
-    /// <summary>The builtins the C# emits over the corpus and fixtures whose text is not compared, with why (Q811).</summary>
+    /// <summary>The builtins the C# emits over the corpus and fixtures whose text is not compared, with why (Q876).</summary>
     private static readonly Dictionary<BuiltinMember, string> Uncompared = new()
     {
-        [BuiltinMember.ListAdd] = "calls T9's `claimed`",
-        [BuiltinMember.StrBufAppend] = "calls T9's `claimed`",
-        [BuiltinMember.StrBufAppendRepeated] = "calls T9's `claimed`",
-        [BuiltinMember.StrBufInsert] = "calls T9's `claimed`",
+        // Empty since T9 landed: the four builtins that call its `claimed` are compared.
     };
 }
