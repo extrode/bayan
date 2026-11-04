@@ -659,7 +659,121 @@ public sealed class SelfhostEmitterT3Tests
         void main() { }
         """;
 
+    /// T4's lines in lowerstmt.byn: never operands, `??=`, pattern sections and lvalues of non-place receivers (Q870).
+    private const string Exprs = """
+        union error E {
+            bad(i64 n)
+        }
+
+        union V {
+            a(i64 n)
+            b
+        }
+
+        struct H {
+            (Ci a, i64 b) t
+            Ci c
+        }
+
+        struct AH {
+            Arena a
+            i64 n
+        }
+
+        interface IS {
+            i64 area()
+        }
+
+        struct Ci : IS {
+            i64 r
+            i64 area() => r
+        }
+
+        struct Digits : IIndexable {
+            type Item = i64
+            i64 count
+            i64 get(i64 index) => index * 10
+        }
+
+        struct Countdown : IEnumerator {
+            type Item = i64
+            i64 left
+            bool moveNext(ref this) {
+                left -= 1
+                return left >= 0
+            }
+            i64 current => left
+        }
+
+        i64 g() => 1
+        i64 h() fails E { return 1 }
+        void nothing() { }
+        void v2() => nothing()
+        H mkH() => H { t: (Ci { r: 1 }, 2), c: Ci { r: 3 } }
+        Ci mkC() => Ci { r: 2 }
+        Ci[2] mkCs() => [Ci { r: 1 }, Ci { r: 2 }]
+        i64? opt() => 3
+
+        void nevers(i64 n, through ref List<i64> xs, by Arena arena, to ref i64 o, at Digits[2] ds) fails E {
+            if n == 1 { fail .bad(1 + panic("f")) }
+            if n == 2 {
+                provide allocator: (AH { a: arena, n: 1 + panic("a") }.a) {
+                    o = 1
+                }
+            }
+            if n == 3 { xs[1 + panic("i")] = 1 }
+            if n == 4 { o += 1 + panic("c") }
+            if n == 5 { if (1 + panic("if")) == 2 { o = 2 } }
+            if n == 6 { while (1 + panic("w")) == 2 { o = 3 } }
+            if n == 7 { for k in 0..(1 + panic("r")) { o = k } }
+            if n == 8 { switch 1 + panic("s") { default: o = 4 } }
+            if n == 9 { for x in [1, panic("l")] { o = x } }
+            if n == 10 { for x in (Digits { count: 1 + panic("u") }) { o = x } }
+            if n == 11 { for x in ds[1 + panic("v")] { o = x } }
+            if n == 12 { for x in (Countdown { left: 1 + panic("e") }) { o = x } }
+            o += g()
+        }
+
+        i64 rets(i64 n) {
+            defer print("d")
+            if n == 1 { return 1 + panic("r") }
+            let p = opt()
+            if p is not null { return p }
+            return n
+        }
+
+        void coalesce(to ref i64? o, by i64 n) {
+            o ??= n
+            o ??= 1 + panic("q")
+        }
+
+        void pats(V v, by i64 n, to i64? p) {
+            var r = 0
+            switch v {
+                case .a(let k): r = k
+                case .b: r = 2
+            }
+            switch v {
+                case .a(let k) when k > n: r = 1
+                case .a(let k) when k > (p ?? g()): r = 3
+                case .a(let k) when k > (h() catch 0): r = 5
+                default: r = 4
+            }
+        }
+
+        void places(i64 k, through ref List<Ci> cs) {
+            let d1: dyn ref readonly IS = mkH().c
+            let d2: dyn ref readonly IS = mkH().t.a
+            let d3: dyn ref readonly IS = mkC()
+            let d4: dyn ref readonly IS = mkCs()[k]
+            let d5: dyn ref readonly IS = cs.removeLast()
+        }
+
+        void main() { }
+        """;
+
     [Theory]
+    [InlineData(nameof(Exprs), Exprs)]
     [InlineData(nameof(Typed), Typed)]
     [InlineData(nameof(Users), Users)]
     [InlineData(nameof(Loops), Loops)]

@@ -476,3 +476,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 011 T7: `Corpus_MatchesCSharp` skips files with `requires ` because selfhost semantics binds an extra bool checker function that C# does not (Q792); pin the function and drop the skip (2026-11-04)
 - guard-checks.py:109: a backticked cite followed by more text captures that text as the code, failing the near-line check (011 T7, 2026-11-04).
 - tests/parity/wave-brief/unknown-task/expected/stderr pins `wave-brief.py` line 53; the assert is at line 68 since an earlier wave-brief edit, so the parity case fails (found 2026-11-04, 011 Q870).
+- 011 T11 review row 10 (LOW): the T11 oracle names plain locals "" while T10's `emitExpr` is a stub, so swapped operands in `binary`, the string builtins and `stringEquals` go undetected; fixing task T10 (or T13): once `emitExpr` is real, add a compared case per two-operand arm with distinct locals (2026-11-04).
+- 011 T4 review row 7 (LOW): the `More` fixture's `errs` function is never named by a T4 test case though Q773 lists it as covered; fixing task T13 (2026-11-04).
