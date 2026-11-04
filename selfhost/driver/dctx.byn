@@ -13,3 +13,8 @@ struct DStyle {
 public struct DCtx {
     // ── T1 state
 }
+
+/// The state of a run before any option is read. On the base so the coverage report has an entry for this file (Q920).
+DCtx newDCtx() {
+    return DCtx {}
+}
