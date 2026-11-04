@@ -287,7 +287,7 @@ i64 t6IndexOf(in List<semantics.FuncId> fns, for semantics.FuncId f) {
     return -1
 }
 
-/// CEmitter.cs:366 `Overload`: the `__o1` that tells a second overload from the first (J65); empty for the first.
+/// CEmitter.cs:369 `Overload`: the `__o1` that tells a second overload from the first (J65); empty for the first.
 string t6Overload(in List<semantics.FuncId> overloads, for semantics.FuncId f) uses alloc {
     let i = t6IndexOf(in overloads, for: f)
     return i > 0 ? $"__o{i}" : ""
