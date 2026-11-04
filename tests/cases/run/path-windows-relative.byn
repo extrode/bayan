@@ -1,0 +1,5 @@
+// os: windows
+// `Path.relative` with Windows rules: drive letters and names compare without case.
+print(Path.relative(from: "C:\\Src", to: "c:\\src\\x.byn"))
+print(Path.relative(from: "C:\\a\\b", to: "C:\\a\\c"))
+print(Path.relative(from: "C:\\a", to: "D:\\b"))

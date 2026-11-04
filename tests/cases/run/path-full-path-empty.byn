@@ -1,0 +1,4 @@
+// os: unix
+// `Path.fullPath` panics on an empty path, where .NET's `Path.GetFullPath` throws `ArgumentException`.
+print(Path.fullPath("/a"))
+print(Path.fullPath(""))
