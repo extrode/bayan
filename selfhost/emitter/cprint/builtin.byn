@@ -1,4 +1,4 @@
-// T11: CEmitter.cs 1946-2449 (`Builtin`, `Unary`, `BareCase`, `Binary`, `Op`, `Conversion`, `Index`, `Slice`).
+// T11: CEmitter.cs 1946-2454 (`Builtin`, `Unary`, `BareCase`, `Binary`, `Op`, `Conversion`, `Index`, `Slice`).
 // A C# `_c.Helper(name, proto, () => body)` whose body reads only text built before it is `helper` with the body
 // built first (common.byn:170). A C# `throw new InvalidOperationException(m)` is `panic(m)`.
 

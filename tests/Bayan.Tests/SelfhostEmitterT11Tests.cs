@@ -219,13 +219,14 @@ public sealed class SelfhostEmitterT11Tests
     private static bool PlainChildren(BoundNode n)
     {
         if (n is BoundBuiltinCall { Receiver: null }) return false;
-        return BoundTree.Children(n).All(ch => ch is BoundLocal { Constant: null } l && l.Local is not ParameterSymbol { IsByRef: true });
+        // `EnumField`'s argument is the field's index, read as a literal and never printed (CEmitter.cs:2275).
+        var children = n is BoundBuiltinCall { Member: BuiltinMember.EnumField } ef ? [ef.Receiver!] : BoundTree.Children(n);
+        return children.All(ch => ch is BoundLocal { Constant: null } l && l.Local is not ParameterSymbol { IsByRef: true });
     }
 
     private static readonly HashSet<BuiltinMember> StubMembers =
     [
         BuiltinMember.ListAdd, BuiltinMember.StrBufAppend, BuiltinMember.StrBufAppendRepeated, BuiltinMember.StrBufInsert,
-        BuiltinMember.SymbolText, BuiltinMember.EnumName, BuiltinMember.EnumField,
     ];
 
     private static readonly HashSet<BinaryOp> SuffixOps =
@@ -234,43 +235,13 @@ public sealed class SelfhostEmitterT11Tests
         BinaryOp.AddSat, BinaryOp.SubSat, BinaryOp.MulSat, BinaryOp.Shl, BinaryOp.Shr,
     ];
 
-    private static bool Ordering(BinaryOp op) => op is BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge;
-
-    /// <summary>Whether <c>CEmitter.Equal(t, …)</c> (CEmitter.cs:779-857) names a field, through T6's <c>FieldName</c> stub.
-    /// It also covers a map key's <c>KeyHash</c>/<c>KeyEq</c> (CEmitter.cs:861-892), which name the fields Equal names.</summary>
-    private static bool NamesFields(Compilation c, TypeSymbol t) => t switch
+    /// <summary>Whether the case calls a sibling stub (<c>IntSuffix</c>, <c>Claimed</c>, <c>Vtable</c>), so its text
+    /// cannot match yet (Q811).</summary>
+    private static bool ReachesStub(BoundNode n) => n switch
     {
-        PrimitiveType or EnumSymbol or BuiltinType { Kind: BuiltinKind.Symbol } => false,
-        ErrorSetSymbol or ErrorUnionType => c.ErrorVariants.Any(v => v.Fields.Count > 0 && v.Fields.All(f => Compilation.IsEquatable(f.Type))),
-        OwnedType o => NamesFields(c, o.Inner),
-        UntrustedType u => NamesFields(c, u.Inner),
-        StateType st => NamesFields(c, st.Struct),
-        UnionSymbol u => u.Variants.Any(v => v.Fields.Count > 0),
-        StructSymbol s => s.Fields.Count > 0 || c.States.ContainsKey(s),
-        Bayan.Semantics.Symbols.ArrayType a => NamesFields(c, a.Element),
-        Bayan.Semantics.Symbols.OptionalType o => NamesFields(c, o.Inner),
-        ResultType r => NamesFields(c, r.Error) || NamesFields(c, r.Value),
-        Bayan.Semantics.Symbols.TupleType tt => tt.Fields.Any(f => NamesFields(c, f.Type)),
-        _ => false,
-    };
-
-    private static readonly HashSet<BuiltinMember> MapMethods =
-    [
-        BuiltinMember.MapIndex, BuiltinMember.MapIndexSet, BuiltinMember.MapSlot, BuiltinMember.MapTryGet, BuiltinMember.MapContains,
-        BuiltinMember.MapRemove,
-    ];
-
-    /// <summary>Whether the case calls a sibling stub (<c>IntSuffix</c>, <c>Claimed</c>, <c>SymbolText</c>,
-    /// <c>EnumNames</c>, <c>EnumField</c>, <c>Vtable</c>, or <c>FieldName</c> under <c>Equal</c>/<c>MapMethod</c>), so its
-    /// text cannot match yet (Q811).</summary>
-    private static bool ReachesStub(Compilation comp, BoundNode n) => n switch
-    {
-        BoundBuiltinCall b => StubMembers.Contains(b.Member)
-            || (MapMethods.Contains(b.Member) && NamesFields(comp, ((MapType)b.Receiver!.Type).KeyType)),
+        BoundBuiltinCall b => StubMembers.Contains(b.Member),
         BoundUnary u => u.Op == UnaryOp.Negate && u.Type.IsInteger,
-        BoundBinary b => (b.Left.Type.IsInteger && SuffixOps.Contains(b.Op))
-            || (b.Left.Type == BuiltinType.Symbol && Ordering(b.Op))
-            || (b.Op is BinaryOp.Eq or BinaryOp.Ne && NamesFields(comp, b.Left.Type)),
+        BoundBinary b => b.Left.Type.IsInteger && SuffixOps.Contains(b.Op),
         BoundConversion c => c.Kind == ConversionKind.ToDynRef
             || (c.Kind is ConversionKind.NumericCast or ConversionKind.CharToInteger && c.Type.IsInteger),
         _ => false,
@@ -346,7 +317,7 @@ public sealed class SelfhostEmitterT11Tests
             catch (TargetInvocationException) { return; }
             if (n is BoundBuiltinCall emittedCall) emitted.Add(emittedCall.Member);
             // A child that is not a plain local is T10's `emitExpr`, still a stub, so the text cannot match yet (Q811).
-            if (!plain || ReachesStub(c, n))
+            if (!plain || ReachesStub(n))
             {
                 flags[index] = '2';
                 run.Add(index);
@@ -846,8 +817,5 @@ public sealed class SelfhostEmitterT11Tests
         [BuiltinMember.StrBufAppend] = "calls T9's `claimed`",
         [BuiltinMember.StrBufAppendRepeated] = "calls T9's `claimed`",
         [BuiltinMember.StrBufInsert] = "calls T9's `claimed`",
-        [BuiltinMember.SymbolText] = "calls T6's `symbolText`",
-        [BuiltinMember.EnumName] = "calls T6's `enumNames`",
-        [BuiltinMember.EnumField] = "calls T6's `enumField`",
     };
 }
