@@ -1,24 +1,322 @@
 // T7: CEmitter.cs 477-587 (`EmitTypes`), 600-681 (`SlotSignature`, `FunctionSignature`, `FunctionThunk`, `Vtable`).
-// Header only (T1): final signatures.
 
 import semantics
 
-/// CEmitter.cs:477 `EmitTypes`: the struct definitions of every registered type, in `_typeOrder`.
-public string emitTypes(ref CCtx cc, from ref Ctx c) {
-    return ""
+/// CEmitter.cs:477 `EmitTypes`: forward typedefs for every named type, then the definitions with by-value members first.
+public string emitTypes(ref CCtx cc, from ref Ctx c) uses alloc {
+    var defs = StrBuf()
+    var done = Map<string, bool>()
+    // Defining a type can name new ones (an element type), so iterate to a fixed point.
+    var i = 0
+    while i < cc.typeOrder.length {
+        let name = cc.typeOrder[i]
+        t7Define(ref cc, from: ref c, through: ref defs, to: ref done, for: name)
+        i += 1
+    }
+    var sb = StrBuf()
+    for name in cc.typeOrder { sb.append($"typedef struct {name} {name};\n") }
+    sb.append("\n")
+    sb.append(defs.finish())
+    return $"{sb.finish()}"
 }
 
-/// CEmitter.cs:605 `SlotName` (Q845): the vtable slot name of interface method or getter `m`.
-public string slotName(ref Ctx c, for semantics.FuncId m) {
-    return ""
+/// CEmitter.cs:481 `Define`: appends the definition of named type `name` to `defs`, after those of the types it holds by value.
+void t7Define(ref CCtx cc, from ref Ctx c, through ref StrBuf defs, to ref Map<string, bool> done, for string name) uses alloc {
+    if done.contains(name) { return }
+    done[name] = true
+    let t = cc.types[name]
+    let i = i64(t & 0xFFFFFFFF)
+    var memberTypes = List<Type>()
+    var decls = List<string>()
+    var payloads = List<Type>()
+    switch semantics.kindOf(t) {
+        case .structType:
+            var fields = List<semantics.FieldId>()
+            for f in c.structs[i].fields { fields.append(f) }
+            for f in fields {
+                let ft = c.fields[f].type
+                memberTypes.append(ft)
+                decls.append($"{cType(ref cc, from: ref c, for: ft)} {fieldName(c.fields[f].name)}")
+            }
+            if c.states.contains(i) {
+                // After the fields, the state's tag and its payload, laid out like a union (spec §3.17).
+                memberTypes.append(semantics.prim(.u8))
+                decls.append("uint8_t tag")
+                var held = List<semantics.VariantId>()
+                for v in c.unions[c.states[i]].variants {
+                    if c.unionVariants[v].fields.length > 0 { held.append(v) }
+                }
+                if held.length > 0 {
+                    memberTypes.append(semantics.prim(.u8))
+                    decls.append(t7VariantUnion(ref cc, from: ref c, for: in held, as: false))
+                }
+                t7Payloads(ref c, for: in held, to: ref payloads, as: false)
+            } else if fields.length == 0 {
+                memberTypes.append(semantics.prim(.bool))
+                decls.append("char unused")
+            }
+        case .optional:
+            let inner = c.optionalTypes[i]
+            memberTypes.append(semantics.prim(.bool))
+            decls.append("bool has")
+            memberTypes.append(inner)
+            decls.append($"{cType(ref cc, from: ref c, for: inner)} value")
+        case .errorSet or .errorUnion:
+            // The code, then the largest payload: a case with fields has a struct named by its code (SPEC §3.12).
+            memberTypes.append(semantics.prim(.u32))
+            decls.append("uint32_t code")
+            var cases = List<semantics.VariantId>()
+            for v in 0..c.errorVariants.length {
+                if c.errorVariants[v].fields.length > 0 { cases.append(v) }
+            }
+            // coverage-exempt: Q790
+            if cases.length > 0 {
+                memberTypes.append(semantics.prim(.u32))
+                decls.append(t7VariantUnion(ref cc, from: ref c, for: in cases, as: true))
+            }
+            t7Payloads(ref c, for: in cases, to: ref payloads, as: true)
+        case .result:
+            let error = c.resultTypes[i].error
+            let value = c.resultTypes[i].value
+            memberTypes.append(error)
+            decls.append($"{cType(ref cc, from: ref c, for: error)} err")
+            memberTypes.append(value)
+            decls.append($"{cType(ref cc, from: ref c, for: value)} value")
+        case .span:
+            memberTypes.append(semantics.prim(.i64))
+            decls.append($"{cType(ref cc, from: ref c, for: c.spanTypes[i].element)}* ptr")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append("int64_t len")
+        case .list:
+            memberTypes.append(semantics.prim(.i64))
+            decls.append($"{cType(ref cc, from: ref c, for: c.listTypes[i])}* ptr")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append("int64_t len")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append("int64_t cap")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append("byn_alloc* alloc")
+        case .map:
+            memberTypes.append(semantics.prim(.i64))
+            decls.append("byn_map_hdr h")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append($"{cType(ref cc, from: ref c, for: c.mapTypes[i].key)}* keys")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append($"{cType(ref cc, from: ref c, for: c.mapTypes[i].value)}* vals")
+        case .array:
+            let element = c.arrayTypes[i].element
+            memberTypes.append(element)
+            decls.append($"{cType(ref cc, from: ref c, for: element)} v[{c.arrayTypes[i].length}]")
+        case .tuple:
+            var types = List<Type>()
+            for f in c.tupleTypes[i] { types.append(f.type) }
+            for k in 0..types.length {
+                memberTypes.append(types[k])
+                decls.append($"{cType(ref cc, from: ref c, for: types[k])} item{k + 1}")
+            }
+        case .dynRef:
+            // Slot parameters may be incomplete types, so the table needs no other definition first.
+            let iface = c.dynRefTypes[i].iface
+            let vt = $"byn_vt_{key(ref c, for: semantics.makeType(.interfaceType, at: iface))}"
+            defs.append($"struct {vt} {{\n")
+            for m in t7Slots(in c, for: iface) {
+                var ignored = List<string>()
+                defs.append($"    {t7SlotSignature(ref cc, from: ref c, for: m, by: $"(*{slotName(ref c, for: m)})", to: ref ignored)};\n")
+            }
+            defs.append("};\n\n")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append("void* data")
+            memberTypes.append(semantics.prim(.i64))
+            decls.append($"const struct {vt}* vt")
+        case .function:
+            // Q1: round 4 redoes this (CEmitter.cs:557-560).
+            // The code and the environment it is called with; parameter and return types need only their typedefs.
+            var ignored = List<string>()
+            memberTypes.append(semantics.prim(.i64))
+            decls.append(t7FunctionSignature(ref cc, from: ref c, for: t, by: "(*fn)", to: ref ignored))
+            memberTypes.append(semantics.prim(.i64))
+            decls.append("void* env")
+        case .unionType:
+            // Unit variants have no struct; a union of only unit variants has no `u`.
+            memberTypes.append(semantics.prim(.i32))
+            decls.append("int32_t tag")
+            var variants = List<semantics.VariantId>()
+            for v in c.unions[i].variants {
+                if c.unionVariants[v].fields.length > 0 { variants.append(v) }
+            }
+            if variants.length > 0 {
+                memberTypes.append(semantics.prim(.i32))
+                decls.append(t7VariantUnion(ref cc, from: ref c, for: in variants, as: false))
+            }
+            t7Payloads(ref c, for: in variants, to: ref payloads, as: false)
+        // C# has no default: any other named type gets an empty definition.
+        default:
+    }
+    var deps = List<Type>()
+    for m in memberTypes { deps.append(m) }
+    for p in payloads { deps.append(p) }
+    for ty in deps {
+        if semantics.kindOf(ty) != .primitive {
+            let dep = cType(ref cc, from: ref c, for: ty)
+            if cc.types.contains(dep) { t7Define(ref cc, from: ref c, through: ref defs, to: ref done, for: dep) }
+        }
+    }
+    defs.append($"struct {name} {{\n")
+    for d in decls { defs.append($"    {d};\n") }
+    defs.append("};\n\n")
 }
 
-/// CEmitter.cs:648 `FunctionThunk` (Q845): the name of the helper that calls named function `fn` as a value of function type `type`, registering it.
-public string functionThunk(ref CCtx cc, from ref Ctx c, for semantics.FuncId fn, as Type type) {
-    return ""
+/// The `union { struct { fields } name; ... } u` member of a state or union (`p` of an error): `errors` for error variants (`e{code}`).
+string t7VariantUnion(ref CCtx cc, from ref Ctx c, for in List<semantics.VariantId> variants, as bool errors) uses alloc {
+    var sb = StrBuf()
+    sb.append("union {\n")
+    for v in variants {
+        var fields = List<semantics.LocalId>()
+        var vname = ""
+        if errors {
+            for f in c.errorVariants[v].fields { fields.append(f) }
+            vname = $"e{c.errorVariants[v].code}"
+        } else {
+            for f in c.unionVariants[v].fields { fields.append(f) }
+            vname = fieldName(c.unionVariants[v].name)
+        }
+        sb.append("        struct { ")
+        for f in fields { sb.append($"{cType(ref cc, from: ref c, for: c.locals[f].type)} {fieldName(c.locals[f].name)}; ") }
+        sb.append($"}} {vname};\n")
+    }
+    // The state's and the union's member is `u`, the error's `p`.
+    sb.append(errors ? "    } p" : "    } u")
+    return $"{sb.finish()}"
 }
 
-/// CEmitter.cs:661 `Vtable` (Q845): the name of struct `s`'s vtable for interface `i`, registering it.
-public string vtable(ref CCtx cc, from ref Ctx c, for semantics.StructId s, as semantics.InterfaceId i) {
-    return ""
+/// The field types of `variants`, in order, appended to `payloads`.
+void t7Payloads(ref Ctx c, for in List<semantics.VariantId> variants, to ref List<Type> payloads, as bool errors) uses alloc {
+    for v in variants {
+        if errors {
+            for f in c.errorVariants[v].fields { payloads.append(c.locals[f].type) }
+        } else {
+            for f in c.unionVariants[v].fields { payloads.append(c.locals[f].type) }
+        }
+    }
+}
+
+/// CEmitter.cs:602 `Slots`: the vtable slots of `i`: one per method and getter, defaults included.
+List<semantics.FuncId> t7Slots(in Ctx c, for semantics.InterfaceId i) uses alloc {
+    var r = List<semantics.FuncId>()
+    for m in c.interfaces[i].methods { r.append(m) }
+    for m in c.interfaces[i].properties { r.append(m) }
+    return r
+}
+
+/// CEmitter.cs:605 `SlotName`: the vtable slot name of interface method or getter `m`.
+public string slotName(ref Ctx c, for semantics.FuncId m) uses alloc {
+    if c.functions[m].kind == .getter { return $"get_{c.functions[m].name}" }
+    return fieldName(c.functions[m].name)
+}
+
+/// CEmitter.cs:609 `SlotSignature`: a slot's C signature around `declarator`, in `Signature`'s `fails` convention with
+/// `void* self` first; `args` are the names of the parameters after `self`.
+string t7SlotSignature(ref CCtx cc, from ref Ctx c, for semantics.FuncId m, by string declarator, to ref List<string> args) uses alloc {
+    let ret = c.functions[m].returnType
+    let returnsValue = !semantics.isVoid(ret) && !semantics.isNever(ret)
+    var ps = List<string>()
+    ps.append("void* self")
+    var parameters = List<semantics.LocalId>()
+    for p in c.functions[m].parameters { parameters.append(p) }
+    for k in 0..parameters.length {
+        args.append($"a{k}")
+        let byRef = c.locals[parameters[k]].modifier == .refKeyword || c.locals[parameters[k]].modifier == .outKeyword
+        let star = byRef ? "*" : ""
+        ps.append($"{cType(ref cc, from: ref c, for: c.locals[parameters[k]].type)}{star} a{k}")
+    }
+    let failing = c.functions[m].hasFails
+    if failing && returnsValue {
+        args.append("byn_out")
+        ps.append($"{cType(ref cc, from: ref c, for: ret)}* byn_out")
+    }
+    let head = failing ? errorCType(ref cc, from: ref c) : cType(ref cc, from: ref c, for: ret)
+    return $"{head} {declarator}({t7Join(in ps)})"
+}
+
+/// CEmitter.cs:627 `FunctionSignature`: a function type's C signature around `declarator`, in `Signature`'s `fails` convention
+/// with `void* env` first; `args` are the names of the parameters after `env`.
+string t7FunctionSignature(ref CCtx cc, from ref Ctx c, for Type f, by string declarator, to ref List<string> args) uses alloc {
+    // Q1: round 4 redoes this (CEmitter.cs:627-644).
+    let i = i64(f & 0xFFFFFFFF)
+    let failing = c.functionTypes[i].errorSets.length > 0
+    let ret = c.functionTypes[i].ret
+    var ps = List<string>()
+    ps.append("void* env")
+    var parameters = List<Type>()
+    for p in c.functionTypes[i].parameters { parameters.append(p) }
+    for k in 0..parameters.length {
+        args.append($"a{k}")
+        ps.append($"{cType(ref cc, from: ref c, for: parameters[k])} a{k}")
+    }
+    if failing && !semantics.isVoid(ret) && !semantics.isNever(ret) {
+        args.append("byn_out")
+        ps.append($"{cType(ref cc, from: ref c, for: ret)}* byn_out")
+    }
+    let head = failing ? errorCType(ref cc, from: ref c) : cType(ref cc, from: ref c, for: ret)
+    return $"{head} {declarator}({t7Join(in ps)})"
+}
+
+/// `string.Join(", ", xs)`.
+string t7Join(in List<string> xs) uses alloc {
+    var sb = StrBuf()
+    for k in 0..xs.length {
+        if k > 0 { sb.append(", ") }
+        sb.append(xs[k])
+    }
+    return $"{sb.finish()}"
+}
+
+/// CEmitter.cs:648 `FunctionThunk`: the name of the helper that calls named function `fn` as a value of function type `type`, registering it.
+public string functionThunk(ref CCtx cc, from ref Ctx c, for semantics.FuncId fn, as Type type) uses alloc {
+    // Q1: round 4 redoes this (CEmitter.cs:646-654).
+    let name = $"bynh_fnthunk_{functionName(ref cc, from: ref c, for: fn)}"
+    var args = List<string>()
+    let proto = $"static {t7FunctionSignature(ref cc, from: ref c, for: type, by: name, to: ref args)}"
+    let i = i64(type & 0xFFFFFFFF)
+    let ret = c.functionTypes[i].ret
+    let returns = c.functionTypes[i].errorSets.length > 0 || (!semantics.isVoid(ret) && !semantics.isNever(ret))
+    let returnWord = returns ? "return " : ""
+    return helper(ref cc, for: name, from: proto, as: $"{{\n    (void)env;\n    {returnWord}{functionName(ref cc, from: ref c, for: fn)}({t7Join(in args)});\n}}\n")
+}
+
+/// CEmitter.cs:661 `Vtable`: the name of struct `s`'s vtable for interface `i`, registering it; a thunk per slot casts `self` to the conformer.
+public string vtable(ref CCtx cc, from ref Ctx c, for semantics.StructId s, as semantics.InterfaceId i) uses alloc {
+    let sType = semantics.makeType(.structType, at: s)
+    let iType = semantics.makeType(.interfaceType, at: i)
+    let name = $"bynh_vtab_{key(ref c, for: sType)}_{key(ref c, for: iType)}"
+    if cc.vtables.contains(name) { return name }
+    var conformance: semantics.ConformanceId = -1
+    for k in c.structs[s].conformances {
+        if conformance == -1 && c.conformances[k].iface == i { conformance = k }
+    }
+    // C# `First` throws when the struct has no conformance to `i`.
+    if conformance == -1 { panic($"no conformance of {c.structs[s].name} to {c.interfaces[i].name}") }
+    var thunks = List<string>()
+    for m in t7Slots(in c, for: i) {
+        let thunk = $"bynh_vt_{key(ref c, for: sType)}_{key(ref c, for: iType)}_{slotName(ref c, for: m)}"
+        var args = List<string>()
+        let proto = $"static {t7SlotSignature(ref cc, from: ref c, for: m, by: thunk, to: ref args)}"
+        var call = ""
+        if c.conformances[conformance].fieldWitnesses.contains(m) {
+            let field = c.conformances[conformance].fieldWitnesses[m]
+            call = $"(({cType(ref cc, from: ref c, for: sType)}*)self)->{fieldName(c.fields[field].name)}"
+        } else {
+            var all = List<string>()
+            all.append($"({cType(ref cc, from: ref c, for: sType)}*)self")
+            for a in args { all.append(a) }
+            call = $"{functionName(ref cc, from: ref c, for: c.conformances[conformance].witnesses[m])}({t7Join(in all)})"
+        }
+        let ret = c.functions[m].returnType
+        let returns = c.functions[m].hasFails || (!semantics.isVoid(ret) && !semantics.isNever(ret))
+        let returnWord = returns ? "return " : ""
+        thunks.append(helper(ref cc, for: thunk, from: proto, as: $"{{\n    {returnWord}{call};\n}}\n"))
+    }
+    cc.vtables[name] = $"static const struct byn_vt_{key(ref c, for: iType)} {name} = {{ {t7Join(in thunks)} }};\n"
+    cc.vtableOrder.append(name)
+    return name
 }
