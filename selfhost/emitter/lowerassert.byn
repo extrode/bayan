@@ -8,13 +8,13 @@ import semantics
 import parser
 import emitter.ltree
 
-type LGoto = ltree.LGoto
-type LLabel = ltree.LLabel
-type LNever = ltree.LNever
-type LOptionalValue = ltree.LOptionalValue
-type LPanic = ltree.LPanic
-type LVoid = ltree.LVoid
-type LWrite = ltree.LWrite
+type T5LGoto = ltree.LGoto
+type T5LLabel = ltree.LLabel
+type T5LNever = ltree.LNever
+type T5LOptionalValue = ltree.LOptionalValue
+type T5LPanic = ltree.LPanic
+type T5LVoid = ltree.LVoid
+type T5LWrite = ltree.LWrite
 
 /// Lowerer.cs:1376 `Printable`.
 public bool printable(Type t) {
@@ -198,7 +198,7 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
     lvalues.append(mutating && isLvalueShape(ref c, through: ref l, for: receiver))
     var parts = List<BExpr>()
     unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) {
-        return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type })
+        return ltree.addLNever(ref l.tree, from: T5LNever { span: span, type: type })
     }
     var lowered = parts[0]
     if mutating && !isLvalue(in c, through: in l, for: lowered) {
@@ -211,7 +211,7 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
     let copy = t5Copied(ref c, from: e, as: semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: member, receiver: lowered, arguments: move arguments, type: type }))
     if semantics.isVoid(type) {
         emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: copy }))
-        return ltree.addLVoid(ref l.tree, from: LVoid { span: span })
+        return ltree.addLVoid(ref l.tree, from: T5LVoid { span: span })
     }
     return copy
 }
@@ -224,7 +224,7 @@ public BExpr lowerStable(ref Ctx c, through ref LCtx l, for BExpr place) uses al
             let span = l.tree.optionalValues[i].span
             let type = l.tree.optionalValues[i].type
             let optional = lowerStable(ref c, through: ref l, for: l.tree.optionalValues[i].optional)
-            return ltree.addLOptionalValue(ref l.tree, from: LOptionalValue { span: span, optional: optional, type: type })
+            return ltree.addLOptionalValue(ref l.tree, from: T5LOptionalValue { span: span, optional: optional, type: type })
         }
     } else {
         let i = i64(place & 0xFFFFFFFF)
@@ -291,7 +291,7 @@ public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by l
     if level != -1 { values.append(level) }
     var lowered = List<BExpr>()
     unless operands(ref c, through: ref l, for: in values, as: in List<bool>(), to: ref lowered) {
-        return ltree.addLNever(ref l.tree, from: LNever { span: span, type: ltree.typeOf(in c, through: in l.tree, for: call) })
+        return ltree.addLNever(ref l.tree, from: T5LNever { span: span, type: ltree.typeOf(in c, through: in l.tree, for: call) })
     }
     var written = target
     if level != -1 {
@@ -316,8 +316,8 @@ public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by l
             next += 1
         }
     }
-    emit(ref l, for: ltree.addLWrite(ref l.tree, from: LWrite { span: span, sink: sink, target: written, parts: move parts }))
-    return ltree.addLVoid(ref l.tree, from: LVoid { span: span })
+    emit(ref l, for: ltree.addLWrite(ref l.tree, from: T5LWrite { span: span, sink: sink, target: written, parts: move parts }))
+    return ltree.addLVoid(ref l.tree, from: T5LVoid { span: span })
 }
 
 /// Lowerer.cs:1652 `SwitchExpr` (Q845): the lowered switch expression `e`, with its statements appended to the current output list.
@@ -341,7 +341,7 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
         } else {
             emitEffect(ref c, through: ref l, for: v)
         }
-        emit(ref l, for: ltree.addLGoto(ref l.tree, from: LGoto { span: arm.span, label: end }))
+        emit(ref l, for: ltree.addLGoto(ref l.tree, from: T5LGoto { span: arm.span, label: end }))
         let body = captureEnd(ref l)
         if arm.guard == -1 {
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move body) }))
@@ -356,9 +356,9 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move pre) }))
         }
     }
-    emit(ref l, for: ltree.addLPanic(ref l.tree, from: LPanic { span: span, message: "no switch arm matched" }))
-    emit(ref l, for: ltree.addLLabel(ref l.tree, from: LLabel { span: span, name: end }))
-    if result == -1 { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
+    emit(ref l, for: ltree.addLPanic(ref l.tree, from: T5LPanic { span: span, message: "no switch arm matched" }))
+    emit(ref l, for: ltree.addLLabel(ref l.tree, from: T5LLabel { span: span, name: end }))
+    if result == -1 { return ltree.addLNever(ref l.tree, from: T5LNever { span: span, type: type }) }
     return localExpr(ref c, at: span, for: result)
 }
 

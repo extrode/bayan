@@ -350,7 +350,7 @@ public sealed class SelfhostEmitterT5Tests
             t5Reset(ref l, for: calls)
             sb.append(t5Report(ref c, through: ref l, for: "neverTry", at: lowerTryFrom(ref c, through: ref l, for: neverTry)))
 
-            let optional = ltree.addLOptionalValue(ref l.tree, from: LOptionalValue { span: span, optional: donor, type: i64Type })
+            let optional = ltree.addLOptionalValue(ref l.tree, from: T5LOptionalValue { span: span, optional: donor, type: i64Type })
             t5Reset(ref l, for: calls)
             sb.append(t5Report(ref c, through: ref l, for: "optStable", at: lowerStable(ref c, through: ref l, for: optional)))
 
@@ -365,7 +365,7 @@ public sealed class SelfhostEmitterT5Tests
             sb.append(t5Report(ref c, through: ref l, for: "noArgSlot", at: lowerBuiltinCall(ref c, through: ref l, for: noArgSlot)))
 
             t5Reset(ref l, for: calls)
-            sb.append(t5Report(ref c, through: ref l, for: "neverStable", at: lowerStable(ref c, through: ref l, for: ltree.addLNever(ref l.tree, from: LNever { span: span, type: semantics.prim(.neverKind) }))))
+            sb.append(t5Report(ref c, through: ref l, for: "neverStable", at: lowerStable(ref c, through: ref l, for: ltree.addLNever(ref l.tree, from: T5LNever { span: span, type: semantics.prim(.neverKind) }))))
 
             t5Reset(ref l, for: calls)
             let unchecked = ltree.addLIndexUnchecked(ref l.tree, from: T3LIndexUnchecked { span: span, target: donor, index: donor, type: i64Type }) because "a hand-built place that Stable only inspects"
