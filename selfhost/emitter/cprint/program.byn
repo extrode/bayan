@@ -7,7 +7,6 @@ import emitter.ltree
 /// CEmitter.cs:61 `Emit`: the C translation unit for `program`. The lowered nodes are in `t`.
 public string emit(ref Ctx c, from in ltree.LTree t, through in ltree.LoweredProgram program, by bool ownershipChecks) uses alloc {
     var cc = CCtx { ownershipChecks: ownershipChecks, packageRoot: c.packageRoot }
-    // coverage-blocked: Q787 T9 emitFunction
     for i in 0..program.testFunctions.length { cc.testIndex[program.testFunctions[i].symbol] = i }
     return t6Run(ref cc, from: ref c, through: in t, for: in program)
 }
@@ -16,7 +15,6 @@ public string emit(ref Ctx c, from in ltree.LTree t, through in ltree.LoweredPro
 public string t6Run(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredProgram program) uses alloc {
     var bodies = StrBuf()
     var protos = StrBuf()
-    // coverage-blocked: Q787 T9 emitFunction through 21
     for f in program.functions { t6EmitFunction(ref cc, from: ref c, through: in t, for: in f, to: ref protos, by: ref bodies) }
     for f in program.testFunctions { t6EmitFunction(ref cc, from: ref c, through: in t, for: in f, to: ref protos, by: ref bodies) }
     let main = t6EmitMain(ref cc, from: ref c, through: in program)
@@ -81,7 +79,6 @@ public string t6Run(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for i
 
 /// CEmitter.cs:69-73: `new FunctionEmitter(this, f)`, its signature as a prototype and its body.
 void t6EmitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f, to ref StrBuf protos, by ref StrBuf bodies) uses alloc {
-    // coverage-blocked: Q787 T9 emitFunction through 88
     protos.append(signature(ref cc, from: ref c, through: in t, for: in f))
     protos.append(";\n")
     bodies.append(emitFunction(ref cc, from: ref c, through: in t, for: in f))
