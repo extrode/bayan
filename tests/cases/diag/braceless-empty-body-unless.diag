@@ -1,0 +1,13 @@
+error BYN1007: `unless` with a negated condition is a double negative
+
+  2 │     unless (!x) }
+    │     ^^^^^^^^^^^ `unless` already negates
+    │
+  help: use `if` with the condition as written
+    │ 2 │     if x {  } }
+    │   │     +++++++++
+
+error BYN1002: expected an expression, found `}`
+
+  2 │     unless (!x) }
+    │                 ^
