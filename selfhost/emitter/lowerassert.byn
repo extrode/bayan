@@ -29,7 +29,7 @@ public bool printable(Type t) {
 }
 
 /// `e is BoundBuiltinCall { Member: member }`.
-// coverage-blocked: Q778 T3 lowerLvalue
+// coverage-blocked: Q779 T4 lowerExpr
 bool t5IsBuiltin(in Ctx c, for BExpr e, by semantics.BuiltinMember member) => !ltree.isLowered(e) && semantics.boundKind(e) == .builtinCall && c.bBuiltinCalls[e & 0xFFFFFFFF].member == member
 
 /// The `Constant` and syntax facts (Q537) of `old`, which `old with { ... }` keeps, set on its copy.
@@ -48,8 +48,6 @@ BExpr t5Builtin(ref Ctx c, from BExpr b, as semantics.BuiltinMember member, to B
     return t5Copied(ref c, from: b, as: copy)
 }
 
-
-
 /// The arguments of the builtin call `b`.
 List<BExpr> t5Arguments(in Ctx c, for BExpr b) uses alloc {
     var r = List<BExpr>()
@@ -66,14 +64,6 @@ bool t5Mutating(semantics.BuiltinMember m) {
         case .strBufAppend or .strBufAppendRepeated or .strBufInsert or .strBufClear or .arrayAsSpan or .listMutableSpan or .arrayMutableSpan: return true
         default: return false
     }
-}
-
-/// `a < b` for two's-complement `Big`s within 65 bits (`bigCmp` is private to semantics, Q780): `hi` is all zeros or all ones, so it is the sign.
-bool t5BigLess(Big a, by Big b) {
-    let an = (a.hi & 0x8000000000000000) != 0
-    let bn = (b.hi & 0x8000000000000000) != 0
-    if an != bn { return an }
-    return a.lo < b.lo
 }
 
 /// A literal of `type` with constant `k`.
@@ -108,7 +98,6 @@ public BExpr lowerCallParts(ref Ctx c, through ref LCtx l, for BExpr e) uses all
     if hasReceiver {
         let receiver = c.bCalls[i].receiver
         ops.append(receiver)
-        // coverage-blocked: Q778 T3 isLvalueShape
         lvalues.append(isLvalueShape(ref c, through: ref l, for: receiver))
     }
     let offset: i64 = hasReceiver ? 1 : 0
@@ -151,7 +140,6 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
     if member == .strBufAppend {
         let first = c.bBuiltinCalls[i].arguments[0]
         if !ltree.isLowered(first) && semantics.boundKind(first) == .interpolated {
-            // coverage-blocked: Q778 T3 lowerLvalue
             let target = lowerLvalue(ref c, through: ref l, for: receiver)
             if isNeverExpr(target) { return target }
             return lowerWriteParts(ref c, through: ref l, for: e, by: .strBuf, to: target, as: first)
@@ -159,15 +147,12 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
     }
     // `x.take()`: move the value out, then leave the type's empty value in the place, evaluated once.
     if member == .listTake || member == .mapTake || member == .strBufTake || member == .optionalTake {
-        // coverage-blocked: Q778 T3 lowerLvalue
         var place = lowerLvalue(ref c, through: ref l, for: receiver)
         if isNeverExpr(place) { return place }
         place = lowerStable(ref c, through: ref l, for: place)
         // `map[k].take()` reads through the panicking index, so a missing key is not inserted.
         var read = place
-        // coverage-blocked: Q778 T3 lowerLvalue
         if t5IsBuiltin(in c, for: place, by: .mapIndexSet) {
-            // coverage-blocked: Q778 T3 lowerLvalue
             read = t5Builtin(ref c, from: place, as: .mapIndex, to: c.bBuiltinCalls[place & 0xFFFFFFFF].receiver, by: t5Arguments(in c, for: place))
         }
         let taken = spill(ref c, through: ref l, for: read)
@@ -191,9 +176,10 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
             var values = List<BExpr>()
             for k in 0..c.structs[sid].fields.length {
                 let field = c.structs[sid].fields[k]
-                let given = c.fields[field].defaultValue
+                var value = c.fields[field].defaultValue
                 // coverage-exempt: Q780
-                values.append(given != -1 ? given : semantics.addDefault(ref c, from: BDefault { span: span, type: c.fields[field].type }))
+                if value == -1 { value = semantics.addDefault(ref c, from: BDefault { span: span, type: c.fields[field].type }) }
+                values.append(value)
             }
             ops.append(semantics.addStructLiteral(ref c, from: BStructLiteral { span: span, structId: sid, fields: move values, type: type }))
         } else {
@@ -201,14 +187,13 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
         }
     }
     var lvalues = List<bool>()
-    // coverage-blocked: Q778 T3 isLvalueShape
     lvalues.append(mutating && isLvalueShape(ref c, through: ref l, for: receiver))
     var parts = List<BExpr>()
     unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) {
         return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type })
     }
     var lowered = parts[0]
-    // coverage-blocked: Q779 T4 lowerExpr through 213
+    // coverage-blocked: Q779 T4 lowerExpr through 198
     if mutating && !isLvalue(in c, through: in l, for: lowered) {
         lowered = spill(ref c, through: ref l, for: lowered)
     } else if !mutating && !isTrivial(in c, through: in l, for: lowered) && (member == .listAsSpan || member == .strBufAsString) {
@@ -360,7 +345,7 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
         }
         emit(ref l, for: ltree.addLGoto(ref l.tree, from: LGoto { span: arm.span, label: end }))
         let body = captureEnd(ref l)
-        // coverage-blocked: Q779 T4 lowerMatch through 375
+        // coverage-blocked: Q779 T4 lowerMatch through 360
         if arm.guard == -1 {
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move body) }))
             continue
@@ -409,10 +394,10 @@ public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc
     } else if semantics.isInteger(target) {
         let r = semantics.range(semantics.primKindOf(i64(target & 0xFFFFFFFF)))
         let fr = semantics.range(semantics.primKindOf(i64(from & 0xFFFFFFFF)))
-        if t5BigLess(fr.min, by: r.min) {
+        if semantics.bigCmp(fr.min, as: r.min) < 0 {
             fits = t5Check(ref c, through: in l, at: span, for: fits, by: .ge, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .integer, integer: r.min }))
         }
-        if t5BigLess(r.max, by: fr.max) {
+        if semantics.bigCmp(r.max, as: fr.max) < 0 {
             fits = t5Check(ref c, through: in l, at: span, for: fits, by: .le, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .integer, integer: r.max }))
         }
     }

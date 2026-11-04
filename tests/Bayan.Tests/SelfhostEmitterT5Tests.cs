@@ -284,6 +284,7 @@ public sealed class SelfhostEmitterT5Tests
             if kind == "stable" { result = lowerStable(ref c, through: ref l, for: e) }
             if kind == "tryFrom" { result = lowerTryFrom(ref c, through: ref l, for: e) }
             if kind == "switch" { result = lowerSwitchExpr(ref c, through: ref l, for: e) }
+            if kind == "assign" { lowerAssign(ref c, through: ref l, for: c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements[index]) }
             if kind == "write" { result = lowerWrite(ref c, through: ref l, for: e, by: .print, to: -1, as: c.bCalls[e & 0xFFFFFFFF].arguments[0]) }
             if kind == "levelTrivial" {
                 let level = localExpr(ref c, at: c.bCalls[e & 0xFFFFFFFF].span, for: c.functions[fn].parameters[0])
@@ -579,7 +580,7 @@ public sealed class SelfhostEmitterT5Tests
 
         void kinds(i64 a, from f64 b, to bool c, by string d, as Color e, for P f) { }
 
-        void calls(i64 k, from ref P p, to i64 -> i64 fv, by ref Map<string, P> m) {
+        void calls(i64 k, from ref P p, to i64 -> i64 fv, by ref Map<string, P> m, as ref List<P> ps) {
             let c1 = id(k)
             let c2 = pair(id(k), by: id(k))
             let c3 = mk().get()
@@ -589,6 +590,7 @@ public sealed class SelfhostEmitterT5Tests
             p.bump()
             var kk = 1
             inc(ref kk)
+            let c6 = ps.removeLast().get()
         }
 
         void builtins(ref List<i64> xs, to ref Map<string, P> m, by ref StrBuf sb, as ref Map<string, i64> mi, for string name) uses alloc {
@@ -614,8 +616,21 @@ public sealed class SelfhostEmitterT5Tests
             xs.replace(at: 0..1, by: xs)
         }
 
-        void opts(ref Owned<P>? o) {
+        void opts(ref Owned<P>? o, to ref Map<string, List<i64>> ml, by ref Map<string, Owned<P>?> mo, as ref Map<string, P> m) uses alloc {
             let t = o.take()
+            let t2 = ml["a"].take()
+            let t3 = mo.slot("b").take()
+            m.slot("c").bump()
+        }
+
+        void compound(ref Map<string, i64> mi, to ref List<i64> xs, by i64 k) uses alloc {
+            mi["a"] += 1
+            mi[ids("a")] += k
+            xs[id(k)] += 1
+            xs[k] += 1
+            xs[0] = 1
+            mi.slot("d") += 1
+            mi.slot(ids("e")) += k
         }
 
         void arrs(ref i64[3] arr) {
@@ -662,11 +677,11 @@ public sealed class SelfhostEmitterT5Tests
 
     private static readonly string[] CaseSpecs =
     [
-        "calls:0:callParts", "calls:1:callParts", "calls:2:callParts", "calls:3:callParts", "calls:4:callParts", "calls:5:callParts", "calls:6:callParts", "calls:8:callParts",
+        "calls:0:callParts", "calls:1:callParts", "calls:2:callParts", "calls:3:callParts", "calls:4:callParts", "calls:5:callParts", "calls:6:callParts", "calls:8:callParts", "calls:9:callParts",
         "builtins:1:builtin", "builtins:2:builtin", "builtins:3:builtin", "builtins:4:builtin", "builtins:5:builtin", "builtins:6:builtin",
         "builtins:7:builtin", "builtins:8:builtin", "builtins:9:builtin", "builtins:10:builtin", "builtins:11:builtin", "builtins:12:builtin",
         "builtins:14:builtin", "builtins:15:builtin", "builtins:13:switch", "builtins:16:builtin", "builtins:17:builtin", "builtins:18:builtin", "builtins:19:builtin",
-        "opts:0:builtin", "builtins:2:stable", "builtins:8:stable", "builtins:9:stable", "arrs:1:stable", "arrs:2:stable",
+        "opts:0:builtin", "opts:1:builtin", "opts:2:builtin", "opts:3:callParts", "compound:0:assign", "compound:1:assign", "compound:2:assign", "compound:3:assign", "compound:4:assign", "compound:5:assign", "compound:6:assign", "builtins:2:stable", "builtins:8:stable", "builtins:9:stable", "arrs:1:stable", "arrs:2:stable",
         "writes:0:write", "writes:1:write", "writes:2:write", "writes:0:levelTrivial", "writes:2:levelTrivial", "writes:0:levelCall", "writes:2:levelCall",
         "places:1:stable", "places:2:stable", "places:3:stable", "places:4:stable", "places:5:stable", "places:6:stable",
         "tries:0:tryFrom", "tries:1:tryFrom", "tries:2:tryFrom", "tries:3:tryFrom", "tries:4:tryFrom", "tries:5:tryFrom", "tries:6:tryFrom",
@@ -693,6 +708,7 @@ public sealed class SelfhostEmitterT5Tests
                 case "stable": result = (BoundExpr)Call(fl, "Stable", e)!; break;
                 case "tryFrom": result = (BoundExpr)Call(fl, "TryFrom", e)!; break;
                 case "switch": result = (BoundExpr)Call(fl, "SwitchExpr", e)!; break;
+                case "assign": Call(fl, "Assign", fn.Body!.Statements[int.Parse(f[1])]); break;
                 case "write":
                     result = (BoundExpr)Call(fl, "Write", e, WriteSink.Print, null, ((BoundCall)e).Arguments[0])!;
                     break;
