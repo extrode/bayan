@@ -2,9 +2,6 @@
 
 import parser
 
-/// The syntax `bindConversion` takes for the C# `c` of `BindConversion(c, p, arg.Value)`, which reads only its span (Q620).
-type T21ErrorExpr = parser.ErrorExpr
-
 // The C# `BindSwitchSubject`'s result and its `out bool owns`.
 struct SwitchSubjectResult {
     BExpr value
@@ -133,8 +130,7 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
             return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
         case .primitive:
             if (isNumeric(type) || type == prim(.char)) && call.args.length == 1 && call.args[0].name is null {
-                let e = parser.Expr.errorExpr(Owned(T21ErrorExpr { span: call.span }))
-                return bindConversion(ref b, through: ref c, for: in e, to: type, from: in call.args[0].value)
+                return t21BindConversion(ref b, through: ref c, at: call.span, to: type, from: in call.args[0].value, as: syntaxOfCall(ref c, from: in call))
             }
             if isString(type) && call.args.length > 0 && call.args[0].name is null {
                 return bindIntegerText(ref b, through: ref c, for: in call)

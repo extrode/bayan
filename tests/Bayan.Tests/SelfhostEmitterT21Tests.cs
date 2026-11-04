@@ -18,8 +18,10 @@ public sealed class SelfhostEmitterT21Tests
     private const string Main = """
         i32 main(ReadOnlySpan<string> args) {
             for i in 0..args.length {
-                var c = fromPath(args[i], by: in CompilationOptions { includeTests: true }, wholeDirectory: false)
-                Io.stdout.write(t21Print(in c, at: args[i]))
+                let all = args[i].startsWith("+")
+                let path = all ? $"{args[i][1..]}" : args[i]
+                var c = fromPath(path, by: in CompilationOptions { includeTests: true }, wholeDirectory: false)
+                Io.stdout.write(all ? t21PrintAll(in c, at: args[i]) : t21Print(in c, at: args[i]))
             }
             return 0
         }
@@ -40,6 +42,23 @@ public sealed class SelfhostEmitterT21Tests
                             let h = c.exprSyntaxOf.tryGet(at: e) ?? -1
                             sb.append($"{sp.start}..{sp.end} {t21Node(in c, at: h)}\n")
                         }
+                    }
+                }
+            }
+            return $"{sb.finish()}"
+        }
+
+        string t21PrintAll(in Ctx c, at string path) uses alloc {
+            var sb = StrBuf()
+            sb.append($"== {path}\n")
+            for m in 0..c.modules.length {
+                for k in 0..c.modules[m].allFunctions.length {
+                    let fn = c.modules[m].allFunctions[k]
+                    if c.functions[fn].body == -1 { continue }
+                    for e in descendants(in c, for: c.functions[fn].body) {
+                        if !isExprKind(boundKind(e)) { continue }
+                        let h = c.exprSyntaxOf.tryGet(at: e) ?? -1
+                        sb.append($"{t21Node(in c, at: h)}\n")
                     }
                 }
             }
@@ -85,11 +104,20 @@ public sealed class SelfhostEmitterT21Tests
         return s.ToString();
     }
 
-    /// <summary>The C# lines for <paramref name="path"/>, as the generated main prints them.</summary>
+    /// <summary>The C# lines for <paramref name="path"/>, as the generated main prints them; a leading <c>+</c> asks for
+    /// every bound expression of every function body instead of those under an <c>assert</c> condition.</summary>
     private static List<string> Expected(string path)
     {
-        var c = Compilation.FromPath(path, new CompilationOptions(IncludeTests: true), wholeDirectory: false);
+        var all = path.StartsWith('+');
+        var c = Compilation.FromPath(all ? path[1..] : path, new CompilationOptions(IncludeTests: true), wholeDirectory: false);
         var lines = new List<string>();
+        if (all)
+        {
+            foreach (var fn in c.Modules.SelectMany(m => m.AllFunctions).Where(f => f.Body is not null))
+                foreach (var e in BoundTree.Descendants(fn.Body!).OfType<BoundExpr>())
+                    lines.Add(NodeText(e.Syntax));
+            return lines;
+        }
         foreach (var fn in c.Modules.SelectMany(m => m.AllFunctions).Where(f => f.Body is not null))
             foreach (var a in BoundTree.Descendants(fn.Body!).OfType<BoundAssert>())
             {
@@ -134,4 +162,98 @@ public sealed class SelfhostEmitterT21Tests
 
     [Fact]
     public void CorpusAssertConditionsRecordTheCSharpSyntax() => AssertSameAsCSharp(CorpusWithAsserts());
+
+    private const string ValidFixture = """
+        struct Point {
+            i64 x
+            i64 y
+        }
+
+        enum Color {
+            red
+            green
+        }
+
+        union error E {
+            bad
+        }
+
+        i64 twice(i64 n) => n * 2
+
+        i64 apply(i64 v, by i64 -> i64 f) => f(v)
+
+        i64 parsed(i64 n) fails E {
+            fail .bad if n == 0
+            return n
+        }
+
+        let p = Point { x: 1, y: 2 }
+        let xs = [1, 2, 3]
+        let o: i64? = null
+        assert -3 < 0 && !(p.x == 2) && ~1 != 0
+        assert (o ?? 4) == 4
+        assert p.x in 0..5
+        assert (p.x > 0 ? 1 : 2) == 1
+        assert i32(p.y) == 2
+        assert xs[0] + xs.length == 4
+        assert $"{p.x}-{twice(2)}" == "1-4"
+        assert (p with { x: 5 }).x == 5
+        assert Color.red != Color.green
+        assert apply(3, by: x => x + 1) == 4
+        assert xs[1..].length == 2
+        assert (p.x switch { 1 => 10, _ => 20 }) == 10
+        assert (parsed(7) catch 0) == 7
+        assert ((1 + 2) * 3) == 9
+        assert "ab".length == 2 && true
+        assert (line: 1, col: 2).line == 1 && o is { }
+        """;
+
+    private const string ErrorFixture = """
+        struct Point {
+            i64 x
+        }
+
+        union Shape {
+            circle(f64 r)
+            dot
+        }
+
+        let p = Point { x: 1 }
+        let s: Shape = .circle(r: 2.0)
+        let m: Map<string, i64> = ["a": 1]
+        assert p.nope == 1
+        assert undefinedName
+        assert 1 + "a" == 2
+        assert i8(300) == 0
+        assert 9223372036854775807 + 1 > 0
+        assert s.r > 1.0
+        assert m["a"] == 1
+        assert [1, 2].length + p.x == 3
+        assert -(-5) == 5 && !true == false
+        """;
+
+    /// <summary>Folding, coalesce, range, conditional, cast, index/slice, interpolation, <c>with</c>, literals, lambda,
+    /// switch, catch, tuple, map and <c>is</c>; then the error paths (unknown member/name, mismatched operands, constant
+    /// overflow, payload field, map index).</summary>
+    [Fact]
+    public void FixturesRecordTheCSharpSyntax()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "bayan-t21-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = new List<string>();
+            foreach (var (name, source) in new[] { ("valid", ValidFixture), ("errors", ErrorFixture) })
+            {
+                var path = Path.Combine(dir, name, "main.byn");
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, source);
+                paths.Add(path);
+            }
+            // Every bound expression of the fixtures' bodies, and of the `for try` loop whose `next()` member C# names at
+            // the iterable (Q739); the lines carry the recorded syntax only, in `Descendants` order.
+            paths.Add(Path.Combine(Golden.CasesRoot, "run", "for-try-var.byn"));
+            AssertSameAsCSharp(paths.Concat(paths.Select(p => "+" + p)).ToList());
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
 }

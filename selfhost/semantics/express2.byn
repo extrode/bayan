@@ -299,7 +299,7 @@ BExpr t18BindEnumStatic(ref Binder b, through ref Ctx c, for parser.MemberExpr m
     }
 }
 
-BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to ModId mod, from i64 syntax) {
+BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to ModId mod, from i64 syntax = -1) {
     let name = t18Text(in c, from: b.file, at: m.member)
     if c.modules[mod].constants.contains(name) {
         let constId = c.modules[mod].constants[name]

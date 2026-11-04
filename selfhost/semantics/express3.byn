@@ -546,11 +546,13 @@ BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast, fro
 }
 
 /// `u8(x)` (or the input form `(u8)x`): a checked conversion that traps when the value does not fit.
-BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, from in parser.Expr operandSyntax) {
-    let span = parser.exprSpan(in e)
+BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, from in parser.Expr operandSyntax) => t21BindConversion(ref b, through: ref c, at: parser.exprSpan(in e), to: target, from: in operandSyntax, as: syntaxNode(ref c, from: in e))
+
+/// `bindConversion` where `span` and `syntax` are the C# `c`'s span and recorded node (Q849).
+BExpr t21BindConversion(ref Binder b, through ref Ctx c, at TextSpan span, to Type target, from in parser.Expr operandSyntax, as i64 syntax) {
     let operand = bindExpr(ref b, through: ref c, for: in operandSyntax, to: isNumeric(target) ? -1 : target)
     let ot = exprType(in c, for: operand)
-    if isError(target) || isError(ot) { return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), from: in e) }
+    if isError(target) || isError(ot) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax) }
     if (exprConstant(in c, for: operand) is { } n) && n.kind == .integer && isInteger(target)
         && (hasSyntax(in c, for: operand, by: syntaxLiteral) || hasSyntax(in c, for: operand, by: syntaxUnary)) {
         // `u8(300)` is a compile-time error rather than a runtime trap.
@@ -558,11 +560,11 @@ BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
     }
     if (explicit(ref c, from: ot, to: target) is not { } kind) {
         report(ref b, through: ref c, for: .invalidCast, at: span, by: (typeDisplay(ref c, by: ot), typeDisplay(ref c, by: target), "", "", ""))
-        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), from: in e)
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
     if kind == .identity { return operand }
-    if kind == .nullToOptional { return recordSyntax(ref c, for: addDefault(ref c, from: BDefault { span: span, type: target }), from: in e) }
-    let conv = recordSyntax(ref c, for: addConversion(ref c, from: BConversion { span: span, operand: operand, type: target, kind: kind }), from: in e)
+    if kind == .nullToOptional { return recordSyntaxNode(ref c, for: addDefault(ref c, from: BDefault { span: span, type: target }), at: syntax) }
+    let conv = recordSyntaxNode(ref c, for: addConversion(ref c, from: BConversion { span: span, operand: operand, type: target, kind: kind }), at: syntax)
     if (exprConstant(in c, for: operand) is { } k) {
         if (foldCast(ref c, for: in k, from: ot, to: target) is { } folded) {
             setConstant(ref c, for: conv, to: folded)

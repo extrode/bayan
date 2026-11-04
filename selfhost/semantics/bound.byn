@@ -564,7 +564,8 @@ i64 syntaxOfParen(ref Ctx c, from in parser.ParenExpr x) uses alloc {
 }
 
 /// Records a `MemberExpr` and its `Member` name.
-i64 syntaxOfMember(ref Ctx c, from in parser.MemberExpr x) uses alloc => syntaxAppend(ref c, from: ExprSyntax { kind: .memberExpr, span: x.span, member: x.member })
+/// A synthetic `for try` member name (`t28SyntheticName`) is its C# span, `f.Iterable.Span` (Q739).
+i64 syntaxOfMember(ref Ctx c, from in parser.MemberExpr x) uses alloc => syntaxAppend(ref c, from: ExprSyntax { kind: .memberExpr, span: x.span, member: t40RealSpan(in c, for: x.member) })
 
 /// Records a `CallExpr` and the `Callee` child it walks.
 i64 syntaxOfCall(ref Ctx c, from in parser.CallExpr x) uses alloc {
