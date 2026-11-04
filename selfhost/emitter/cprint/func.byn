@@ -36,7 +36,6 @@ public CFunc functionEmitter(ref CCtx cc, from ref Ctx c, for in ltree.LoweredFu
     }
     var n: i64 = 0
     for l in f.locals {
-        // coverage-blocked: Q799 T3 lowerStatement
         fe.names[l] = c.locals[l].kind == .temp ? $"t{n}" : $"l{n}_{c.locals[l].name}"
         n += 1
     }
@@ -106,7 +105,6 @@ public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t
     }
     for l in f.locals {
         let lt = c.locals[l].type
-        // coverage-blocked: Q799 T3 lowerStatement
         if semantics.isVoid(lt) || semantics.isNever(lt) { continue }
         line(ref sb, by: in fe, for: $"{cType(ref cc, from: ref c, for: lt)} {fe.names[l]} = {{0}};")
     }
@@ -141,7 +139,6 @@ public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t
 /// CEmitter.cs:1257 `IsOwner`: a local, owning pattern binding (of `switch move x`) or `move` parameter this function owns.
 bool isOwner(in Ctx c, for LocalId l) {
     let k = c.locals[l].kind
-    // coverage-blocked: Q799 T3 lowerStatement through 146
     return ((k == .letKeyword || k == .varKeyword || k == .patternVariable) && !c.locals[l].borrowsSubject)
         || (c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword)
 }
@@ -182,7 +179,7 @@ LocalId root(in Ctx c, for BExpr e) {
 
 /// CEmitter.cs:1284 `Place`: a store target as an lvalue, without checking its local was not moved.
 string placeOf(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at BExpr e) uses alloc {
-    // coverage-blocked: Q799 T7 ownsStorage through 201
+    // coverage-blocked: Q799 T7 ownsStorage through 198
     unless ltree.isLowered(e) {
         let i = e & 0xFFFFFFFF
         switch semantics.boundKind(e) {
@@ -209,7 +206,7 @@ public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, throug
     if !ltree.isLowered(target) && semantics.boundKind(target) == .local { local = c.bLocals[target & 0xFFFFFFFF].local }
     let hasLocalSlot = local != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: local)
     let type = ltree.typeOf(in c, through: in t, for: target)
-    // coverage-blocked: Q799 T7 ownsStorage through 218
+    // coverage-blocked: Q799 T7 ownsStorage through 215
     if (r != -1 && c.locals[r].kind == .temp) || (!hasLocalSlot && !ownsStorage(ref c, for: type)) { return null }
     let claims = claim && r != -1 && isOwner(in c, for: r) ? "true" : "false"
     let set = ownSet(ref cc, from: ref c, for: type)
@@ -234,7 +231,7 @@ public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through
     // coverage-blocked: Q799 T10 emitExpr
     if r == -1 || f.moved.contains(r) { return }
     let type = ltree.typeOf(in c, through: in t, for: place)
-    // coverage-blocked: Q799 T7 ownsStorage through 241
+    // coverage-blocked: Q799 T7 ownsStorage through 238
     unless ownsStorage(ref c, for: type) { return }
     let claim = ownClaim(ref cc, from: ref c, for: type)
     let p = placeOf(ref cc, for: ref f, from: ref c, through: in t, at: place)
@@ -249,7 +246,7 @@ void claimMapEntry(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltre
     let i = target & 0xFFFFFFFF
     let member = c.bBuiltinCalls[i].member
     let map = c.bBuiltinCalls[i].receiver
-    // coverage-blocked: Q799 T3 lowerLvalue
+    // coverage-exempt: Q800
     if (member == .mapIndexSet || member == .mapSlot) && map != -1 && ownerRoot(in c, for: map) != -1 {
         let claim = ownClaim(ref cc, from: ref c, for: ltree.typeOf(in c, through: in t, for: map))
         let p = placeOf(ref cc, for: ref f, from: ref c, through: in t, at: map)
@@ -375,7 +372,7 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
                 line(ref sb, by: in f, for: $"byn_panic_pop(&ph{t.popPanicHandlers[i].slot});")
             case .claim:
                 let l = t.claims[i].local
-                // coverage-blocked: Q799 T7 ownsStorage through 381
+                // coverage-blocked: Q799 T7 ownsStorage through 378
                 if cc.ownershipChecks && isOwner(in c, for: l) && ownsStorage(ref c, for: c.locals[l].type) {
                     let claim = ownClaim(ref cc, from: ref c, for: c.locals[l].type)
                     line(ref sb, by: in f, for: $"{claim}(&{f.names[l]}, {loc(in c, by: in f, at: t.claims[i].span)});")
@@ -410,7 +407,7 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
                 afterCalls(ref sb, for: ref f, at: in after)
                 block(ref cc, for: ref f, from: ref c, through: in t, to: ref sb, at: c.bIfs[i].then)
                 let elseBranch = c.bIfs[i].elseBranch
-                // coverage-blocked: Q799 T7 ownsStorage through 417
+                // coverage-blocked: Q799 T7 ownsStorage through 414
                 if elseBranch != -1 || after.length > 0 {
                     line(ref sb, by: in f, for: "} else {")
                     afterCalls(ref sb, for: ref f, at: in after)
@@ -463,7 +460,7 @@ void returnStmt(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.L
 /// CEmitter.cs:1500 `Returned`.
 string returned(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at BExpr value) uses alloc {
     let type = ltree.typeOf(in c, through: in t, for: value)
-    // coverage-blocked: Q799 T7 ownsStorage through 469
+    // coverage-blocked: Q799 T7 ownsStorage through 466
     if cc.ownershipChecks && ownsStorage(ref c, for: type) {
         let r = ownReturn(ref cc, from: ref c, for: type)
         return $"{r}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)})"
@@ -537,7 +534,6 @@ string formatWithSpec(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in l
     // A struct with a `formatInto` that takes the `FormatSpec` reads every spec itself, padding included, even when it also has the one-parameter form.
     if semantics.kindOf(type) == .structType {
         let method = formatIntoWithSpec(ref c, for: type & 0xFFFFFFFF)
-        // coverage-blocked: Q799 T8 formatIntoWithSpec through 546
         if method != -1 {
             let radix: i64 = spec.radix == 2 ? 0 : spec.radix == 8 ? 1 : spec.radix == 16 ? 3 : 2
             let align = spec.align > 0 ? spec.align : 0
@@ -594,7 +590,6 @@ string debug(ref CCtx cc, from ref Ctx c, for Type type, at string v, to string 
     if semantics.kindOf(type) != .structType { return format(ref cc, from: ref c, for: type, at: v, to: w) }
     let s = type & 0xFFFFFFFF
     let into = formatInto(ref c, for: s)
-    // coverage-blocked: Q799 T8 formatInto
     if into != -1 && c.functions[into].parameters.length == 2 { return format(ref cc, from: ref c, for: type, at: v, to: w) }
     let k = key(ref c, for: type)
     let name = $"bynh_debug_{k}"

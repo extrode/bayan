@@ -71,7 +71,8 @@ public sealed class SelfhostEmitterT9Tests
             for m in 0..c.modules.length {
                 for k in 0..c.modules[m].allFunctions.length {
                     let fn = c.modules[m].allFunctions[k]
-                    if c.functions[fn].body == -1 || c.functions[fn].kind == .testKeyword || semantics.functionIsGeneric(ref c, by: fn) { continue }
+                    // The `formatInto` methods are there for the format calls, not to be emitted.
+                    if c.functions[fn].body == -1 || c.functions[fn].kind == .testKeyword || semantics.functionIsGeneric(ref c, by: fn) || c.functions[fn].name == "formatInto" { continue }
                     r.append(fn)
                 }
             }
@@ -220,6 +221,28 @@ public sealed class SelfhostEmitterT9Tests
                 let owned = t9Field(ref c, at: span, by: t9Local(ref c, at: span, for: locals[5]), for: c.structs[p].fields[0])
                 stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .strBuf, target: owned, parts: List<BInterpolationPart>() }))
                 stmts.append(t9SetOnPanic(ref c, at: span, for: fn))
+                // Structs with each `formatInto` form (`FormatWithSpec`'s spec call, `Debug` on fields).
+                let kv = xs[7]
+                let ks = c.locals[params[7]].type & 0xFFFFFFFF
+                let fv = t9Field(ref c, at: span, by: kv, for: c.structs[ks].fields[0])
+                var fparts = List<BInterpolationPart>()
+                fparts.append(t9Part(fv, by: BFormatSpec { radix: 2 }))
+                fparts.append(t9Part(fv, by: BFormatSpec { radix: 8, align: 1 }))
+                fparts.append(t9Part(fv, by: BFormatSpec { radix: 16, debug: true }))
+                fparts.append(t9Part(fv, by: BFormatSpec { width: 5 }))
+                fparts.append(t9Part(kv, by: BFormatSpec { debug: true }))
+                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .print, target: b, parts: move fparts }))
+                // Lowering's locals: temps, a void and a never one, pattern bindings that own and that borrow.
+                c.locals.append(LocalSymbol { name: "t", type: semantics.prim(.i64), kind: .temp })
+                locals.append(c.locals.length - 1)
+                c.locals.append(LocalSymbol { name: "t", type: semantics.prim(.void), kind: .temp })
+                locals.append(c.locals.length - 1)
+                c.locals.append(LocalSymbol { name: "t", type: semantics.prim(.neverKind), kind: .temp })
+                locals.append(c.locals.length - 1)
+                c.locals.append(LocalSymbol { name: "pv", type: semantics.prim(.i64), kind: .patternVariable })
+                locals.append(c.locals.length - 1)
+                c.locals.append(LocalSymbol { name: "pb", type: semantics.prim(.i64), kind: .patternVariable, borrowsSubject: true })
+                locals.append(c.locals.length - 1)
             }
             if c.functions[fn].name == "lm" { stmts.append(t9Lowered(ref c, through: ref t, at: span, for: xs[0], by: c.functions[fn].parameters[0])) }
             stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span }))
@@ -381,7 +404,22 @@ public sealed class SelfhostEmitterT9Tests
 
         void h2() { { { } } }
 
-        void w(i64 zq, for string zs, by bool zb, at rune zc, to Symbol zy, from P zp, through Q zr) {
+        struct F {
+            i64 fa = 0
+            void formatInto(ref StrBuf output, as FormatSpec spec) { { { } } }
+        }
+
+        struct G {
+            i64 ga = 0
+            void formatInto(ref StrBuf output) { { { } } }
+        }
+
+        struct K {
+            F kf
+            G kg
+        }
+
+        void w(i64 zq, for string zs, by bool zb, at rune zc, to Symbol zy, from P zp, through Q zr, until K zk) {
             { { } }
             let k1 = zq
             let k2 = zs
@@ -392,6 +430,7 @@ public sealed class SelfhostEmitterT9Tests
             let k7 = zr
             var k8 = Map<i64, i64>()
             k8[zq] = zq
+            k8.slot(zq) = zq
             h2()
             print("x")
         }
@@ -475,7 +514,7 @@ public sealed class SelfhostEmitterT9Tests
 
     /// <summary><c>Lowerer.Lower</c>'s filter: the functions it lowers, in order.</summary>
     private static List<FunctionSymbol> Functions(Compilation c) =>
-        c.Modules.SelectMany(m => m.AllFunctions).Where(fn => fn.Body is not null && fn.Kind != FunctionKind.Test && !fn.IsGeneric).ToList();
+        c.Modules.SelectMany(m => m.AllFunctions).Where(fn => fn.Body is not null && fn.Kind != FunctionKind.Test && !fn.IsGeneric && fn.Name != "formatInto").ToList();
 
     /// <summary>A <c>FunctionEmitter</c> with the file and <c>#line</c> path the T6 stubs give (<c>fileName</c> "", <c>cString</c> "").</summary>
     private static FunctionEmitter Frame(CEmitter emitter, LoweredFunction f)
@@ -500,7 +539,9 @@ public sealed class SelfhostEmitterT9Tests
             if (s is BoundExprStmt { Expr: BoundCall call }) calls.Add(call);
             if (s is BoundLocalDecl { Initializer: BoundTry { Operand: BoundCall tried } }) calls.Add(tried);
         }
-        var assigns = body.Statements.OfType<BoundAssign>().ToList();
+        // `slot`'s default value is an argument lowering adds (Lowerer.cs:1589); the C# `Expr` reads it.
+        var assigns = body.Statements.OfType<BoundAssign>()
+            .Select(a => a.Target is BoundBuiltinCall { Member: BuiltinMember.MapSlot, Arguments.Length: 1 } b ? a with { Target = b with { Arguments = [.. b.Arguments, new BoundDefault(syn, b.Type)] } } : a).ToList();
         var xs = fn.Parameters.Select(p => (BoundExpr)new BoundLocal(syn, p)).ToList();
         var isH = fn.Name == "h";
         var stmts = new List<BoundStmt>
@@ -575,14 +616,21 @@ public sealed class SelfhostEmitterT9Tests
             var owned = new BoundField(syn, new BoundLocal(syn, locals[5]), p.Fields[0]);
             stmts.Add(new LWrite(syn, WriteSink.StrBuf, owned, []));
             stmts.Add(new BoundSetOnPanic(syn, fn));
+            var kv = xs[7];
+            var fv = new BoundField(syn, kv, ((StructSymbol)kv.Type).Fields[0]);
+            stmts.Add(new LWrite(syn, WriteSink.Print, b,
+                [Part(fv, Spec(radix: 2)), Part(fv, Spec(radix: 8, align: 1)), Part(fv, Spec(radix: 16, debug: true)), Part(fv, Spec(width: 5)), Part(kv, Spec(debug: true))]));
+            locals.Add(new LocalSymbol("t", null, PrimitiveType.I64, LocalKind.Temp));
+            locals.Add(new LocalSymbol("t", null, PrimitiveType.Void, LocalKind.Temp));
+            locals.Add(new LocalSymbol("t", null, PrimitiveType.Never, LocalKind.Temp));
+            locals.Add(new LocalSymbol("pv", null, PrimitiveType.I64, LocalKind.PatternVariable));
+            locals.Add(new LocalSymbol("pb", null, PrimitiveType.I64, LocalKind.PatternVariable) { BorrowsSubject = true });
+            masks.Add(Expr(fv));
+            foreach (var lit in new[] { "K { ", "kf: ", ", kg: ", "G { ", "ga: " }) masks.Add(CEmitter.StringLiteral(lit));
             masks.Add(CEmitter.StringLiteral("a"));
             masks.Add(CEmitter.StringLiteral("b"));
-            masks.Add(emitter.Format(p.Fields[1].Type, "v." + CEmitter.FieldName(p.Fields[1].Name), "w"));
             masks.Add(CEmitter.StringLiteral(", y: "));
-            masks.Add(emitter.Format(q.Type, Expr(q), "w"));
-            masks.Add(emitter.Format(q.Type, Expr(q), "sw"));
             masks.Add(emitter.SymbolText(Expr(xs[4])));
-            masks.Add(emitter.Format(p.Fields[0].Type, "v." + CEmitter.FieldName(p.Fields[0].Name), "w"));
             masks.Add(CEmitter.StringLiteral("P { "));
             masks.Add(CEmitter.StringLiteral("x: "));
             masks.Add(CEmitter.StringLiteral(" }"));
@@ -602,7 +650,7 @@ public sealed class SelfhostEmitterT9Tests
                 new LIndexUnchecked(syn, q, q, PrimitiveType.I64), new LNextChar(syn, q, fn.Parameters[0]),
             ];
             stmts.Add(new LWrite(syn, WriteSink.Print, q, [.. lowered.Select(x => new BoundInterpolationPart(null, x) { Spec = new BoundFormatSpec(0, false, 1, 32, -1, -1) })]));
-            foreach (var x in lowered) masks.Add(emitter.Format(x.Type, Expr(x), "sw"));
+            foreach (var x in lowered) masks.Add(Expr(x));
         }
         stmts.Add(new LReturn(syn, null));
         return (stmts, locals);
@@ -617,15 +665,15 @@ public sealed class SelfhostEmitterT9Tests
 
     private static List<string> Lines(string text) => text.Split('\n').Where(s => s.Length > 0).ToList();
 
-    // The helpers T9 registers; the C# Format (T8) registers its own, which the stub does not.
-    private static bool T9Helper(string name) => name.StartsWith("bynh_w_", StringComparison.Ordinal) || name.StartsWith("bynh_debug_", StringComparison.Ordinal);
+    // The helpers T9 and the T8 `format` register; the C# `Expr` (T10 `emitExpr`) and ownership (T7) register the rest, which the stubs do not.
+    private static bool T9Helper(string name) => name.StartsWith("bynh_w_", StringComparison.Ordinal) || name.StartsWith("bynh_debug_", StringComparison.Ordinal) || name.StartsWith("bynh_fmt_", StringComparison.Ordinal);
 
     private static Dictionary<string, List<string>> EmitOracle(Compilation c, bool checks)
     {
         var p = Lowerer.Lower(c);
         var emitter = NewEmitter(p, checks);
         var functions = Functions(c);
-        var names = functions.Select(fn => emitter.FunctionName(fn)).ToList();
+        var names = c.Modules.SelectMany(m => m.AllFunctions).Where(fn => fn.Body is not null && !fn.IsGeneric).Select(fn => emitter.FunctionName(fn)).ToList();
         functions.Single(fn => fn.Name == "e0").File = null;
         var emit = new List<string>();
         foreach (var fn in functions)
@@ -648,12 +696,16 @@ public sealed class SelfhostEmitterT9Tests
         var order = (List<string>)Field(emitter, "_helperOrder")!;
         var bodies = (System.Collections.IDictionary)Field(emitter, "_helpers")!;
         var t9Masks = new List<string>();
+        var pFields = c.Modules.SelectMany(m => m.Structs).SelectMany(s => s.Fields).ToList();
         foreach (var fn in functions) Body(c, emitter, fn, t9Masks);
         foreach (var n in order.Where(T9Helper))
         {
             var (proto, body) = ((string, string))bodies[n]!;
             helpers.Add($"{n} {proto}");
-            helpers.AddRange(Lines(Mask(body, t9Masks)));
+            // `fieldName` and `functionName` are still stubs (program.byn): a field read in a debug helper is `v.`, a call has no name.
+            var text = Mask(body, [.. t9Masks, .. names]);
+            foreach (var f in pFields) text = text.Replace("v." + CEmitter.FieldName(f.Name), "v.");
+            helpers.AddRange(Lines(text));
         }
         return new() { ["emit"] = emit, ["helpers"] = helpers };
     }
