@@ -143,7 +143,7 @@ public string bigText(Big n) uses alloc {
 // ── Comparison ──────────────────────────────────────────────────────────────
 
 /// Signed comparison: -1, 0 or 1.
-i32 bigCmp(Big a, as Big b) {
+public i32 bigCmp(Big a, as Big b) {
     let ah = bigI64OfBits(a.hi)
     let bh = bigI64OfBits(b.hi)
     if ah < bh { return -1 }
