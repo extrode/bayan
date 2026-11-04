@@ -346,6 +346,16 @@ v0.3: fibers and `Io.Evented`, networking, HTTP, TLS through a C wrapper, WASM.
 Formatter, LSP, prose tool and packages land across v0.2–v0.4.
 Addendum 002 (`docs/bayan-handoff-addendum-002.md`): opt-in `law` declarations and `bayan laws` (v0.2), `requires`/`ensures` contracts (runtime v0.2+, `bayan verify` v1.x), `.par()` parallel iterators (v0.3). Design only until the v0.1 exit criterion and addendum 001 are done; its §1 (reserve `law requires ensures`) is done.
 
+### Design inputs (filed 2026-11-04)
+
+Filed from the user, for round 4 (after 012) and later; none changes 011–013. Open contradictions and decisions: `docs/misc/2026-11-04-design-inputs-review.md`.
+
+- `docs/bayan-design-round-4-draft.md`: now with the clause order `where → expects → uses → becomes → fails` (first commit after 012: flip BYN1065, `bayan format` the repo) and C-only interop (the .NET interop question is closed).
+- `docs/bayan-shorthands-proposal.md`: round-4 syntax batch (views `T[]`, implicit type parameters, `some I`, `.member`, `T[U]`, …).
+- `docs/bayan-style-proposal.md`: layout rules for `bayan format` and `docs/bayan-style.md`, idiom lints; §3.4 needs a grammar revision.
+- `docs/bayan-concurrency.md`: thread-per-core fibers, `scope`/`spawn`, cancellation, locks; spec in round 4, runtime in v0.2 (this section's v0.3 line predates it).
+- `docs/bayan-views.md`: `markup` and `@element` views, provisional; `kit.web`/`kit.ui`, v0.2+.
+
 ### Target: zero dependencies (set by the user 2026-11-02)
 
 Building, testing and shipping Bayan should need nothing but Bayan. Today it needs:
