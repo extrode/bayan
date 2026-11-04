@@ -6,10 +6,20 @@
       "coverage": 1.0,
       "branches": 1.0
     },
+    "selfhost/emitter/cprint/helpers.byn": {
+      "mutation": null,
+      "coverage": 0.9871,
+      "branches": 0.9706
+    },
     "selfhost/emitter/lower.byn": {
       "mutation": null,
       "coverage": 0.9691,
       "branches": 0.9516
+    },
+    "selfhost/emitter/lowerstmt.byn": {
+      "mutation": null,
+      "coverage": 0.875,
+      "branches": 0.6768
     },
     "selfhost/emitter/main.byn": {
       "mutation": null,

@@ -262,7 +262,7 @@ string constantText(in Constant k) {
 
 /// C#'s `double.ToString()` under the invariant culture: the shortest round-trip digits, in exponent form
 /// `1E+20` / `1E-05` when the decimal exponent is at least 17 or below -4; `Infinity`, `-Infinity`, `NaN`.
-string realText(f64 v) {
+public string realText(f64 v) uses alloc {
     if v != v { return "NaN" }
     let s = $"{v}"
     if s == "inf" { return "Infinity" }

@@ -462,6 +462,10 @@ public struct Ctx {
     public Map<string, Type> associatedBindings = []
     /// C# `_baseSpans` (T12 fills it in `declareMembers`, T14 reads it): `"{s} {i}"` to where the base is listed.
     public Map<string, TextSpan> baseSpans = []
+    /// C# `Builtins.Panic` (Q858; `Builtins` constructor fills it, T3 of spec 011 `lowerIf` reads it): the built-in `panic` function.
+    public FuncId builtinPanic = -1
+    /// C# `Builtins.StrBufGrow` (Q861; `Builtins` constructor fills it, T4/T5 of spec 011 read it): the built-in growable `StrBuf()`.
+    public FuncId builtinStrBufGrow = -1
 
     // ── Per-task state (Q710). A task adds the C# fields it needs, with defaults, only under its own marker.
     // ── T10 state

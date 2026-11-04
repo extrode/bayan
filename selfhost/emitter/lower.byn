@@ -89,7 +89,6 @@ LoweredFunction lowerFunction(ref Ctx c, through ref LCtx l, for FuncId fn) uses
     if c.functions[fn].kind == .constructor { emit(ref l, for: ltree.addLReturn(ref l.tree, from: LReturn { span: bodySpan, value: -1 })) }
     let lowered = l.outs.removeLast()
     var locals = List<LocalId>()
-    // coverage-blocked: Q768 T3 lowerStatement
     for x in l.locals { locals.append(x) }
     let block = semantics.addBlock(ref c, from: BBlock { span: bodySpan, statements: move lowered })
     return LoweredFunction { symbol: fn, locals: move locals, contextSlots: l.contextSlots, panicSlots: l.panicSlots, body: block }
