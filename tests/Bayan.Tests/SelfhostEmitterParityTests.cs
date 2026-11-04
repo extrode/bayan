@@ -101,13 +101,12 @@ public sealed class SelfhostEmitterHarnessTests
 
     private static void SameOnFailure(string name, string copy, params string[] options)
     {
-        if (CliApp.Run(["check", copy], new StringWriter(), new StringWriter()) == CliApp.ExitOk) return;
         SelfhostEmitterHarness.SameAsCli(name, ["build", "--emit-c", copy, .. options], [copy, .. options]);
     }
 
     /// <summary>
-    /// A diag input the C# compiler rejects: <c>CliApp.Run(["build", "--emit-c", copy])</c> against <c>bayan-emit copy</c>, stderr and exit
-    /// (R1 errors). An input the C# accepts reaches the emitter proper and belongs to the emission rows.
+    /// A diag input: <c>CliApp.Run(["build", "--emit-c", copy])</c> against <c>bayan-emit copy</c>, stderr, stdout and exit
+    /// (R1 errors); an input the C# accepts with a warning is compared the same way.
     /// </summary>
     [Theory]
     [MemberData(nameof(DiagCases))]
@@ -141,7 +140,6 @@ public sealed class SelfhostEmitterHarnessTests
         SameOnFailure(name, dir);
     }
 
-    /// <summary>A project without its entry module, an app and a library; a script with an error; the cap on reported errors.</summary>
     [Fact]
     public void AssertSameReadsCrlfAsLf()
     {
@@ -150,6 +148,7 @@ public sealed class SelfhostEmitterHarnessTests
         Assert.Contains("crlf: line 2 differs", e.Message);
     }
 
+    /// <summary>A project without its entry module, an app and a library; a script with an error; the cap on reported errors.</summary>
     [Fact]
     public void ProjectAndScriptErrorsAgree()
     {
@@ -309,7 +308,7 @@ public sealed class SelfhostEmitterHarnessTests
         SelfhostEmitterHarness.SameAsCli("missing --time", ["build", "--emit-c", missing], ["--time", missing]);
     }
 
-    /// <summary>A warning alone does not stop emission: exit 0 under every path, as <c>build --emit-c</c>; <c>--ascii</c> and a valid <c>--color</c> are consumed.</summary>
+    /// <summary>A warning alone does not stop emission: stderr, stdout and exit as <c>build --emit-c</c> under every path; <c>--ascii</c> and a valid <c>--color</c> are consumed.</summary>
     [Fact]
     public void WarningsDoNotStopEmission()
     {
@@ -319,11 +318,9 @@ public sealed class SelfhostEmitterHarnessTests
         var path = Path.Combine(dir, "a.byn");
         File.WriteAllText(path, "void main() {\n    var x = 1\n    print($\"{x}\")\n}\n");
         Assert.Equal(CliApp.ExitOk, CliApp.Run(["build", "--emit-c", path], new StringWriter(), new StringWriter()));
-        foreach (var args in new[] { new[] { "--ascii", path }, ["--color=always", path], ["--package", dir, path] })
-        {
-            var (exit, _, error) = SelfhostEmitterHarness.Run(args);
-            Assert.True(exit == CliApp.ExitOk, $"{string.Join(' ', args)}: exit {exit}\n{error}");
-        }
+        SelfhostEmitterHarness.SameAsCli("--ascii", ["--ascii", "build", "--emit-c", path], ["--ascii", path]);
+        SelfhostEmitterHarness.SameAsCli("--color=always", ["--color=always", "build", "--emit-c", path], ["--color=always", path]);
+        SelfhostEmitterHarness.SameAsCli("--package", ["build", "--emit-c", path], ["--package", dir, path], namedBy: dir);
     }
 
     /// <summary><c>--many</c> skips a directory entry that is not a <c>.byn</c> file.</summary>
