@@ -3,7 +3,7 @@
 # The spec is a row of specs.tsv: its shared-state files (section check C) and the directory a bare .byn name resolves in.
 # A  oracle: the task's test class runs the C# implementation and compares with it; no hand-typed expected lines.
 # B  stubs: no `// stub: <task>` marker left in an owned file unless it names its blocking Question; no empty bodies.
-# C  ctx.byn: changes only inside the task's own `// ── <task> state` section.
+# C  ctx.byn: changes only inside the task's own `// ── <task> state` section (its header line counts as inside).
 # D  gates: no Question that gates this task ("before <task>") is still Open.
 # E  docs: a Progress log entry naming the task; every `[dir/]file.byn:N` a new Question cites exists and shows the quoted code.
 import fnmatch, os, re, subprocess, sys
@@ -86,7 +86,8 @@ for ctx in shared:
         lo, hi = at, at + max(cnt, 1) - 1
         if old_n and not cnt:
             fails.append(f'ctx: {name} deletes lines near :{at}; sections only grow'); continue
-        if not any(s < lo and hi < e for s, e in spans):
+        # a hunk may start on its section's header: a task adds its own `// ── Tn state` line with its first field
+        if not any(s <= lo and hi < e for s, e in spans):
             fails.append(f'ctx: {name}:{lo}-{hi} is outside `// ── {task} state` sections; add fields only there')
 
 # D — gates
