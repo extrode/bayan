@@ -1,5 +1,5 @@
 Traceback (most recent call last):
-  File "$ROOT/scripts/selfhost/guard-checks.py", line 10, in <module>
+  File "$ROOT/scripts/selfhost/guard-checks.py", line 11, in <module>
     base, task, allow = sys.argv[1], sys.argv[2], sys.argv[3].split(',')
                                      ~~~~~~~~^^^
 IndexError: list index out of range
