@@ -1,0 +1,577 @@
+using System.Reflection;
+using Bayan.Backend.C;
+using Bayan.Lowering;
+using Bayan.Semantics;
+using Bayan.Semantics.Binding;
+using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
+using Bayan.Syntax.Diagnostics;
+using Bayan.Syntax.Text;
+
+namespace Bayan.Tests;
+
+/// <summary>
+/// 011 T9: <c>selfhost/emitter/cprint/func.byn</c> (CEmitter.cs 1173-1236, 1254-1616) against the C#
+/// <c>FunctionEmitter</c> as an in-process oracle. Both sides build the same lowered bodies by hand (T3's statement
+/// lowering is a stub), from the fixture's bound nodes. The siblings' stubs return "", so the C# text of each stubbed
+/// callee (T6 names and literals, T7 helper names, T8 <c>Format</c>, T10 <c>Expr</c>/<c>Call</c>) is masked to "" and
+/// the C# file and <c>#line</c> path are set to the stubs' "" (Q800).
+/// </summary>
+public sealed class SelfhostEmitterT9Tests
+{
+    // args: mode, ownership checks ("true"/"false"), then bayan-check's.
+    private const string Main = """
+        import semantics
+        import emitter.cprint
+        import emitter.ltree
+
+        type CCtx = cprint.CCtx
+        type CFunc = cprint.CFunc
+        type BAssign = semantics.BAssign
+        type BExprStmt = semantics.BExprStmt
+        type BField = semantics.BField
+        type BFormatSpec = semantics.BFormatSpec
+        type BIf = semantics.BIf
+        type BLocal = semantics.BLocal
+        type BSetOnPanic = semantics.BSetOnPanic
+        type BTupleElement = semantics.BTupleElement
+        type LClaim = ltree.LClaim
+        type LFailingCall = ltree.LFailingCall
+        type LFreeArena = ltree.LFreeArena
+        type LGoto = ltree.LGoto
+        type LLabel = ltree.LLabel
+        type LLoop = ltree.LLoop
+        type LPanic = ltree.LPanic
+        type LPopPanicHandler = ltree.LPopPanicHandler
+        type LPushPanicHandler = ltree.LPushPanicHandler
+        type LReturn = ltree.LReturn
+        type LReturnError = ltree.LReturnError
+        type LSetContext = ltree.LSetContext
+        type LWrite = ltree.LWrite
+
+        i32 main(ReadOnlySpan<string> args) {
+            var rest = List<string>()
+            for i in 2..args.length { rest.append(args[i]) }
+            let symbols = semantics.t26Symbols(false)
+            let o = semantics.t26ParseBuildOptions(in rest, allowSpans: false) ?? return 2
+            var reported = List<semantics.T26Reported>()
+            var ok = false
+            var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+            let mode = args[0]
+            let checks = args[1] == "true"
+            if mode == "emit" { Io.stdout.write(t9PrintEmit(ref c, by: checks)) }
+            if mode == "bound" { Io.stdout.write(t9Fail(ref c)) }
+            return 0
+        }
+
+        /// `Lowerer.Lower`'s filter: the functions it lowers, in order.
+        List<FuncId> t9Functions(ref Ctx c) uses alloc {
+            var r = List<FuncId>()
+            for m in 0..c.modules.length {
+                for k in 0..c.modules[m].allFunctions.length {
+                    let fn = c.modules[m].allFunctions[k]
+                    if c.functions[fn].body == -1 || c.functions[fn].kind == .testKeyword || semantics.functionIsGeneric(ref c, by: fn) { continue }
+                    r.append(fn)
+                }
+            }
+            return r
+        }
+
+        BExpr t9Local(ref Ctx c, at TextSpan span, for LocalId l) uses alloc {
+            c.bLocals.append(BLocal { span: span, local: l, type: c.locals[l].type })
+            return semantics.makeBound(.local, at: c.bLocals.length - 1)
+        }
+
+        BExpr t9Field(ref Ctx c, at TextSpan span, by BExpr receiver, for semantics.FieldId field) uses alloc {
+            c.bFields.append(BField { span: span, receiver: receiver, field: field, type: c.fields[field].type })
+            return semantics.makeBound(.field, at: c.bFields.length - 1)
+        }
+
+        BExpr t9Tuple(ref Ctx c, at TextSpan span, by BExpr receiver) uses alloc {
+            c.bTupleElements.append(BTupleElement { span: span, receiver: receiver, index: 0, type: semantics.prim(.i64) })
+            return semantics.makeBound(.tupleElement, at: c.bTupleElements.length - 1)
+        }
+
+        BStmt t9ExprStmt(ref Ctx c, at TextSpan span, for BExpr e) uses alloc {
+            c.bExprStmts.append(BExprStmt { span: span, expr: e })
+            return semantics.makeBound(.exprStmt, at: c.bExprStmts.length - 1)
+        }
+
+        BStmt t9Assign(ref Ctx c, at TextSpan span, for BExpr e, by bool op) uses alloc {
+            if op == true {
+                c.bAssigns.append(BAssign { span: span, target: e, value: e, op: .add })
+            } else {
+                c.bAssigns.append(BAssign { span: span, target: e, value: e })
+            }
+            return semantics.makeBound(.assign, at: c.bAssigns.length - 1)
+        }
+
+        BStmt t9If(ref Ctx c, at TextSpan span, for BExpr e, by BStmt inner, to BStmt elseBranch) uses alloc {
+            c.bIfs.append(BIf { span: span, condition: e, then: inner, elseBranch: elseBranch })
+            return semantics.makeBound(.ifStmt, at: c.bIfs.length - 1)
+        }
+
+        BStmt t9SetOnPanic(ref Ctx c, at TextSpan span, for FuncId fn) uses alloc {
+            c.bSetOnPanics.append(BSetOnPanic { span: span, handler: fn })
+            return semantics.makeBound(.setOnPanic, at: c.bSetOnPanics.length - 1)
+        }
+
+        BInterpolationPart t9Part(BExpr value, by BFormatSpec spec) => BInterpolationPart { value: value, spec: spec }
+
+        /// The body both sides emit (`Body` in the test): each statement kind, over the fixture's own bound nodes.
+        void t9Build(ref Ctx c, through ref LTree t, for FuncId fn, to ref List<BStmt> stmts, at ref List<LocalId> locals) uses alloc {
+            let body = c.functions[fn].body
+            let span = semantics.nodeSpan(in c, for: body)
+            var original = List<BStmt>()
+            for s in c.bBlocks[body & 0xFFFFFFFF].statements { original.append(s) }
+            var inner: BStmt = -1
+            var calls = List<BExpr>()
+            var assigns = List<BStmt>()
+            for s in original {
+                let k = semantics.boundKind(s)
+                if k == .localDecl { locals.append(c.bLocalDecls[s & 0xFFFFFFFF].local) }
+                if k == .block && inner == -1 { inner = s }
+                if k == .exprStmt { calls.append(c.bExprStmts[s & 0xFFFFFFFF].expr) }
+                if k == .assign { assigns.append(s) }
+            }
+            var params = List<LocalId>()
+            for p in c.functions[fn].parameters { params.append(p) }
+            var xs = List<BExpr>()
+            for p in params { xs.append(t9Local(ref c, at: span, for: p)) }
+            let isH = c.functions[fn].name == "h"
+            stmts.append(inner)
+            stmts.append(ltree.addLLabel(ref t, from: LLabel { span: span, name: "L0" }))
+            stmts.append(ltree.addLGoto(ref t, from: LGoto { span: span, label: "L0" }))
+            stmts.append(ltree.addLLoop(ref t, from: LLoop { span: span, body: inner }))
+            stmts.append(ltree.addLSetContext(ref t, from: LSetContext { span: span, slot: 0 }))
+            stmts.append(ltree.addLPushPanicHandler(ref t, from: LPushPanicHandler { span: span, slot: 0, body: inner }))
+            stmts.append(ltree.addLPopPanicHandler(ref t, from: LPopPanicHandler { span: span, slot: 0 }))
+            if !isH && params.length > 0 { stmts.append(ltree.addLClaim(ref t, from: LClaim { span: span, local: params[0] })) }
+            stmts.append(ltree.addLPanic(ref t, from: LPanic { span: span, message: "boom" }))
+            var skipped = List<BInterpolationPart>()
+            skipped.append(BInterpolationPart { text: "" })
+            skipped.append(BInterpolationPart {})
+            stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .panic, parts: skipped }))
+            for a in assigns { stmts.append(a) }
+            if xs.length > 0 {
+                let q = xs[0]
+                stmts.append(t9ExprStmt(ref c, at: span, for: q))
+                stmts.append(t9Assign(ref c, at: span, for: q, by: false))
+                stmts.append(t9Assign(ref c, at: span, for: q, by: true))
+                stmts.append(ltree.addLReturnError(ref t, from: LReturnError { span: span, code: q }))
+                stmts.append(ltree.addLSetContext(ref t, from: LSetContext { span: span, arena: q, slot: 0 }))
+                stmts.append(ltree.addLFreeArena(ref t, from: LFreeArena { span: span, arena: q }))
+                if locals.length > 0 { stmts.append(ltree.addLPushPanicHandler(ref t, from: LPushPanicHandler { span: span, slot: 0, panic: locals[0], body: inner })) }
+                if !isH { stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span, value: q })) }
+            }
+            if calls.length >= 2 && locals.length >= 2 {
+                stmts.append(ltree.addLFailingCall(ref t, from: LFailingCall { span: span, error: locals[0], call: calls[0], result: locals[1] }))
+                stmts.append(ltree.addLFailingCall(ref t, from: LFailingCall { span: span, error: locals[0], call: calls[1] }))
+            }
+            if xs.length >= 7 {
+                let q = xs[0]
+                let s = xs[1]
+                let b = xs[2]
+                stmts.append(t9If(ref c, at: span, for: b, by: inner, to: -1))
+                stmts.append(t9If(ref c, at: span, for: b, by: inner, to: inner))
+                var parts = List<BInterpolationPart>()
+                var guards = List<BExpr>()
+                parts.append(BInterpolationPart { text: "a" })
+                guards.append(-1)
+                parts.append(BInterpolationPart { value: q })
+                guards.append(b)
+                parts.append(t9Part(q, by: BFormatSpec { radix: 16 }))
+                parts.append(t9Part(b, by: BFormatSpec { radix: 2 }))
+                parts.append(t9Part(q, by: BFormatSpec { digits: 2 }))
+                parts.append(t9Part(q, by: BFormatSpec { radix: 8, width: 6 }))
+                parts.append(t9Part(s, by: BFormatSpec { debug: true, width: 4 }))
+                parts.append(t9Part(s, by: BFormatSpec { debug: true }))
+                parts.append(t9Part(q, by: BFormatSpec { debug: true }))
+                parts.append(t9Part(xs[3], by: BFormatSpec { debug: true }))
+                parts.append(t9Part(xs[4], by: BFormatSpec { debug: true }))
+                parts.append(t9Part(xs[5], by: BFormatSpec { debug: true }))
+                parts.append(t9Part(xs[6], by: BFormatSpec { debug: true }))
+                parts.append(t9Part(q, by: BFormatSpec { width: 2, fill: 42, align: 2, digits: 1 }))
+                for k in 2..parts.length { guards.append(-1) }
+                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .print, target: b, parts: parts, guards: guards }))
+                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .log, target: q, parts: List<BInterpolationPart>() }))
+                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .strBuf, target: q, parts: List<BInterpolationPart>() }))
+                let p = c.locals[locals[5]].type & 0xFFFFFFFF
+                let owned = t9Field(ref c, at: span, by: t9Local(ref c, at: span, for: locals[5]), for: c.structs[p].fields[0])
+                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .strBuf, target: owned, parts: List<BInterpolationPart>() }))
+                stmts.append(t9SetOnPanic(ref c, at: span, for: fn))
+            }
+            stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span }))
+        }
+
+        string t9PrintEmit(ref Ctx c, by bool checks) uses alloc {
+            var sb = StrBuf()
+            var cc = CCtx { ownershipChecks: checks }
+            sb.append("== emit\n")
+            for fn in t9Functions(ref c) {
+                var t = LTree {}
+                var stmts = List<BStmt>()
+                var locals = List<LocalId>()
+                t9Build(ref c, through: ref t, for: fn, to: ref stmts, at: ref locals)
+                let body = c.functions[fn].body
+                c.bBlocks[body & 0xFFFFFFFF].statements = stmts
+                let f = LoweredFunction { symbol: fn, locals: locals, contextSlots: 1, panicSlots: 1, body: body }
+                sb.append($"fn {c.functions[fn].name}\n")
+                sb.append($"sig {cprint.signature(ref cc, from: ref c, through: t, for: f)}\n")
+                sb.append(cprint.emitFunction(ref cc, from: ref c, through: in t, for: in f))
+                var fe = cprint.functionEmitter(ref cc, from: ref c, for: in f)
+                var owned = List<LocalId>()
+                for p in c.functions[fn].parameters { owned.append(p) }
+                for l in locals { owned.append(l) }
+                for l in owned {
+                    let has = cprint.hasSlot(ref cc, for: ref fe, from: ref c, at: l)
+                    sb.append($"slot {has ? "true" : "false"} {cprint.slot(ref cc, for: ref fe, from: ref c, at: l)}\n")
+                }
+                if c.functions[fn].name == "w" { sb.append(t9Claims(ref cc, through: ref fe, from: ref c, by: in t, at: in locals)) }
+            }
+            sb.append("== helpers\n")
+            for n in cc.helperOrder { sb.append($"{n} {cc.helpers[n].proto}\n{cc.helpers[n].body}\n") }
+            return $"{sb.finish()}"
+        }
+
+        /// The ownership-check entry points T10 calls, on `w`'s frame.
+        string t9Claims(ref CCtx cc, through ref CFunc f, from ref Ctx c, by in LTree t, at in List<LocalId> locals) uses alloc {
+            var sb = StrBuf()
+            let fn = f.fn
+            let span = semantics.nodeSpan(in c, for: c.functions[fn].body)
+            let q = t9Local(ref c, at: span, for: c.functions[fn].parameters[0])
+            let p = c.locals[locals[5]].type & 0xFFFFFFFF
+            let field = t9Field(ref c, at: span, by: t9Local(ref c, at: span, for: locals[5]), for: c.structs[p].fields[0])
+            let tuple = t9Tuple(ref c, at: span, by: t9Local(ref c, at: span, for: locals[0]))
+            sb.append($"claimed {cprint.claimed(ref cc, for: ref f, from: ref c, through: t, at: "x()", by: q, to: span)}\n")
+            sb.append($"claimed {cprint.claimed(ref cc, for: ref f, from: ref c, through: t, at: "x()", by: field, to: span)}\n")
+            sb.append($"claimed {cprint.claimed(ref cc, for: ref f, from: ref c, through: t, at: "x()", by: tuple, to: span)}\n")
+            cprint.claimAfterCall(ref cc, for: ref f, from: ref c, through: t, at: q, to: span)
+            cprint.claimAfterCall(ref cc, for: ref f, from: ref c, through: t, at: field, to: span)
+            sb.append($"after {f.afterCalls.length}\n")
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: tuple, to: q) ?? "null"}\n")
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: q, to: q) ?? "null"}\n")
+            return $"{sb.finish()}"
+        }
+
+        /// `main`'s body as it is bound: a local declaration has no C.
+        string t9Fail(ref Ctx c) uses alloc {
+            var cc = CCtx {}
+            for fn in t9Functions(ref c) {
+                if c.functions[fn].name != "main" { continue }
+                var t = LTree {}
+                let body = c.functions[fn].body
+                let f = LoweredFunction { symbol: fn, locals: List<LocalId>(), contextSlots: 0, panicSlots: 0, body: body }
+                return cprint.emitFunction(ref cc, from: ref c, through: in t, for: in f)
+            }
+            return ""
+        }
+        """;
+
+    private const string Fixture = """
+        union error E {
+            bad
+        }
+
+        struct P {
+            i64 x = 1
+            P(i64 zq) { { { } } }
+        }
+
+        struct Q {
+        }
+
+        void h2() { { { } } }
+
+        void w(i64 zq, for string zs, by bool zb, at rune zc, to Symbol zy, from P zp, through Q zr) {
+            { { } }
+            let k1 = zq
+            let k2 = zs
+            let k3 = zb
+            let k4 = zc
+            let k5 = zy
+            let k6 = zp
+            let k7 = zr
+            var k8 = Map<i64, i64>()
+            k8[zq] = zq
+            h2()
+            print("x")
+        }
+
+        void v() fails E { { { } } }
+
+        i64 u(i64 zq) fails E {
+            { { } }
+            let k1 = zq
+            return k1
+        }
+
+        void h(move List<i64> zl) { { { } } }
+
+        void main() {
+            { { } }
+            let k = 1
+        }
+        """;
+
+    private static readonly Lazy<(string? Path, string Error)> Built = new(BuildNow);
+
+    private static string Build()
+    {
+        var (path, error) = Built.Value;
+        if (path is null) Assert.Fail($"selfhost/emitter with the T9 main did not build:\n{error}");
+        return path!;
+    }
+
+    private static (string? Path, string Error) BuildNow()
+    {
+        var dir = SelfhostEmitterHarness.EmitterDir;
+        var sources = Directory.GetFiles(dir, "*.byn")
+            .Where(p => Path.GetFileName(p) != "main.byn")
+            .Order(StringComparer.Ordinal)
+            .Select(SourceText.FromFile)
+            .ToList();
+        sources.Add(SourceText.FromString(Path.Combine(dir, "main.byn"), Main));
+        Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
+        var c = Compilation.Create(sources, packageRoot: SelfhostSemanticsHarness.SelfhostDir);
+        if (c.Diagnostics.HasErrors) return (null, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal) { sources[^1].Path });
+        return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
+    }
+
+    /// <summary>Writes <paramref name="source"/> to a temporary file, then runs <paramref name="act"/> on its path.</summary>
+    private static void WithFixture(string source, Action<string> act)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "bayan-t9-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "a.byn");
+            File.WriteAllText(path, source);
+            act(path);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    private static Compilation Compile(string path)
+    {
+        var c = Compilation.Create([SourceText.FromFile(path)], Path.GetDirectoryName(path)!);
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        return c;
+    }
+
+    private static (int Exit, string Out, string Err) Run(string mode, bool checks, string path) =>
+        SelfhostParserTests.Run(Build(), [mode, checks ? "true" : "false", path]);
+
+    private static object? Call(object target, string name, params object?[] args) =>
+        target.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(target, args);
+
+    private static object? Field(object target, string name) =>
+        target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target);
+
+    private static void SetField(object target, string name, object? value) =>
+        target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
+
+    private static CEmitter NewEmitter(LoweredProgram p, bool checks) =>
+        (CEmitter)Activator.CreateInstance(typeof(CEmitter), BindingFlags.Instance | BindingFlags.NonPublic, null, [p, checks], null)!;
+
+    /// <summary><c>Lowerer.Lower</c>'s filter: the functions it lowers, in order.</summary>
+    private static List<FunctionSymbol> Functions(Compilation c) =>
+        c.Modules.SelectMany(m => m.AllFunctions).Where(fn => fn.Body is not null && fn.Kind != FunctionKind.Test && !fn.IsGeneric).ToList();
+
+    /// <summary>A <c>FunctionEmitter</c> with the file and <c>#line</c> path the T6 stubs give (<c>fileName</c> "", <c>cString</c> "").</summary>
+    private static FunctionEmitter Frame(CEmitter emitter, LoweredFunction f)
+    {
+        var fe = new FunctionEmitter(emitter, f);
+        SetField(fe, "_file", "");
+        SetField(fe, "_linePath", f.Symbol.Body is null ? null : "");
+        return fe;
+    }
+
+    /// <summary>The C# twin of the generated main's <c>t9Build</c>, collecting the text each stubbed callee gives in C#.</summary>
+    private static (List<BoundStmt> Stmts, List<LocalSymbol> Locals) Body(CEmitter emitter, FunctionSymbol fn, List<string> masks)
+    {
+        var body = fn.Body!;
+        var syn = body.Syntax;
+        var locals = body.Statements.OfType<BoundLocalDecl>().Select(d => d.Local).ToList();
+        var inner = body.Statements.OfType<BoundBlock>().First();
+        var calls = body.Statements.OfType<BoundExprStmt>().Select(e => (BoundCall)e.Expr).ToList();
+        var assigns = body.Statements.OfType<BoundAssign>().ToList();
+        var xs = fn.Parameters.Select(p => (BoundExpr)new BoundLocal(syn, p)).ToList();
+        var isH = fn.Name == "h";
+        var stmts = new List<BoundStmt>
+        {
+            inner, new LLabel(syn, "L0"), new LGoto(syn, "L0"), new LLoop(syn, inner), new LSetContext(syn, null, 0),
+            new LPushPanicHandler(syn, 0, null, inner), new LPopPanicHandler(syn, 0),
+        };
+        if (!isH && fn.Parameters.Count > 0) stmts.Add(new LClaim(syn, fn.Parameters[0]));
+        stmts.Add(new LPanic(syn, "boom"));
+        masks.Add(CEmitter.CString("boom"));
+        stmts.Add(new LWrite(syn, WriteSink.Panic, null, [new BoundInterpolationPart("", null), new BoundInterpolationPart(null, null)]));
+        stmts.AddRange(assigns);
+        var probe = new FunctionEmitter(emitter, new LoweredFunction(fn, locals, 1, 1, body));
+        string Expr(BoundExpr e) => (string)Call(probe, "Expr", e)!;
+        foreach (var a in assigns)
+        {
+            masks.Add(Expr(a.Target));
+            masks.Add(Expr(a.Value));
+            if (a.Target is BoundBuiltinCall { Receiver: { } map }) masks.Add(emitter.OwnClaim(map.Type));
+        }
+        foreach (var x in xs) masks.Add(Expr(x));
+        if (xs.Count > 0)
+        {
+            var q = xs[0];
+            stmts.Add(new BoundExprStmt(syn, q));
+            stmts.Add(new BoundAssign(syn, q, q, null));
+            stmts.Add(new BoundAssign(syn, q, q, BinaryOp.Add));
+            stmts.Add(new LReturnError(syn, q));
+            stmts.Add(new LSetContext(syn, q, 0));
+            stmts.Add(new LFreeArena(syn, q));
+            if (locals.Count > 0) stmts.Add(new LPushPanicHandler(syn, 0, locals[0], inner));
+            if (!isH) stmts.Add(new LReturn(syn, q));
+            if (isH) masks.Add(emitter.OwnSet(q.Type));
+        }
+        if (calls.Count >= 2 && locals.Count >= 2)
+        {
+            stmts.Add(new LFailingCall(syn, locals[0], calls[0], locals[1]));
+            stmts.Add(new LFailingCall(syn, locals[0], calls[1], null));
+            var names = (Dictionary<LocalSymbol, string>)Field(probe, "_names")!;
+            masks.Add((string)Call(probe, "Call", calls[0], "&" + names[locals[1]])!);
+            masks.Add((string)Call(probe, "Call", calls[1], null)!);
+        }
+        if (xs.Count >= 7)
+        {
+            var (q, s, b) = (xs[0], xs[1], xs[2]);
+            stmts.Add(new BoundIf(syn, b, inner, null));
+            stmts.Add(new BoundIf(syn, b, inner, inner));
+            BoundInterpolationPart Part(BoundExpr v, BoundFormatSpec spec) => new(null, v) { Spec = spec };
+            BoundFormatSpec Spec(int radix = 0, bool debug = false, long width = 0, uint fill = 32, int align = -1, int digits = -1) =>
+                new(radix, debug, width, fill, align, digits);
+            BoundInterpolationPart[] parts =
+            [
+                new("a", null), new(null, q), Part(q, Spec(radix: 16)), Part(b, Spec(radix: 2)), Part(q, Spec(digits: 2)),
+                Part(q, Spec(radix: 8, width: 6)), Part(s, Spec(debug: true, width: 4)), Part(s, Spec(debug: true)), Part(q, Spec(debug: true)),
+                Part(xs[3], Spec(debug: true)), Part(xs[4], Spec(debug: true)), Part(xs[5], Spec(debug: true)), Part(xs[6], Spec(debug: true)),
+                Part(q, Spec(width: 2, fill: 42, align: 2, digits: 1)),
+            ];
+            var guards = new BoundExpr?[parts.Length];
+            guards[1] = b;
+            stmts.Add(new LWrite(syn, WriteSink.Print, b, parts, guards));
+            stmts.Add(new LWrite(syn, WriteSink.Log, q, []));
+            stmts.Add(new LWrite(syn, WriteSink.StrBuf, q, []));
+            var p = (StructSymbol)locals[5].Type;
+            var owned = new BoundField(syn, new BoundLocal(syn, locals[5]), p.Fields[0]);
+            stmts.Add(new LWrite(syn, WriteSink.StrBuf, owned, []));
+            stmts.Add(new BoundSetOnPanic(syn, fn));
+            masks.Add(CEmitter.StringLiteral("a"));
+            masks.Add(emitter.Format(q.Type, Expr(q), "w"));
+            masks.Add(emitter.Format(q.Type, Expr(q), "sw"));
+            masks.Add(emitter.SymbolText(Expr(xs[4])));
+            masks.Add(emitter.Format(p.Fields[0].Type, "v." + CEmitter.FieldName(p.Fields[0].Name), "w"));
+            masks.Add(CEmitter.StringLiteral("P { "));
+            masks.Add(CEmitter.StringLiteral("x: "));
+            masks.Add(CEmitter.StringLiteral(" }"));
+            masks.Add(CEmitter.StringLiteral("Q {}"));
+            masks.Add(Expr(owned));
+            masks.Add(emitter.OwnClaim(owned.Type));
+        }
+        stmts.Add(new LReturn(syn, null));
+        return (stmts, locals);
+    }
+
+    /// <summary><paramref name="text"/> with each mask (longest first) replaced by the stub's "".</summary>
+    private static string Mask(string text, List<string> masks)
+    {
+        foreach (var m in masks.Where(m => m.Length > 0).Distinct().OrderByDescending(m => m.Length)) text = text.Replace(m, "");
+        return text;
+    }
+
+    private static List<string> Lines(string text) => text.Split('\n').Where(s => s.Length > 0).ToList();
+
+    // The helpers T9 registers; the C# Format (T8) registers its own, which the stub does not.
+    private static bool T9Helper(string name) => name.StartsWith("bynh_w_", StringComparison.Ordinal) || name.StartsWith("bynh_debug_", StringComparison.Ordinal);
+
+    private static Dictionary<string, List<string>> EmitOracle(Compilation c, bool checks)
+    {
+        var p = Lowerer.Lower(c);
+        var emitter = NewEmitter(p, checks);
+        var functions = Functions(c);
+        var names = functions.Select(fn => emitter.FunctionName(fn)).ToList();
+        var emit = new List<string>();
+        foreach (var fn in functions)
+        {
+            var masks = new List<string>();
+            var (stmts, locals) = Body(emitter, fn, masks);
+            var f = new LoweredFunction(fn, locals, 1, 1, new BoundBlock(fn.Body!.Syntax, [.. stmts]));
+            emit.Add($"fn {fn.Name}");
+            emit.Add($"sig {Mask(Frame(emitter, f).Signature(), names)}");
+            var fe = Frame(emitter, f);
+            var text = fe.Emit();
+            var signature = text[..text.IndexOf('\n')];
+            emit.AddRange(Lines(Mask(signature, names) + Mask(text[text.IndexOf('\n')..], [.. masks, .. names])));
+            var slots = Frame(emitter, f);
+            foreach (var l in fn.Parameters.Concat<LocalSymbol>(locals))
+                emit.Add($"slot {((bool)Call(slots, "HasSlot", l)! ? "true" : "false")} {Call(slots, "Slot", l)}");
+            if (fn.Name == "w") emit.AddRange(ClaimsOracle(emitter, slots, fn, locals));
+        }
+        var helpers = new List<string>();
+        var order = (List<string>)Field(emitter, "_helperOrder")!;
+        var bodies = (System.Collections.IDictionary)Field(emitter, "_helpers")!;
+        var t9Masks = new List<string>();
+        foreach (var fn in functions) Body(emitter, fn, t9Masks);
+        foreach (var n in order.Where(T9Helper))
+        {
+            var (proto, body) = ((string, string))bodies[n]!;
+            helpers.Add($"{n} {proto}");
+            helpers.AddRange(Lines(Mask(body, t9Masks)));
+        }
+        return new() { ["emit"] = emit, ["helpers"] = helpers };
+    }
+
+    private static List<string> ClaimsOracle(CEmitter emitter, FunctionEmitter fe, FunctionSymbol fn, List<LocalSymbol> locals)
+    {
+        var syn = fn.Body!.Syntax;
+        var q = new BoundLocal(syn, fn.Parameters[0]);
+        var p = (StructSymbol)locals[5].Type;
+        var field = new BoundField(syn, new BoundLocal(syn, locals[5]), p.Fields[0]);
+        var tuple = new BoundTupleElement(syn, new BoundLocal(syn, locals[0]), 0, PrimitiveType.I64);
+        // The T6 `fieldName` stub gives "" where the C# names the field.
+        var masks = new List<string> { emitter.OwnClaim(field.Type), emitter.OwnClaim(tuple.Type) };
+        string Claimed(BoundExpr r) => Mask((string)Call(fe, "Claimed", "x()", r, syn)!, masks).Replace("." + CEmitter.FieldName(p.Fields[0].Name) + ",", ".,");
+        var lines = new List<string> { $"claimed {Claimed(q)}", $"claimed {Claimed(field)}", $"claimed {Claimed(tuple)}" };
+        Call(fe, "ClaimAfterCall", q, syn);
+        Call(fe, "ClaimAfterCall", field, syn);
+        lines.Add($"after {((List<string>)Field(fe, "_afterCalls")!).Count}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", tuple, q, true) ?? "null"}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", q, q, true) ?? "null"}");
+        return lines;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Emit_MatchesCSharp(bool checks) => WithFixture(Fixture, path =>
+    {
+        var expected = EmitOracle(Compile(path), checks);
+        var (exit, stdout, stderr) = Run("emit", checks, path);
+        Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
+        var actual = SelfhostSemanticsHarness.Sections(stdout);
+        SelfhostSemanticsHarness.AssertSection(actual, "emit", expected["emit"]);
+        SelfhostSemanticsHarness.AssertSection(actual, "helpers", expected["helpers"]);
+    });
+
+    // A statement with no C arm fails on both sides: `main`'s bound local declaration.
+    [Fact]
+    public void Emit_NoArmFailsLikeCSharp() => WithFixture(Fixture, path =>
+    {
+        const string mode = "bound";
+        var c = Compile(path);
+        var fn = Functions(c).Single(f => f.Name == "main");
+        var f = new LoweredFunction(fn, [], 0, 0, fn.Body!);
+        var e = Assert.Throws<TargetInvocationException>(() => typeof(FunctionEmitter).GetMethod("Emit")!.Invoke(Frame(NewEmitter(Lowerer.Lower(c), false), f), null));
+        Assert.StartsWith("cannot emit ", e.InnerException!.Message);
+        var (exit, _, stderr) = Run(mode, false, path);
+        Assert.NotEqual(0, exit);
+        Assert.Contains("cannot emit ", stderr);
+    });
+}
