@@ -94,6 +94,10 @@ public enum BuiltinFunction {
     pathIsRooted
     pathRelative
     pathFileName
+    pathDirectoryName
+    pathCombine
+    pathCombineSpan
+    pathFullPath
 }
 
 // ── Symbols ─────────────────────────────────────────────────────────────────────

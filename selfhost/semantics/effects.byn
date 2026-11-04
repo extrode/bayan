@@ -530,7 +530,7 @@ List<string> t23Builtin(BuiltinFunction f) {
     if f == .ioWriteFile { return ["fs"] }
     if f == .ioRun || f == .ioRunBatch { return ["process", "alloc"] }
     if f == .ioMonotonicNanos { return ["clock"] }
-    if f == .listNew || f == .ownedNew || f == .strBufGrow || f == .strBufOver || f == .arenaNew || f == .utf8Decode || f == .utf8TryDecode || f == .utf8DecodeReplace || f == .hexEncode || f == .hexDecode || f == .symbolIntern || f == .pathRelative || f == .pathFileName { return ["alloc"] }
+    if f == .listNew || f == .ownedNew || f == .strBufGrow || f == .strBufOver || f == .arenaNew || f == .utf8Decode || f == .utf8TryDecode || f == .utf8DecodeReplace || f == .hexEncode || f == .hexDecode || f == .symbolIntern || f == .pathRelative || f == .pathFileName || f == .pathDirectoryName || f == .pathCombine || f == .pathCombineSpan || f == .pathFullPath { return ["alloc"] }
     return []
 }
 
