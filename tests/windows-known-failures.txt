@@ -1,17 +1,7 @@
 # Windows-only test failures expected until spec 014 (std Path module, handoff Q743) lands.
 # Measured on wp1, 2026-11-02, test/win-combined-1102 (83ed4a17), zig 0.17.0: 78 failed of 6051; the 2 not listed are fixed separately.
+# After 014 T7, measured on wp1, 2026-11-05, chore/worker-014-t7 (caf4a746): 32 failed, all listed here; the 83 names T7 fixed are removed (the whole 011 T12 Q816 and 011 T13 Q886 sections). The rest wait for 014 T8 (typed.byn, json.byn).
 Bayan.Tests.SelfhostSemanticsEquivalenceLawTests.BayanCheckEqualsTheCCheckerOnEveryCleanParse
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/capability-exceeded/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/error-set-same-name/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/for-try-next-not-visible/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/grammar-dictionary/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/import-cycle/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/interface-default-other-file/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/not-visible/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/statement-outside-entry/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/validation-error-same-name-list/main.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/validation-error-same-name-undeclared/main.by"···)
-Bayan.Tests.SelfhostSemanticsParityTests.CheckParity(name: "diag/validation-error-same-name-unhandled/main.byn")
 Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/constrained-by-argument.byn")
 Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/constrained-by-assignment.byn")
 Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/constrained-by-comparison.byn")
@@ -30,39 +20,6 @@ Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/symbol-literal
 Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/symbol-text.byn")
 Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/symbol-type.byn")
 Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/unconstrained-i32.byn")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "declare main-string")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "declare wheres")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "declfile decls-tests")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "declfile decls")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "declfile stmts")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "mainsig main-i64-param")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "mainsig main-i64-span")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "mainsig main-ref-args")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "mainsig main-span")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "mainsig main-string")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "mainsig main-two")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path clean")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path dirs")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path dotted")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path imports-dir-tests")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path imports-dir")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path imports-file-whole-tests")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path imports-file-whole")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path imports-file")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path imports-test-file")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "path unless")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "project dirs")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "project proj-tests")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "project proj")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "unit constraint")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "unit fullpath")
-Bayan.Tests.SelfhostSemanticsT11Tests.CaseMatchesCSharp(section: "unit keysite")
-Bayan.Tests.SelfhostSemanticsT12Tests.CaseMatchesCSharp(section: "overloads")
-Bayan.Tests.SelfhostSemanticsT12Tests.CaseMatchesCSharp(section: "params")
-Bayan.Tests.SelfhostSemanticsT12Tests.CaseMatchesCSharp(section: "structs-o")
-Bayan.Tests.SelfhostSemanticsT12Tests.CaseMatchesCSharp(section: "structs")
-Bayan.Tests.SelfhostSemanticsT12Tests.CaseMatchesCSharp(section: "unique")
-Bayan.Tests.SelfhostSemanticsT40Tests.CheckReportsAtTheIterable
 Bayan.Tests.SelfhostSemanticsTests.CheckBuildOptions
 Bayan.Tests.SelfhostSemanticsTests.CheckCleanFile
 Bayan.Tests.SelfhostSemanticsTests.CheckDiagnosticsFormats
@@ -76,45 +33,4 @@ Bayan.Tests.SelfhostSemanticsTests.TypesAgree(name: "typed/rune.byn")
 Bayan.Tests.SelfhostSemanticsTests.TypesBindingKinds
 Bayan.Tests.SelfhostSemanticsTests.TypesIsCliJson
 Bayan.Tests.SelfhostSemanticsTests.TypesModuleOrder
-# 011 T12 (Q816): bayan-emit parity cases on the same `/`-only paths (work/todo.md, 014); measured on wp1, 2026-11-04, e01073aa: 101 failed of 8404, these 24 plus the 76 above plus a ProgressTests race (work/todo.md).
-Bayan.Tests.SelfhostEmitterHarnessTests.CorpusErrorInputsAgree(name: "parse/declarations.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/capability-exceeded/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/error-set-same-name/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/for-try-next-not-visible/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/grammar-dictionary/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/import-cycle/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/interface-default-other-file/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/not-visible/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/statement-outside-entry/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/validation-error-same-name-list/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/validation-error-same-name-undeclared/main.by"···)
-Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/validation-error-same-name-unhandled/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/capability-exceeded/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/error-set-same-name/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/for-try-next-not-visible/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/grammar-dictionary/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/import-cycle/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/interface-default-other-file/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/not-visible/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/statement-outside-entry/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-list/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-undeclared/main.by"···)
-Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-unhandled/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.ProjectDirectoriesAgree
-# 011 T13 (Q886): the same `/`-only paths (t11DirectoryName, compile.byn:1271; 014); measured on wp1, 2026-11-04, d3d398fd: 116 failed of 8849, these 15 plus the 100 above plus an OwnershipTableTests file-lock race (work/todo.md), not listed. 12 already failed on feat a4e62a40 (T21/T22 landed without a wp1 run); 3 are parity/T13 tests this task un-skipped or added.
-Bayan.Tests.SelfhostEmitterHarnessTests.CleanInputsExitLikeBuild
-Bayan.Tests.SelfhostEmitterHarnessTests.WarningsDoNotStopEmission
-Bayan.Tests.SelfhostEmitterParityTests.ExamplesEmitTheSameC(name: "hello")
-Bayan.Tests.SelfhostEmitterParityTests.ExamplesEmitTheSameC(name: "tally-lite")
-Bayan.Tests.SelfhostEmitterT13Tests.ModulesEmitInCompilationOrder
-Bayan.Tests.SelfhostEmitterT6Tests.Emit_OfLoweredFunctionsMatchesCSharp(flag: "")
-Bayan.Tests.SelfhostEmitterT6Tests.Emit_OfLoweredFunctionsMatchesCSharp(flag: "debug")
-Bayan.Tests.SelfhostEmitterT6Tests.Names_FunctionsFilesAndPathsMatchCSharp
-Bayan.Tests.SelfhostEmitterT6Tests.Names_OfAnImplicitMainMatchCSharp
-Bayan.Tests.SelfhostEmitterT6Tests.Names_OfFunctionsTheCorpusLacksMatchCSharp(flag: "nofile")
-Bayan.Tests.SelfhostEmitterT6Tests.Names_OfFunctionsTheCorpusLacksMatchCSharp(flag: "nomodule")
-Bayan.Tests.SelfhostEmitterT9Tests.Emit_MatchesCSharp(checks: False)
-Bayan.Tests.SelfhostEmitterT9Tests.Emit_MatchesCSharp(checks: True)
-Bayan.Tests.SelfhostEmitterT9Tests.Emit_NoArmFailsLikeCSharp
 Bayan.Tests.SelfhostEmitterSpeedTests.OneMegabyteLowerAndEmitWithinTenTimes
-Bayan.Tests.SelfhostEmitterTests.MainExitsZero

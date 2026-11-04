@@ -1,0 +1,14 @@
+// os: unix
+// `Path.combine` over a span of parts: the last rooted part restarts the result, empty parts are skipped.
+string join(ReadOnlySpan<string> parts) uses alloc => Path.combine(parts)
+
+let one = ["/a"]
+let three = ["/a", "b", "c"]
+let restart = ["/a", "b", "/c", "d"]
+let gaps = ["a", "", "b", ""]
+let none: List<string> = []
+print(join(one.span))
+print(join(three.span))
+print(join(restart.span))
+print(join(gaps.span))
+print($"[{join(none.span)}]")
