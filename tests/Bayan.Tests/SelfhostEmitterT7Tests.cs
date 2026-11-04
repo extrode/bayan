@@ -2,7 +2,6 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using Bayan.Backend.C;
 using Bayan.Lowering;
 using Bayan.Semantics;
@@ -17,8 +16,7 @@ namespace Bayan.Tests;
 /// 011 T7: <c>selfhost/emitter/cprint/types.byn</c> (CEmitter.cs 477-587, 605-681) and <c>cprint/own.byn</c> (682-778) against the C#
 /// as an in-process oracle. The expected text is whatever the C# <c>CEmitter</c> prints for the same program; the emitter's sources but
 /// <c>main.byn</c> are built with a generated <c>main.byn</c> that prints what the ported functions return (Q788).
-/// Siblings still stubs (<c>fieldName</c>, <c>functionName</c>, <c>cString</c>) return "", so text that carries their results is masked
-/// on both sides (<see cref="Mask"/>), never typed by hand; the fixtures without such text compare whole.
+/// Every section compares whole, with nothing masked (Q791).
 /// </summary>
 public sealed class SelfhostEmitterT7Tests
 {
@@ -350,65 +348,14 @@ public sealed class SelfhostEmitterT7Tests
     private static string Oracle(Compilation c) =>
         TypesOracle(c) + OwnOracle(c) + SuffixOracle() + DynOracle(c);
 
-    // ── Masks ────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// The text a stub sibling prints (<c>cString</c>, <c>functionName</c>, <c>fieldName</c> all return ""), cut out on both sides alike:
-    /// the type-name literal of <c>byn_own_read</c> and <c>byn_own_claim</c>, the function name in a <c>bynh_fnthunk_</c> name and in a thunk's call, and the field and
-    /// variant names of payload lines. With <paramref name="corpus"/> also every member line (<c>fieldName</c> of the corpus's fields) and the
-    /// vtable and helper detail. A masked line stays a line, so counts and order are still compared.
-    /// </summary>
-    private static List<string> Mask(string section, List<string> lines, bool corpus)
-    {
-        var r = new List<string>();
-        var maskBody = false;
-        var thunkBody = false;
-        var detail = false;
-        foreach (var raw in lines)
-        {
-            var line = Regex.Replace(raw, @"bynh_fnthunk_[A-Za-z0-9_]*", "bynh_fnthunk_");
-            // `cString` of a type's name, before the `file, line` arguments of `byn_own_read`/`byn_own_claim`.
-            line = Regex.Replace(line, @", (?:""(?:[^""\\]|\\.)*"")?, file, line\)", ", , file, line)");
-            if (section == "dyn" && corpus && line.StartsWith("count ", StringComparison.Ordinal)) detail = true;
-            if (section == "dyn" && corpus && detail) {
-                // Slots whose `fieldName` is "" share a thunk name, so `Helper` drops some: only the vtable count is comparable.
-                if (line.StartsWith("count ", StringComparison.Ordinal)) r.Add(line);
-                continue;
-            }
-            if (line.StartsWith("helper ", StringComparison.Ordinal))
-            {
-                var name = line["helper ".Length..];
-                maskBody = corpus;
-                thunkBody = name.StartsWith("bynh_fnthunk_", StringComparison.Ordinal) || name.StartsWith("bynh_vt_", StringComparison.Ordinal);
-                r.Add(line);
-                continue;
-            }
-            if (maskBody && !line.StartsWith("static ", StringComparison.Ordinal)) { r.Add("."); continue; }
-            // A thunk's call names the function through `functionName`.
-            if (thunkBody) line = Regex.Replace(line, @"^(    (?:return )?)[A-Za-z_]\w*\(", "$1(");
-            // Payload lines carry `fieldName` of the variants' fields and of a union's variants; error variants are named `e{code}`.
-            if (section == "types" && line.TrimStart().StartsWith("struct {", StringComparison.Ordinal))
-            {
-                line = Regex.Replace(line, @" [A-Za-z_]\w*; ", " ; ");
-                line = Regex.Replace(line, @"\} (?!e\d+;)[A-Za-z_]\w*;$", "} ;");
-            }
-            if (section == "types" && corpus && line.StartsWith("    ", StringComparison.Ordinal)) { r.Add("    ."); continue; }
-            if (corpus && section == "dyn" && line.StartsWith("slot ", StringComparison.Ordinal)) { r.Add("slot ."); continue; }
-            r.Add(line);
-        }
-        return r;
-    }
-
-    private static void AssertSections(string name, string expected, string actual, bool corpus)
+    private static void AssertSections(string name, string expected, string actual)
     {
         var e = SelfhostSemanticsHarness.Sections(expected);
         var a = SelfhostSemanticsHarness.Sections(actual);
         foreach (var (section, lines) in e)
         {
             if (section == "") continue;
-            var want = Mask(section, lines, corpus);
-            var got = Mask(section, a.GetValueOrDefault(section) ?? [], corpus);
-            SelfhostEmitterHarness.AssertSame($"{name} {section}", string.Join('\n', want), string.Join('\n', got));
+            SelfhostEmitterHarness.AssertSame($"{name} {section}", string.Join('\n', lines), string.Join('\n', a.GetValueOrDefault(section) ?? []));
         }
     }
 
@@ -461,7 +408,7 @@ public sealed class SelfhostEmitterT7Tests
         Assert.False(c.Diagnostics.HasErrors, string.Join('\n', c.Diagnostics.Items));
         var (exit, stdout, stderr) = Run("corpus", path);
         Assert.True(exit == 0, $"exited {exit}: {stderr}");
-        AssertSections("plain", Oracle(c), stdout, corpus: false);
+        AssertSections("plain", Oracle(c), stdout);
     });
 
     private const string SlotFixture = """
@@ -504,7 +451,7 @@ public sealed class SelfhostEmitterT7Tests
         Assert.False(c.Diagnostics.HasErrors, string.Join('\n', c.Diagnostics.Items));
         var (exit, stdout, stderr) = Run("corpus", path);
         Assert.True(exit == 0, $"exited {exit}: {stderr}");
-        AssertSections("slots", Oracle(c), stdout, corpus: true);
+        AssertSections("slots", Oracle(c), stdout);
     });
 
     [Fact]
@@ -527,7 +474,7 @@ public sealed class SelfhostEmitterT7Tests
                 failures.Add($"{Path.GetFileName(corpus)}: exited {exit}: {stderr}");
                 return;
             }
-            try { AssertSections(Path.GetFileName(corpus), Oracle(c), stdout, corpus: true); }
+            try { AssertSections(Path.GetFileName(corpus), Oracle(c), stdout); }
             catch (Exception ex) { failures.Add(ex.Message); return; }
             Interlocked.Increment(ref compared);
         }));
@@ -583,7 +530,7 @@ public sealed class SelfhostEmitterT7Tests
         var expected = Section("thunk", $"{Call(e, "FunctionThunk", fn, type)}\n{Helpers(e)}");
         var (exit, stdout, stderr) = Run("thunk", function, local, path);
         Assert.True(exit == 0, $"exited {exit}: {stderr}");
-        AssertSections($"thunk {function}", expected, stdout, corpus: false);
+        AssertSections($"thunk {function}", expected, stdout);
     });
 
     [Fact]
@@ -625,7 +572,7 @@ public sealed class SelfhostEmitterT7Tests
         var expected = Section("types", (string)Call(e, "EmitTypes")!);
         var (exit, stdout, stderr) = Run("iface", path);
         Assert.True(exit == 0, $"exited {exit}: {stderr}");
-        AssertSections("iface", expected, stdout, corpus: false);
+        AssertSections("iface", expected, stdout);
     });
 
     [Fact]
@@ -690,6 +637,6 @@ public sealed class SelfhostEmitterT7Tests
         Assert.False(c.Diagnostics.HasErrors, string.Join('\n', c.Diagnostics.Items));
         var (exit, stdout, stderr) = Run("corpus", path);
         Assert.True(exit == 0, $"exited {exit}: {stderr}");
-        AssertSections("states", Oracle(c), stdout, corpus: false);
+        AssertSections("states", Oracle(c), stdout);
     });
 }
