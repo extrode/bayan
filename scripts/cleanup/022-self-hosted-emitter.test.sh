@@ -11,6 +11,7 @@ export GIT_ALLOW_PROTECTED=1  # fixture repo: its dev branch is the subject unde
 export CLEANUP_TMP_ROOT="$r/ext"
 old="2020-01-01T00:00:00"
 g() { GIT_COMMITTER_DATE="$old" GIT_AUTHOR_DATE="$old" git -c user.email=t@t -c user.name=t "$@"; }
+gnow() { git -c user.email=t@t -c user.name=t "$@"; }
 git init -q -b dev w && cd w && git config core.hooksPath /dev/null
 feat="feat/011-self-hosted-emitter"
 printf 'bin/\nobj/\n' > .gitignore
@@ -20,7 +21,11 @@ for b in "$feat" chore/worker-011-a docs/review-small-rows fix/011-guard-unrepor
 g switch -q fix/011-guard-unreported-file && g commit -q --allow-empty -m u && g switch -q dev
 g worktree add -q .worktrees/ign chore/worker-011-ign
 g worktree add -q .worktrees/dev-merge chore/011-merge-dev
-mkdir .worktrees/ign/bin && echo o > .worktrees/ign/bin/out.o
+g branch chore/worker-011-ahead && g branch chore/worker-docs-small-rows
+g worktree add -q .worktrees/ahead chore/worker-011-ahead && g -C .worktrees/ahead commit -q --allow-empty -m ahead
+g worktree add -q .worktrees/dirty chore/worker-docs-small-rows && echo d > .worktrees/dirty/new.txt
+gnow branch docs/defer-grace-headers-manifest  # real date: moved just now
+mkdir .worktrees/ign/bin &&echo o > .worktrees/ign/bin/out.o
 mkdir -p tmp/011-x tmp/guard-run "$r/ext/q845gate" && echo s > tmp/011-x/f
 fail() { echo "FAIL: $1"; echo "$out"; cd "$root"; exit 1; }
 has() { git rev-parse -q --verify "refs/heads/$1" >/dev/null; }
@@ -51,6 +56,9 @@ echo "$out" | grep -q "^keep:  fix/011-guard-unreported-file (not in dev)$" || f
 for b in dev main "$feat" dev-keep; do has "$b" || fail "$b deleted"; done
 [ -d .worktrees/ign ] || fail "ignored-output worktree removed without the second flag"
 [ ! -d .worktrees/dev-merge ] || fail "clean worktree not removed"
+[ -d .worktrees/ahead ] && echo "$out" | grep -q "^keep:  .worktrees/ahead (HEAD not in dev)$" || fail "worktree whose HEAD is not in dev not left"
+[ -d .worktrees/dirty ] && echo "$out" | grep -q "^keep:  .worktrees/dirty (uncommitted changes)$" || fail "dirty worktree not left"
+has docs/defer-grace-headers-manifest && echo "$out" | grep -q "^keep:  docs/defer-grace-headers-manifest (moved in the last 1h)$" || fail "recently moved branch not kept"
 has chore/011-merge-dev && fail "branch of removed worktree not deleted"
 [ ! -e tmp/011-x ] && [ ! -e tmp/guard-run ] && [ ! -e "$r/ext/q845gate" ] || fail "scratch not removed"
 
