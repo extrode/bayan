@@ -50,7 +50,7 @@ public BExpr lowerExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
 
 /// A C# `with` copy keeps the record's `Constant` (BoundNodes.cs:27): `copy` gets `e`'s.
 BExpr t4Keep(ref Ctx c, from BExpr e, to BExpr copy) uses alloc {
-    if semantics.exprConstant(in c, for: e) is { } k { semantics.setConstant(ref c, for: copy, to: k) }
+    if (semantics.exprConstant(in c, for: e) is { } k) { semantics.setConstant(ref c, for: copy, to: k) }
     return copy
 }
 
@@ -70,7 +70,7 @@ BExpr t4Never(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
 /// (Builtins.cs:60; builtins.byn:101 stores it under `"StrBuf"`).
 FuncId t4StrBufGrow(in Ctx c) {
     for m in c.modules {
-        unless m.name == "builtin" && m.functions.contains("StrBuf") { continue }
+        if m.name != "builtin" || !m.functions.contains("StrBuf") { continue }
         for f in m.functions["StrBuf"] {
             if c.functions[f].builtin == .strBufGrow { return f }
         }
@@ -345,9 +345,9 @@ BExpr lowerShortCircuit(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     emitAssign(ref c, through: ref l, to: localExpr(ref c, at: span, for: t), as: left)
     pre.append(semantics.addAssign(ref c, from: BAssign { span: span, target: localExpr(ref c, at: span, for: t), value: right, op: null }))
     if isNeverExpr(right) { let _ = pre.removeLast() }
-    var test = localExpr(ref c, at: span, for: t)
-    if c.bBinaries[i].op == .logicalOr { test = notExpr(ref c, through: in l, for: test) }
-    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: test, then: block(ref c, at: span, for: move pre), elseBranch: -1 }))
+    var cond = localExpr(ref c, at: span, for: t)
+    if c.bBinaries[i].op == .logicalOr { cond = notExpr(ref c, through: in l, for: cond) }
+    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: cond, then: block(ref c, at: span, for: move pre), elseBranch: -1 }))
     return localExpr(ref c, at: span, for: t)
 }
 
@@ -495,7 +495,7 @@ bool lowerExpanded(ref Ctx c, through ref LCtx l, for in List<BExpr> elements, t
             let length = c.arrayTypes[i64(semantics.exprType(in c, for: c.bSpreads[s].operand) & 0xFFFFFFFF)].length
             for k in 0..length {
                 let index = i64Literal(ref c, at: c.bSpreads[s].span, by: k)
-                values.append(ltree.addLIndexUnchecked(ref l.tree, from: LIndexUnchecked { span: c.bSpreads[s].span, target: source, index: index, type: c.bSpreads[s].type }))
+                values.append(ltree.addLIndexUnchecked(ref l.tree, from: LIndexUnchecked { span: c.bSpreads[s].span, target: source, index: index, type: c.bSpreads[s].type }) because "k is below the fixed length of the array being spread")
             }
             continue
         }
@@ -526,7 +526,7 @@ void lowerAddEach(ref Ctx c, through ref LCtx l, for BExpr spread, from BExpr so
     exit.append(ltree.addLGoto(ref l.tree, from: LGoto { span: span, label: done }))
     emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: notExpr(ref c, through: in l, for: more), then: block(ref c, at: span, for: move exit), elseBranch: -1 }))
     var args = List<BExpr>()
-    args.append(ltree.addLIndexUnchecked(ref l.tree, from: LIndexUnchecked { span: span, target: source, index: localExpr(ref c, at: span, for: index), type: c.bSpreads[s].type }))
+    args.append(ltree.addLIndexUnchecked(ref l.tree, from: LIndexUnchecked { span: span, target: source, index: localExpr(ref c, at: span, for: index), type: c.bSpreads[s].type }) because "the loop leaves before index reaches the source length")
     let add = semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: outer, member: .listAdd, receiver: localExpr(ref c, at: outer, for: list), arguments: move args, type: semantics.prim(.void) })
     emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: outer, expr: add }))
     let next = semantics.addBinary(ref c, from: BBinary { span: span, op: .addWrap, left: localExpr(ref c, at: span, for: index), right: i64Literal(ref c, at: span, by: 1), type: semantics.prim(.i64) })
@@ -617,7 +617,8 @@ public (LocalId error, BExpr result)? lowerFailingCall(ref Ctx c, through ref LC
     if c.functions[fn].name == "requires" && c.functions[fn].owner != -1 {
         let value = spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: c.bCalls[i].receiver))
         if isNeverExpr(value) { return null }
-        let check = newTemp(ref c, through: ref l, for: semantics.errorUnionOf(ref c, for: in c.functions[fn].errorSets, as: in List<VariantId>()))
+        let sets = t4Copy(in c.functions[fn].errorSets)
+        let check = newTemp(ref c, through: ref l, for: semantics.errorUnionOf(ref c, for: in sets, as: in List<VariantId>()))
         let args = t4Copy(in c.bCalls[i].arguments)
         let call = t4Keep(ref c, from: operand, to: semantics.addCall(ref c, from: BCall { span: span, function: fn, receiver: value, arguments: move args, type: c.bCalls[i].type }))
         emit(ref l, for: ltree.addLFailingCall(ref l.tree, from: LFailingCall { span: span, error: check, call: call, result: -1 }))
@@ -626,7 +627,8 @@ public (LocalId error, BExpr result)? lowerFailingCall(ref Ctx c, through ref LC
     let lowered = lowerCallParts(ref c, through: ref l, for: operand)
     // coverage-blocked: Q774 T5 lowerCallParts
     if lowered == -1 { return null }
-    let error = newTemp(ref c, through: ref l, for: semantics.errorUnionOf(ref c, for: in c.functions[fn].errorSets, as: in List<VariantId>()))
+    let sets = t4Copy(in c.functions[fn].errorSets)
+    let error = newTemp(ref c, through: ref l, for: semantics.errorUnionOf(ref c, for: in sets, as: in List<VariantId>()))
     let type = c.bCalls[i].type
     let result = semantics.isVoid(type) || semantics.isNever(type) ? -1 : newTemp(ref c, through: ref l, for: type)
     emit(ref l, for: ltree.addLFailingCall(ref l.tree, from: LFailingCall { span: span, error: error, call: lowered, result: result }))
@@ -681,10 +683,10 @@ BExpr lowerCatch(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
         let caught = semantics.addErrorVariant(ref c, from: BErrorVariant { span: span, variant: variant })
         let other = semantics.addBinary(ref c, from: BBinary { span: span, op: .ne, left: localExpr(ref c, at: span, for: r.error), right: caught, type: semantics.prim(.bool) })
         var propagate = lowerPropagate(ref c, through: ref l, at: span, for: r.error)
-        var checked = List<BStmt>()
-        checked.append(semantics.addIf(ref c, from: BIf { span: span, condition: other, then: block(ref c, at: span, for: move propagate), elseBranch: -1 }))
-        for s in handler { checked.append(s) }
-        handler = move checked
+        var checkedBody = List<BStmt>()
+        checkedBody.append(semantics.addIf(ref c, from: BIf { span: span, condition: other, then: block(ref c, at: span, for: move propagate), elseBranch: -1 }))
+        for s in handler { checkedBody.append(s) }
+        handler = move checkedBody
     }
     emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: lowerFailed(ref c, through: ref l, at: span, for: r.error), then: block(ref c, at: span, for: move handler), elseBranch: -1 }))
     return r.result

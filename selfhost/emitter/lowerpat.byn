@@ -37,17 +37,17 @@ public BExpr lowerMatch(ref Ctx c, through ref LCtx l, for BPattern pattern, at 
         case .relationalPattern:
             let span = c.bRelationalPatterns[i].span
             let v = optional ? t4Inner(ref c, through: ref l, at: span, for: value) : value
-            let test = semantics.addBinary(ref c, from: BBinary { span: span, op: c.bRelationalPatterns[i].op, left: v, right: c.bRelationalPatterns[i].value, type: semantics.prim(.bool) })
-            unless optional { return test }
-            return andExpr(ref c, through: in l, for: ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value }), by: test)
+            let cond = semantics.addBinary(ref c, from: BBinary { span: span, op: c.bRelationalPatterns[i].op, left: v, right: c.bRelationalPatterns[i].value, type: semantics.prim(.bool) })
+            unless optional { return cond }
+            return andExpr(ref c, through: in l, for: ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value }), by: cond)
         case .rangePattern:
             let span = c.bRangePatterns[i].span
             let v = optional ? t4Inner(ref c, through: ref l, at: span, for: value) : value
             let low = semantics.addBinary(ref c, from: BBinary { span: span, op: .ge, left: v, right: c.bRangePatterns[i].start, type: semantics.prim(.bool) })
             let high = semantics.addBinary(ref c, from: BBinary { span: span, op: c.bRangePatterns[i].inclusive ? .le : .lt, left: v, right: c.bRangePatterns[i].end, type: semantics.prim(.bool) })
-            let test = andExpr(ref c, through: in l, for: low, by: high)
-            unless optional { return test }
-            return andExpr(ref c, through: in l, for: ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value }), by: test)
+            let cond = andExpr(ref c, through: in l, for: low, by: high)
+            unless optional { return cond }
+            return andExpr(ref c, through: in l, for: ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value }), by: cond)
         case .notPattern:
             return notExpr(ref c, through: in l, for: lowerMatch(ref c, through: ref l, for: c.bNotPatterns[i].operand, at: value))
         case .binaryPattern:
@@ -58,14 +58,14 @@ public BExpr lowerMatch(ref Ctx c, through ref LCtx l, for BPattern pattern, at 
         case .propertyPattern:
             let span = c.bPropertyPatterns[i].span
             var tests = List<BExpr>()
-            var subject = value
+            var target = value
             if optional {
                 tests.append(ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value }))
-                subject = t4Inner(ref c, through: ref l, at: span, for: value)
+                target = t4Inner(ref c, through: ref l, at: span, for: value)
             }
             var k: i64 = 0
             while k < c.bPropertyPatterns[i].subpatterns.length {
-                var member = subject
+                var member = target
                 var s: i64 = 0
                 while s < c.bPropertyPatterns[i].subpatterns[k].path.length {
                     member = lowerStep(ref c, at: span, for: member, by: c.bPropertyPatterns[i].subpatterns[k].path[s])
@@ -77,30 +77,30 @@ public BExpr lowerMatch(ref Ctx c, through ref LCtx l, for BPattern pattern, at 
             let d = c.bPropertyPatterns[i].designation
             if d != -1 {
                 note(ref c, through: ref l, for: d)
-                tests.append(t4Bind(ref c, through: ref l, at: span, for: d, as: subject))
+                tests.append(t4Bind(ref c, through: ref l, at: span, for: d, as: target))
             }
             if tests.length == 0 { return boolLiteral(ref c, at: span, by: true) }
             return t4All(ref c, through: in l, for: in tests)
         case .unionPattern:
             let span = c.bUnionPatterns[i].span
             let variant = c.bUnionPatterns[i].variant
-            let subject = optional ? t4Inner(ref c, through: ref l, at: span, for: value) : value
+            let target = optional ? t4Inner(ref c, through: ref l, at: span, for: value) : value
             let tag = Constant { kind: .integer, integer: Big { lo: u64(c.unionVariants[variant].tag), hi: 0 } }
             var tests = List<BExpr>()
             if optional { tests.append(ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value })) }
             let literal = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.i32), value: tag })
             semantics.setConstant(ref c, for: literal, to: tag)
-            tests.append(lowerEqual(ref c, at: span, for: ltree.addLUnionTag(ref l.tree, from: LUnionTag { span: span, unionValue: subject }), by: literal))
+            tests.append(lowerEqual(ref c, at: span, for: ltree.addLUnionTag(ref l.tree, from: LUnionTag { span: span, unionValue: target }), by: literal))
             var k: i64 = 0
             while k < c.bUnionPatterns[i].subpatterns.length {
-                let field = ltree.addLUnionField(ref l.tree, from: LUnionField { span: span, unionValue: subject, variant: variant, index: k })
+                let field = ltree.addLUnionField(ref l.tree, from: LUnionField { span: span, unionValue: target, variant: variant, index: k })
                 tests.append(lowerMatch(ref c, through: ref l, for: c.bUnionPatterns[i].subpatterns[k], at: field))
                 k += 1
             }
             let d = c.bUnionPatterns[i].designation
             if d != -1 {
                 note(ref c, through: ref l, for: d)
-                tests.append(t4Bind(ref c, through: ref l, at: span, for: d, as: subject))
+                tests.append(t4Bind(ref c, through: ref l, at: span, for: d, as: target))
             }
             return t4All(ref c, through: in l, for: in tests)
         case .errorPattern:
@@ -162,15 +162,17 @@ public void lowerClaim(ref Ctx c, through ref LCtx l, for BPattern p) uses alloc
             lowerClaim(ref c, through: ref l, for: c.bBinaryPatterns[i].left)
             lowerClaim(ref c, through: ref l, for: c.bBinaryPatterns[i].right)
         case .propertyPattern:
-            for sub in c.bPropertyPatterns[i].subpatterns { lowerClaim(ref c, through: ref l, for: sub.pattern) }
+            var subs = List<BPattern>()
+            for sub in c.bPropertyPatterns[i].subpatterns { subs.append(sub.pattern) }
+            for sub in subs { lowerClaim(ref c, through: ref l, for: sub) }
             let d = c.bPropertyPatterns[i].designation
             if d != -1 && !c.locals[d].borrowsSubject { emit(ref l, for: ltree.addLClaim(ref l.tree, from: LClaim { span: c.bPropertyPatterns[i].span, local: d })) }
         case .unionPattern:
-            for sub in c.bUnionPatterns[i].subpatterns { lowerClaim(ref c, through: ref l, for: sub) }
+            for sub in t4Copy(in c.bUnionPatterns[i].subpatterns) { lowerClaim(ref c, through: ref l, for: sub) }
             let d = c.bUnionPatterns[i].designation
             if d != -1 && !c.locals[d].borrowsSubject { emit(ref l, for: ltree.addLClaim(ref l.tree, from: LClaim { span: c.bUnionPatterns[i].span, local: d })) }
         case .errorPattern:
-            for sub in c.bErrorPatterns[i].subpatterns { lowerClaim(ref c, through: ref l, for: sub) }
+            for sub in t4Copy(in c.bErrorPatterns[i].subpatterns) { lowerClaim(ref c, through: ref l, for: sub) }
         default: break
     }
 }
@@ -182,7 +184,7 @@ BExpr lowerStep(ref Ctx c, at TextSpan span, for BExpr receiver, by in BMemberSt
         let p = step.propertyId
         return semantics.addCall(ref c, from: BCall { span: span, function: c.properties[p].getter, receiver: receiver, arguments: List<BExpr>(), type: c.properties[p].type })
     }
-    if step.builtin is BuiltinMember b { return semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: b, receiver: receiver, arguments: List<BExpr>(), type: step.type }) }
+    if (step.builtin is { } b) { return semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: b, receiver: receiver, arguments: List<BExpr>(), type: step.type }) }
     return semantics.addTupleElement(ref c, from: BTupleElement { span: span, receiver: receiver, index: step.tupleIndex, type: step.type })
 }
 
