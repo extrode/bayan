@@ -84,6 +84,43 @@ public static class SelfhostEmitterHarness
         return "safe";
     }
 
+    /// <summary>
+    /// The app of <c>CacheTests.ACallerIsRecheckedWhenACalleeStartsOrStopsStoringAnArgument</c> (CacheTests.cs:135-153): <c>bayan new</c>, then its
+    /// <c>main.byn</c> and <c>keep.byn</c> with the callee that <c>copies</c> its argument or <c>stores</c> it (the latter is rejected, BYN3002).
+    /// </summary>
+    public static string CacheApp(string name, bool stores)
+    {
+        var root = Path.Combine(Golden.RepoRoot, "tmp", "t12-tests", name);
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        Directory.CreateDirectory(root);
+        var app = Path.Combine(root, "tally");
+        Assert.Equal(CliApp.ExitOk, CliApp.Run(["new", app, "--vcs", "none"], new StringWriter(), new StringWriter()));
+        var callee = Path.Combine(app, "src", "keep", "keep.byn");
+        Directory.CreateDirectory(Path.GetDirectoryName(callee)!);
+        File.WriteAllText(callee, stores
+            ? "public void pass(string s, to ref string g) {\n    g = s\n}\n"
+            : "public void pass(string s, to ref string g) {\n    g = \"\"\n}\n");
+        File.WriteAllText(Path.Combine(app, "src", "app", "main.byn"),
+            "import keep\n\nvar kept = \"\"\n{\n    using let arena = Arena()\n    keep.pass(\"ann\".copy(to: arena), to: ref kept)\n}\nprint(kept)\n");
+        return app;
+    }
+
+    /// <summary>
+    /// The C that <c>bayan test -v &lt;dir&gt;</c> builds for the test file <paramref name="input"/> copied alone into <paramref name="work"/>
+    /// (RunTests.cs:122-131): <c>CliApp.Compile</c> of the whole directory with tests, in the mode <c>ParseBuildOptions</c> gives without
+    /// <c>--mode</c> (<c>Safe</c>, CliApp.cs:154), then <c>CliApp.Test</c>'s <c>Lowerer.Lower</c> and <c>CEmitter.Emit</c> (CliApp.cs:620-621,
+    /// no probes outside <c>Debug</c>), which is <c>EmitC</c>. Null when the C# rejects the input.
+    /// </summary>
+    public static string? TestRunC(string input, string work)
+    {
+        if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
+        Directory.CreateDirectory(work);
+        File.Copy(input, Path.Combine(work, Path.GetFileName(input)));
+        if (CliApp.ParseBuildOptions(["-v", work], new StringWriter(), allowOutput: false, allowTestJson: true, allowVerbose: true) is not { } o) return null;
+        if (CliApp.Compile(o, new StringWriter(), includeTests: true) is not { } compiled) return null;
+        return CliApp.EmitC(compiled.Compilation, o.Mode);
+    }
+
     /// <summary><c>CliApp.Run(cli)</c> against <c>bayan-emit self</c> (with <paramref name="namedBy"/> stripped from the C# text): stdout and stderr by <see cref="AssertSame"/>, then the exit code.</summary>
     public static void SameAsCli(string name, string[] cli, string[] self, string? namedBy = null)
     {

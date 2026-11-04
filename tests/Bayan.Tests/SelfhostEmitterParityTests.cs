@@ -28,11 +28,19 @@ public sealed class SelfhostEmitterParityTests
         }
     }
 
-    /// <summary>Every <c>run/</c> input in its mode, compiled alone with its directory as package root (RunTests.cs:80-82).</summary>
+    /// <summary>
+    /// Every <c>run/</c> input in its mode, compiled alone with its directory as package root (RunTests.cs:80-82); a <c>*.test.byn</c> goes
+    /// to <see cref="TestInputEmitsTheSameC"/> as <c>Execute</c> routes it (RunTests.cs:79).
+    /// </summary>
     [Theory(Skip = SkipUntilT13)]
     [MemberData(nameof(RunCases))]
     public void RunInputsEmitTheSameC(string name)
     {
+        if (name.EndsWith(".test.byn", StringComparison.Ordinal))
+        {
+            TestInputEmitsTheSameC(name);
+            return;
+        }
         var input = Path.Combine(Golden.CasesRoot, name);
         var mode = SelfhostEmitterHarness.ModeOf(input);
         var c = Compilation.Create([Golden.Load(input)], Path.GetDirectoryName(input)!);
@@ -43,17 +51,19 @@ public sealed class SelfhostEmitterParityTests
         SelfhostEmitterHarness.AssertSame(name, CliApp.EmitC(c, buildMode), output);
     }
 
-    /// <summary>Every <c>*.test.byn</c> with tests included.</summary>
+    /// <summary>Every <c>*.test.byn</c> as <c>bayan test -v</c> builds it: alone in a work directory, the directory compiled with tests, no <c>--mode</c> (Safe).</summary>
     [Theory(Skip = SkipUntilT13)]
     [MemberData(nameof(RunTestCases))]
-    public void RunTestInputsEmitTheSameC(string name)
+    public void RunTestInputsEmitTheSameC(string name) => TestInputEmitsTheSameC(name);
+
+    private static void TestInputEmitsTheSameC(string name)
     {
         var input = Path.Combine(Golden.CasesRoot, name);
-        var c = Compilation.Create([Golden.Load(input)], Path.GetDirectoryName(input)!, new CompilationOptions(IncludeTests: true));
-        if (c.Diagnostics.HasErrors) return;
-        var (exit, output, error) = SelfhostEmitterHarness.Run("--package", Path.GetDirectoryName(input)!, "--tests", input);
+        var work = Path.Combine(Golden.RepoRoot, "tmp", "t12-tests", "test-run-" + Path.ChangeExtension(name, null).Replace('/', '_'));
+        if (SelfhostEmitterHarness.TestRunC(input, work) is not { } expected) return;
+        var (exit, output, error) = SelfhostEmitterHarness.Run("--tests", work);
         Assert.True(exit == 0, $"{name}: exit {exit}\n{error}");
-        SelfhostEmitterHarness.AssertSame(name, CliApp.EmitC(c, BuildMode.Safe), output);
+        SelfhostEmitterHarness.AssertSame(name, expected, output);
     }
 
     /// <summary>The inputs <c>CliTests.BuildEmitsC</c> and <c>CacheTests</c> pass to <c>--emit-c</c>, over every example project.</summary>
@@ -63,6 +73,14 @@ public sealed class SelfhostEmitterParityTests
     {
         var path = Path.Combine(Golden.RepoRoot, "examples", name, "main.byn");
         SelfhostEmitterHarness.SameAsCli(name, ["build", "--emit-c", path], [path]);
+    }
+
+    /// <summary>The app of <c>CacheTests.cs:135-153</c> with the callee that copies its argument (the C is compared; the storing callee is in <c>SelfhostEmitterHarnessTests</c>).</summary>
+    [Fact(Skip = SkipUntilT13)]
+    public void CacheAppEmitsTheSameC()
+    {
+        var app = SelfhostEmitterHarness.CacheApp("cache-copies", stores: false);
+        SelfhostEmitterHarness.SameAsCli("copies", ["build", "--emit-c", app], [app]);
     }
 }
 
@@ -158,6 +176,9 @@ public sealed class SelfhostEmitterHarnessTests
         SelfhostEmitterHarness.SameAsCli("second path", ["build", "--emit-c", many, script], [many, script]);
         SelfhostEmitterHarness.SameAsCli("no path", ["build", "--emit-c"], []);
         SelfhostEmitterHarness.SameAsCli("-- args", ["build", "--emit-c", many, "--", "x"], [many, "--", "x"]);
+        // Nothing after `--` is an option (CliApp.cs:163, :325).
+        SelfhostEmitterHarness.SameAsCli("-- --color", ["build", "--emit-c", many, "--", "--color", "blue"], [many, "--", "--color", "blue"]);
+        SelfhostEmitterHarness.SameAsCli("-- --mode", ["build", "--emit-c", many, "--", "--mode", "turbo"], [many, "--", "--mode", "turbo"]);
     }
 
     /// <summary>
@@ -184,11 +205,26 @@ public sealed class SelfhostEmitterHarnessTests
             SelfhostEmitterHarness.SameAsCli(dir, ["build", "--emit-c", project], [project]);
             SelfhostEmitterHarness.SameAsCli($"{dir} --tests", ["test", project], ["--tests", project]);
         }
+        // A clean library: `build` refuses it (CliApp.cs:464 `RefuseLibrary`), `bayan test` is its command.
+        var clean = Path.Combine(root, "cleanlib");
+        Directory.CreateDirectory(Path.Combine(clean, "src", "cleanlib"));
+        File.WriteAllText(Path.Combine(clean, "package.byn"), "Package {\n    name: \"local/cleanlib\",\n    version: \"0.1.0\",\n    edition: 2027,\n    kind: .lib,\n}\n");
+        File.WriteAllText(Path.Combine(clean, "src", "cleanlib", "main.byn"), "public i32 one() => 1\n");
+        Assert.Equal(CliApp.ExitUsage, CliApp.Run(["build", "--emit-c", clean], new StringWriter(), new StringWriter()));
+        SelfhostEmitterHarness.SameAsCli("clean lib", ["build", "--emit-c", clean], [clean]);
         var plain = Path.Combine(root, "plain");
         Directory.CreateDirectory(plain);
         File.WriteAllText(Path.Combine(plain, "main.byn"), "let x: i32 = \"s\"\n");
         SelfhostEmitterHarness.SameAsCli("no manifest", ["build", "--emit-c", plain], [plain]);
         SelfhostEmitterHarness.SameAsCli("no manifest --tests", ["test", plain], ["--tests", plain]);
+    }
+
+    /// <summary>The app of <c>CacheTests.cs:135-153</c> with the callee that stores its argument: BYN3002, stderr and exit as <c>build --emit-c</c>.</summary>
+    [Fact]
+    public void CacheAppWithAStoringCalleeFailsLikeBuild()
+    {
+        var app = SelfhostEmitterHarness.CacheApp("cache-stores", stores: true);
+        SelfhostEmitterHarness.SameAsCli("stores", ["build", "--emit-c", app], [app]);
     }
 
     /// <summary><c>--time</c> and <c>--mode</c> on an input the C# rejects fail as <c>build --emit-c</c> does.</summary>
