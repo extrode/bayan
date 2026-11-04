@@ -12,7 +12,9 @@ Order of work:
 2. Feature decisions (sections 6 to 9), revised by what the retrospective finds.
 3. A numbered plan in the round-3 format, handed to the agent after 012.
 
-Where this draft cites the spec, it relies on the round-3 plan, its consolidated summary and recorded decisions. SPEC.md and GRAMMAR.md are not in the project, so section references should be checked against them before finalizing.
+Where this draft cites the spec, it relies on the round-3 plan, its consolidated summary and recorded decisions.
+
+Clause order changes in round 4 to `where → expects → uses → becomes → fails`; examples here use the new order. It lands as the first commit after 012: flip the canonical order in BYN1065, run `bayan format` over the repository (including the self-hosted compiler), regenerate goldens. No manual edits.
 
 ## 2. Retrospective: promises kept and broken
 
@@ -42,7 +44,7 @@ let n: int = count                       let n: i32 = count
 if !done && n > 0 { … }                  if not done and n > 0 { … }
 ```
 
-This is the dialect problem we cite against macros, in a smaller form. Proposal: keep the setting, but make `bayan format --display` show either style, and make docs and std use one.
+This is the dialect problem we cite against macros, in a smaller form. Proposal: keep the setting, but make the language server show either style (a display option or inlay hint, not a `bayan format` flag), and make docs and std use one.
 
 ### Word order
 
@@ -82,10 +84,9 @@ Each of these was accepted "for now" or carries a known risk. The self-hosted co
 | `$n` SQL placeholders | Argument position drift in long queries | Sūq queries with five or more arguments | With `sql` interpolation |
 | Two-layer trust model | Too much ceremony or too little | Sūq handlers: how often `trustUnchecked() because` appears | After Sūq runs |
 | Typestate scope | Used for plain data, adding ceremony | Count of `states` blocks that are not lifecycles | After Sūq runs |
-| .NET interop ("use .NET libraries early on") | Promised, with no design | Decide whether it is a v0.x goal at all | Round 4 |
 | `f64` text form: `1.0` prints as `1` (and `1e21`, where Python writes `1e+21`) | A float written to JSON or a report reads as an integer; readers that care about the type see it change | Spec 015 S8: quality reports compare floats as numbers after the port | Round 4 |
 
-The interop row needs a decision, not evidence. Options are a C ABI bridge to a NativeAOT .NET library (cheap, one direction) or hosting the CLR (heavy, GC at the edge). The first is consistent with "accept GC cost at the edges".
+Interop is already decided and is not reopened here: C is the only live interop (`std.c`), and C# code arrives through the one-time `bayan migrate cs` translator.
 
 ## 4. Performance and efficiency
 
@@ -219,16 +220,20 @@ Round 4 holds every syntax change in one batch, landed after 012 with one migrat
 
 | Feature | Pros | Cons |
 | --- | --- | --- |
+| Replace `async`/`await` and `Io.group` with `scope`/`spawn` (spec §13, Appendix A) | One structured form; no function coloring; reopens Appendix A by user decision 2026-11-04 | Spec §13 and Appendix A rewritten by revision |
+| Remove `provide timeout: d { … }` (spec §13 :1556) | The block deadline is `scope(timeout:)` / `until:`; also clashes with BYN6007 | Spec §13 edit |
+| Structured concurrency with shared-nothing workers | Borrow safety across fibers by construction | Spec in round 4, runtime v0.2 (bayan-concurrency.md) |
 | Subjectless `switch` | Replaces long `else if` chains; same C as the chain | One new parse form |
 | `when` guards on pattern arms | Mixes patterns and conditions | Guarded arms do not count for exhaustiveness |
-| `final` states (BYN7010) | Catches a forgotten commit or close at compile time | Path analysis over `fail`, `try`, `defer` |
+| `final` states (BYN7013) | Catches a forgotten commit or close at compile time | Path analysis over `fail`, `try`, `defer` |
 | Closure escape rule + `fails` polymorphism | Zero-allocation closures by default; lambdas can call failing functions | Real checker work; needs compile-fail tests |
 | `dbg(x)` | Daily debugging aid | Must be an error in release builds |
-| `!(x is .s)` input form (BYN1069) | One spelling of negated `is` | One more code |
+| `!(x is .s)` input form (BYN1070) | One spelling of negated `is` | One more code |
 | Payload size-ratio lint | Keeps `Result` small | Heuristic threshold |
 | Diagnostic renumbering | Codes grouped by category, as intended | One-time alias table |
 | Consuming `finish()` (`move this`) | Hands the heap block to the caller, so a function can return a built string without a copy (revision 0018 made `finish()` a loan) | A second `finish` form, or a `move` overload rule; the buffer is unusable after it |
 | Store and return summaries across packages (Q745) | A caller's acceptance depends on callee bodies (the Q745 per-callee store summaries, and the return summaries that replace rule 4 for calls with a body), so a public function's body change can break another package; decide: public functions declare their store and return summaries in the signature, or `bayan api diff` reports a summary change as breaking | Signature syntax, or a tooling rule that only catches the break at diff time |
+| Clause order `where → expects → uses → becomes → fails` | Clauses read in the order they apply: compile time, entry, running, success, failure; matches Swift's `async throws` | Every signature with both `uses` and `fails` changes; automatic through the BYN1065 fix-it and `bayan format` |
 
 ```cs
 // subjectless switch
@@ -239,12 +244,12 @@ let tier = switch {
 }
 
 // final states
-void save(Connection.open conn) fails DbError uses net {
+void save(Connection.open conn) uses net fails DbError {
     var tx = try conn.begin()
     defer failing tx.rollback()
-    try conn.execute(sql"INSERT …", in: tx)
+    try tx.execute(sql"INSERT …")
     try tx.commit()
-}   // without the commit: BYN7010, `tx` is still .active
+}   // without the commit: BYN7013, `tx` is still .active
 
 // closures: borrowed by default, `fails` passes through
 void retain<T>(ref List<T> xs, where (T -> bool fails E) keep) fails E { … }
@@ -283,11 +288,10 @@ let record: TableRecord = try TableRecord.decode(bytes)   // bytes: Untrusted<Re
 | --- | --- | --- |
 | Compile-time evaluation of functions with empty `uses` | Lookup tables at build time; purity check is free | An interpreter inside the compiler |
 | `@soa` layout | Large gains in hot loops | `ref xs[i]` becomes awkward |
-| Structured concurrency with shared-nothing workers | Borrow safety across fibers by construction | Must be designed with fibers |
 
 ## 8. Classes and GC
 
-Verdict: no `class` keyword and no garbage collector in the language. Shared heap objects come from library types; GC stays at the .NET edge. Section 3's interop decision is the only place either could enter.
+Verdict: no `class` keyword and no garbage collector in the language. Shared heap objects come from library types. Interop is C only, so there is no GC edge to accommodate.
 
 ### What a class would have to be
 
@@ -321,7 +325,7 @@ let child: Handle<Node> = tree.add(Node { name: "a", parent: root })
 tree[root].children.append(child)
 ```
 
-For foreign objects only (.NET, Objective-C, C++), an `extern class` declaration could wrap a handle owned by the other runtime. That is an interop feature, not a Bayān type.
+For foreign objects only (C libraries with object-like APIs), an `extern class` declaration could wrap a handle owned by the other runtime. That is an interop feature, not a Bayān type.
 
 ### GC options
 
@@ -330,7 +334,7 @@ For foreign objects only (.NET, Objective-C, C++), an `extern class` declaration
 | No GC; owners, arenas, pools | Rust, Zig, Odin | Predictable, fast; more design up front | Current model |
 | Optional tracing GC | D | Libraries split into GC and no-GC | No |
 | Reference counting everywhere | Swift | Predictable pauses; constant count traffic | Library `Rc`/`Arc` only |
-| GC only across interop | Kotlin/Native, C# with native code | Contained cost | Yes, at the .NET edge |
+| GC only across interop | Kotlin/Native, C# with native code | Contained cost | Not needed: interop is C only |
 | Arena per run or request | Zig, Odin, game engines | GC-like convenience with no collector | Default for `bayan run` scripts and request handlers |
 
 The last row gives scripts most of what people want from a GC. If the context allocator for `bayan run` is a single arena freed at exit, a script never frees anything by hand and never pauses for a collector.
@@ -348,13 +352,12 @@ The last row gives scripts most of what people want from a GC. If the context al
 | `class`, optional GC | Section 8 |
 | Goose's heap-less model | Conflicts with `alloc`, arenas and collections |
 | Macros, resumable effects, types-as-values comptime | Dialects, stack switching, slow compiles |
-| Inheritance, exceptions, implicit conversions, runtime reflection, async/await, explicit lifetimes, dependent types | Each contradicts a recorded decision |
+| Inheritance, exceptions, implicit conversions, runtime reflection, `async`/`await` (replaced by `scope`/`spawn`, bayan-concurrency.md), explicit lifetimes, dependent types | Each contradicts a recorded decision |
 
 ### Open questions
 
 - [ ] How does 007 lower a function-typed parameter today: `{fn, env*}`, monomorphized, or boxed?
-- [ ] Spelling of a failing function type: `(T -> bool fails E)`, matching `(Line -> Money uses net)`?
-- [ ] .NET interop: C ABI bridge to NativeAOT libraries, CLR hosting, or neither for v0.x?
+- [ ] Order of `fails` and `uses` in function types, e.g. `(T -> bool fails E uses net)`? (`() -> T fails DbError` is already specified, spec :551.)
 - [ ] Renumber diagnostics before 1.0, with one edition of aliases?
 - [ ] Synonym styles: keep per-project, or one canonical style with a display option?
 - [ ] Lockfile and package registry: when?
