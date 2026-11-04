@@ -1,4 +1,4 @@
 selfhost/parser/p.byn -> FullyQualifiedName~SelfhostParser
-selfhost/semantics/a.byn -> FullyQualifiedName~SelfhostSemanticsATests
+selfhost/semantics/a.byn -> FullyQualifiedName~SelfhostSemanticsATests|FullyQualifiedName~SelfhostSemanticsBTests|FullyQualifiedName~SelfhostSemanticsCTests
 selfhost/semantics/b.byn -> FullyQualifiedName~SelfhostSemanticsATests|FullyQualifiedName~SelfhostSemanticsBTests|FullyQualifiedName~SelfhostSemanticsCTests
 selfhost/semantics/c.byn -> FullyQualifiedName~SelfhostSemanticsATests|FullyQualifiedName~SelfhostSemanticsBTests|FullyQualifiedName~SelfhostSemanticsCTests
