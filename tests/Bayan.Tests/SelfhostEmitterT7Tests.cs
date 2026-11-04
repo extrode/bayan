@@ -361,7 +361,7 @@ public sealed class SelfhostEmitterT7Tests
 
     // ── Cases ────────────────────────────────────────────────────────────────────
 
-    /// <summary>No struct has a field, no function a name that reaches a stub: types, ownership and vtables compare whole.</summary>
+    /// <summary>No struct has a field: types, ownership and vtables compare whole.</summary>
     private const string PlainFixture = """
         union error Bad {
             bad
@@ -595,7 +595,7 @@ public sealed class SelfhostEmitterT7Tests
         Assert.Equal("", stdout);
     });
 
-    /// <summary>States and unions of unit variants only (no `u`) and with a payload (`u`); no struct field reaches `fieldName`.</summary>
+    /// <summary>States and unions of unit variants only (no `u`) and with a payload (`u`).</summary>
     private const string StateFixture = """
         struct Lamp {
             states {

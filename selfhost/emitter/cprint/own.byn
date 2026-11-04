@@ -42,14 +42,14 @@ void t7StorageParts(ref Ctx c, for Type t, at string at, to ref List<T7Part> par
     }
 }
 
-/// CEmitter.cs:722 `OwnsStorage`: whether a value of `t` owns heap storage the ownership checker tracks.
+/// CEmitter.cs:717 `OwnsStorage`: whether a value of `t` owns heap storage the ownership checker tracks.
 public bool ownsStorage(ref Ctx c, for Type t) uses alloc {
     var parts = List<T7Part>()
     t7StorageParts(ref c, for: t, at: "v", to: ref parts)
     return parts.length > 0
 }
 
-/// CEmitter.cs:729 `OwnStatements`: `line` of each of the storage parts of `t` at `at`, one statement each.
+/// CEmitter.cs:724 `OwnStatements`: `line` of each of the storage parts of `t` at `at`, one statement each.
 string t7OwnStatements(ref Ctx c, for Type t, at string at, as T7OwnLine line) uses alloc {
     var parts = List<T7Part>()
     t7StorageParts(ref c, for: t, at: at, to: ref parts)
