@@ -101,7 +101,7 @@ The **015** column marks modules the tooling ports are expected to need first; t
 | `std.cli` | argument parsing derived at comptime from a struct | `env` | spec | yes |
 | `std.config` | binds env, files and args to a struct at comptime; dependencies come from effects, not a container | `env`, `fs` | Proposed | |
 | `std.time` | `Instant`, `Duration` as units, `DateTime`, UTC and offsets; all immutable values | `clock` | spec | yes |
-| `std.fiber` (and sync types) | fibers, `scope`/`spawn` runtime (`limit:`, `timeout:`/`until:`, `policy: .collectAll`, `workers: .compute`), `Channel`, `select`, timers, `Fiber.yield()`, `Mutex.with`, `AsyncMutex`, `Arc`, `Rc`, blocking pool for `@blocking` externs, compute pool, debug watchdog, data-parallel `par` query | `suspend` | Decided, v0.2 | |
+| `std.fiber` (and sync types) | fibers, `scope`/`spawn` runtime (`limit:`, `timeout:`/`until:`, `policy: .collectAll`, `workers: .compute`), `Channel`, `select`, timers, `Fiber.yieldNow()`, `Fiber.checkCanceled()`, `shield(timeout:)`, `Mutex` guards (`lock()`, `unlock(move this)`), `AsyncMutex`, `Arc`, `Rc`, blocking pool for `@blocking` externs, compute pool, debug watchdog, data-parallel `par` query | `suspend` | Decided, v0.2 | |
 | `std.net` | TCP, UDP, DNS, Unix sockets, named pipes; timeouts or deadlines required in signatures | `net` | spec | |
 | `std.codec` | the shared codec interface so JSON, TOML, CSV and binary formats use one comptime derivation | none | Proposed | |
 | `std.json` | comptime-generated, zero-allocation reader and writer; decoded output `Untrusted` by default; `@derive(Json)` (unions, validation on decode); no reflection-based polymorphic decoding | none | Decided (std); derivation v0.2 | yes |

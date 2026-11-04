@@ -1,13 +1,15 @@
-# Nightly and on-demand batch mutation run (spec 013 T28): scripts/selfhost/mutate-batch.sh over the selfhost .byn files,
-# split into SHARDS parallel jobs (--shard k/4). It only measures: it never commits or pushes. Each shard uploads its reports
+# On-demand (nightly when the schedule is back on) batch mutation run (spec 013 T28): scripts/selfhost/mutate-batch.sh over the selfhost .byn files,
+# split into SHARDS parallel jobs (--shard k/4); each shard records once per test family, not per filter (handoff Q910). It only measures: it never commits or pushes. Each shard uploads its reports
 # (tmp/mutate-batch/, paths relative to the repo root); the `merge` job runs one quality-baseline.py update over all of them and
 # uploads tests/quality-baseline.json and the accepted reports. Apply the run by `python3 -I scripts/selfhost/quality-baseline.py update tests/quality-baseline.json . <reports...>`
 # on a chore/ branch off current dev, never by copying the baseline file.
 name: mutation
 
 on:
-  schedule:
-    - cron: '0 3 * * *'
+  # Nightly schedule off (2026-11-04): each group re-records the shared law tests (~2h a group, 83 groups), so shards hit the
+  # 6h limit. Groups now share one recording per (shard, family); back on after a workflow_dispatch run finishes every shard under 6h (handoff Q910).
+  # schedule:
+  #   - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       files:
