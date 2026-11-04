@@ -240,6 +240,23 @@ LocalId declareLocal(ref Binder b, through ref Ctx c, at TextSpan name, as Type 
     return local
 }
 
+/// `DeclareLocal` of the C# parser's `Name(SpanFrom(groupStart), "_")` (Parser.cs:2722), a tuple `for` variable: the
+/// selfhost parser keeps only the group's span (Q463), so the text `_` is given here. `CheckValue` returns on `_`
+/// (Naming.cs:42) and `AddLocal` after `_fn.Locals.Add` (Binder.cs:145-146).
+LocalId declareDiscard(ref Binder b, through ref Ctx c, at TextSpan name, as Type type, for LocalKind kind) {
+    let local = newLocal(ref c, by: LocalSymbol {
+        name: "_",
+        nameSpan: name,
+        span: name,
+        type: type,
+        kind: kind,
+        id: b.nextLocalId,
+    })
+    b.nextLocalId += 1
+    if b.fn >= 0 { c.functions[b.fn].locals.append(local) }
+    return local
+}
+
 void addLocal(ref Binder b, through ref Ctx c, at TextSpan name, for LocalId local) {
     if b.fn >= 0 { c.functions[b.fn].locals.append(local) }
     let text = t15Text(in c, from: b.file, at: name)
