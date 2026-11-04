@@ -11,7 +11,7 @@ namespace Bayan.Tests;
 /// <c>tests/cases/run/*.byn</c>: compiled with the C backend and run. Expected <c>*.stdout</c>
 /// always; <c>*.stderr</c> and <c>*.exitcode</c> only when non-empty / non-zero. A first line
 /// <c>// mode: fast</c> (or <c>debug</c>) picks the build mode; the default is <c>safe</c>. An optional
-/// <c>*.args</c> holds one command-line argument per line, and an optional <c>*.stdin</c> the bytes fed to standard input (otherwise it is empty). A line <c>// os: unix</c> among the first two skips the case on Windows. Each case runs in its own empty directory
+/// <c>*.args</c> holds one command-line argument per line, and an optional <c>*.stdin</c> the bytes fed to standard input (otherwise it is empty). A line <c>// os: unix</c> among the first two skips the case on Windows, and <c>// os: windows</c> skips it everywhere else. Each case runs in its own empty directory
 /// under <c>tmp/run/</c>, so it may write files. A <c>*.test.byn</c> case is run by <c>bayan test -v</c> instead, with seconds masked as <c>Ts</c>.
 /// A <c>*.pending</c> file marks a case expected to fail until a feature lands (it names the step): the output must still
 /// differ, so the case fails loudly once it matches, and <c>BAYAN_UPDATE=1</c> leaves its expected files alone.
@@ -43,7 +43,8 @@ public sealed class RunTests
     [MemberData(nameof(Cases))]
     public void RunGolden(string name)
     {
-        if (OperatingSystem.IsWindows() && File.ReadLines(Path.Combine(Golden.CasesRoot, name)).Take(2).Contains("// os: unix")) return;
+        var head = File.ReadLines(Path.Combine(Golden.CasesRoot, name)).Take(2).ToList();
+        if (OperatingSystem.IsWindows() ? head.Contains("// os: unix") : head.Contains("// os: windows")) return;
         _ = Warm.Value;
         var outcome = Get(name);
         if (outcome.BuildError is { } error) Assert.Fail($"{name} did not build:\n{error}");
