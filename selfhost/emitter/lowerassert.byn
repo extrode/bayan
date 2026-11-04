@@ -29,6 +29,7 @@ public bool printable(Type t) {
 }
 
 /// `e is BoundBuiltinCall { Member: member }`.
+// coverage-blocked: Q778 T3 lowerLvalue
 bool t5IsBuiltin(in Ctx c, for BExpr e, by semantics.BuiltinMember member) => !ltree.isLowered(e) && semantics.boundKind(e) == .builtinCall && c.bBuiltinCalls[e & 0xFFFFFFFF].member == member
 
 /// The `Constant` and syntax facts (Q537) of `old`, which `old with { ... }` keeps, set on its copy.
@@ -56,14 +57,6 @@ List<BExpr> t5Arguments(in Ctx c, for BExpr b) uses alloc {
     return r
 }
 
-/// `_builtins.StrBufGrow`: the builtin function `StrBuf()` (Q-T5: found by scanning `c.functions`).
-FuncId t5StrBufGrow(in Ctx c) {
-    for f in 0..c.functions.length {
-        if c.functions[f].builtin == .strBufGrow { return f }
-    }
-    return -1
-}
-
 /// Whether `m` is one of the members that change their receiver (Lowerer.cs:1582).
 bool t5Mutating(semantics.BuiltinMember m) {
     switch m {
@@ -75,19 +68,12 @@ bool t5Mutating(semantics.BuiltinMember m) {
     }
 }
 
-/// `a < b` for two's-complement `Big`s.
+/// `a < b` for two's-complement `Big`s within 65 bits (`bigCmp` is private to semantics, Q780): `hi` is all zeros or all ones, so it is the sign.
 bool t5BigLess(Big a, by Big b) {
     let an = (a.hi & 0x8000000000000000) != 0
     let bn = (b.hi & 0x8000000000000000) != 0
     if an != bn { return an }
-    if a.hi != b.hi { return a.hi < b.hi }
     return a.lo < b.lo
-}
-
-/// `(double)v` for a `Big` within the 64-bit integer range.
-f64 t5BigToF64(Big v) {
-    if (v.hi & 0x8000000000000000) != 0 { return -f64(0xFFFFFFFFFFFFFFFF - v.lo + 1) }
-    return f64(v.lo)
 }
 
 /// A literal of `type` with constant `k`.
@@ -104,8 +90,8 @@ BExpr t5Check(ref Ctx c, through in LCtx l, at TextSpan span, for BExpr fits, by
     return andExpr(ref c, through: in l, for: fits, by: check)
 }
 
-// stub: T5 waits on T21 exprSyntax (blocked: Q849)
 /// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
+// stub: T5 waits on T21 exprSyntax (blocked: Q849)
 public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
 }
 
@@ -137,6 +123,7 @@ public BExpr lowerCallParts(ref Ctx c, through ref LCtx l, for BExpr e) uses all
     if hasReceiver {
         receiver = parts[0]
         // A function value is named twice in C (its code and its environment), so anything but a local is evaluated once first.
+        // coverage-blocked: Q779 T4 lowerExpr
         if !isLvalue(in c, through: in l, for: receiver) || invoke && (ltree.isLowered(receiver) || semantics.boundKind(receiver) != .local) {
             receiver = spill(ref c, through: ref l, for: receiver)
         }
@@ -161,7 +148,7 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
     let span = c.bBuiltinCalls[i].span
     let type = c.bBuiltinCalls[i].type
     let receiver = c.bBuiltinCalls[i].receiver
-    if member == .strBufAppend && c.bBuiltinCalls[i].arguments.length > 0 {
+    if member == .strBufAppend {
         let first = c.bBuiltinCalls[i].arguments[0]
         if !ltree.isLowered(first) && semantics.boundKind(first) == .interpolated {
             // coverage-blocked: Q778 T3 lowerLvalue
@@ -178,13 +165,15 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
         place = lowerStable(ref c, through: ref l, for: place)
         // `map[k].take()` reads through the panicking index, so a missing key is not inserted.
         var read = place
+        // coverage-blocked: Q778 T3 lowerLvalue
         if t5IsBuiltin(in c, for: place, by: .mapIndexSet) {
+            // coverage-blocked: Q778 T3 lowerLvalue
             read = t5Builtin(ref c, from: place, as: .mapIndex, to: c.bBuiltinCalls[place & 0xFFFFFFFF].receiver, by: t5Arguments(in c, for: place))
         }
         let taken = spill(ref c, through: ref l, for: read)
         var empty: BExpr = -1
         if member == .strBufTake {
-            empty = semantics.addCall(ref c, from: BCall { span: span, function: t5StrBufGrow(in c), type: type })
+            empty = semantics.addCall(ref c, from: BCall { span: span, function: c.builtinStrBufGrow, type: type })
         } else {
             empty = semantics.addDefault(ref c, from: BDefault { span: span, type: type })
         }
@@ -203,6 +192,7 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
             for k in 0..c.structs[sid].fields.length {
                 let field = c.structs[sid].fields[k]
                 let given = c.fields[field].defaultValue
+                // coverage-exempt: Q780
                 values.append(given != -1 ? given : semantics.addDefault(ref c, from: BDefault { span: span, type: c.fields[field].type }))
             }
             ops.append(semantics.addStructLiteral(ref c, from: BStructLiteral { span: span, structId: sid, fields: move values, type: type }))
@@ -218,6 +208,7 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
         return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type })
     }
     var lowered = parts[0]
+    // coverage-blocked: Q779 T4 lowerExpr through 213
     if mutating && !isLvalue(in c, through: in l, for: lowered) {
         lowered = spill(ref c, through: ref l, for: lowered)
     } else if !mutating && !isTrivial(in c, through: in l, for: lowered) && (member == .listAsSpan || member == .strBufAsString) {
@@ -281,6 +272,7 @@ public BExpr lowerStable(ref Ctx c, through ref LCtx l, for BExpr place) uses al
             default: break
         }
     }
+    // coverage-blocked: Q779 T4 lowerExpr
     return isTrivial(in c, through: in l, for: place) || isLvalue(in c, through: in l, for: place) ? place : spill(ref c, through: ref l, for: place)
 }
 
@@ -317,6 +309,7 @@ public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by l
             // Spilling the target evaluates it ahead of the call (the emitter would evaluate it last inside the
             // call), so the parts before it are spilled first to keep them evaluated before it.
             for j in 0..lowered.length - 1 {
+                // coverage-blocked: Q779 T4 lowerExpr
                 unless isTrivial(in c, through: in l, for: lowered[j]) { lowered[j] = spill(ref c, through: ref l, for: lowered[j]) }
             }
             written = spill(ref c, through: ref l, for: written)
@@ -346,6 +339,7 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
     var value = lowerExpr(ref c, through: ref l, for: c.bSwitchExprs[si].value)
     if isNeverExpr(value) { return value }
     unless isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
+    // coverage-blocked: Q779 T4 lowerExpr
     let result: LocalId = semantics.isNever(type) ? -1 : newTemp(ref c, through: ref l, for: type)
     let end = newLabel(ref l, for: "switch_end")
     for k in 0..c.bSwitchExprs[si].arms.length {
@@ -357,13 +351,16 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
         lowerClaim(ref c, through: ref l, for: arm.pattern)
         // coverage-blocked: Q779 T4 lowerExpr
         let v = lowerExpr(ref c, through: ref l, for: arm.value)
+        // coverage-blocked: Q779 T4 lowerExpr
         if result != -1 {
             emitAssign(ref c, through: ref l, to: localExpr(ref c, at: arm.span, for: result), as: v)
         } else {
+            // coverage-blocked: Q779 T4 lowerExpr
             emitEffect(ref c, through: ref l, for: v)
         }
         emit(ref l, for: ltree.addLGoto(ref l.tree, from: LGoto { span: arm.span, label: end }))
         let body = captureEnd(ref l)
+        // coverage-blocked: Q779 T4 lowerMatch through 375
         if arm.guard == -1 {
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move body) }))
             continue
@@ -379,6 +376,7 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
     }
     emit(ref l, for: ltree.addLPanic(ref l.tree, from: LPanic { span: span, message: "no switch arm matched" }))
     emit(ref l, for: ltree.addLLabel(ref l.tree, from: LLabel { span: span, name: end }))
+    // coverage-blocked: Q779 T4 lowerExpr
     if result == -1 { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
     return localExpr(ref c, at: span, for: result)
 }
@@ -397,8 +395,8 @@ public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc
     var fits: BExpr = -1
     if semantics.isInteger(target) && semantics.isFloat(from) {
         let r = semantics.range(semantics.primKindOf(i64(target & 0xFFFFFFFF)))
-        let min = t5BigToF64(r.min)
-        let max = t5BigToF64(r.max)
+        let min = semantics.bigToF64(r.min)
+        let max = semantics.bigToF64(r.max)
         // A value above min - 1 truncates into range; when min - 1 rounds to min in `from` (i64 from f64, i32
         // from f32) no value lies between them, so the bound is min itself, inclusive.
         let below = from == semantics.prim(.f32) ? f64(f32(min - 1.0)) : min - 1.0
@@ -408,7 +406,7 @@ public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc
             fits = t5Check(ref c, through: in l, at: span, for: fits, by: .gt, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .real, real: below }))
         }
         fits = t5Check(ref c, through: in l, at: span, for: fits, by: .lt, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .real, real: max + 1.0 }))
-    } else if semantics.isInteger(target) && semantics.isInteger(from) {
+    } else if semantics.isInteger(target) {
         let r = semantics.range(semantics.primKindOf(i64(target & 0xFFFFFFFF)))
         let fr = semantics.range(semantics.primKindOf(i64(from & 0xFFFFFFFF)))
         if t5BigLess(fr.min, by: r.min) {

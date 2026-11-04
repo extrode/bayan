@@ -193,10 +193,11 @@ public sealed class SelfhostEmitterT5Tests
                 case .field: return $"field({c.fields[c.bFields[i].field].name};{t5Shape(ref c, through: in l, for: c.bFields[i].receiver)})"
                 case .tupleElement: return $"tuple({c.bTupleElements[i].index};{t5Shape(ref c, through: in l, for: c.bTupleElements[i].receiver)})"
                 case .call:
+                    let hasK = c.constants.tryGet(at: e) is { } ? "#k" : ""
                     let receiver = c.bCalls[i].receiver == -1 ? "-" : t5Shape(ref c, through: in l, for: c.bCalls[i].receiver)
                     var arguments = List<BExpr>()
                     for a in c.bCalls[i].arguments { arguments.append(a) }
-                    return $"call({c.functions[c.bCalls[i].function].name};{receiver};{t5List(ref c, through: in l, for: in arguments)})"
+                    return $"call({c.functions[c.bCalls[i].function].name}{hasK};{receiver};{t5List(ref c, through: in l, for: in arguments)})"
                 case .builtinCall:
                     var arguments = List<BExpr>()
                     for a in c.bBuiltinCalls[i].arguments { arguments.append(a) }
@@ -345,6 +346,45 @@ public sealed class SelfhostEmitterT5Tests
             let optional = ltree.addLOptionalValue(ref l.tree, from: LOptionalValue { span: span, optional: donor, type: i64Type })
             t5Reset(ref l, for: calls)
             sb.append(t5Report(ref c, through: ref l, for: "optStable", at: lowerStable(ref c, through: ref l, for: optional)))
+
+            t5Reset(ref l, for: calls)
+            var args3 = List<BExpr>()
+            args3.append(nv)
+            let neverArg = semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .strBufAppend, receiver: nv, arguments: move args3, type: semantics.prim(.void) })
+            sb.append(t5Report(ref c, through: ref l, for: "neverArg", at: lowerBuiltinCall(ref c, through: ref l, for: neverArg)))
+
+            t5Reset(ref l, for: calls)
+            let noArgSlot = semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .mapSlot, receiver: nv, type: i64Type })
+            sb.append(t5Report(ref c, through: ref l, for: "noArgSlot", at: lowerBuiltinCall(ref c, through: ref l, for: noArgSlot)))
+
+            t5Reset(ref l, for: calls)
+            sb.append(t5Report(ref c, through: ref l, for: "neverStable", at: lowerStable(ref c, through: ref l, for: nv)))
+
+            let lit = t5Literal(ref c, at: span, by: i64Type, as: Constant { kind: .flag, flag: true })
+            var args4 = List<BExpr>()
+            args4.append(lit)
+            args4.append(lit)
+            t5Reset(ref l, for: calls)
+            let staticCall = semantics.addCall(ref c, from: BCall { span: span, function: id, receiver: lit, arguments: move args4, type: i64Type })
+            sb.append(t5Report(ref c, through: ref l, for: "staticReceiver", at: lowerCallParts(ref c, through: ref l, for: staticCall)))
+
+            t5Reset(ref l, for: calls)
+            let kcall = semantics.addCall(ref c, from: BCall { span: span, function: id, type: i64Type })
+            semantics.setConstant(ref c, for: kcall, to: Constant { kind: .flag, flag: true })
+            sb.append(t5Report(ref c, through: ref l, for: "constantCall", at: lowerCallParts(ref c, through: ref l, for: kcall)))
+
+            let builtinsFn = t5Func(ref c, for: "builtins")
+            let strBuf = localExpr(ref c, at: span, for: c.functions[builtinsFn].parameters[2])
+            var parts3 = List<BInterpolationPart>()
+            parts3.append(BInterpolationPart { value: strBuf })
+            let bufText = semantics.addInterpolated(ref c, from: BInterpolated { span: span, parts: move parts3 })
+            t5Reset(ref l, for: calls)
+            sb.append(t5Report(ref c, through: ref l, for: "builtinPart", at: lowerWrite(ref c, through: ref l, for: donor, by: .print, to: -1, as: bufText)))
+
+            let kinds = t5Func(ref c, for: "kinds")
+            for p in 0..c.functions[kinds].parameters.length {
+                sb.append($"printable {p} {printable(c.locals[c.functions[kinds].parameters[p]].type)}\n")
+            }
             return $"== synth\n{sb.finish()}"
         }
         """;
@@ -457,7 +497,7 @@ public sealed class SelfhostEmitterT5Tests
                 case BoundLocal l: return $"local({Local(l.Local)})";
                 case BoundField f: return $"field({f.Field.Name};{Expr(f.Receiver)})";
                 case BoundTupleElement t: return $"tuple({t.Index};{Expr(t.Receiver)})";
-                case BoundCall c: return $"call({c.Function.Name};{(c.Receiver is null ? "-" : Expr(c.Receiver))};{List(c.Arguments)})";
+                case BoundCall c: return $"call({c.Function.Name}{(c.Constant is null ? "" : "#k")};{(c.Receiver is null ? "-" : Expr(c.Receiver))};{List(c.Arguments)})";
                 case BoundBuiltinCall b: return $"builtin({Lc(b.Member)};{Expr(b.Receiver)};{List(b.Arguments)})";
                 case BoundBinary b: return $"binary({Lc(b.Op)};{Expr(b.Left)};{Expr(b.Right)})";
                 case BoundConversion c: return $"conv({Lc(c.Kind)};{Expr(c.Operand)})";
@@ -526,6 +566,19 @@ public sealed class SelfhostEmitterT5Tests
 
         i64 pair(i64 x, by i64 y) => x
 
+        string ids(string s) => s
+
+        enum Color {
+            red
+            green
+        }
+
+        void inc(ref i64 v) {
+            v += 1
+        }
+
+        void kinds(i64 a, from f64 b, to bool c, by string d, as Color e, for P f) { }
+
         void calls(i64 k, from ref P p, to i64 -> i64 fv, by ref Map<string, P> m) {
             let c1 = id(k)
             let c2 = pair(id(k), by: id(k))
@@ -534,9 +587,11 @@ public sealed class SelfhostEmitterT5Tests
             let c5 = fv(k)
             m["a"].bump()
             p.bump()
+            var kk = 1
+            inc(ref kk)
         }
 
-        void builtins(ref List<i64> xs, to ref Map<string, P> m, by ref StrBuf sb, as ref Map<string, i64> mi) uses alloc {
+        void builtins(ref List<i64> xs, to ref Map<string, P> m, by ref StrBuf sb, as ref Map<string, i64> mi, for string name) uses alloc {
             let k = 1
             xs.append(k)
             let r = xs.removeLast()
@@ -553,6 +608,20 @@ public sealed class SelfhostEmitterT5Tests
             let sn = (id(k)) switch { 1 => 10, _ => 20 }
             let sp2 = mkl().span
             let v2 = mksb().finish()
+            sb.append(name)
+            let ln = mkl().length
+            xs.sort()
+            xs.replace(at: 0..1, by: xs)
+        }
+
+        void opts(ref Owned<P>? o) {
+            let t = o.take()
+        }
+
+        void arrs(ref i64[3] arr) {
+            let k = 1
+            arr[1] = 1
+            arr[id(k)] = 2
         }
 
         void writes(i64 k, from Symbol sy, to string s) uses alloc, console {
@@ -568,6 +637,7 @@ public sealed class SelfhostEmitterT5Tests
             xs[id(k)] = 1
             t.q = 1
             xs[k] = 1
+            m[ids("a")] = mk()
         }
 
         void tries(i64 k, from f64 d, to f32 f, by u8 b, as u64 u) {
@@ -584,6 +654,7 @@ public sealed class SelfhostEmitterT5Tests
             let t11 = u8.tryFrom(id(k))
             let t12 = u8.tryFrom(f)
             let sw = k switch { 1 => 10, _ => 20 }
+            let t13 = f64.tryFrom(k)
         }
 
         void main() { }
@@ -591,14 +662,15 @@ public sealed class SelfhostEmitterT5Tests
 
     private static readonly string[] CaseSpecs =
     [
-        "calls:0:callParts", "calls:1:callParts", "calls:2:callParts", "calls:3:callParts", "calls:4:callParts", "calls:5:callParts", "calls:6:callParts",
+        "calls:0:callParts", "calls:1:callParts", "calls:2:callParts", "calls:3:callParts", "calls:4:callParts", "calls:5:callParts", "calls:6:callParts", "calls:8:callParts",
         "builtins:1:builtin", "builtins:2:builtin", "builtins:3:builtin", "builtins:4:builtin", "builtins:5:builtin", "builtins:6:builtin",
         "builtins:7:builtin", "builtins:8:builtin", "builtins:9:builtin", "builtins:10:builtin", "builtins:11:builtin", "builtins:12:builtin",
-        "builtins:14:builtin", "builtins:15:builtin", "builtins:13:switch",
+        "builtins:14:builtin", "builtins:15:builtin", "builtins:13:switch", "builtins:16:builtin", "builtins:17:builtin", "builtins:18:builtin", "builtins:19:builtin",
+        "opts:0:builtin", "builtins:2:stable", "builtins:8:stable", "builtins:9:stable", "arrs:1:stable", "arrs:2:stable",
         "writes:0:write", "writes:1:write", "writes:2:write", "writes:0:levelTrivial", "writes:2:levelTrivial", "writes:0:levelCall", "writes:2:levelCall",
-        "places:1:stable", "places:2:stable", "places:3:stable", "places:4:stable", "places:5:stable",
+        "places:1:stable", "places:2:stable", "places:3:stable", "places:4:stable", "places:5:stable", "places:6:stable",
         "tries:0:tryFrom", "tries:1:tryFrom", "tries:2:tryFrom", "tries:3:tryFrom", "tries:4:tryFrom", "tries:5:tryFrom", "tries:6:tryFrom",
-        "tries:7:tryFrom", "tries:8:tryFrom", "tries:9:tryFrom", "tries:10:tryFrom", "tries:11:tryFrom", "tries:12:switch",
+        "tries:7:tryFrom", "tries:8:tryFrom", "tries:9:tryFrom", "tries:10:tryFrom", "tries:11:tryFrom", "tries:12:switch", "tries:13:tryFrom",
     ];
 
     private static List<string> CasesOracle(Compilation c)
@@ -663,6 +735,19 @@ public sealed class SelfhostEmitterT5Tests
         Run("neverSwitch", fl => (BoundExpr)Call(fl, "SwitchExpr", new BoundSwitchExpr(syntax, never, [], i64))!);
         Run("neverTry", fl => (BoundExpr)Call(fl, "TryFrom", new BoundTryFrom(syntax, never, (PrimitiveType)i64, i64))!);
         Run("optStable", fl => (BoundExpr)Call(fl, "Stable", new LOptionalValue(syntax, donor, i64))!);
+        Run("neverArg", fl => (BoundExpr)Call(fl, "BuiltinCall", new BoundBuiltinCall(syntax, BuiltinMember.StrBufAppend, never, [never], PrimitiveType.Void))!);
+        Run("noArgSlot", fl => (BoundExpr)Call(fl, "BuiltinCall", new BoundBuiltinCall(syntax, BuiltinMember.MapSlot, never, [], i64))!);
+        Run("neverStable", fl => (BoundExpr)Call(fl, "Stable", new LNever(syntax, PrimitiveType.Never))!);
+        var lit = new BoundLiteral(syntax, i64, new ConstantValue(true));
+        Run("staticReceiver", fl => (BoundExpr?)Call(fl, "CallParts", new BoundCall(syntax, donor.Function, lit, [lit, lit], i64)));
+        Run("constantCall", fl => (BoundExpr?)Call(fl, "CallParts", new BoundCall(syntax, donor.Function, null, [], i64) { Constant = new ConstantValue(true) }));
+        var builtinsFn = Functions(c).First(x => x.Name == "builtins");
+        var bufText = new BoundInterpolated(syntax, [new BoundInterpolationPart(null, new BoundLocal(syntax, builtinsFn.Parameters[2]))]);
+        Run("builtinPart", fl => (BoundExpr)Call(fl, "Write", donor, WriteSink.Print, null, bufText)!);
+        var printable = FunctionLowerer.GetMethod("Printable", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var kindsFn = Functions(c).First(x => x.Name == "kinds");
+        for (var p = 0; p < kindsFn.Parameters.Count; p++)
+            lines.Add($"printable {p} {((bool)printable.Invoke(null, [kindsFn.Parameters[p].Type])!).ToString().ToLowerInvariant()}");
         return lines;
     }
 
