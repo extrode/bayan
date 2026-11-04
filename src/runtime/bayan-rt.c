@@ -2041,10 +2041,18 @@ static wchar_t* byn_path_expand_short(wchar_t* full, int64_t* n, int64_t cap) {
 }
 #endif
 
+/* Panics with `name: what`, `name` being the `Path` function that was called. */
+static BYN_NORETURN void byn_path_fail(const char* name, const char* what, const char* file, int line) {
+    char msg[96];
+    snprintf(msg, sizeof msg, "%s: %s", name, what);
+    byn_panic(msg, file, line);
+}
+
 /* `Path.GetFullPath`: on Windows `GetFullPathNameW` and, when the result has a `~`, short-name expansion, as .NET's
  * `PathHelper.Normalize` does (an extended `\\?\` path is already full); elsewhere the working directory joined to a relative
- * path, then `PathInternal.RemoveRelativeSegments`, and `/` for an empty result. */
-static byn_path_buf byn_path_full(byn_str s, const char* file, int line) {
+ * path, then `PathInternal.RemoveRelativeSegments`, and `/` for an empty result. `name` names the caller in
+ * the panic text. */
+static byn_path_buf byn_path_full(byn_str s, const char* name, const char* file, int line) {
     byn_path_buf out = {0};
 #ifdef _WIN32
     if (byn_path_extended(s.ptr, s.len)) {
@@ -2055,11 +2063,11 @@ static byn_path_buf byn_path_full(byn_str s, const char* file, int line) {
     /* .NET's builder starts as `stackalloc char[MaxShortPath]` (260) and grows when the full path does not fit. */
     int64_t cap = 260;
     DWORD need = GetFullPathNameW(w, 0, NULL, NULL);
-    if (need == 0) byn_panic("Path.relative: the path cannot be made full", file, line);
+    if (need == 0) byn_path_fail(name, "the path cannot be made full", file, line);
     if (need > cap) cap = byn_path_grown(cap, need);
     wchar_t* full = byn_path_wide(cap);
     DWORD got = GetFullPathNameW(w, (DWORD)cap, full, NULL);
-    if (got == 0 || got >= cap) byn_panic("Path.relative: the path cannot be made full", file, line);
+    if (got == 0 || got >= cap) byn_path_fail(name, "the path cannot be made full", file, line);
     int64_t fulln = got;
     for (int64_t i = 0; i < fulln; i++)
         if (full[i] == L'~') {
@@ -2074,7 +2082,7 @@ static byn_path_buf byn_path_full(byn_str s, const char* file, int line) {
     byn_path_buf in = {0};
     if (s.ptr[0] != '/') {
         char* cwd = getcwd(NULL, 0);
-        if (!cwd) byn_panic("Path.relative: the working directory cannot be read", file, line);
+        if (!cwd) byn_path_fail(name, "the working directory cannot be read", file, line);
         int64_t cn = (int64_t)strlen(cwd);
         byn_path_put(&in, cwd, cn);
         if (cn == 0 || cwd[cn - 1] != '/') byn_path_put(&in, "/", 1);
@@ -2111,6 +2119,7 @@ static byn_path_buf byn_path_full(byn_str s, const char* file, int line) {
     }
     free(in.p);
     if (out.n == 0) byn_path_put(&out, "/", 1);
+    (void)name;
     (void)file;
     (void)line;
     return out;
@@ -2270,12 +2279,21 @@ static void byn_path_relative_into(byn_path_buf* sb, const uint8_t* fb, int64_t 
 byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line) {
     if (byn_path_effectively_empty(from) || byn_path_effectively_empty(path)) byn_panic("Path.relative: the path is empty", file, line);
     if (memchr(from.ptr, 0, (size_t)from.len) || memchr(path.ptr, 0, (size_t)path.len)) byn_panic("Path.relative: the path has a NUL byte", file, line);
-    byn_path_buf f = byn_path_full(from, file, line), p = byn_path_full(path, file, line), sb = {0};
+    byn_path_buf f = byn_path_full(from, "Path.relative", file, line), p = byn_path_full(path, "Path.relative", file, line), sb = {0};
     byn_path_relative_into(&sb, f.p, f.n, p.p, p.n);
     byn_str result = byn_str_copy((byn_str){sb.p, sb.n}, to);
     free(sb.p);
     free(f.p);
     free(p.p);
+    return result;
+}
+
+byn_str byn_path_full_path(byn_str s, byn_alloc* to, const char* file, int line) {
+    if (byn_path_effectively_empty(s)) byn_panic("Path.fullPath: the path is empty", file, line);
+    if (memchr(s.ptr, 0, (size_t)s.len)) byn_panic("Path.fullPath: the path has a NUL byte", file, line);
+    byn_path_buf f = byn_path_full(s, "Path.fullPath", file, line);
+    byn_str result = byn_str_copy((byn_str){f.p, f.n}, to);
+    free(f.p);
     return result;
 }
 

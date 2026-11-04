@@ -265,7 +265,7 @@ internal static class EffectAnalysis
         BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver or BuiltinFunction.ArenaNew
             or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
             or BuiltinFunction.SymbolIntern or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName or BuiltinFunction.PathDirectoryName
-            or BuiltinFunction.PathCombine or BuiltinFunction.PathCombineSpan => ["alloc"],
+            or BuiltinFunction.PathCombine or BuiltinFunction.PathCombineSpan or BuiltinFunction.PathFullPath => ["alloc"],
         _ => [],
     };
 

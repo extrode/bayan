@@ -1886,6 +1886,8 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_path_combine_span(paths.ptr, paths.len, byn_context);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
             }
+            case BuiltinFunction.PathFullPath:
+                return $"byn_path_full_path({Expr(c.Arguments[0])}, byn_context, {Loc(c.Syntax)})";
             case BuiltinFunction.HexEncode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
