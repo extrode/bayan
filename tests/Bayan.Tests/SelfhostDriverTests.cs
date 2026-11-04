@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Reflection;
 using Bayan.Cli;
+using Bayan.Syntax.Diagnostics;
 
 namespace Bayan.Tests;
 
@@ -104,6 +106,106 @@ public sealed class SelfhostDriverT1Tests
         // a directory named like a script is not one (`File.Exists`)
         Directory.CreateDirectory(Path.Combine(dir, "d.byn"));
         AssertSameAsCs(Path.Combine(dir, "d.byn"));
+    }
+
+    private static string StyleLine(Style? out_, Style? err, bool tty) =>
+        $"out {Fmt(out_)} err {Fmt(err)} tty {tty.ToString().ToLowerInvariant()}";
+
+    private static string Fmt(Style? s) => $"{(s!.Colors is not null).ToString().ToLowerInvariant()} {(s.Symbols == Symbols.Ascii).ToString().ToLowerInvariant()} {s.Width}";
+
+    private static object? Static(string name) => typeof(CliApp).GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null);
+
+    /// <summary>The style state after <see cref="CliApp.Run(string[], TextWriter, TextWriter)"/> with the process environment.</summary>
+    private static string CsStyle(string[] args)
+    {
+        CliApp.Run(args, new StringWriter(), new StringWriter());
+        return StyleLine((Style?)Static("s_styleOut"), (Style?)Static("s_styleErr"), (bool)Static("s_stderrTty")!);
+    }
+
+    private static string ProbeStyle(IReadOnlyDictionary<string, string> env, string[] args)
+    {
+        var (exit, stdout, _) = SelfhostDriverHarness.RunProbe(env, ["style", .. args]);
+        Assert.Equal(CliApp.ExitOk, exit);
+        return stdout.TrimEnd('\n').Split('\n')[^1];
+    }
+
+    [Theory]
+    [InlineData("--color", "always", "version")]
+    [InlineData("--color", "never", "version")]
+    [InlineData("--color", "auto", "version")]
+    [InlineData("--ascii", "version")]
+    [InlineData("--color=always", "--ascii", "version")]
+    [InlineData("--ascii", "--color", "never", "version")]
+    [InlineData("version")]
+    public void DecidesTheStyleAsCliAppRun(params string[] args) =>
+        Assert.Equal(CsStyle(args), ProbeStyle(new Dictionary<string, string>(), args));
+
+    [Theory]
+    [InlineData("NO_COLOR", "1", "always", false)]
+    [InlineData("FORCE_COLOR", "1", "never", false)]
+    [InlineData("TERM", "dumb", "always", true)]
+    public void AnExplicitFlagDecidesWhateverTheEnvironmentSays(string name, string value, string color, bool ascii)
+    {
+        // CliApp.Run reads Environment.GetEnvironmentVariable, so the C# side is `Decide` over the same variable, the process
+        // environment itself left alone for the other tests. The driver reads no environment (Q919): these are the cases where a flag decides.
+        string? Env(string k) => k == name ? value : null;
+        var expected = TerminalStyle.Decide(color, ascii, false, Env, 0);
+        string[] args = ascii ? ["--ascii", "--color", color, "version"] : ["--color", color, "version"];
+        Assert.Equal(StyleLine(expected, expected, false), ProbeStyle(new Dictionary<string, string> { [name] = value }, args));
+    }
+
+    [Theory]
+    [InlineData("auto", false, true, 80)]
+    [InlineData("auto", false, true, 0)]
+    [InlineData("auto", true, false, 80)]
+    [InlineData("never", true, true, 80)]
+    [InlineData("always", false, false, 80)]
+    public void DecideMatchesTerminalStyleWithNoEnvironment(string color, bool ascii, bool tty, int width)
+    {
+        var expected = TerminalStyle.Decide(color, ascii, tty, _ => null, width);
+        var actual = SelfhostDriverHarness.RunProbe(new Dictionary<string, string>(), "decide", color, ascii ? "true" : "false", tty ? "true" : "false", width.ToString()).Out;
+        Assert.Equal(Fmt(expected) + "\n", actual);
+    }
+
+    [Fact]
+    public void RefuseLibraryAsCliAppDoes()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "tmp", "t1-driver-lib");
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        var lib = Path.Combine(root, "cleanlib");
+        Directory.CreateDirectory(Path.Combine(lib, "src", "cleanlib"));
+        File.WriteAllText(Path.Combine(lib, "package.byn"), "Package {\n    name: \"local/cleanlib\",\n    version: \"0.1.0\",\n    edition: 2027,\n    kind: .lib,\n}\n");
+        File.WriteAllText(Path.Combine(lib, "src", "cleanlib", "main.byn"), "public i32 one() => 1\n");
+        var plain = Path.Combine(root, "plain");
+        Directory.CreateDirectory(plain);
+        File.WriteAllText(Path.Combine(plain, "main.byn"), "i32 main() => 0\n");
+        foreach (var (path, refused) in new[] { (lib, true), (plain, false) })
+        {
+            var expected = Oracle(["build", "--emit-c", path]);
+            Assert.Equal(refused ? CliApp.ExitUsage : CliApp.ExitOk, expected.Exit);
+            var (exit, stdout, stderr) = SelfhostDriverHarness.RunProbe(new Dictionary<string, string>(), "library", path, "build");
+            Assert.Equal(0, exit);
+            Assert.Equal(refused ? "true\n" : "false\n", stdout);
+            SelfhostEmitterHarness.AssertSame($"stderr for {Path.GetFileName(path)}", expected.Err, stderr);
+        }
+    }
+
+    [Fact]
+    public void IsScriptAsCliAppDoes()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t1-driver-script");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "#!/usr/bin/env bayan\nprint(\"x\")\n");
+        File.WriteAllText(Path.Combine(dir, "b.byn"), "print(\"x\")\n");
+        File.WriteAllText(Path.Combine(dir, "c.byn"), "#");
+        File.WriteAllText(Path.Combine(dir, "d.byn"), "#!");
+        File.WriteAllText(Path.Combine(dir, "e.byn"), "#x\n");
+        var isScript = typeof(CliApp).GetMethod("IsScript", BindingFlags.NonPublic | BindingFlags.Static)!;
+        foreach (var path in new[] { "a.byn", "b.byn", "c.byn", "d.byn", "e.byn", "missing.byn", "." }.Select(n => Path.GetFullPath(Path.Combine(dir, n))))
+        {
+            var expected = ((bool)isScript.Invoke(null, [path])!).ToString().ToLowerInvariant();
+            Assert.Equal(expected + "\n", SelfhostDriverHarness.RunProbe(new Dictionary<string, string>(), "isscript", path).Out);
+        }
     }
 
     [Fact]

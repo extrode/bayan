@@ -2,10 +2,22 @@
 
 // ── T1 state
 
-/// The global options of `TakeGlobalOptions` (CliApp.cs:315). The terminal is never a tty here (R2: no colour), so `color` is checked and kept, and paints nothing.
+/// One stream's style as `TerminalStyle.Decide` (TerminalStyle.cs:13) gives it. The palette is `Ansi16` whenever `color` (the
+/// truecolor palettes need `COLORTERM`, which has no builtin, Q919); `ascii` is `Symbols.Ascii`.
+struct DStyle {
+    bool color = false
+    bool ascii = false
+    i64 width = 100
+}
+
+/// The global options of `TakeGlobalOptions` (CliApp.cs:315), as given (`ascii`, `color`), and the state `Run` decides from
+/// them (CliApp.cs:29-31: `s_styleOut`, `s_styleErr`, `s_stderrTty`). Commands read the decided styles, not the raw flags.
 struct DCtx {
     bool ascii = false
     string color = "auto"
+    DStyle styleOut = DStyle {}
+    DStyle styleErr = DStyle {}
+    bool stderrTty = false
 }
 
 /// The state of a run before any option is read.
