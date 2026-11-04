@@ -14,7 +14,7 @@ namespace Bayan.Tests;
 /// 011 T8: <c>selfhost/emitter/cprint/helpers.byn</c> (CEmitter.cs 779-1046: <c>Equal</c>, <c>KeyHash</c>, <c>KeyEq</c>,
 /// <c>MapMethod</c>, <c>Format</c>, <c>FormatInto</c>, <c>FormatIntoWithSpec</c>) against the C# as an in-process oracle. The types
 /// are the parameters of the fixture's <c>eqN</c>, <c>fmtN</c> and <c>mapN</c> functions; the cases that reach <c>fieldName</c>,
-/// <c>stringLiteral</c>, <c>enumNames</c>, <c>symbolText</c> or <c>functionName</c> (T6 stubs) are left out (Q849).
+/// <c>stringLiteral</c>, <c>enumNames</c>, <c>symbolText</c> or <c>functionName</c> (T6 stubs) are left out (Q793).
 /// </summary>
 public sealed class SelfhostEmitterT8Tests
 {
@@ -86,7 +86,7 @@ public sealed class SelfhostEmitterT8Tests
             }
             sb.append($"hashes {cc.hashes}\n")
             sb.append("== helpers\n")
-            // A body that names a field or writes a literal goes through `fieldName` or `stringLiteral` (T6 stubs, Q849): the
+            // A body that names a field or writes a literal goes through `fieldName` or `stringLiteral` (T6 stubs, Q793): the
             // payload fixture compares name and prototype only.
             for n in cc.helperOrder { sb.append($"{n} {cc.helpers[n].proto} | {bodies && n != "bynh_eq_err" ? cc.helpers[n].body : "-"}\n") }
             return $"{sb.finish()}"

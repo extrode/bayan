@@ -268,7 +268,7 @@ public string primitiveName(PrimitiveKind k) {
 }
 
 /// The C# `PrimitiveType.Bits`.
-i64 primitiveBits(PrimitiveKind k) {
+public i64 primitiveBits(PrimitiveKind k) {
     switch k {
         case .i8: return 8
         case .i16: return 16
