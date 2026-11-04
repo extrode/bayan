@@ -52,7 +52,10 @@ public sealed class SelfhostEmitterT22Tests
 
         void t22Locals(ref StrBuf sb, from in Ctx c, for in LoweredFunction lf) uses alloc {
             sb.append($"{c.functions[lf.symbol].name}:")
-            for x in lf.locals { sb.append($" {c.locals[x].kind.ordinal}:{c.locals[x].name}") }
+            for x in lf.locals {
+                sb.append($" {c.locals[x].kind.ordinal}:{c.locals[x].name}")
+                if c.locals[x].kind != .temp { sb.append($"@{c.locals[x].span.start}") }
+            }
             sb.append("\n")
         }
 
@@ -141,8 +144,12 @@ public sealed class SelfhostEmitterT22Tests
     {
         var p = Lowerer.Lower(c);
         return p.Functions.Concat(p.Tests.Select(t => t.Function))
-            .Select(lf => lf.Symbol.Name + ":" + string.Concat(lf.Locals.Select(l => $" {(int)l.Kind}:{l.Name}"))).ToList();
+            .Select(lf => lf.Symbol.Name + ":" + string.Concat(lf.Locals.Select(Local))).ToList();
     }
+
+    /// <summary>A local as <c>kind:name</c>, and for a non-temp <c>@</c> its declaration's start (0 with no location).</summary>
+    private static string Local(LocalSymbol l) =>
+        $" {(int)l.Kind}:{l.Name}" + (l.Kind == LocalKind.Temp ? "" : $"@{l.Location?.Span.Start ?? 0}");
 
     /// <summary>Compares one input; null when every function matches, else the first differing function and the count of differing ones.</summary>
     private static (string First, int Count)? Compare(string path)
@@ -299,26 +306,65 @@ public sealed class SelfhostEmitterT22Tests
         return 0;
     });
 
+    // `for try (a, b) in …` binds the group as `_` through `BindPresent` (Binder.cs:1119, Parser.cs:2722).
+    private const string ForTryTuple = """
+        union error ReadError { broken }
+
+        type Pair = (i64 x, i64 y)
+
+        struct Pairs {
+            i64 at
+            i64 limit
+
+            Pair? next(ref this) fails ReadError {
+                if at >= limit { return null }
+                at += 1
+                return (x: at, y: at * 10)
+            }
+        }
+
+        i64 total(through i64 limit) fails ReadError {
+            var sum = 0
+            for try (a, b) in (Pairs { at: 0, limit: limit }) {
+                sum += a + b
+            }
+            return sum
+        }
+
+        print($"total {try total(through: 3)}")
+        """;
+
+    [Fact]
+    public void ForTryTuple_LocalsMatchCSharp() => WithFixture(ForTryTuple, path =>
+    {
+        var c = Compile(path);
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        Assert.Contains(CSharp(c), x => x.StartsWith("total:", StringComparison.Ordinal) && x.Contains(" 5:_@", StringComparison.Ordinal));
+        Assert.Null(Compare(path));
+        return 0;
+    });
+
     /// <summary>Every fixture of the T2-T5 and T11 test classes that compiles alone.</summary>
     [Fact]
     public void Fixtures_LocalsMatchCSharp()
     {
         var fixtures = new[] { typeof(SelfhostEmitterT2Tests), typeof(SelfhostEmitterT3Tests), typeof(SelfhostEmitterT4Tests), typeof(SelfhostEmitterT5Tests), typeof(SelfhostEmitterT11Tests) }
             .SelectMany(t => t.GetFields(BindingFlags.Static | BindingFlags.NonPublic)
-                .Where(f => f.IsLiteral && f.FieldType == typeof(string) && f.Name != "Main")
-                .Select(f => (Name: $"{t.Name}.{f.Name}", Source: (string)f.GetRawConstantValue()!)))
+                .Where(f => (f.IsLiteral || f.IsInitOnly) && f.FieldType == typeof(string) && f.Name != "Main")
+                .Select(f => (Name: $"{t.Name}.{f.Name}", Source: (string)(f.IsLiteral ? f.GetRawConstantValue() : f.GetValue(null))!)))
             .ToList();
         var failures = new List<string>();
-        var compared = 0;
+        var compared = new List<string>();
         foreach (var (name, source) in fixtures)
             WithFixture(source, path =>
             {
                 if (Compile(path).Diagnostics.HasErrors) return 0;
-                compared++;
+                compared.Add(name);
                 if (Compare(path) is { } d) failures.Add($"{name} ({d.Count}) {d.First}");
                 return 0;
             });
-        Assert.True(compared >= 10, $"only {compared} fixtures compared");
+        Assert.True(compared.Count >= 10, $"only {compared.Count} fixtures compared");
+        Assert.Contains("SelfhostEmitterT5Tests.Fixture", compared);
         Assert.True(failures.Count == 0, string.Join('\n', failures));
     }
 }

@@ -816,9 +816,10 @@ bool isBorrowedPlace(ref Ctx c, for BExpr e) {
     }
 }
 
-/// The pattern `{ } x`: on an optional, matches a present value and binds it unwrapped.
-BPattern bindPresent(ref Binder b, through ref Ctx c, at TextSpan name, as Type input) {
-    let local = declareLocal(ref b, through: ref c, at: name, as: unwrap(ref c, for: input), for: .patternVariable)
+/// The pattern `{ } x`: on an optional, matches a present value and binds it unwrapped. `discard`: `name` is a tuple
+/// `for try` variable's group, the C# parser's `_` (`declareDiscard`).
+BPattern bindPresent(ref Binder b, through ref Ctx c, at TextSpan name, as Type input, bool discard = false) {
+    let local = discard ? declareDiscard(ref b, through: ref c, at: name, as: unwrap(ref c, for: input), for: .patternVariable) : declareLocal(ref b, through: ref c, at: name, as: unwrap(ref c, for: input), for: .patternVariable)
     c.locals[local].borrowsSubject = true
     return addPropertyPattern(ref c, from: BPropertyPattern {
         span: name,
