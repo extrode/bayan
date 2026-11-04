@@ -40,6 +40,7 @@ public string equalHelper(ref CCtx cc, from ref Ctx c, for Type t, at string a, 
                 }
                 if all { cases.append(v) }
             }
+            // coverage-exempt: Q793
             if cases.length == 0 { return $"({a}.code == {b}.code)" }
             let ect = errorCType(ref cc, from: ref c)
             let eq = "bynh_eq_err"

@@ -100,7 +100,7 @@ public sealed class SelfhostEmitterT8Tests
         string t8FormatInto(ref Ctx c) uses alloc {
             var sb = StrBuf()
             sb.append("== formatinto\n")
-            for name in ["Plain", "One", "Two", "Both", "Wrong", "Static", "Fails", "ByValue", "NotBuf", "Three", "SpecRef", "Reverse", "StaticSpec", "FailsSpec"] {
+            for name in ["Plain", "One", "Two", "Both", "Wrong", "Static", "Fails", "ByValue", "NotBuf", "Three", "SpecRef", "Reverse", "StaticSpec", "FailsSpec", "SpecByValue", "SpecNotBuf"] {
                 for s in 0..c.structs.length {
                     if c.structs[s].name == name {
                         sb.append($"{name} {t8Method(ref c, for: cprint.formatInto(ref c, for: s))} {t8Method(ref c, for: cprint.formatIntoWithSpec(ref c, for: s))}\n")
@@ -256,6 +256,16 @@ public sealed class SelfhostEmitterT8Tests
                 void formatInto(ref StrBuf sb, as FormatSpec spec) fails ParseError { }
             }
 
+            struct SpecByValue {
+                i64 x
+                void formatInto(in StrBuf sb, as FormatSpec spec) { }
+            }
+
+            struct SpecNotBuf {
+                i64 x
+                void formatInto(ref List<i64> xs, as FormatSpec spec) { }
+            }
+
             void zbadEq(List<i64> a) { }
             void zbadFmt(Plain a) { }
             void zbadFmtList(List<i64> a) { }
@@ -344,7 +354,7 @@ public sealed class SelfhostEmitterT8Tests
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
         foreach (var n in (List<string>)Field(emitter, "_helperOrder")!) sb.Append($"{n} {helpers[n].Proto} | {(bodies && n != "bynh_eq_err" ? helpers[n].Body : "-")}\n");
         sb.Append("== formatinto\n");
-        foreach (var name in new[] { "Plain", "One", "Two", "Both", "Wrong", "Static", "Fails", "ByValue", "NotBuf", "Three", "SpecRef", "Reverse", "StaticSpec", "FailsSpec" })
+        foreach (var name in new[] { "Plain", "One", "Two", "Both", "Wrong", "Static", "Fails", "ByValue", "NotBuf", "Three", "SpecRef", "Reverse", "StaticSpec", "FailsSpec", "SpecByValue", "SpecNotBuf" })
         {
             var s = c.EntryModule.Structs.First(x => x.Name == name);
             sb.Append($"{name} {Method(CEmitter.FormatInto(s))} {Method(CEmitter.FormatIntoWithSpec(s))}\n");
