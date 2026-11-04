@@ -1,7 +1,7 @@
 // T5: PowerAssert.cs 1-78.
 // Header only (T1): the entry point with its final signature.
 
-/// PowerAssert.cs `Column`: the rune column of byte offset `offset` in `line`.
-public i64 powerAssertColumn(string line, at i64 offset) {
+/// PowerAssert.cs:29 `Column` (Q848): the rune count of `before` once flattened.
+public i64 powerAssertColumn(string before) {
     return 0
 }
