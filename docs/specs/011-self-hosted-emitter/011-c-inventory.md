@@ -24,3 +24,12 @@ R4. Every hit of the token regex in `tests/Bayan.Tests/CInventoryTests.cs` is on
 ## Platform guards (not extensions, not checked by the regex)
 
 Predefined macros the runtime and emitter test, listed for 012: `_WIN32` (15 in `bayan-rt.c`), `__wasi__`, `__APPLE__`, `__linux__`, `__GNUC__`, `__clang__` (`bayan-rt.h:17-25` selects the attribute and builtin spellings above).
+
+## Direct libc calls in emitted C (012 T8, Q7)
+
+The C that `CliApp.EmitC` gives for every `tests/cases/run` input (all three modes; a `*.test.byn` as `bayan test` builds it) calls these library functions directly, not through `byn_*`. They are rows for 012, not a fix: no emitted C changes (Q7). `SelfhostDriverT8Tests` (in SelfhostDriverInventoryTests.cs, named for the guard filter) fails on a call missing here or listed without a call.
+
+- `atoi`
+- `memcpy`
+- `memmove`
+- `strcmp`
