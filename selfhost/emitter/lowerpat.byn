@@ -87,7 +87,7 @@ public BExpr lowerMatch(ref Ctx c, through ref LCtx l, for BPattern pattern, at 
             let span = c.bUnionPatterns[i].span
             let variant = c.bUnionPatterns[i].variant
             let target = optional ? t4Inner(ref c, through: ref l, at: span, for: value) : value
-            let tag = Constant { kind: .integer, integer: Big { lo: u64(c.unionVariants[variant].tag), hi: 0 } }
+            let tag = Constant { kind: .integer, integer: Big { lo: c.unionVariants[variant].tag >= 0 ? u64(c.unionVariants[variant].tag) : ~u64(-(c.unionVariants[variant].tag + 1)), hi: c.unionVariants[variant].tag >= 0 ? 0 : 0xFFFFFFFFFFFFFFFF } }
             var tests = List<BExpr>()
             if optional { tests.append(ltree.addLOptionalHas(ref l.tree, from: T4LOptionalHas { span: span, optional: value })) }
             let literal = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.i32), value: tag })

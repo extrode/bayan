@@ -79,7 +79,7 @@ public i64 powerAssertColumn(string before) {
 
 /// PowerAssert.cs:47 `Diagram`'s local `Add`: appends a piece, dropping an `anyFrom` past the last column, and an `anyFrom`
 /// that an always-shown column from there on satisfies, and the columns of `whens` that are always shown.
-void powerAssertAdd(in List<i64> columns, by in List<bool> always, to ref List<PowerAssertPiece> pieces, for string text, at i64 value, through in List<i64> whens, from in List<i64> unlesses, as i64 anyFrom) uses alloc {
+void powerAssertAdd(List<i64> columns, by List<bool> always, to ref List<PowerAssertPiece> pieces, for string text, at i64 value, through List<i64> whens, from List<i64> unlesses, as i64 anyFrom) uses alloc {
     var from = anyFrom
     if from != -1 {
         if from >= columns.length { return }
@@ -100,45 +100,45 @@ void powerAssertAdd(in List<i64> columns, by in List<bool> always, to ref List<P
 }
 
 /// PowerAssert.cs:47 `Diagram`'s local `Gap`.
-string powerAssertGap(in List<i64> columns, at i64 k) uses alloc {
+string powerAssertGap(List<i64> columns, at i64 k) uses alloc {
     return " ".repeated(columns[k] - (k == 0 ? 0 : columns[k - 1] + 1))
 }
 
 /// PowerAssert.cs:47 `Diagram`: the pieces after the statement, for ascending, distinct `columns`: a row of bars, then
 /// each value hung from its bar, rightmost first, under the bars to its left. A column that is not `always` shown (a side
 /// that may not run) is shown only when its value was computed; the guards of the pieces say so, and name only such columns.
-List<PowerAssertPiece> powerAssertDiagram(in List<i64> columns, by in List<bool> always) uses alloc {
+List<PowerAssertPiece> powerAssertDiagram(List<i64> columns, by List<bool> always) uses alloc {
     var pieces = List<PowerAssertPiece>()
     let none = List<i64>()
     let line = $"\n{powerAssertIndent}"
     // A missing column leaves a blank where its bar would be, but never at the end of the row.
-    powerAssertAdd(in columns, by: in always, to: ref pieces, for: line, at: -1, through: in none, from: in none, as: 0)
+    powerAssertAdd(columns, by: always, to: ref pieces, for: line, at: -1, through: none, from: none, as: 0)
     for k in 0..columns.length {
         var only = List<i64>()
         only.append(k)
-        powerAssertAdd(in columns, by: in always, to: ref pieces, for: $"{powerAssertGap(in columns, at: k)}{powerAssertBar}", at: -1, through: in only, from: in none, as: -1)
+        powerAssertAdd(columns, by: always, to: ref pieces, for: $"{powerAssertGap(columns, at: k)}{powerAssertBar}", at: -1, through: only, from: none, as: -1)
         unless always[k] {
-            powerAssertAdd(in columns, by: in always, to: ref pieces, for: $"{powerAssertGap(in columns, at: k)} ", at: -1, through: in none, from: in only, as: k + 1)
+            powerAssertAdd(columns, by: always, to: ref pieces, for: $"{powerAssertGap(columns, at: k)} ", at: -1, through: none, from: only, as: k + 1)
         }
     }
     var k = columns.length - 1
     while k >= 0 {
         var only = List<i64>()
         only.append(k)
-        powerAssertAdd(in columns, by: in always, to: ref pieces, for: line, at: -1, through: in only, from: in none, as: -1)
+        powerAssertAdd(columns, by: always, to: ref pieces, for: line, at: -1, through: only, from: none, as: -1)
         for j in 0..k {
             var both = List<i64>()
             both.append(k)
             both.append(j)
             var left = List<i64>()
             left.append(j)
-            powerAssertAdd(in columns, by: in always, to: ref pieces, for: $"{powerAssertGap(in columns, at: j)}{powerAssertBar}", at: -1, through: in both, from: in none, as: -1)
+            powerAssertAdd(columns, by: always, to: ref pieces, for: $"{powerAssertGap(columns, at: j)}{powerAssertBar}", at: -1, through: both, from: none, as: -1)
             unless always[j] {
-                powerAssertAdd(in columns, by: in always, to: ref pieces, for: $"{powerAssertGap(in columns, at: j)} ", at: -1, through: in only, from: in left, as: -1)
+                powerAssertAdd(columns, by: always, to: ref pieces, for: $"{powerAssertGap(columns, at: j)} ", at: -1, through: only, from: left, as: -1)
             }
         }
-        powerAssertAdd(in columns, by: in always, to: ref pieces, for: powerAssertGap(in columns, at: k), at: -1, through: in only, from: in none, as: -1)
-        powerAssertAdd(in columns, by: in always, to: ref pieces, for: "", at: k, through: in only, from: in none, as: -1)
+        powerAssertAdd(columns, by: always, to: ref pieces, for: powerAssertGap(columns, at: k), at: -1, through: only, from: none, as: -1)
+        powerAssertAdd(columns, by: always, to: ref pieces, for: "", at: k, through: only, from: none, as: -1)
         k -= 1
     }
     return pieces

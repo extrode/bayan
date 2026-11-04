@@ -50,10 +50,10 @@ public sealed class SelfhostEmitterT5Tests
             rest.append(args[3])
             let ascii = false
             let symbols = semantics.t26Symbols(ascii)
-            let o = semantics.t26ParseBuildOptions(in rest, allowSpans: false) ?? return 2
+            let o = semantics.t26ParseBuildOptions(rest, allowSpans: false) ?? return 2
             var reported = List<semantics.T26Reported>()
             var ok = false
-            var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+            var c = semantics.t26Compile(o, by: symbols, to: ref reported, through: ref ok)
             var l = LCtx {}
             if mode == "cases" {
                 Io.stdout.write("== cases\n")
@@ -86,7 +86,7 @@ public sealed class SelfhostEmitterT5Tests
             }
             var sb = StrBuf()
             sb.append($"diagram {spec}\n")
-            for p in powerAssertDiagram(in columns, by: in always) {
+            for p in powerAssertDiagram(columns, by: always) {
                 var from: i64 = 0
                 for at in 0..p.text.length {
                     if p.text.bytes[at] == 10 {
@@ -139,7 +139,7 @@ public sealed class SelfhostEmitterT5Tests
         }
 
         /// The expression of statement `index` of `fn`: a declaration's initializer, an expression statement's expression, an assignment's target.
-        BExpr t5Pick(in Ctx c, at FuncId fn, for i64 index) {
+        BExpr t5Pick(Ctx c, at FuncId fn, for i64 index) {
             let s = c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements[index]
             let i = s & 0xFFFFFFFF
             switch semantics.boundKind(s) {
@@ -149,36 +149,38 @@ public sealed class SelfhostEmitterT5Tests
             }
         }
 
-        string t5Local(in Ctx c, for LocalId x) => c.locals[x].kind == .temp ? "temp" : c.locals[x].name
+        string t5Local(Ctx c, for LocalId x) => c.locals[x].kind == .temp ? "temp" : c.locals[x].name
 
         string t5Real(f64 r) {
             let hi = i64(r / 4294967296.0)
             return $"{hi}.{i64(r - f64(hi) * 4294967296.0)}"
         }
 
-        string t5List(ref Ctx c, through in LCtx l, for in List<BExpr> xs) uses alloc {
+        string t5List(ref Ctx c, through LCtx l, for List<BExpr> xs) uses alloc {
             var sb = StrBuf()
-            for x in xs { sb.append($"{t5Shape(ref c, through: in l, for: x)};") }
+            for x in xs { sb.append($"{t5Shape(ref c, through: l, for: x)};") }
             return $"{sb.finish()}"
         }
 
-        string t5Shape(ref Ctx c, through in LCtx l, for BExpr e) uses alloc {
-            let key = cprint.key(ref c, for: ltree.typeOf(in c, through: in l.tree, for: e))
-            let span = ltree.spanOf(in c, through: in l.tree, for: e)
-            return $"{t5Body(ref c, through: in l, for: e)}:{key}@{span.start}+{span.length}"
+        string t5Shape(ref Ctx c, through LCtx l, for BExpr e) uses alloc {
+            let key = cprint.key(ref c, for: ltree.typeOf(c, through: l.tree, for: e))
+            let span = ltree.spanOf(c, through: l.tree, for: e)
+            return $"{t5Body(ref c, through: l, for: e)}:{key}@{span.start}+{span.length}"
         }
 
-        string t5Body(ref Ctx c, through in LCtx l, for BExpr e) uses alloc {
+        string t5Body(ref Ctx c, through LCtx l, for BExpr e) uses alloc {
             if ltree.isLowered(e) {
                 switch ltree.lKindOf(e) {
                     case .voidValue: return "void"
                     case .neverValue: return "never"
-                    case .optionalValue: return $"optval({t5Shape(ref c, through: in l, for: l.tree.optionalValues[ltree.lIndexOf(e)].optional)})"
-                    case .optionalHas: return $"has({t5Shape(ref c, through: in l, for: l.tree.optionalHass[ltree.lIndexOf(e)].optional)})"
-                    case .assignExpr: return $"set({t5Shape(ref c, through: in l, for: l.tree.assignExprs[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: in l, for: l.tree.assignExprs[ltree.lIndexOf(e)].value)})"
-                    case .sequence: return $"seq({t5List(ref c, through: in l, for: in l.tree.sequences[ltree.lIndexOf(e)].effects)}{t5Shape(ref c, through: in l, for: l.tree.sequences[ltree.lIndexOf(e)].value)})"
-                    case .indexUnchecked: return $"unchecked({t5Shape(ref c, through: in l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: in l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].index)})"
-                    case .errorCode: return $"errcode({t5Shape(ref c, through: in l, for: l.tree.errorCodes[ltree.lIndexOf(e)].error)})"
+                    case .optionalValue: return $"optval({t5Shape(ref c, through: l, for: l.tree.optionalValues[ltree.lIndexOf(e)].optional)})"
+                    case .optionalHas: return $"has({t5Shape(ref c, through: l, for: l.tree.optionalHass[ltree.lIndexOf(e)].optional)})"
+                    case .assignExpr: return $"set({t5Shape(ref c, through: l, for: l.tree.assignExprs[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: l, for: l.tree.assignExprs[ltree.lIndexOf(e)].value)})"
+                    case .sequence: return $"seq({t5List(ref c, through: l, for: l.tree.sequences[ltree.lIndexOf(e)].effects)}{t5Shape(ref c, through: l, for: l.tree.sequences[ltree.lIndexOf(e)].value)})"
+                    case .indexUnchecked: return $"unchecked({t5Shape(ref c, through: l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].index)})"
+                    case .errorCode: return $"errcode({t5Shape(ref c, through: l, for: l.tree.errorCodes[ltree.lIndexOf(e)].error)})"
+                    case .unionTag: return $"uniontag({t5Shape(ref c, through: l, for: l.tree.unionTags[ltree.lIndexOf(e)].unionValue)})"
+                    case .unionField: return $"unionfield({c.unionVariants[l.tree.unionFields[ltree.lIndexOf(e)].variant].name};{l.tree.unionFields[ltree.lIndexOf(e)].index};{t5Shape(ref c, through: l, for: l.tree.unionFields[ltree.lIndexOf(e)].unionValue)})"
                     default: return "lowered?"
                 }
             }
@@ -195,29 +197,29 @@ public sealed class SelfhostEmitterT5Tests
                         default: return $"k{hasK}"
                     }
                 case .defaultValue: return "default"
-                case .local: return $"local({t5Local(in c, for: c.bLocals[i].local)})"
-                case .field: return $"field({c.fields[c.bFields[i].field].name};{t5Shape(ref c, through: in l, for: c.bFields[i].receiver)})"
-                case .tupleElement: return $"tuple({c.bTupleElements[i].index};{t5Shape(ref c, through: in l, for: c.bTupleElements[i].receiver)})"
+                case .local: return $"local({t5Local(c, for: c.bLocals[i].local)})"
+                case .field: return $"field({c.fields[c.bFields[i].field].name};{t5Shape(ref c, through: l, for: c.bFields[i].receiver)})"
+                case .tupleElement: return $"tuple({c.bTupleElements[i].index};{t5Shape(ref c, through: l, for: c.bTupleElements[i].receiver)})"
                 case .call:
                     let hasK = c.constants.tryGet(at: e) is { } ? "#k" : ""
-                    let receiver = c.bCalls[i].receiver == -1 ? "-" : t5Shape(ref c, through: in l, for: c.bCalls[i].receiver)
+                    let receiver = c.bCalls[i].receiver == -1 ? "-" : t5Shape(ref c, through: l, for: c.bCalls[i].receiver)
                     var arguments = List<BExpr>()
                     for a in c.bCalls[i].arguments { arguments.append(a) }
-                    return $"call({c.functions[c.bCalls[i].function].name}{hasK};{receiver};{t5List(ref c, through: in l, for: in arguments)})"
+                    return $"call({c.functions[c.bCalls[i].function].name}{hasK};{receiver};{t5List(ref c, through: l, for: arguments)})"
                 case .builtinCall:
                     var arguments = List<BExpr>()
                     for a in c.bBuiltinCalls[i].arguments { arguments.append(a) }
-                    return $"builtin({c.bBuiltinCalls[i].member};{t5Shape(ref c, through: in l, for: c.bBuiltinCalls[i].receiver)};{t5List(ref c, through: in l, for: in arguments)})"
-                case .unary: return $"unary({c.bUnaries[i].op == .notKeyword ? "not" : $"{c.bUnaries[i].op}"};{t5Shape(ref c, through: in l, for: c.bUnaries[i].operand)})"
+                    return $"builtin({c.bBuiltinCalls[i].member};{t5Shape(ref c, through: l, for: c.bBuiltinCalls[i].receiver)};{t5List(ref c, through: l, for: arguments)})"
+                case .unary: return $"unary({c.bUnaries[i].op == .notKeyword ? "not" : $"{c.bUnaries[i].op}"};{t5Shape(ref c, through: l, for: c.bUnaries[i].operand)})"
                 case .errorVariant: return $"errvar({c.errorVariants[c.bErrorVariants[i].variant].name})"
-                case .binary: return $"binary({c.bBinaries[i].op};{t5Shape(ref c, through: in l, for: c.bBinaries[i].left)};{t5Shape(ref c, through: in l, for: c.bBinaries[i].right)})"
-                case .conversion: return $"conv({c.bConversions[i].kind};{t5Shape(ref c, through: in l, for: c.bConversions[i].operand)})"
-                case .conditional: return $"cond({t5Shape(ref c, through: in l, for: c.bConditionals[i].condition)};{t5Shape(ref c, through: in l, for: c.bConditionals[i].whenTrue)};{t5Shape(ref c, through: in l, for: c.bConditionals[i].whenFalse)})"
-                case .index: return $"index({t5Shape(ref c, through: in l, for: c.bIndexes[i].target)};{t5Shape(ref c, through: in l, for: c.bIndexes[i].index)})"
+                case .binary: return $"binary({c.bBinaries[i].op};{t5Shape(ref c, through: l, for: c.bBinaries[i].left)};{t5Shape(ref c, through: l, for: c.bBinaries[i].right)})"
+                case .conversion: return $"conv({c.bConversions[i].kind};{t5Shape(ref c, through: l, for: c.bConversions[i].operand)})"
+                case .conditional: return $"cond({t5Shape(ref c, through: l, for: c.bConditionals[i].condition)};{t5Shape(ref c, through: l, for: c.bConditionals[i].whenTrue)};{t5Shape(ref c, through: l, for: c.bConditionals[i].whenFalse)})"
+                case .index: return $"index({t5Shape(ref c, through: l, for: c.bIndexes[i].target)};{t5Shape(ref c, through: l, for: c.bIndexes[i].index)})"
                 case .structLiteral:
                     var fields = List<BExpr>()
                     for a in c.bStructLiterals[i].fields { fields.append(a) }
-                    return $"struct({t5List(ref c, through: in l, for: in fields)})"
+                    return $"struct({t5List(ref c, through: l, for: fields)})"
                 default: return "bound?"
             }
         }
@@ -237,34 +239,34 @@ public sealed class SelfhostEmitterT5Tests
             return $"{sb.finish()}"
         }
 
-        string t5Parts(ref Ctx c, through in LCtx l, for in List<BInterpolationPart> parts) uses alloc {
+        string t5Parts(ref Ctx c, through LCtx l, for List<BInterpolationPart> parts) uses alloc {
             var sb = StrBuf()
             for p in parts {
                 if p.value == -1 {
                     sb.append($"t'{t5Escape(p.text ?? "")}',")
                 } else {
-                    sb.append($"{t5Shape(ref c, through: in l, for: p.value)},")
+                    sb.append($"{t5Shape(ref c, through: l, for: p.value)},")
                 }
             }
             return $"{sb.finish()}"
         }
 
-        string t5Stmt(ref Ctx c, through in LCtx l, for BStmt s) uses alloc {
+        string t5Stmt(ref Ctx c, through LCtx l, for BStmt s) uses alloc {
             if ltree.isLowered(s) {
                 let i = ltree.lIndexOf(s)
                 switch ltree.lKindOf(s) {
                     case .write:
-                        let target = l.tree.writes[i].target == -1 ? "-" : t5Shape(ref c, through: in l, for: l.tree.writes[i].target)
+                        let target = l.tree.writes[i].target == -1 ? "-" : t5Shape(ref c, through: l, for: l.tree.writes[i].target)
                         var guards = StrBuf()
                         if (l.tree.writes[i].guards is { } gs) {
                             guards.append(";g:")
-                            for g in gs { guards.append(g == -1 ? "-," : $"{t5Shape(ref c, through: in l, for: g)},") }
+                            for g in gs { guards.append(g == -1 ? "-," : $"{t5Shape(ref c, through: l, for: g)},") }
                         }
-                        return $"write({l.tree.writes[i].sink};{target};{t5Parts(ref c, through: in l, for: in l.tree.writes[i].parts)}{guards.finish()})"
+                        return $"write({l.tree.writes[i].sink};{target};{t5Parts(ref c, through: l, for: l.tree.writes[i].parts)}{guards.finish()})"
                     case .failingCall:
                         let f = l.tree.failingCalls[i]
-                        let result = f.result == -1 ? "-" : t5Local(in c, for: f.result)
-                        return $"failcall({t5Local(in c, for: f.error)};{t5Shape(ref c, through: in l, for: f.call)};{result})"
+                        let result = f.result == -1 ? "-" : t5Local(c, for: f.result)
+                        return $"failcall({t5Local(c, for: f.error)};{t5Shape(ref c, through: l, for: f.call)};{result})"
                     case .panic: return $"panic({l.tree.panics[i].message})"
                     case .label: return $"label({l.tree.labels[i].name})"
                     case .gotoStmt: return $"goto({l.tree.gotoStmts[i].label})"
@@ -273,16 +275,16 @@ public sealed class SelfhostEmitterT5Tests
             }
             let i = s & 0xFFFFFFFF
             switch semantics.boundKind(s) {
-                case .exprStmt: return $"expr({t5Shape(ref c, through: in l, for: c.bExprStmts[i].expr)})"
-                case .assign: return $"assign({t5Shape(ref c, through: in l, for: c.bAssigns[i].target)};{t5Shape(ref c, through: in l, for: c.bAssigns[i].value)})"
-                case .localDecl: return $"decl({t5Local(in c, for: c.bLocalDecls[i].local)})"
-                case .ifStmt: return $"if({t5Shape(ref c, through: in l, for: c.bIfs[i].condition)};{t5Stmt(ref c, through: in l, for: c.bIfs[i].then)})"
+                case .exprStmt: return $"expr({t5Shape(ref c, through: l, for: c.bExprStmts[i].expr)})"
+                case .assign: return $"assign({t5Shape(ref c, through: l, for: c.bAssigns[i].target)};{t5Shape(ref c, through: l, for: c.bAssigns[i].value)})"
+                case .localDecl: return $"decl({t5Local(c, for: c.bLocalDecls[i].local)})"
+                case .ifStmt: return $"if({t5Shape(ref c, through: l, for: c.bIfs[i].condition)};{t5Stmt(ref c, through: l, for: c.bIfs[i].then)})"
                 case .block:
                     var sb = StrBuf()
                     sb.append("block[")
                     var inner = List<BStmt>()
                     for x in c.bBlocks[i].statements { inner.append(x) }
-                    for x in inner { sb.append($"{t5Stmt(ref c, through: in l, for: x)} ") }
+                    for x in inner { sb.append($"{t5Stmt(ref c, through: l, for: x)} ") }
                     sb.append("]")
                     return $"{sb.finish()}"
                 default: return "stmt?"
@@ -293,8 +295,8 @@ public sealed class SelfhostEmitterT5Tests
         string t5Report(ref Ctx c, through ref LCtx l, for string head, at BExpr result) uses alloc {
             var sb = StrBuf()
             sb.append($"case {head}\n")
-            sb.append(result == -1 ? "  result null\n" : $"  result {t5Shape(ref c, through: in l, for: result)}\n")
-            for s in l.outs[0] { sb.append($"  out {t5Stmt(ref c, through: in l, for: s)}\n") }
+            sb.append(result == -1 ? "  result null\n" : $"  result {t5Shape(ref c, through: l, for: result)}\n")
+            for s in l.outs[0] { sb.append($"  out {t5Stmt(ref c, through: l, for: s)}\n") }
             var temps: i64 = 0
             for x in l.locals {
                 if c.locals[x].kind == .temp { temps += 1 }
@@ -309,7 +311,7 @@ public sealed class SelfhostEmitterT5Tests
             for b in t5Field(spec, at: 1).bytes { index = index * 10 + i64(b) - 48 }
             let kind = t5Field(spec, at: 2)
             t5Reset(ref l, for: fn)
-            let e = kind == "assert" || kind == "stmt" ? -1 : t5Pick(in c, at: fn, for: index)
+            let e = kind == "assert" || kind == "stmt" ? -1 : t5Pick(c, at: fn, for: index)
             var result: BExpr = -1
             if kind == "callParts" { result = lowerCallParts(ref c, through: ref l, for: e) }
             if kind == "builtin" { result = lowerBuiltinCall(ref c, through: ref l, for: e) }
@@ -325,7 +327,7 @@ public sealed class SelfhostEmitterT5Tests
                 result = lowerWriteParts(ref c, through: ref l, for: e, by: .log, to: -1, as: c.bCalls[e & 0xFFFFFFFF].arguments[0], at: level)
             }
             if kind == "levelCall" {
-                let level = t5Pick(in c, at: t5Func(ref c, for: "calls"), for: 0)
+                let level = t5Pick(c, at: t5Func(ref c, for: "calls"), for: 0)
                 result = lowerWriteParts(ref c, through: ref l, for: e, by: .log, to: -1, as: c.bCalls[e & 0xFFFFFFFF].arguments[0], at: level)
             }
             return t5Report(ref c, through: ref l, for: spec, at: result)
@@ -334,7 +336,7 @@ public sealed class SelfhostEmitterT5Tests
         /// Hand-built nodes: calls with an operand that nv returns, a `Stable` optional value.
         string t5Synth(ref Ctx c, through ref LCtx l) uses alloc {
             let calls = t5Func(ref c, for: "calls")
-            let donor = t5Pick(in c, at: calls, for: 0)
+            let donor = t5Pick(c, at: calls, for: 0)
             let span = c.bCalls[donor & 0xFFFFFFFF].span
             let i64Type = c.bCalls[donor & 0xFFFFFFFF].type
             let id = c.bCalls[donor & 0xFFFFFFFF].function
@@ -544,6 +546,8 @@ public sealed class SelfhostEmitterT5Tests
                 case BoundCall c: return $"call({c.Function.Name}{(c.Constant is null ? "" : "#k")};{(c.Receiver is null ? "-" : Expr(c.Receiver))};{List(c.Arguments)})";
                 case BoundBuiltinCall b: return $"builtin({Lc(b.Member)};{Expr(b.Receiver)};{List(b.Arguments)})";
                 case LErrorCode x: return $"errcode({Expr(x.Error)})";
+                case LUnionTag x: return $"uniontag({Expr(x.Union)})";
+                case LUnionField x: return $"unionfield({x.Variant.Name};{x.Index};{Expr(x.Union)})";
                 case BoundUnary u: return $"unary({Lc(u.Op)};{Expr(u.Operand)})";
                 case BoundErrorVariant v: return $"errvar({v.Variant.Name})";
                 case BoundBinary b: return $"binary({Lc(b.Op)};{Expr(b.Left)};{Expr(b.Right)})";
@@ -745,6 +749,26 @@ public sealed class SelfhostEmitterT5Tests
             let s3 = k switch { 1 => panic("a"), _ => panic("b") }
         }
 
+        union Mode {
+            read = 1
+            none = -1
+        }
+
+        struct Bill {
+            i64 id
+            states {
+                card(i64 amount)
+                cash(i64 amount)
+            }
+        }
+
+        Bill mk(i64 k) => Bill.card { id: 0, amount: k }
+
+        void unions(Mode m, to i64 k) uses alloc {
+            let u1 = m switch { .read => 1, .none => 2 }
+            assert mk(k).amount == 3
+        }
+
         union error AE {
             bad
             worse
@@ -817,7 +841,7 @@ public sealed class SelfhostEmitterT5Tests
         "places:1:stable", "places:2:stable", "places:3:stable", "places:4:stable", "places:5:stable", "places:6:stable",
         "tries:0:tryFrom", "tries:1:tryFrom", "tries:2:tryFrom", "tries:3:tryFrom", "tries:4:tryFrom", "tries:5:tryFrom", "tries:6:tryFrom",
         "tries:7:tryFrom", "tries:8:tryFrom", "tries:9:tryFrom", "tries:10:tryFrom", "tries:11:tryFrom", "tries:12:switch", "tries:13:tryFrom",
-        "narrows:1:callParts", "narrows:2:switch", "narrows:3:switch", "nevers:0:switch", "spans:0:builtin",
+        "narrows:1:callParts", "narrows:2:switch", "narrows:3:switch", "nevers:0:switch", "spans:0:builtin", "unions:0:switch", "unions:1:assert",
         "asserts:0:assert", "asserts:1:assert", "asserts:2:assert", "asserts:3:assert", "asserts:4:assert", "asserts:5:assert", "asserts:6:assert", "asserts:7:assert",
         "asserts:8:assert", "asserts:9:assert", "asserts:10:assert", "asserts:11:assert", "asserts:12:assert", "asserts:13:assert", "asserts:14:assert", "asserts:15:assert", "asserts:16:assert",
         "asserts:17:assert", "asserts:18:assert", "asserts:19:assert", "asserts:20:assert", "asserts:21:assert", "asserts:22:assert", "assertsNever:0:assert", "asserts:0:stmt",
