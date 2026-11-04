@@ -1,39 +1,646 @@
-// T9: CEmitter.cs 1173-1236 (constructor, `Signature`, `Emit`), 1254-1616 (statements, ownership checks).
-// Header only (T1): final signatures.
+// T9: CEmitter.cs 1173-1236 (constructor, `Signature`, `Emit`), 1254-1616 (statements, ownership checks); D3's
+// `Count` (:1481-1482) is not ported. `_sb` is a `ref StrBuf` beside the frame (`CFunc`, cctx.byn), and C#'s
+// `_sb.Length = mark` is `t9Truncate`.
 
 import semantics
 import emitter.ltree
 
-/// CEmitter.cs:1173 `FunctionEmitter.Emit`: the C definition of `f`.
-public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f) {
-    return ""
+type TupleField = semantics.TupleField
+type TextSpan = semantics.TextSpan
+type LocalId = semantics.LocalId
+type FuncId = semantics.FuncId
+type BStmt = semantics.BStmt
+type BFormatSpec = semantics.BFormatSpec
+
+/// CEmitter.cs:166 `ResetLine` (T6's range; Q798).
+const t9ResetLine: string = "#line generated"
+
+// ── Frame ────────────────────────────────────────────────────────────────────
+
+/// CEmitter.cs:1173 `FunctionEmitter`'s constructor: the frame of `f`, its locals named.
+public CFunc functionEmitter(ref CCtx cc, from ref Ctx c, for in ltree.LoweredFunction f) uses alloc {
+    let fn = f.symbol
+    var fe = CFunc { fn: fn }
+    fe.file = fileName(ref cc, from: ref c, for: fn)
+    fe.linePath = c.functions[fn].file == -1 ? null : cString(filePath(ref cc, from: ref c, for: fn))
+    let parameters = t9Copy(c.functions[fn].parameters)
+    for p in parameters { fe.names[p] = $"p_{c.locals[p].name}" }
+    // Q1: round 4 redoes this (CEmitter.cs:1181-1186).
+    // A lambda reads each capture from its environment tuple (spec 007 R13).
+    let captures = t9Copy(c.functions[fn].captures)
+    if captures.length > 0 {
+        var fields = List<TupleField>()
+        for l in captures { fields.append(TupleField { name: null, type: c.locals[l].type }) }
+        let env = cType(ref cc, from: ref c, for: semantics.internTuple(ref c, for: in fields))
+        for i in 0..captures.length { fe.names[captures[i]] = $"(({env}*)env)->item{i + 1}" }
+    }
+    var n: i64 = 0
+    for l in f.locals {
+        fe.names[l] = c.locals[l].kind == .temp ? $"t{n}" : $"l{n}_{c.locals[l].name}"
+        n += 1
+    }
+    return fe
+}
+
+/// CEmitter.cs:1192 `ReturnsValue`.
+bool returnsValue(Ctx c, by FuncId fn) {
+    let r = c.functions[fn].returnType
+    // coverage-exempt: Q800
+    return !semantics.isVoid(r) && !semantics.isNever(r) && c.functions[fn].kind != .constructor
 }
 
 /// CEmitter.cs:1194 `FunctionEmitter.Signature` (Q845): the C declarator of `f`, after the frame the constructor (:1173) builds.
-public string signature(ref CCtx cc, from ref Ctx c, through ltree.LTree t, for ltree.LoweredFunction f) {
-    return ""
+public string signature(ref CCtx cc, from ref Ctx c, through ltree.LTree t, for ltree.LoweredFunction f) uses alloc {
+    let fe = functionEmitter(ref cc, from: ref c, for: in f)
+    return frameSignature(ref cc, for: fe, from: ref c)
+}
+
+/// CEmitter.cs:1194 `Signature` on a built frame.
+string frameSignature(ref CCtx cc, for CFunc fe, from ref Ctx c) uses alloc {
+    let fn = fe.fn
+    let kind = c.functions[fn].kind
+    let hasFails = c.functions[fn].hasFails
+    var result = ""
+    if hasFails {
+        result = errorCType(ref cc, from: ref c)
+    } else if kind == .constructor {
+        result = cType(ref cc, from: ref c, for: semantics.structTypeOf(c.functions[fn].owner))
+    } else {
+        result = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+    }
+    var ps = List<string>()
+    // Q1: round 4 redoes this (CEmitter.cs:1201).
+    if kind == .lambda { ps.append("void* env") }
+    if semantics.functionHasThis(ref c, by: fn) && kind != .constructor {
+        ps.append($"{cType(ref cc, from: ref c, for: semantics.structTypeOf(c.functions[fn].owner))}* self")
+    }
+    let parameters = t9Copy(c.functions[fn].parameters)
+    for p in parameters {
+        let ct = cType(ref cc, from: ref c, for: c.locals[p].type)
+        ps.append($"{ct}{semantics.paramIsByRef(ref c, by: p) ? "*" : ""} {fe.names[p]}")
+    }
+    if hasFails && returnsValue(c, by: fn) { ps.append($"{cType(ref cc, from: ref c, for: c.functions[fn].returnType)}* byn_out") }
+    let noreturn = semantics.isNever(c.functions[fn].returnType) && !hasFails ? "BYN_NORETURN " : ""
+    var joined = StrBuf()
+    if ps.length == 0 { joined.append("void") }
+    for i in 0..ps.length {
+        if i > 0 { joined.append(", ") }
+        joined.append(ps[i])
+    }
+    return $"{noreturn}{result} {functionName(ref cc, from: ref c, for: fn)}({joined.finish()})"
+}
+
+/// CEmitter.cs:1209 `FunctionEmitter.Emit`: the C definition of `f`.
+public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f) uses alloc {
+    var fe = functionEmitter(ref cc, from: ref c, for: in f)
+    let fn = fe.fn
+    let kind = c.functions[fn].kind
+    var sb = StrBuf()
+    sb.append(frameSignature(ref cc, for: fe, from: ref c))
+    sb.append(" {\n")
+    if kind == .constructor {
+        let ty = cType(ref cc, from: ref c, for: semantics.structTypeOf(c.functions[fn].owner))
+        line(ref sb, by: in fe, for: $"{ty} self_v = {{0}};")
+        line(ref sb, by: in fe, for: $"{ty}* self = &self_v;")
+    }
+    for l in f.locals {
+        let lt = c.locals[l].type
+        if semantics.isVoid(lt) || semantics.isNever(lt) { continue }
+        line(ref sb, by: in fe, for: $"{cType(ref cc, from: ref c, for: lt)} {fe.names[l]} = {{0}};")
+    }
+    var owned = t9Copy(c.functions[fn].parameters)
+    for l in f.locals { owned.append(l) }
+    for l in owned {
+        if hasSlot(ref cc, for: ref fe, from: ref c, at: l) { line(ref sb, by: in fe, for: $"byn_own_slot {slot(ref cc, for: ref fe, from: ref c, at: l)} = {{0}};") }
+    }
+    for i in 0..f.contextSlots { line(ref sb, by: in fe, for: $"byn_alloc* ctx{i} = byn_context;") }
+    for i in 0..f.panicSlots { line(ref sb, by: in fe, for: $"byn_panic_handler ph{i};") }
+    // Q1: round 4 redoes this (CEmitter.cs:1227).
+    if kind == .lambda && c.functions[fn].captures.length == 0 { line(ref sb, by: in fe, for: "(void)env;") }
+    let statements = t9Copy(c.bBlocks[f.body & 0xFFFFFFFF].statements)
+    for s in statements { statement(ref cc, for: ref fe, from: ref c, through: t, to: ref sb, at: s) }
+    if kind == .constructor {
+        line(ref sb, by: in fe, for: "return self_v;")
+    } else if c.functions[fn].hasFails && !returnsValue(c, by: fn) {
+        line(ref sb, by: in fe, for: $"return ({errorCType(ref cc, from: ref c)}){{0}};")
+    } else if semantics.isNever(c.functions[fn].returnType) {
+        line(ref sb, by: in fe, for: $"byn_unreachable({fe.file}, {lineOf(in c, by: in fe, at: semantics.nodeSpan(in c, for: f.body))});")
+    }
+    sb.append("}\n")
+    if fe.lastLine != 0 {
+        sb.append(t9ResetLine)
+        sb.append("\n")
+    }
+    return $"{sb.finish()}"
+}
+
+// ── Ownership checks ─────────────────────────────────────────────────────────
+
+/// CEmitter.cs:1257 `IsOwner`: a local, owning pattern binding (of `switch move x`) or `move` parameter this function owns.
+bool isOwner(Ctx c, for LocalId l) {
+    let k = c.locals[l].kind
+    return ((k == .letKeyword || k == .varKeyword || k == .patternVariable) && !c.locals[l].borrowsSubject)
+        || (c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword)
 }
 
 /// CEmitter.cs:1261 `HasSlot` (Q845): whether local `l` has a moved slot (ownership checks on, an owned local of a unique type).
-public bool hasSlot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) {
-    return false
+public bool hasSlot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) uses alloc {
+    return cc.ownershipChecks && isOwner(c, for: l) && semantics.isUnique(ref c, for: c.locals[l].type)
 }
 
 /// CEmitter.cs:1263 `Slot` (Q845): the C name of local `l`'s moved slot.
-public string slot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) {
-    return ""
+public string slot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) uses alloc {
+    return $"own_{f.names[l]}"
+}
+
+/// CEmitter.cs:1266 `OwnerRoot`: the owned local `e` lives in by value (through fields and tuple items), or -1.
+LocalId ownerRoot(Ctx c, for BExpr e) {
+    if ltree.isLowered(e) { return -1 }
+    let i = e & 0xFFFFFFFF
+    switch semantics.boundKind(e) {
+        case .local: return isOwner(c, for: c.bLocals[i].local) ? c.bLocals[i].local : -1
+        case .field: return ownerRoot(c, for: c.bFields[i].receiver)
+        case .tupleElement: return ownerRoot(c, for: c.bTupleElements[i].receiver)
+        default: return -1
+    }
+}
+
+/// CEmitter.cs:1275 `Root`: the local `e` lives in by value, or -1.
+LocalId root(Ctx c, for BExpr e) {
+    if ltree.isLowered(e) { return -1 }
+    let i = e & 0xFFFFFFFF
+    switch semantics.boundKind(e) {
+        case .local: return c.bLocals[i].local
+        case .field: return root(c, for: c.bFields[i].receiver)
+        case .tupleElement: return root(c, for: c.bTupleElements[i].receiver)
+        default: return -1
+    }
+}
+
+/// CEmitter.cs:1284 `Place`: a store target as an lvalue, without checking its local was not moved.
+string placeOf(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) uses alloc {
+    unless ltree.isLowered(e) {
+        let i = e & 0xFFFFFFFF
+        switch semantics.boundKind(e) {
+            case .local:
+                let l = c.bLocals[i].local
+                return c.locals[l].isParameter && semantics.paramIsByRef(ref c, by: l) ? $"(*{f.names[l]})" : f.names[l]
+            case .field:
+                let receiver = placeOf(ref cc, for: ref f, from: ref c, through: t, at: c.bFields[i].receiver)
+                return $"{receiver}.{fieldName(c.fields[c.bFields[i].field].name)}"
+            case .tupleElement:
+                let receiver = placeOf(ref cc, for: ref f, from: ref c, through: t, at: c.bTupleElements[i].receiver)
+                return $"{receiver}.item{c.bTupleElements[i].index + 1}"
+            default: return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: e)
+        }
+    }
+    return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: e)
 }
 
 /// CEmitter.cs:1294 `CheckedStore` (Q845): `target = value` through the ownership checker, or null when it needs no hook.
-public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr target, to BExpr value, bool claim = true) {
-    return null
+public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr target, to BExpr value, bool claim = true) uses alloc {
+    if !cc.ownershipChecks { return null }
+    let r = root(c, for: target)
+    var local: LocalId = -1
+    if !ltree.isLowered(target) && semantics.boundKind(target) == .local { local = c.bLocals[target & 0xFFFFFFFF].local }
+    let hasLocalSlot = local != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: local)
+    let type = ltree.typeOf(in c, through: in t, for: target)
+    if (r != -1 && c.locals[r].kind == .temp) || (!hasLocalSlot && !ownsStorage(ref c, for: type)) { return null }
+    let claims = claim && r != -1 && isOwner(c, for: r) ? "true" : "false"
+    let set = ownSet(ref cc, from: ref c, for: type)
+    let p = placeOf(ref cc, for: ref f, from: ref c, through: t, at: target)
+    let v = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
+    let s = hasLocalSlot ? $"&{slot(ref cc, for: ref f, from: ref c, at: local)}" : "NULL"
+    return $"{set}(&{p}, {v}, {s}, {claims}, {loc(in c, by: in f, at: ltree.spanOf(in c, through: in t, for: target))})"
 }
 
 /// CEmitter.cs:1305 `Claimed` (Q845): C `call` followed by the claim of owned `receiver`, or `call` alone.
-public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at string call, by BExpr receiver, to semantics.TextSpan span) {
-    return ""
+public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at string call, by BExpr receiver, to semantics.TextSpan span) uses alloc {
+    if !cc.ownershipChecks || ownerRoot(c, for: receiver) == -1 { return call }
+    let claim = ownClaim(ref cc, from: ref c, for: ltree.typeOf(in c, through: in t, for: receiver))
+    let p = placeOf(ref cc, for: ref f, from: ref c, through: t, at: receiver)
+    return $"({call}, {claim}(&{p}, {loc(in c, by: in f, at: span)}))"
 }
 
 /// CEmitter.cs:1310 `ClaimAfterCall` (Q845): records the claim of owned `place`, passed by pointer, to run after the statement.
-public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr place, to semantics.TextSpan span) {
+public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr place, to semantics.TextSpan span) uses alloc {
+    unless cc.ownershipChecks { return }
+    let r = ownerRoot(c, for: place)
+    // coverage-blocked: Q799 T10 emitExpr
+    if r == -1 || f.moved.contains(r) { return }
+    let type = ltree.typeOf(in c, through: in t, for: place)
+    unless ownsStorage(ref c, for: type) { return }
+    let claim = ownClaim(ref cc, from: ref c, for: type)
+    let p = placeOf(ref cc, for: ref f, from: ref c, through: t, at: place)
+    f.afterCalls.append($"{claim}(&{p}, {loc(in c, by: in f, at: span)});")
+}
+
+/// CEmitter.cs:1316 `ClaimMapEntry`.
+void claimMapEntry(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, to ref StrBuf sb, at BStmt a) uses alloc {
+    unless cc.ownershipChecks { return }
+    let target = c.bAssigns[a & 0xFFFFFFFF].target
+    if ltree.isLowered(target) || semantics.boundKind(target) != .builtinCall { return }
+    let i = target & 0xFFFFFFFF
+    let member = c.bBuiltinCalls[i].member
+    let map = c.bBuiltinCalls[i].receiver
+    // coverage-exempt: Q800
+    if (member == .mapIndexSet || member == .mapSlot) && map != -1 && ownerRoot(c, for: map) != -1 {
+        let claim = ownClaim(ref cc, from: ref c, for: ltree.typeOf(in c, through: in t, for: map))
+        let p = placeOf(ref cc, for: ref f, from: ref c, through: t, at: map)
+        line(ref sb, by: in f, for: $"{claim}(&{p}, {loc(in c, by: in f, at: semantics.nodeSpan(in c, for: a))});")
+    }
+}
+
+/// CEmitter.cs:1324 `FindUnsequenced`: emits `s` (or an if's condition) dry to find the locals it both reads and moves.
+void findUnsequenced(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, to ref StrBuf sb, at BStmt s) uses alloc {
+    f.unsequenced = Map<LocalId, bool>()
+    f.reads = Map<LocalId, bool>()
+    f.moves = Map<LocalId, bool>()
+    f.hasDryRun = true
+    let mark = sb.length
+    let lastLine = f.lastLine
+    let lastLineEnd = f.lastLineEnd
+    if !ltree.isLowered(s) && semantics.boundKind(s) == .ifStmt {
+        let _ = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bIfs[s & 0xFFFFFFFF].condition)
+    } else {
+        statement(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: s)
+    }
+    t9Truncate(ref sb, to: mark)
+    f.lastLine = lastLine
+    f.lastLineEnd = lastLineEnd
+    var both = Map<LocalId, bool>()
+    for (l, _) in f.reads {
+        // coverage-blocked: Q799 T10 emitExpr
+        if f.moves.contains(l) { both[l] = true }
+    }
+    f.moved = f.moves.take()
+    f.unsequenced = move both
+    f.reads = Map<LocalId, bool>()
+    f.hasDryRun = false
+}
+
+// ── Statements ───────────────────────────────────────────────────────────────
+
+/// CEmitter.cs:1343 `Block`.
+void block(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, to ref StrBuf sb, at BStmt s) uses alloc {
+    f.indent += 1
+    if !ltree.isLowered(s) && semantics.boundKind(s) == .block {
+        let inner = t9Copy(c.bBlocks[s & 0xFFFFFFFF].statements)
+        for x in inner { statement(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: x) }
+    } else {
+        statement(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: s)
+    }
+    f.indent -= 1
+}
+
+/// CEmitter.cs:1351 `Statement`.
+void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, to ref StrBuf sb, at BStmt s) uses alloc {
+    let lowered = ltree.isLowered(s)
+    let isBlock = !lowered && semantics.boundKind(s) == .block
+    let lk = ltree.lKindOf(s)
+    let isLabel = lowered && lk == .label
+    if cc.ownershipChecks && !f.hasDryRun && !(isBlock || (lowered && (lk == .loop || lk == .label || lk == .gotoStmt || lk == .pushPanicHandler))) {
+        findUnsequenced(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: s)
+    }
+    f.afterCalls = List<string>()
+    let mark = sb.length
+    let lastLine = f.lastLine
+    let lastLineEnd = f.lastLineEnd
+    if !(isBlock || isLabel) { mapLine(ref sb, from: in c, through: ref f, at: ltree.spanOf(in c, through: in t, for: s)) }
+    let start = sb.length
+    let i = s & 0xFFFFFFFF
+    if lowered {
+        switch lk {
+            case .loop:
+                line(ref sb, by: in f, for: "for (;;) {")
+                block(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: t.loops[i].body)
+                line(ref sb, by: in f, for: "}")
+            case .label:
+                let indent = f.indent - 1 > 0 ? f.indent - 1 : 0
+                sb.appendRepeated(' ', by: indent * 4)
+                sb.append(t.labels[i].name)
+                sb.append(":;\n")
+            case .gotoStmt:
+                line(ref sb, by: in f, for: $"goto {t.gotoStmts[i].label};")
+            case .returnStmt:
+                returnStmt(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: s)
+                f.afterCalls = List<string>()
+            case .returnError:
+                line(ref sb, by: in f, for: $"return {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.returnErrors[i].code)};")
+            case .failingCall:
+                let result: string? = t.failingCalls[i].result == -1 ? null : $"&{f.names[t.failingCalls[i].result]}"
+                // Built-in failing calls return the runtime's bare code, except the ones whose errors carry a payload.
+                let callText = call(ref cc, for: ref f, from: ref c, through: t, at: t.failingCalls[i].call, to: result)
+                let builtin = c.functions[c.bCalls[t.failingCalls[i].call & 0xFFFFFFFF].function].builtin
+                let error = f.names[t.failingCalls[i].error]
+                if builtin == .none || builtin == .utf8Decode || builtin == .hexDecode || builtin == .intParse {
+                    line(ref sb, by: in f, for: $"{error} = {callText};")
+                } else {
+                    line(ref sb, by: in f, for: $"{error} = ({errorCType(ref cc, from: ref c)}){{ .code = {callText} }};")
+                }
+            case .write:
+                write(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: s)
+            case .panic:
+                let message = cString(t.panics[i].message)
+                line(ref sb, by: in f, for: $"byn_panic({message}, {loc(in c, by: in f, at: t.panics[i].span)});")
+            case .setContext:
+                if t.setContexts[i].arena != -1 {
+                    line(ref sb, by: in f, for: $"ctx{t.setContexts[i].slot} = byn_context;")
+                    line(ref sb, by: in f, for: $"byn_context = byn_arena_alloc({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.setContexts[i].arena)});")
+                } else {
+                    line(ref sb, by: in f, for: $"byn_context = ctx{t.setContexts[i].slot};")
+                }
+            case .freeArena:
+                line(ref sb, by: in f, for: $"byn_arena_free({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.freeArenas[i].arena)});")
+            case .pushPanicHandler:
+                // The runtime longjmps here on a panic; the handler reads only `let`s and parameters, unchanged since the setjmp.
+                let slotIndex = t.pushPanicHandlers[i].slot
+                line(ref sb, by: in f, for: $"if (BYN_PANIC_CATCH(&ph{slotIndex})) {{")
+                f.indent += 1
+                if t.pushPanicHandlers[i].panic != -1 { line(ref sb, by: in f, for: $"{f.names[t.pushPanicHandlers[i].panic]} = byn_panic_current();") }
+                f.indent -= 1
+                block(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: t.pushPanicHandlers[i].body)
+                f.indent += 1
+                line(ref sb, by: in f, for: "byn_panic_resume();")
+                f.indent -= 1
+                line(ref sb, by: in f, for: "}")
+                line(ref sb, by: in f, for: $"byn_panic_push(&ph{slotIndex});")
+            case .popPanicHandler:
+                line(ref sb, by: in f, for: $"byn_panic_pop(&ph{t.popPanicHandlers[i].slot});")
+            case .claim:
+                let l = t.claims[i].local
+                if cc.ownershipChecks && isOwner(c, for: l) && ownsStorage(ref c, for: c.locals[l].type) {
+                    let claim = ownClaim(ref cc, from: ref c, for: c.locals[l].type)
+                    line(ref sb, by: in f, for: $"{claim}(&{f.names[l]}, {loc(in c, by: in f, at: t.claims[i].span)});")
+                }
+            // coverage-exempt: Q800
+            default: panic($"cannot emit {t9StmtNames()[t9BoundStmtCount + i64(lk.ordinal)]}")
+        }
+    } else {
+        switch semantics.boundKind(s) {
+            case .block:
+                line(ref sb, by: in f, for: "{")
+                block(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: s)
+                line(ref sb, by: in f, for: "}")
+            case .exprStmt:
+                line(ref sb, by: in f, for: $"(void){emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bExprStmts[i].expr)};")
+            case .assign:
+                let target = c.bAssigns[i].target
+                let value = c.bAssigns[i].value
+                var store: string? = null
+                if c.bAssigns[i].op is null { store = checkedStore(ref cc, for: ref f, from: ref c, through: t, at: target, to: value) }
+                if (store is { } stored) {
+                    line(ref sb, by: in f, for: $"(void){stored};")
+                } else {
+                    let tx = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: target)
+                    let vx = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
+                    line(ref sb, by: in f, for: $"{tx} = {vx};")
+                }
+                claimMapEntry(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: s)
+            case .ifStmt:
+                line(ref sb, by: in f, for: $"if ({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bIfs[i].condition)}) {{")
+                let after = f.afterCalls.take()
+                afterCalls(ref sb, for: ref f, at: after)
+                block(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: c.bIfs[i].then)
+                let elseBranch = c.bIfs[i].elseBranch
+                // coverage-blocked: Q799 T10 call
+                if elseBranch != -1 || after.length > 0 {
+                    line(ref sb, by: in f, for: "} else {")
+                    afterCalls(ref sb, for: ref f, at: after)
+                    // coverage-blocked: Q799 T10 call
+                    if elseBranch != -1 { block(ref cc, for: ref f, from: ref c, through: t, to: ref sb, at: elseBranch) }
+                }
+                line(ref sb, by: in f, for: "}")
+            case .setOnPanic:
+                line(ref sb, by: in f, for: $"byn_on_panic = {functionName(ref cc, from: ref c, for: c.bSetOnPanics[i].handler)};")
+            default: panic($"cannot emit {t9StmtNames()[i64(semantics.boundKind(s).ordinal) - i64(semantics.BoundKind.block.ordinal)]}")
+        }
+    }
+    // coverage-blocked: Q799 T10 call
+    for x in f.afterCalls { line(ref sb, by: in f, for: x) }
+    f.afterCalls = List<string>()
+    // A statement with no C (a claim without ownership checks) keeps no `#line` either.
+    if sb.length == start {
+        t9Truncate(ref sb, to: mark)
+        f.lastLine = lastLine
+        f.lastLineEnd = lastLineEnd
+    }
+}
+
+/// CEmitter.cs:1474 `AfterCalls`: the claims after an if's condition, at the start of a branch.
+void afterCalls(ref StrBuf sb, for ref CFunc f, at List<string> claims) {
+    f.indent += 1
+    // coverage-blocked: Q799 T10 call
+    for x in claims { line(ref sb, by: in f, for: x) }
+    f.indent -= 1
+}
+
+/// CEmitter.cs:1484 `Return`.
+void returnStmt(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, to ref StrBuf sb, at BStmt r) uses alloc {
+    let fn = f.fn
+    if c.functions[fn].kind == .constructor {
+        line(ref sb, by: in f, for: "return self_v;")
+        return
+    }
+    let value = t.returnStmts[r & 0xFFFFFFFF].value
+    if c.functions[fn].hasFails {
+        if value != -1 { line(ref sb, by: in f, for: $"*byn_out = {returned(ref cc, for: ref f, from: ref c, through: t, at: value)};") }
+        line(ref sb, by: in f, for: $"return ({errorCType(ref cc, from: ref c)}){{0}};")
+        return
+    }
+    if value == -1 {
+        line(ref sb, by: in f, for: "return;")
+    } else {
+        line(ref sb, by: in f, for: $"return {returned(ref cc, for: ref f, from: ref c, through: t, at: value)};") }
+}
+
+/// CEmitter.cs:1500 `Returned`.
+string returned(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr value) uses alloc {
+    let type = ltree.typeOf(in c, through: in t, for: value)
+    if cc.ownershipChecks && ownsStorage(ref c, for: type) {
+        let r = ownReturn(ref cc, from: ref c, for: type)
+        return $"{r}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)})"
+    }
+    return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
+}
+
+/// CEmitter.cs:1503 `Write`.
+void write(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, to ref StrBuf sb, at BStmt s) uses alloc {
+    let i = s & 0xFFFFFFFF
+    let sink = t.writes[i].sink
+    let target = t.writes[i].target
+    let span = t.writes[i].span
+    line(ref sb, by: in f, for: "{")
+    f.indent += 1
+    if sink == .strBuf {
+        line(ref sb, by: in f, for: $"byn_writer* w = &{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: target)};")
+        line(ref sb, by: in f, for: $"w->file = {f.file};")
+        line(ref sb, by: in f, for: $"w->line = {lineOf(in c, by: in f, at: span)};")
+    } else {
+        let mode = sink == .print ? $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: target)} == 1 ? BYN_WRITE_STDERR : BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE"
+        // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram; a log line never allocates, so it is cut.
+        let size: i64 = sink == .panic ? 1024 : sink == .log ? 512 : 256
+        line(ref sb, by: in f, for: $"uint8_t wb[{size}];")
+        line(ref sb, by: in f, for: $"byn_writer wv = {{wb, {size}, 0, {mode}, {loc(in c, by: in f, at: span)}}};")
+        line(ref sb, by: in f, for: "byn_writer* w = &wv;")
+    }
+    for k in 0..t.writes[i].parts.length {
+        let part = t.writes[i].parts[k]
+        var write: string? = null
+        let text = part.text ?? ""
+        if text.length > 0 {
+            write = $"byn_w_str(w, {stringLiteral(text)});"
+        } else if part.value != -1 {
+            if (part.spec is { } spec) {
+                write = formatWithSpec(ref cc, for: ref f, from: ref c, through: t, at: part.value, by: spec)
+            } else {
+                let vt = ltree.typeOf(in c, through: in t, for: part.value)
+                let vx = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: part.value)
+                write = format(ref cc, from: ref c, for: vt, at: vx, to: "w")
+            }
+        }
+        let w = write ?? continue
+        var guard: BExpr = -1
+        if (t.writes[i].guards is { } guards) { guard = guards[k] }
+        if guard != -1 {
+            line(ref sb, by: in f, for: $"if ({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: guard)}) {{ {w} }}")
+        } else {
+            line(ref sb, by: in f, for: w)
+        }
+    }
+    if cc.ownershipChecks && sink == .strBuf && ownerRoot(c, for: target) != -1 {
+        let claim = ownClaim(ref cc, from: ref c, for: ltree.typeOf(in c, through: in t, for: target))
+        line(ref sb, by: in f, for: $"{claim}(w, {loc(in c, by: in f, at: span)});")
+    }
+    if sink == .print {
+        line(ref sb, by: in f, for: "byn_w_println(w);")
+    } else if sink == .panic {
+        line(ref sb, by: in f, for: $"byn_panic_str((byn_str){{wb, wv.len}}, {loc(in c, by: in f, at: span)});")
+    } else if sink == .log {
+        line(ref sb, by: in f, for: $"byn_log({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: target)}, (byn_str){{wb, wv.len}});") }
+    f.indent -= 1
+    line(ref sb, by: in f, for: "}")
+}
+
+/// CEmitter.cs:1542 `FormatWithSpec`: a hole with specs: the value is formatted into a stack buffer (a radix, fixed
+/// digits or the debug view), then written padded to the width in runes.
+string formatWithSpec(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr value, by BFormatSpec spec) uses alloc {
+    let type = ltree.typeOf(in c, through: in t, for: value)
+    let v = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
+    // A struct with a `formatInto` that takes the `FormatSpec` reads every spec itself, padding included, even when it also has the one-parameter form.
+    if semantics.kindOf(type) == .structType {
+        let method = formatIntoWithSpec(ref c, for: type & 0xFFFFFFFF)
+        if method != -1 {
+            let radix: i64 = spec.radix == 2 ? 0 : spec.radix == 8 ? 1 : spec.radix == 16 ? 3 : 2
+            let align = spec.align > 0 ? spec.align : 0
+            let ct = cType(ref cc, from: ref c, for: type)
+            let name = functionName(ref cc, from: ref c, for: method)
+            return $"{{ {ct} fv = {v}; {name}(&fv, w, (byn_format_spec){{{radix}, {spec.debug ? "true" : "false"}, {spec.width}, {spec.fill}u, {align}, {spec.digits}}}); }}"
+        }
+    }
+    if spec.radix != 0 {
+        let _ = helper(ref cc, for: "bynh_w_radix", from: "static void bynh_w_radix(byn_writer* w, uint64_t v, bool negative, int base)", as:
+            "{\n    uint8_t d[64];\n    int n = 0;\n    if (negative) {\n        byn_w_char(w, '-');\n        v = 0 - v;\n    }\n    do {\n        d[n++] = (uint8_t)\"0123456789abcdef\"[v % (uint64_t)base];\n        v /= (uint64_t)base;\n    } while (v > 0);\n    while (n > 0) byn_w_bytes(w, &d[--n], 1);\n}\n")
+    }
+    if spec.digits >= 0 {
+        // Rounds half away from zero; a value too large to scale is written as `byn_w_f64` writes it.
+        let _ = helper(ref cc, for: "bynh_w_digits", from: "static void bynh_w_digits(byn_writer* w, double v, int digits)", as:
+            "{\n    double p = 1;\n    for (int i = 0; i < digits; i++) p *= 10;\n    double s = v * p;\n    if (!(s > -9.0e15 && s < 9.0e15)) {\n        byn_w_f64(w, v);\n        return;\n    }\n    int64_t n = (int64_t)(s < 0 ? s - 0.5 : s + 0.5);\n    if (n < 0 || (n == 0 && v < 0)) byn_w_char(w, '-');\n    uint64_t m = n < 0 ? (uint64_t)-n : (uint64_t)n, q = (uint64_t)p;\n    byn_w_u64(w, m / q);\n    if (digits == 0) return;\n    byn_w_char(w, '.');\n    uint64_t f = m % q;\n    for (uint64_t k = q / 10; k > 0; k /= 10) byn_w_char(w, (uint32_t)('0' + f / k % 10));\n}\n")
+    }
+    if spec.width == 0 { return formatInner(ref cc, from: ref c, for: type, at: v, by: spec, to: "w") }
+    // Numbers align to the end by default, everything else to the start.
+    let align: i64 = spec.align >= 0 ? spec.align : semantics.isNumeric(type) ? 1 : 0
+    // The 1024-byte cut drops a code point it would split.
+    let pad = helper(ref cc, for: "bynh_w_padded", from: "static void bynh_w_padded(byn_writer* w, byn_str s, int64_t width, uint32_t fill, int align)", as:
+        "{\n    if (s.len > 0) {\n        int64_t k = s.len - 1;\n        while (k > 0 && (s.ptr[k] & 0xC0) == 0x80) k--;\n        uint8_t c = s.ptr[k];\n        int64_t need = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : 4;\n        if (k + need > s.len) s.len = k;\n    }\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n    int64_t gap = width > runes ? width - runes : 0, before = align == 1 ? gap : align == 2 ? gap / 2 : 0;\n    for (int64_t i = 0; i < before; i++) byn_w_char(w, fill);\n    byn_w_str(w, s);\n    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n")
+    let l = loc(in c, by: in f, at: ltree.spanOf(in c, through: in t, for: value))
+    let inner = formatInner(ref cc, from: ref c, for: type, at: v, by: spec, to: "sw")
+    return $"{{ uint8_t sb[1024]; byn_writer sv = {{sb, 1024, 0, BYN_WRITE_TRUNCATE, {l}}}; byn_writer* sw = &sv; {inner} {pad}(w, (byn_str){{sb, sv.len}}, {spec.width}, {spec.fill}u, {align}); }}"
+}
+
+/// CEmitter.cs:1550 `FormatWithSpec`'s local `Inner`.
+string formatInner(ref CCtx cc, from ref Ctx c, for Type type, at string v, by BFormatSpec spec, to string sw) uses alloc {
+    if spec.radix != 0 {
+        let negative = semantics.isSignedInteger(type) ? $"({v}) < 0" : "false"
+        return $"bynh_w_radix({sw}, (uint64_t)({v}), {negative}, {spec.radix});"
+    }
+    if spec.digits >= 0 { return $"bynh_w_digits({sw}, (double)({v}), {spec.digits});" }
+    if spec.debug { return debug(ref cc, from: ref c, for: type, at: v, to: sw) }
+    return format(ref cc, from: ref c, for: type, at: v, to: sw)
+}
+
+/// CEmitter.cs:1587 `Debug`: the debug view (spec §13): strings, `Symbol`s and runes quoted, a struct in its literal
+/// form `P { x: 1, name: "a" }` (one whose `formatInto` takes the `FormatSpec` formats itself), everything else as it displays.
+string debug(ref CCtx cc, from ref Ctx c, for Type type, at string v, to string w) uses alloc {
+    if semantics.isString(type) || type == semantics.builtinType(.symbol) {
+        let quoted = helper(ref cc, for: "bynh_w_quoted", from: "static void bynh_w_quoted(byn_writer* w, byn_str s, uint32_t quote)", as:
+            "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n")
+        let text = semantics.isString(type) ? v : symbolText(ref cc, for: v)
+        return $"{quoted}({w}, {text}, '\"');"
+    }
+    if type == semantics.prim(.char) {
+        let quoted = helper(ref cc, for: "bynh_w_rune_quoted", from: "static void bynh_w_rune_quoted(byn_writer* w, uint32_t c)", as:
+            "{\n    byn_w_char(w, '\\'');\n    if (c == '\\'' || c == '\\\\') byn_w_char(w, '\\\\');\n    if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n    else byn_w_char(w, c);\n    byn_w_char(w, '\\'');\n}\n")
+        return $"{quoted}({w}, {v});"
+    }
+    if semantics.kindOf(type) != .structType { return format(ref cc, from: ref c, for: type, at: v, to: w) }
+    let s = type & 0xFFFFFFFF
+    let into = formatInto(ref c, for: s)
+    if into != -1 && c.functions[into].parameters.length == 2 { return format(ref cc, from: ref c, for: type, at: v, to: w) }
+    let k = key(ref c, for: type)
+    let name = $"bynh_debug_{k}"
+    let proto = $"static void bynh_debug_{key(ref c, for: type)}(byn_writer* w, {cType(ref cc, from: ref c, for: type)} v)"
+    if helperReserve(ref cc, for: name, from: proto) {
+        var sb = StrBuf()
+        sb.append("{\n")
+        let fields = t9Copy(c.structs[s].fields)
+        let display = semantics.structDisplayName(ref c, by: s)
+        sb.append($"    byn_w_str(w, {stringLiteral($"{display}{fields.length == 0 ? " {}" : " { "}")});\n")
+        for i in 0..fields.length {
+            let fd = fields[i]
+            let fname = c.fields[fd].name
+            sb.append($"    byn_w_str(w, {stringLiteral($"{i == 0 ? "" : ", "}{fname}: ")});\n")
+            sb.append("    ")
+            sb.append(debug(ref cc, from: ref c, for: c.fields[fd].type, at: $"v.{fieldName(fname)}", to: "w"))
+            sb.append("\n")
+        }
+        if fields.length > 0 { sb.append($"    byn_w_str(w, {stringLiteral(" }")});\n") }
+        sb.append("}\n")
+        let _ = helperFill(ref cc, for: name, from: proto, as: $"{sb.finish()}")
+    }
+    return $"{name}({w}, {v});"
+}
+
+// ── T9 copies ────────────────────────────────────────────────────────────────
+
+/// The bound statement kinds in `t9StmtNames`, `block` through `errorStmt`.
+const t9BoundStmtCount: i64 = 21
+
+/// `s.GetType().Name` for `Statement`'s throw (CEmitter.cs:1461): the C# class of each bound statement kind, `block`
+/// through `errorStmt`, then of each lowered kind (D3's `LMutantIs`/`LCount` have no kind).
+List<string> t9StmtNames() uses alloc {
+    var r = List<string>()
+    for n in ["BoundBlock", "BoundLocalDecl", "BoundExprStmt", "BoundAssign", "BoundReturn", "BoundFail", "BoundBecome", "BoundBreak",
+        "BoundContinue", "BoundIf", "BoundWhile", "BoundDoWhile", "BoundFor", "BoundSwitch", "BoundDefer", "BoundAssert", "BoundErrdefer",
+        "BoundPanicDefer", "BoundSetOnPanic", "BoundContext", "BoundErrorStmt",
+        "LLabel", "LGoto", "LLoop", "LReturn", "LReturnError", "LFailingCall", "LWrite", "LPanic", "LSetContext", "LFreeArena",
+        "LPushPanicHandler", "LPopPanicHandler", "LClaim", "LOptionalHas", "LOptionalValue", "LUnionTag", "LUnionField", "LErrorCode",
+        "LErrorField", "LAssignExpr", "LSequence", "LIndexUnchecked", "LNextChar", "LNever", "LFunctionValue", "LVoid"] {
+        r.append(n)
+    }
+    return r
+}
+
+/// A copy of `xs`, so `c` can be passed by `ref` beside it (common.byn's `t2Copy` is for `Type`).
+List<i64> t9Copy(List<i64> xs) uses alloc {
+    var r = List<i64>()
+    for x in xs { r.append(x) }
+    return r
+}
+
+/// C#'s `_sb.Length = mark`: StrBuf has no truncate.
+void t9Truncate(ref StrBuf sb, to i64 mark) uses alloc {
+    let keep = $"{sb.view[0..mark]}"
+    sb.clear()
+    sb.append(keep)
 }
