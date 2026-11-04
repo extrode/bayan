@@ -62,6 +62,10 @@ public sealed class SelfhostEmitterT6Tests
                     Io.stdout.write(cprint.t6Run(ref cc, from: ref c, through: in l.tree, for: in program))
                 }
             }
+            if mode == "lowered" {
+                let program = lower(ref c, to: ref l)
+                Io.stdout.write(cprint.emit(ref c, from: in l.tree, through: in program, by: flag == "debug"))
+            }
             return 0
         }
 
@@ -673,5 +677,25 @@ public sealed class SelfhostEmitterT6Tests
     {
         var c = Compile(path);
         SelfhostSemanticsHarness.AssertSection(RawMode("emit", path, flag), "", Lines(RunWithoutTypes(c, flag, prepare: false)));
+    });
+
+    private const string Lowered = "void f() {\n}\n\ntest \"t\" {\n}\n";
+
+    // T9: `Emit` of a lowered function and test, so `Run` emits their prototypes and bodies; `EmitTypes`' text cut as above.
+    [Theory]
+    [InlineData("")]
+    [InlineData("debug")]
+    public void Emit_OfLoweredFunctionsMatchesCSharp(string flag) => WithFixture(Lowered, path =>
+    {
+        var c = Compile(path);
+        var p = Lowerer.Lower(c);
+        var text = CEmitter.Emit(p, flag == "debug");
+        var second = WithFlag(p, flag);
+        Call(second, "EmitMain");
+        var types = (string)Call(second, "EmitTypes")!;
+        Assert.Contains(types, text);
+        var cut = types.Count(ch => ch == '\n');
+        var expected = System.Text.RegularExpressions.Regex.Replace(text.Replace(types, ""), @"(?m)^#line (\d+) ""main\.c""$", m => $"#line {int.Parse(m.Groups[1].Value) - cut} \"main.c\"");
+        SelfhostSemanticsHarness.AssertSection(RawMode("lowered", path, flag), "", Lines(expected));
     });
 }
