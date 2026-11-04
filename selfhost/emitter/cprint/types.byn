@@ -7,3 +7,18 @@ import semantics
 public string emitTypes(ref CCtx cc, from ref Ctx c) {
     return ""
 }
+
+/// CEmitter.cs:605 `SlotName` (Q845): the vtable slot name of interface method or getter `m`.
+public string slotName(ref Ctx c, for semantics.FuncId m) {
+    return ""
+}
+
+/// CEmitter.cs:648 `FunctionThunk` (Q845): the name of the helper that calls named function `fn` as a value of function type `type`, registering it.
+public string functionThunk(ref CCtx cc, from ref Ctx c, for semantics.FuncId fn, as Type type) {
+    return ""
+}
+
+/// CEmitter.cs:661 `Vtable` (Q845): the name of struct `s`'s vtable for interface `i`, registering it.
+public string vtable(ref CCtx cc, from ref Ctx c, for semantics.StructId s, as semantics.InterfaceId i) {
+    return ""
+}

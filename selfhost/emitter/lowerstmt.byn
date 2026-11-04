@@ -11,3 +11,8 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) {
 public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) {
     return e
 }
+
+/// Lowerer.cs:890 `IsLvalueShape` (Q845): whether `e` is a place a write can name (a local, `this`, an index, a static array, a map slot, or a field or tuple element of one).
+public bool isLvalueShape(ref Ctx c, through ref LCtx l, for BExpr e) {
+    return false
+}

@@ -8,3 +8,32 @@ import emitter.ltree
 public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f) {
     return ""
 }
+
+/// CEmitter.cs:1194 `FunctionEmitter.Signature` (Q845): the C declarator of `f`, after the frame the constructor (:1173) builds.
+public string signature(ref CCtx cc, from ref Ctx c, through ltree.LTree t, for ltree.LoweredFunction f) {
+    return ""
+}
+
+/// CEmitter.cs:1261 `HasSlot` (Q845): whether local `l` has a moved slot (ownership checks on, an owned local of a unique type).
+public bool hasSlot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) {
+    return false
+}
+
+/// CEmitter.cs:1263 `Slot` (Q845): the C name of local `l`'s moved slot.
+public string slot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) {
+    return ""
+}
+
+/// CEmitter.cs:1294 `CheckedStore` (Q845): `target = value` through the ownership checker, or null when it needs no hook.
+public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr target, to BExpr value, bool claim = true) {
+    return null
+}
+
+/// CEmitter.cs:1305 `Claimed` (Q845): C `call` followed by the claim of owned `receiver`, or `call` alone.
+public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at string call, by BExpr receiver, to semantics.TextSpan span) {
+    return ""
+}
+
+/// CEmitter.cs:1310 `ClaimAfterCall` (Q845): records the claim of owned `place`, passed by pointer, to run after the statement.
+public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr place, to semantics.TextSpan span) {
+}

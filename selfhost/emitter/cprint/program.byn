@@ -8,3 +8,38 @@ import emitter.ltree
 public string emit(ref Ctx c, from in ltree.LTree t, through in ltree.LoweredProgram program, by bool ownershipChecks) {
     return ""
 }
+
+/// CEmitter.cs:137 `SymbolLiteral` (Q845): the C value of symbol literal `text`, numbering the text on first sight.
+public string symbolLiteral(ref CCtx cc, for string text) {
+    return ""
+}
+
+/// CEmitter.cs:150 `SymbolText` (Q845): the C expression for the interned text of the symbol `s` (C text).
+public string symbolText(ref CCtx cc, for string s) {
+    return ""
+}
+
+/// CEmitter.cs:157 `SymbolIntern` (Q845): the C expression for `Symbol.intern` of `text` (C text).
+public string symbolIntern(ref CCtx cc, for string text) {
+    return ""
+}
+
+/// CEmitter.cs:348 `FunctionName` (Q845): the C name of function `fn`.
+public string functionName(ref CCtx cc, from ref Ctx c, for semantics.FuncId fn) {
+    return ""
+}
+
+/// CEmitter.cs:374 `FieldName` (Q845): `name` as a C member name, avoiding C keywords.
+public string fieldName(string name) {
+    return ""
+}
+
+/// CEmitter.cs:376 `FileName` (Q845): the C name of the static that holds `fn`'s file path, registering it.
+public string fileName(ref CCtx cc, from ref Ctx c, for semantics.FuncId fn) {
+    return ""
+}
+
+/// CEmitter.cs:388 `FilePath` (Q845): the path panics and `#line` name `fn`'s file by.
+public string filePath(ref CCtx cc, from ref Ctx c, for semantics.FuncId fn) {
+    return ""
+}

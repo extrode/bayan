@@ -1,7 +1,44 @@
 // T6: CEmitter.cs 1047-1147 (`Static`, `StaticArray`, `StringLiteral`, `Escape`, `Constant`, `FloatLiteral`).
 // Header only (T1): final signatures.
 
+import semantics
+
 /// CEmitter.cs:1100 `Escape`: `text` as the body of a C string literal.
 public string escape(string text) {
+    return ""
+}
+
+/// CEmitter.cs:1060 `EnumNames` (Q845): the name of the static table of `e`'s member names, registering it.
+public string enumNames(ref CCtx cc, from ref Ctx c, for semantics.EnumId e) {
+    return ""
+}
+
+/// CEmitter.cs:1064 `EnumValues` (Q845): the name of the static table of `e`'s members in order, registering it.
+public string enumValues(ref CCtx cc, from ref Ctx c, for semantics.EnumId e) {
+    return ""
+}
+
+/// CEmitter.cs:1068 `EnumField` (Q845): the name of the static table of data enum field `field`'s values by ordinal, registering it.
+public string enumField(ref CCtx cc, from ref Ctx c, for semantics.EnumFieldId field) {
+    return ""
+}
+
+/// CEmitter.cs:1073 `StaticArray` (Q845): the C expression that reads `const` array `k` in place, registering its table.
+public string staticArray(ref CCtx cc, from ref Ctx c, for semantics.ConstId k) {
+    return ""
+}
+
+/// CEmitter.cs:1092 `CString` (Q845): `s` as a C string literal.
+public string cString(string s) {
+    return ""
+}
+
+/// CEmitter.cs:1094 `StringLiteral` (Q845): `s` as a C `byn_str` value.
+public string stringLiteral(string s) {
+    return ""
+}
+
+/// CEmitter.cs:1111 `Constant` (Q845): the C text of constant `k` of type `type`.
+public string constant(ref CCtx cc, from ref Ctx c, for semantics.Constant k, as Type type) {
     return ""
 }

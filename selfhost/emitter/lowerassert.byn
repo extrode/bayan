@@ -2,6 +2,7 @@
 // Header only (T1): the entry point with its final signature.
 
 import semantics
+import emitter.ltree
 
 /// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
 public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
@@ -15,4 +16,29 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) {
 /// Lowerer.cs:1609 `Stable` (Q844): `place` with every operand that a later write could change spilled to a temporary.
 public BExpr lowerStable(ref Ctx c, through ref LCtx l, for BExpr place) {
     return place
+}
+
+/// Lowerer.cs:1528 `CallParts` (Q845): the call `e` with its receiver and arguments lowered, or -1 when one never returns.
+public BExpr lowerCallParts(ref Ctx c, through ref LCtx l, for BExpr e) {
+    return e
+}
+
+/// Lowerer.cs:1621 `Write` (Q845): the lowered write of interpolated `text` to `sink` (`target` -1 when the sink has none) for `call`.
+public BExpr lowerWrite(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.WriteSink sink, to BExpr target, as BExpr text) {
+    return call
+}
+
+/// Lowerer.cs:1624 `WriteParts` (Q845): as `lowerWrite`, with `level` (a log level or print stream, -1 for none) lowered after the parts and written as the target.
+public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.WriteSink sink, to BExpr target, as BExpr text, at BExpr level = -1) {
+    return call
+}
+
+/// Lowerer.cs:1652 `SwitchExpr` (Q845): the lowered switch expression `e`, with its statements appended to the current output list.
+public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) {
+    return e
+}
+
+/// Lowerer.cs:1692 `TryFrom` (Q845): the lowered `T.tryFrom` conversion `e`, with its statements appended to the current output list.
+public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) {
+    return e
 }

@@ -2,8 +2,34 @@
 // Header only (T1): final signatures.
 
 import semantics
+import emitter.ltree
 
 /// CEmitter.cs:1940 `FunctionEmitter.Builtin`: the C text of builtin call `call`.
 public string emitBuiltin(ref CCtx cc, for ref CFunc f, from ref Ctx c, at BExpr call) {
+    return ""
+}
+
+/// CEmitter.cs:2296 `Unary` (Q845): the C text of unary operation `e`.
+public string unary(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) {
+    return ""
+}
+
+/// CEmitter.cs:2317 `Binary` (Q845): the C text of binary operation `e`.
+public string binary(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) {
+    return ""
+}
+
+/// CEmitter.cs:2371 `Conversion` (Q845): the C text of conversion `e`.
+public string conversion(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) {
+    return ""
+}
+
+/// CEmitter.cs:2415 `Index` (Q845): the C text of index expression `e`.
+public string index(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) {
+    return ""
+}
+
+/// CEmitter.cs:2432 `Slice` (Q845): the C text of slice expression `e`.
+public string slice(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) {
     return ""
 }
