@@ -32,7 +32,7 @@ public sealed class SelfhostSemanticsT4Tests
         ["BoundStructLiteral"] = (new() { ["struct"] = "structId" }, ["type"]),
         ["BoundEnumValues"] = (new() { ["enum"] = "enumId" }, []),
         ["BoundStaticArray"] = (new() { ["const"] = "constId" }, ["type"]),
-        ["BoundIf"] = (new() { ["else"] = "elseBranch", ["never"] = "isNever" }, []),
+        ["BoundIf"] = (new() { ["else"] = "elseBranch", ["never"] = "isNever" }, ["guarded"]),
         ["BoundMemberStep"] = (new() { ["property"] = "propertyId" }, []),
         ["BoundLocal"] = (new(), ["type"]),
         ["BoundField"] = (new(), ["type"]),
