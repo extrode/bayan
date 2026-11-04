@@ -27,32 +27,35 @@ public sealed class SelfhostEmitterT9Tests
 
         type CCtx = cprint.CCtx
         type CFunc = cprint.CFunc
-        type BAssign = semantics.BAssign
-        type BExprStmt = semantics.BExprStmt
         type BField = semantics.BField
         type BFormatSpec = semantics.BFormatSpec
-        type BIf = semantics.BIf
-        type BLocal = semantics.BLocal
         type BSetOnPanic = semantics.BSetOnPanic
         type BTupleElement = semantics.BTupleElement
         type LClaim = ltree.LClaim
         type LFailingCall = ltree.LFailingCall
-        type LFreeArena = ltree.LFreeArena
         type LGoto = ltree.LGoto
         type LLabel = ltree.LLabel
         type LLoop = ltree.LLoop
         type LPanic = ltree.LPanic
-        type LPopPanicHandler = ltree.LPopPanicHandler
         type LPushPanicHandler = ltree.LPushPanicHandler
-        type LReturn = ltree.LReturn
         type LReturnError = ltree.LReturnError
-        type LSetContext = ltree.LSetContext
         type LWrite = ltree.LWrite
+        type LOptionalHas = ltree.LOptionalHas
+        type LOptionalValue = ltree.LOptionalValue
+        type LErrorCode = ltree.LErrorCode
+        type LErrorField = ltree.LErrorField
+        type LAssignExpr = ltree.LAssignExpr
+        type LSequence = ltree.LSequence
+        type LIndexUnchecked = ltree.LIndexUnchecked
+        type LNextChar = ltree.LNextChar
+        type LNever = ltree.LNever
+        type LFunctionValue = ltree.LFunctionValue
+        type LVoid = ltree.LVoid
 
         i32 main(ReadOnlySpan<string> args) {
             var rest = List<string>()
             for i in 2..args.length { rest.append(args[i]) }
-            let symbols = semantics.t26Symbols(false)
+            let symbols = semantics.t26Symbols(ascii: false)
             let o = semantics.t26ParseBuildOptions(in rest, allowSpans: false) ?? return 2
             var reported = List<semantics.T26Reported>()
             var ok = false
@@ -122,6 +125,7 @@ public sealed class SelfhostEmitterT9Tests
         void t9Build(ref Ctx c, through ref LTree t, for FuncId fn, to ref List<BStmt> stmts, at ref List<LocalId> locals) uses alloc {
             let body = c.functions[fn].body
             let span = semantics.nodeSpan(in c, for: body)
+            if c.functions[fn].name == "e0" { return }
             var original = List<BStmt>()
             for s in c.bBlocks[body & 0xFFFFFFFF].statements { original.append(s) }
             var inner: BStmt = -1
@@ -131,7 +135,13 @@ public sealed class SelfhostEmitterT9Tests
                 let k = semantics.boundKind(s)
                 if k == .localDecl { locals.append(c.bLocalDecls[s & 0xFFFFFFFF].local) }
                 if k == .block && inner == -1 { inner = s }
-                if k == .exprStmt { calls.append(c.bExprStmts[s & 0xFFFFFFFF].expr) }
+                if k == .exprStmt && semantics.boundKind(c.bExprStmts[s & 0xFFFFFFFF].expr) == .call { calls.append(c.bExprStmts[s & 0xFFFFFFFF].expr) }
+                if k == .localDecl {
+                    let init = c.bLocalDecls[s & 0xFFFFFFFF].initializer
+                    if init != -1 && semantics.boundKind(init) == .tryExpr && semantics.boundKind(c.bTries[init & 0xFFFFFFFF].operand) == .call {
+                        calls.append(c.bTries[init & 0xFFFFFFFF].operand)
+                    }
+                }
                 if k == .assign { assigns.append(s) }
             }
             var params = List<LocalId>()
@@ -143,6 +153,11 @@ public sealed class SelfhostEmitterT9Tests
             stmts.append(ltree.addLLabel(ref t, from: LLabel { span: span, name: "L0" }))
             stmts.append(ltree.addLGoto(ref t, from: LGoto { span: span, label: "L0" }))
             stmts.append(ltree.addLLoop(ref t, from: LLoop { span: span, body: inner }))
+            var labelled = List<BStmt>()
+            labelled.append(ltree.addLLabel(ref t, from: LLabel { span: span, name: "L1" }))
+            let labelBlock = semantics.addBlock(ref c, from: BBlock { span: span, statements: move labelled })
+            stmts.append(ltree.addLLoop(ref t, from: LLoop { span: span, body: labelBlock }))
+            if locals.length > 0 && c.locals[locals[0]].type == semantics.prim(.i64) { stmts.append(ltree.addLClaim(ref t, from: LClaim { span: span, local: locals[0] })) }
             stmts.append(ltree.addLSetContext(ref t, from: LSetContext { span: span, slot: 0 }))
             stmts.append(ltree.addLPushPanicHandler(ref t, from: LPushPanicHandler { span: span, slot: 0, body: inner }))
             stmts.append(ltree.addLPopPanicHandler(ref t, from: LPopPanicHandler { span: span, slot: 0 }))
@@ -151,7 +166,7 @@ public sealed class SelfhostEmitterT9Tests
             var skipped = List<BInterpolationPart>()
             skipped.append(BInterpolationPart { text: "" })
             skipped.append(BInterpolationPart {})
-            stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .panic, parts: skipped }))
+            stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .panic, parts: move skipped }))
             for a in assigns { stmts.append(a) }
             if xs.length > 0 {
                 let q = xs[0]
@@ -167,6 +182,7 @@ public sealed class SelfhostEmitterT9Tests
             if calls.length >= 2 && locals.length >= 2 {
                 stmts.append(ltree.addLFailingCall(ref t, from: LFailingCall { span: span, error: locals[0], call: calls[0], result: locals[1] }))
                 stmts.append(ltree.addLFailingCall(ref t, from: LFailingCall { span: span, error: locals[0], call: calls[1] }))
+                for k in 2..calls.length { stmts.append(ltree.addLFailingCall(ref t, from: LFailingCall { span: span, error: locals[0], call: calls[k] })) }
             }
             if xs.length >= 7 {
                 let q = xs[0]
@@ -192,16 +208,47 @@ public sealed class SelfhostEmitterT9Tests
                 parts.append(t9Part(xs[5], by: BFormatSpec { debug: true }))
                 parts.append(t9Part(xs[6], by: BFormatSpec { debug: true }))
                 parts.append(t9Part(q, by: BFormatSpec { width: 2, fill: 42, align: 2, digits: 1 }))
+                parts.append(t9Part(q, by: BFormatSpec { width: 3 }))
                 for k in 2..parts.length { guards.append(-1) }
-                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .print, target: b, parts: parts, guards: guards }))
-                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .log, target: q, parts: List<BInterpolationPart>() }))
+                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .print, target: b, parts: move parts, guards: move guards }))
+                var logged = List<BInterpolationPart>()
+                logged.append(BInterpolationPart { text: "b" })
+                stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .log, target: q, parts: move logged }))
                 stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .strBuf, target: q, parts: List<BInterpolationPart>() }))
                 let p = c.locals[locals[5]].type & 0xFFFFFFFF
                 let owned = t9Field(ref c, at: span, by: t9Local(ref c, at: span, for: locals[5]), for: c.structs[p].fields[0])
                 stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .strBuf, target: owned, parts: List<BInterpolationPart>() }))
                 stmts.append(t9SetOnPanic(ref c, at: span, for: fn))
             }
+            if c.functions[fn].name == "lm" { stmts.append(t9Lowered(ref c, through: ref t, at: span, for: xs[0], by: c.functions[fn].parameters[0], to: c.locals[locals[1]].type, from: fn)) }
             stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span }))
+        }
+
+        /// A print of each lowered expression kind at width 1 (`t9Type`, `t9Span`).
+        BStmt t9Lowered(ref Ctx c, through ref LTree t, at TextSpan span, for BExpr q, by LocalId zq, to Type g, from FuncId fn) uses alloc {
+            var ua: semantics.VariantId = -1
+            for v in 0..c.unionVariants.length { if c.unionVariants[v].name == "ua9" { ua = v } }
+            var eb: semantics.VariantId = -1
+            for v in 0..c.errorVariants.length { if c.errorVariants[v].name == "bad29" { eb = v } }
+            var xs = List<BExpr>()
+            xs.append(ltree.addLOptionalHas(ref t, from: LOptionalHas { span: span, optional: q }))
+            xs.append(ltree.addLOptionalValue(ref t, from: LOptionalValue { span: span, optional: q, type: semantics.prim(.i64) }))
+            xs.append(ltree.addLUnionTag(ref t, from: LUnionTag { span: span, unionValue: q }))
+            xs.append(ltree.addLUnionField(ref t, from: LUnionField { span: span, unionValue: q, variant: ua, index: 0 }))
+            xs.append(ltree.addLErrorCode(ref t, from: LErrorCode { span: span, error: q }))
+            xs.append(ltree.addLErrorField(ref t, from: LErrorField { span: span, error: q, variant: eb, index: 0 }))
+            xs.append(ltree.addLAssignExpr(ref t, from: LAssignExpr { span: span, target: q, value: q }))
+            var effects = List<BExpr>()
+            effects.append(q)
+            xs.append(ltree.addLSequence(ref t, from: LSequence { span: span, effects: move effects, value: q }))
+            xs.append(ltree.addLIndexUnchecked(ref t, from: LIndexUnchecked { span: span, target: q, index: q, type: semantics.prim(.i64) }) because "a probe of t9Type and t9Span; nothing reads it")
+            xs.append(ltree.addLNextChar(ref t, from: LNextChar { span: span, text: q, position: zq }))
+            xs.append(ltree.addLNever(ref t, from: LNever { span: span, type: semantics.prim(.i64) }))
+            xs.append(ltree.addLFunctionValue(ref t, from: LFunctionValue { span: span, function: fn, functionType: g }))
+            xs.append(ltree.addLVoid(ref t, from: LVoid { span: span }))
+            var parts = List<BInterpolationPart>()
+            for x in xs { parts.append(t9Part(x, by: BFormatSpec { width: 1 })) }
+            return ltree.addLWrite(ref t, from: LWrite { span: span, sink: .print, target: q, parts: move parts })
         }
 
         string t9PrintEmit(ref Ctx c, by bool checks) uses alloc {
@@ -214,8 +261,10 @@ public sealed class SelfhostEmitterT9Tests
                 var locals = List<LocalId>()
                 t9Build(ref c, through: ref t, for: fn, to: ref stmts, at: ref locals)
                 let body = c.functions[fn].body
-                c.bBlocks[body & 0xFFFFFFFF].statements = stmts
-                let f = LoweredFunction { symbol: fn, locals: locals, contextSlots: 1, panicSlots: 1, body: body }
+                c.bBlocks[body & 0xFFFFFFFF].statements = move stmts
+                var fl = List<LocalId>()
+                for l in locals { fl.append(l) }
+                let f = LoweredFunction { symbol: fn, locals: move fl, contextSlots: 1, panicSlots: 1, body: body }
                 sb.append($"fn {c.functions[fn].name}\n")
                 sb.append($"sig {cprint.signature(ref cc, from: ref c, through: t, for: f)}\n")
                 sb.append(cprint.emitFunction(ref cc, from: ref c, through: in t, for: in f))
@@ -227,7 +276,10 @@ public sealed class SelfhostEmitterT9Tests
                     let has = cprint.hasSlot(ref cc, for: ref fe, from: ref c, at: l)
                     sb.append($"slot {has ? "true" : "false"} {cprint.slot(ref cc, for: ref fe, from: ref c, at: l)}\n")
                 }
-                if c.functions[fn].name == "w" { sb.append(t9Claims(ref cc, through: ref fe, from: ref c, by: in t, at: in locals)) }
+                if c.functions[fn].name == "w" {
+                    let lv = ltree.addLVoid(ref t, from: LVoid { span: semantics.nodeSpan(in c, for: body) })
+                    sb.append(t9Claims(ref cc, through: ref fe, from: ref c, by: in t, at: in locals, for: lv))
+                }
             }
             sb.append("== helpers\n")
             for n in cc.helperOrder { sb.append($"{n} {cc.helpers[n].proto}\n{cc.helpers[n].body}\n") }
@@ -235,7 +287,7 @@ public sealed class SelfhostEmitterT9Tests
         }
 
         /// The ownership-check entry points T10 calls, on `w`'s frame.
-        string t9Claims(ref CCtx cc, through ref CFunc f, from ref Ctx c, by in LTree t, at in List<LocalId> locals) uses alloc {
+        string t9Claims(ref CCtx cc, through ref CFunc f, from ref Ctx c, by in LTree t, at in List<LocalId> locals, for BExpr lv) uses alloc {
             var sb = StrBuf()
             let fn = f.fn
             let span = semantics.nodeSpan(in c, for: c.functions[fn].body)
@@ -251,6 +303,15 @@ public sealed class SelfhostEmitterT9Tests
             sb.append($"after {f.afterCalls.length}\n")
             sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: tuple, to: q) ?? "null"}\n")
             sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: q, to: q) ?? "null"}\n")
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: q, to: q, claim: false) ?? "null"}\n")
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: field, to: q) ?? "null"}\n")
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: lv, to: q) ?? "null"}\n")
+            var call: BExpr = -1
+            for s in c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements {
+                if call == -1 && !ltree.isLowered(s) && semantics.boundKind(s) == .assign { call = c.bAssigns[s & 0xFFFFFFFF].target }
+            }
+            sb.append($"claimed {cprint.claimed(ref cc, for: ref f, from: ref c, through: t, at: "x()", by: call, to: span)}\n")
+            sb.append($"claimed {cprint.claimed(ref cc, for: ref f, from: ref c, through: t, at: "x()", by: lv, to: span)}\n")
             return $"{sb.finish()}"
         }
 
@@ -259,7 +320,7 @@ public sealed class SelfhostEmitterT9Tests
             var cc = CCtx {}
             for fn in t9Functions(ref c) {
                 if c.functions[fn].name != "main" { continue }
-                var t = LTree {}
+                let t = LTree {}
                 let body = c.functions[fn].body
                 let f = LoweredFunction { symbol: fn, locals: List<LocalId>(), contextSlots: 0, panicSlots: 0, body: body }
                 return cprint.emitFunction(ref cc, from: ref c, through: in t, for: in f)
@@ -275,8 +336,46 @@ public sealed class SelfhostEmitterT9Tests
 
         struct P {
             i64 x = 1
+            i64 y = 2
             P(i64 zq) { { { } } }
+            void m(ref this) { { { } } }
         }
+
+        union U {
+            ua9(i64 n)
+            ub9
+        }
+
+        union error E2 {
+            bad29(i64 code)
+        }
+
+        never nv() { { { } } panic("x") }
+
+        never nf() fails E2 { { { } } panic("y") }
+
+        void rq(ref i64 zr, to ref Map<i64, i64> zm, at ref List<i64> zl) {
+            { { } }
+            zm[1] = 2
+            zm[1] += 2
+            zl[0] = 1
+        }
+
+        void fc(string zs) fails ParseError, Utf8Error {
+            { { } }
+            let k1 = try Hex.decode(zs)
+            let k2 = try i64.parse(zs)
+            let k3 = try Utf8.decode(k1)
+        }
+
+        void lm(i64 zq) {
+            { { } }
+            let k = 1
+            let g: i64 -> i64 = a => { { { } } return a + k }
+            let g2: i64 -> i64 = a => { { { } } return a }
+        }
+
+        void e0() { { { } } }
 
         struct Q {
         }
@@ -389,27 +488,34 @@ public sealed class SelfhostEmitterT9Tests
     }
 
     /// <summary>The C# twin of the generated main's <c>t9Build</c>, collecting the text each stubbed callee gives in C#.</summary>
-    private static (List<BoundStmt> Stmts, List<LocalSymbol> Locals) Body(CEmitter emitter, FunctionSymbol fn, List<string> masks)
+    private static (List<BoundStmt> Stmts, List<LocalSymbol> Locals) Body(Compilation c, CEmitter emitter, FunctionSymbol fn, List<string> masks)
     {
         var body = fn.Body!;
         var syn = body.Syntax;
+        if (fn.Name == "e0") return ([], []);
         var locals = body.Statements.OfType<BoundLocalDecl>().Select(d => d.Local).ToList();
         var inner = body.Statements.OfType<BoundBlock>().First();
-        var calls = body.Statements.OfType<BoundExprStmt>().Select(e => (BoundCall)e.Expr).ToList();
+        var calls = new List<BoundCall>();
+        foreach (var s in body.Statements)
+        {
+            if (s is BoundExprStmt { Expr: BoundCall call }) calls.Add(call);
+            if (s is BoundLocalDecl { Initializer: BoundTry { Operand: BoundCall tried } }) calls.Add(tried);
+        }
         var assigns = body.Statements.OfType<BoundAssign>().ToList();
         var xs = fn.Parameters.Select(p => (BoundExpr)new BoundLocal(syn, p)).ToList();
         var isH = fn.Name == "h";
         var stmts = new List<BoundStmt>
         {
-            inner, new LLabel(syn, "L0"), new LGoto(syn, "L0"), new LLoop(syn, inner), new LSetContext(syn, null, 0),
-            new LPushPanicHandler(syn, 0, null, inner), new LPopPanicHandler(syn, 0),
+            inner, new LLabel(syn, "L0"), new LGoto(syn, "L0"), new LLoop(syn, inner), new LLoop(syn, new BoundBlock(syn, [new LLabel(syn, "L1")])),
         };
+        if (locals.Count > 0 && locals[0].Type == PrimitiveType.I64) stmts.Add(new LClaim(syn, locals[0]));
+        stmts.AddRange([new LSetContext(syn, null, 0), new LPushPanicHandler(syn, 0, null, inner), new LPopPanicHandler(syn, 0)]);
         if (!isH && fn.Parameters.Count > 0) stmts.Add(new LClaim(syn, fn.Parameters[0]));
         stmts.Add(new LPanic(syn, "boom"));
         masks.Add(CEmitter.CString("boom"));
         stmts.Add(new LWrite(syn, WriteSink.Panic, null, [new BoundInterpolationPart("", null), new BoundInterpolationPart(null, null)]));
         stmts.AddRange(assigns);
-        var probe = new FunctionEmitter(emitter, new LoweredFunction(fn, locals, 1, 1, body));
+        var probe = Frame(emitter, new LoweredFunction(fn, locals, 1, 1, body));
         string Expr(BoundExpr e) => (string)Call(probe, "Expr", e)!;
         foreach (var a in assigns)
         {
@@ -438,6 +544,11 @@ public sealed class SelfhostEmitterT9Tests
             var names = (Dictionary<LocalSymbol, string>)Field(probe, "_names")!;
             masks.Add((string)Call(probe, "Call", calls[0], "&" + names[locals[1]])!);
             masks.Add((string)Call(probe, "Call", calls[1], null)!);
+            foreach (var call in calls.Skip(2))
+            {
+                stmts.Add(new LFailingCall(syn, locals[0], call, null));
+                masks.Add((string)Call(probe, "Call", call, null)!);
+            }
         }
         if (xs.Count >= 7)
         {
@@ -452,18 +563,21 @@ public sealed class SelfhostEmitterT9Tests
                 new("a", null), new(null, q), Part(q, Spec(radix: 16)), Part(b, Spec(radix: 2)), Part(q, Spec(digits: 2)),
                 Part(q, Spec(radix: 8, width: 6)), Part(s, Spec(debug: true, width: 4)), Part(s, Spec(debug: true)), Part(q, Spec(debug: true)),
                 Part(xs[3], Spec(debug: true)), Part(xs[4], Spec(debug: true)), Part(xs[5], Spec(debug: true)), Part(xs[6], Spec(debug: true)),
-                Part(q, Spec(width: 2, fill: 42, align: 2, digits: 1)),
+                Part(q, Spec(width: 2, fill: 42, align: 2, digits: 1)), Part(q, Spec(width: 3)),
             ];
             var guards = new BoundExpr?[parts.Length];
             guards[1] = b;
             stmts.Add(new LWrite(syn, WriteSink.Print, b, parts, guards));
-            stmts.Add(new LWrite(syn, WriteSink.Log, q, []));
+            stmts.Add(new LWrite(syn, WriteSink.Log, q, [new BoundInterpolationPart("b", null)]));
             stmts.Add(new LWrite(syn, WriteSink.StrBuf, q, []));
             var p = (StructSymbol)locals[5].Type;
             var owned = new BoundField(syn, new BoundLocal(syn, locals[5]), p.Fields[0]);
             stmts.Add(new LWrite(syn, WriteSink.StrBuf, owned, []));
             stmts.Add(new BoundSetOnPanic(syn, fn));
             masks.Add(CEmitter.StringLiteral("a"));
+            masks.Add(CEmitter.StringLiteral("b"));
+            masks.Add(emitter.Format(p.Fields[1].Type, "v." + CEmitter.FieldName(p.Fields[1].Name), "w"));
+            masks.Add(CEmitter.StringLiteral(", y: "));
             masks.Add(emitter.Format(q.Type, Expr(q), "w"));
             masks.Add(emitter.Format(q.Type, Expr(q), "sw"));
             masks.Add(emitter.SymbolText(Expr(xs[4])));
@@ -474,6 +588,21 @@ public sealed class SelfhostEmitterT9Tests
             masks.Add(CEmitter.StringLiteral("Q {}"));
             masks.Add(Expr(owned));
             masks.Add(emitter.OwnClaim(owned.Type));
+        }
+        if (fn.Name == "lm")
+        {
+            var q = xs[0];
+            var ua = c.Modules.SelectMany(m => m.Unions).SelectMany(u => u.Variants).Single(v => v.Name == "ua9");
+            var eb = c.Modules.SelectMany(m => m.ErrorSets).SelectMany(e => e.Variants).Single(v => v.Name == "bad29");
+            BoundExpr[] lowered =
+            [
+                new LOptionalHas(syn, q), new LOptionalValue(syn, q, PrimitiveType.I64), new LUnionTag(syn, q), new LUnionField(syn, q, ua, 0),
+                new LErrorCode(syn, q), new LErrorField(syn, q, eb, 0), new LAssignExpr(syn, q, q), new LSequence(syn, [q], q),
+                new LIndexUnchecked(syn, q, q, PrimitiveType.I64), new LNextChar(syn, q, fn.Parameters[0]), new LNever(syn, PrimitiveType.I64),
+                new LFunctionValue(syn, fn, null, (FunctionType)locals[1].Type), new LVoid(syn),
+            ];
+            stmts.Add(new LWrite(syn, WriteSink.Print, q, [.. lowered.Select(x => new BoundInterpolationPart(null, x) { Spec = new BoundFormatSpec(0, false, 1, 32, -1, -1) })]));
+            foreach (var x in lowered) masks.Add(emitter.Format(x.Type, Expr(x), "sw"));
         }
         stmts.Add(new LReturn(syn, null));
         return (stmts, locals);
@@ -501,7 +630,7 @@ public sealed class SelfhostEmitterT9Tests
         foreach (var fn in functions)
         {
             var masks = new List<string>();
-            var (stmts, locals) = Body(emitter, fn, masks);
+            var (stmts, locals) = Body(c, emitter, fn, masks);
             var f = new LoweredFunction(fn, locals, 1, 1, new BoundBlock(fn.Body!.Syntax, [.. stmts]));
             emit.Add($"fn {fn.Name}");
             emit.Add($"sig {Mask(Frame(emitter, f).Signature(), names)}");
@@ -518,7 +647,7 @@ public sealed class SelfhostEmitterT9Tests
         var order = (List<string>)Field(emitter, "_helperOrder")!;
         var bodies = (System.Collections.IDictionary)Field(emitter, "_helpers")!;
         var t9Masks = new List<string>();
-        foreach (var fn in functions) Body(emitter, fn, t9Masks);
+        foreach (var fn in functions) Body(c, emitter, fn, t9Masks);
         foreach (var n in order.Where(T9Helper))
         {
             var (proto, body) = ((string, string))bodies[n]!;
@@ -544,6 +673,12 @@ public sealed class SelfhostEmitterT9Tests
         lines.Add($"after {((List<string>)Field(fe, "_afterCalls")!).Count}");
         lines.Add($"store {(string?)Call(fe, "CheckedStore", tuple, q, true) ?? "null"}");
         lines.Add($"store {(string?)Call(fe, "CheckedStore", q, q, true) ?? "null"}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", q, q, false) ?? "null"}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", field, q, true) ?? "null"}");
+        var lv = new LVoid(syn);
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", lv, q, true) ?? "null"}");
+        lines.Add($"claimed {Claimed(fn.Body.Statements.OfType<BoundAssign>().First().Target)}");
+        lines.Add($"claimed {Claimed(lv)}");
         return lines;
     }
 

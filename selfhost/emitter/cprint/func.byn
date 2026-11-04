@@ -49,7 +49,7 @@ bool returnsValue(in Ctx c, by FuncId fn) {
 }
 
 /// CEmitter.cs:1194 `FunctionEmitter.Signature` (Q845): the C declarator of `f`, after the frame the constructor (:1173) builds.
-public string signature(ref CCtx cc, from ref Ctx c, through ltree.LTree t, for ltree.LoweredFunction f) {
+public string signature(ref CCtx cc, from ref Ctx c, through ltree.LTree t, for ltree.LoweredFunction f) uses alloc {
     let fe = functionEmitter(ref cc, from: ref c, for: in f)
     return frameSignature(ref cc, for: in fe, from: ref c)
 }
@@ -58,11 +58,15 @@ public string signature(ref CCtx cc, from ref Ctx c, through ltree.LTree t, for 
 string frameSignature(ref CCtx cc, for in CFunc fe, from ref Ctx c) uses alloc {
     let fn = fe.fn
     let kind = c.functions[fn].kind
-    let fails = c.functions[fn].hasFails
+    let hasFails = c.functions[fn].hasFails
     var result = ""
-    if fails { result = errorCType(ref cc, from: ref c) }
-    else if kind == .constructor { result = cType(ref cc, from: ref c, for: semantics.structTypeOf(c.functions[fn].owner)) }
-    else { result = cType(ref cc, from: ref c, for: c.functions[fn].returnType) }
+    if hasFails {
+        result = errorCType(ref cc, from: ref c)
+    } else if kind == .constructor {
+        result = cType(ref cc, from: ref c, for: semantics.structTypeOf(c.functions[fn].owner))
+    } else {
+        result = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+    }
     var ps = List<string>()
     // Q1: round 4 redoes this (CEmitter.cs:1201).
     if kind == .lambda { ps.append("void* env") }
@@ -74,8 +78,8 @@ string frameSignature(ref CCtx cc, for in CFunc fe, from ref Ctx c) uses alloc {
         let ct = cType(ref cc, from: ref c, for: c.locals[p].type)
         ps.append($"{ct}{semantics.paramIsByRef(ref c, by: p) ? "*" : ""} {fe.names[p]}")
     }
-    if fails && returnsValue(in c, by: fn) { ps.append($"{cType(ref cc, from: ref c, for: c.functions[fn].returnType)}* byn_out") }
-    let noreturn = semantics.isNever(c.functions[fn].returnType) && !fails ? "BYN_NORETURN " : ""
+    if hasFails && returnsValue(in c, by: fn) { ps.append($"{cType(ref cc, from: ref c, for: c.functions[fn].returnType)}* byn_out") }
+    let noreturn = semantics.isNever(c.functions[fn].returnType) && !hasFails ? "BYN_NORETURN " : ""
     var joined = StrBuf()
     if ps.length == 0 { joined.append("void") }
     for i in 0..ps.length {
@@ -86,7 +90,7 @@ string frameSignature(ref CCtx cc, for in CFunc fe, from ref Ctx c) uses alloc {
 }
 
 /// CEmitter.cs:1209 `FunctionEmitter.Emit`: the C definition of `f`.
-public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f) {
+public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f) uses alloc {
     var fe = functionEmitter(ref cc, from: ref c, for: in f)
     let fn = fe.fn
     let kind = c.functions[fn].kind
@@ -114,9 +118,11 @@ public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t
     if kind == .lambda && c.functions[fn].captures.length == 0 { line(ref sb, by: in fe, for: "(void)env;") }
     let statements = t9Copy(in c.bBlocks[f.body & 0xFFFFFFFF].statements)
     for s in statements { statement(ref cc, for: ref fe, from: ref c, through: in t, to: ref sb, at: s) }
-    if kind == .constructor { line(ref sb, by: in fe, for: "return self_v;") }
-    else if c.functions[fn].hasFails && !returnsValue(in c, by: fn) { line(ref sb, by: in fe, for: $"return ({errorCType(ref cc, from: ref c)}){{0}};") }
-    else if semantics.isNever(c.functions[fn].returnType) {
+    if kind == .constructor {
+        line(ref sb, by: in fe, for: "return self_v;")
+    } else if c.functions[fn].hasFails && !returnsValue(in c, by: fn) {
+        line(ref sb, by: in fe, for: $"return ({errorCType(ref cc, from: ref c)}){{0}};")
+    } else if semantics.isNever(c.functions[fn].returnType) {
         line(ref sb, by: in fe, for: $"byn_unreachable({fe.file}, {lineOf(in c, by: in fe, at: semantics.nodeSpan(in c, for: f.body))});")
     }
     sb.append("}\n")
@@ -137,12 +143,12 @@ bool isOwner(in Ctx c, for LocalId l) {
 }
 
 /// CEmitter.cs:1261 `HasSlot` (Q845): whether local `l` has a moved slot (ownership checks on, an owned local of a unique type).
-public bool hasSlot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) {
+public bool hasSlot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) uses alloc {
     return cc.ownershipChecks && isOwner(in c, for: l) && semantics.isUnique(ref c, for: c.locals[l].type)
 }
 
 /// CEmitter.cs:1263 `Slot` (Q845): the C name of local `l`'s moved slot.
-public string slot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) {
+public string slot(ref CCtx cc, for ref CFunc f, from ref Ctx c, at semantics.LocalId l) uses alloc {
     return $"own_{f.names[l]}"
 }
 
@@ -191,7 +197,7 @@ string placeOf(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
 }
 
 /// CEmitter.cs:1294 `CheckedStore` (Q845): `target = value` through the ownership checker, or null when it needs no hook.
-public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr target, to BExpr value, bool claim = true) {
+public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr target, to BExpr value, bool claim = true) uses alloc {
     if !cc.ownershipChecks { return null }
     let r = root(in c, for: target)
     var local: LocalId = -1
@@ -208,15 +214,15 @@ public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, throug
 }
 
 /// CEmitter.cs:1305 `Claimed` (Q845): C `call` followed by the claim of owned `receiver`, or `call` alone.
-public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at string call, by BExpr receiver, to semantics.TextSpan span) {
-    unless cc.ownershipChecks && ownerRoot(in c, for: receiver) != -1 { return call }
+public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at string call, by BExpr receiver, to semantics.TextSpan span) uses alloc {
+    if !cc.ownershipChecks || ownerRoot(in c, for: receiver) == -1 { return call }
     let claim = ownClaim(ref cc, from: ref c, for: t9Type(in c, through: in t, for: receiver))
     let p = placeOf(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     return $"({call}, {claim}(&{p}, {loc(in c, by: in f, at: span)}))"
 }
 
 /// CEmitter.cs:1310 `ClaimAfterCall` (Q845): records the claim of owned `place`, passed by pointer, to run after the statement.
-public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr place, to semantics.TextSpan span) {
+public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr place, to semantics.TextSpan span) uses alloc {
     unless cc.ownershipChecks { return }
     let r = ownerRoot(in c, for: place)
     if r == -1 || f.moved.contains(r) { return }
@@ -378,8 +384,8 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
                 let value = c.bAssigns[i].value
                 var store: string? = null
                 if c.bAssigns[i].op is null { store = checkedStore(ref cc, for: ref f, from: ref c, through: t, at: target, to: value) }
-                if (store is { } checked) {
-                    line(ref sb, by: in f, for: $"(void){checked};")
+                if (store is { } stored) {
+                    line(ref sb, by: in f, for: $"(void){stored};")
                 } else {
                     let tx = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: target)
                     let vx = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
@@ -433,8 +439,10 @@ void returnStmt(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.L
         line(ref sb, by: in f, for: $"return ({errorCType(ref cc, from: ref c)}){{0}};")
         return
     }
-    if value == -1 { line(ref sb, by: in f, for: "return;") }
-    else { line(ref sb, by: in f, for: $"return {returned(ref cc, for: ref f, from: ref c, through: in t, at: value)};") }
+    if value == -1 {
+        line(ref sb, by: in f, for: "return;")
+    } else {
+        line(ref sb, by: in f, for: $"return {returned(ref cc, for: ref f, from: ref c, through: in t, at: value)};") }
 }
 
 /// CEmitter.cs:1500 `Returned`.
@@ -470,10 +478,13 @@ void write(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree 
     for k in 0..t.writes[i].parts.length {
         let part = t.writes[i].parts[k]
         var write: string? = null
-        if part.text is { } text && text.length > 0 { write = $"byn_w_str(w, {stringLiteral(text)});" }
-        else if part.value != -1 {
-            if part.spec is { } spec { write = formatWithSpec(ref cc, for: ref f, from: ref c, through: in t, at: part.value, by: spec) }
-            else {
+        let text = part.text ?? ""
+        if text.length > 0 {
+            write = $"byn_w_str(w, {stringLiteral(text)});"
+        } else if part.value != -1 {
+            if (part.spec is { } spec) {
+                write = formatWithSpec(ref cc, for: ref f, from: ref c, through: in t, at: part.value, by: spec)
+            } else {
                 let vt = t9Type(in c, through: in t, for: part.value)
                 let vx = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: part.value)
                 write = format(ref cc, from: ref c, for: vt, at: vx, to: "w")
@@ -481,17 +492,23 @@ void write(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree 
         }
         let w = write ?? continue
         var guard: BExpr = -1
-        if t.writes[i].guards is { } guards { guard = guards[k] }
-        if guard != -1 { line(ref sb, by: in f, for: $"if ({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: guard)}) {{ {w} }}") }
-        else { line(ref sb, by: in f, for: w) }
+        if (t.writes[i].guards is { } guards) { guard = guards[k] }
+        if guard != -1 {
+            line(ref sb, by: in f, for: $"if ({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: guard)}) {{ {w} }}")
+        } else {
+            line(ref sb, by: in f, for: w)
+        }
     }
     if cc.ownershipChecks && sink == .strBuf && ownerRoot(in c, for: target) != -1 {
         let claim = ownClaim(ref cc, from: ref c, for: t9Type(in c, through: in t, for: target))
         line(ref sb, by: in f, for: $"{claim}(w, {loc(in c, by: in f, at: span)});")
     }
-    if sink == .print { line(ref sb, by: in f, for: "byn_w_println(w);") }
-    else if sink == .panic { line(ref sb, by: in f, for: $"byn_panic_str((byn_str){{wb, wv.len}}, {loc(in c, by: in f, at: span)});") }
-    else if sink == .log { line(ref sb, by: in f, for: $"byn_log({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: target)}, (byn_str){{wb, wv.len}});") }
+    if sink == .print {
+        line(ref sb, by: in f, for: "byn_w_println(w);")
+    } else if sink == .panic {
+        line(ref sb, by: in f, for: $"byn_panic_str((byn_str){{wb, wv.len}}, {loc(in c, by: in f, at: span)});")
+    } else if sink == .log {
+        line(ref sb, by: in f, for: $"byn_log({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: target)}, (byn_str){{wb, wv.len}});") }
     f.indent -= 1
     line(ref sb, by: in f, for: "}")
 }
@@ -509,38 +526,27 @@ string formatWithSpec(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in l
             let align = spec.align > 0 ? spec.align : 0
             let ct = cType(ref cc, from: ref c, for: type)
             let name = functionName(ref cc, from: ref c, for: method)
-            return $"{{ {ct} fv = {v}; {name}(&fv, w, (byn_format_spec){{{radix}, " + $"{spec.debug ? "true" : "false"}, {spec.width}, {spec.fill}u, {align}, {spec.digits}}}); }}"
+            return $"{{ {ct} fv = {v}; {name}(&fv, w, (byn_format_spec){{{radix}, {spec.debug ? "true" : "false"}, {spec.width}, {spec.fill}u, {align}, {spec.digits}}}); }}"
         }
     }
     if spec.radix != 0 {
         let _ = helper(ref cc, for: "bynh_w_radix", from: "static void bynh_w_radix(byn_writer* w, uint64_t v, bool negative, int base)", as:
-            "{\n    uint8_t d[64];\n    int n = 0;\n    if (negative) {\n        byn_w_char(w, '-');\n        v = 0 - v;\n    }\n"
-            + "    do {\n        d[n++] = (uint8_t)\"0123456789abcdef\"[v % (uint64_t)base];\n        v /= (uint64_t)base;\n    } while (v > 0);\n"
-            + "    while (n > 0) byn_w_bytes(w, &d[--n], 1);\n}\n")
+            "{\n    uint8_t d[64];\n    int n = 0;\n    if (negative) {\n        byn_w_char(w, '-');\n        v = 0 - v;\n    }\n    do {\n        d[n++] = (uint8_t)\"0123456789abcdef\"[v % (uint64_t)base];\n        v /= (uint64_t)base;\n    } while (v > 0);\n    while (n > 0) byn_w_bytes(w, &d[--n], 1);\n}\n")
     }
     if spec.digits >= 0 {
         // Rounds half away from zero; a value too large to scale is written as `byn_w_f64` writes it.
         let _ = helper(ref cc, for: "bynh_w_digits", from: "static void bynh_w_digits(byn_writer* w, double v, int digits)", as:
-            "{\n    double p = 1;\n    for (int i = 0; i < digits; i++) p *= 10;\n    double s = v * p;\n"
-            + "    if (!(s > -9.0e15 && s < 9.0e15)) {\n        byn_w_f64(w, v);\n        return;\n    }\n"
-            + "    int64_t n = (int64_t)(s < 0 ? s - 0.5 : s + 0.5);\n    if (n < 0 || (n == 0 && v < 0)) byn_w_char(w, '-');\n"
-            + "    uint64_t m = n < 0 ? (uint64_t)-n : (uint64_t)n, q = (uint64_t)p;\n    byn_w_u64(w, m / q);\n    if (digits == 0) return;\n"
-            + "    byn_w_char(w, '.');\n    uint64_t f = m % q;\n    for (uint64_t k = q / 10; k > 0; k /= 10) byn_w_char(w, (uint32_t)('0' + f / k % 10));\n}\n")
+            "{\n    double p = 1;\n    for (int i = 0; i < digits; i++) p *= 10;\n    double s = v * p;\n    if (!(s > -9.0e15 && s < 9.0e15)) {\n        byn_w_f64(w, v);\n        return;\n    }\n    int64_t n = (int64_t)(s < 0 ? s - 0.5 : s + 0.5);\n    if (n < 0 || (n == 0 && v < 0)) byn_w_char(w, '-');\n    uint64_t m = n < 0 ? (uint64_t)-n : (uint64_t)n, q = (uint64_t)p;\n    byn_w_u64(w, m / q);\n    if (digits == 0) return;\n    byn_w_char(w, '.');\n    uint64_t f = m % q;\n    for (uint64_t k = q / 10; k > 0; k /= 10) byn_w_char(w, (uint32_t)('0' + f / k % 10));\n}\n")
     }
     if spec.width == 0 { return formatInner(ref cc, from: ref c, for: type, at: v, by: spec, to: "w") }
     // Numbers align to the end by default, everything else to the start.
     let align: i64 = spec.align >= 0 ? spec.align : semantics.isNumeric(type) ? 1 : 0
     // The 1024-byte cut drops a code point it would split.
     let pad = helper(ref cc, for: "bynh_w_padded", from: "static void bynh_w_padded(byn_writer* w, byn_str s, int64_t width, uint32_t fill, int align)", as:
-        "{\n    if (s.len > 0) {\n        int64_t k = s.len - 1;\n        while (k > 0 && (s.ptr[k] & 0xC0) == 0x80) k--;\n"
-        + "        uint8_t c = s.ptr[k];\n        int64_t need = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : 4;\n"
-        + "        if (k + need > s.len) s.len = k;\n    }\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n"
-        + "    int64_t gap = width > runes ? width - runes : 0, before = align == 1 ? gap : align == 2 ? gap / 2 : 0;\n"
-        + "    for (int64_t i = 0; i < before; i++) byn_w_char(w, fill);\n    byn_w_str(w, s);\n"
-        + "    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n")
+        "{\n    if (s.len > 0) {\n        int64_t k = s.len - 1;\n        while (k > 0 && (s.ptr[k] & 0xC0) == 0x80) k--;\n        uint8_t c = s.ptr[k];\n        int64_t need = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : 4;\n        if (k + need > s.len) s.len = k;\n    }\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n    int64_t gap = width > runes ? width - runes : 0, before = align == 1 ? gap : align == 2 ? gap / 2 : 0;\n    for (int64_t i = 0; i < before; i++) byn_w_char(w, fill);\n    byn_w_str(w, s);\n    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n")
     let l = loc(in c, by: in f, at: t9Span(in c, through: in t, for: value))
     let inner = formatInner(ref cc, from: ref c, for: type, at: v, by: spec, to: "sw")
-    return $"{{ uint8_t sb[1024]; byn_writer sv = {{sb, 1024, 0, BYN_WRITE_TRUNCATE, {l}}}; byn_writer* sw = &sv; {inner} " + $"{pad}(w, (byn_str){{sb, sv.len}}, {spec.width}, {spec.fill}u, {align}); }}"
+    return $"{{ uint8_t sb[1024]; byn_writer sv = {{sb, 1024, 0, BYN_WRITE_TRUNCATE, {l}}}; byn_writer* sw = &sv; {inner} {pad}(w, (byn_str){{sb, sv.len}}, {spec.width}, {spec.fill}u, {align}); }}"
 }
 
 /// CEmitter.cs:1550 `FormatWithSpec`'s local `Inner`.
@@ -559,16 +565,13 @@ string formatInner(ref CCtx cc, from ref Ctx c, for Type type, at string v, by B
 string debug(ref CCtx cc, from ref Ctx c, for Type type, at string v, to string w) uses alloc {
     if semantics.isString(type) || type == semantics.builtinType(.symbol) {
         let quoted = helper(ref cc, for: "bynh_w_quoted", from: "static void bynh_w_quoted(byn_writer* w, byn_str s, uint32_t quote)", as:
-            "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n"
-            + "        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n"
-            + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n")
+            "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n")
         let text = semantics.isString(type) ? v : symbolText(ref cc, for: v)
         return $"{quoted}({w}, {text}, '\"');"
     }
     if type == semantics.prim(.char) {
         let quoted = helper(ref cc, for: "bynh_w_rune_quoted", from: "static void bynh_w_rune_quoted(byn_writer* w, uint32_t c)", as:
-            "{\n    byn_w_char(w, '\\'');\n    if (c == '\\'' || c == '\\\\') byn_w_char(w, '\\\\');\n"
-            + "    if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n    else byn_w_char(w, c);\n    byn_w_char(w, '\\'');\n}\n")
+            "{\n    byn_w_char(w, '\\'');\n    if (c == '\\'' || c == '\\\\') byn_w_char(w, '\\\\');\n    if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n    else byn_w_char(w, c);\n    byn_w_char(w, '\\'');\n}\n")
         return $"{quoted}({w}, {v});"
     }
     if semantics.kindOf(type) != .structType { return format(ref cc, from: ref c, for: type, at: v, to: w) }
@@ -583,13 +586,13 @@ string debug(ref CCtx cc, from ref Ctx c, for Type type, at string v, to string 
         sb.append("{\n")
         let fields = t9Copy(in c.structs[s].fields)
         let display = semantics.structDisplayName(ref c, by: s)
-        sb.append($"    byn_w_str(w, {stringLiteral(display + (fields.length == 0 ? " {}" : " { "))});\n")
+        sb.append($"    byn_w_str(w, {stringLiteral($"{display}{fields.length == 0 ? " {}" : " { "}")});\n")
         for i in 0..fields.length {
             let fd = fields[i]
             let fname = c.fields[fd].name
-            sb.append($"    byn_w_str(w, {stringLiteral((i == 0 ? "" : ", ") + fname + ": ")});\n")
+            sb.append($"    byn_w_str(w, {stringLiteral($"{i == 0 ? "" : ", "}{fname}: ")});\n")
             sb.append("    ")
-            sb.append(debug(ref cc, from: ref c, for: c.fields[fd].type, at: "v." + fieldName(fname), to: "w"))
+            sb.append(debug(ref cc, from: ref c, for: c.fields[fd].type, at: $"v.{fieldName(fname)}", to: "w"))
             sb.append("\n")
         }
         if fields.length > 0 { sb.append($"    byn_w_str(w, {stringLiteral(" }")});\n") }
