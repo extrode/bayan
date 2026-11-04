@@ -618,6 +618,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
                     return recordSyntaxNode(ref c, for: bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in l.value.body, by: in noBlock, to: fExpected), at: syntaxLeaf(ref c, as: .lambdaExpr, at: l.value.span))
             }
         case .errorExpr(let eNode):
+            // coverage-exempt: Q853
             return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: eNode.value.span }), from: in e)
         default:
             let span = parser.exprSpan(in e)

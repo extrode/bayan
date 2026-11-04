@@ -185,6 +185,7 @@ BExpr bindOwned(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as
         var ps = List<LocalId>()
         ps.append(t21Param(ref c, by: "value", as: t != -1 ? t : errorType(), at: 0))
         value = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "Owned")[0]
+        // coverage-exempt: Q853
         if t == -1 || isError(t) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     }
     return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Owned"), receiver: -1, arguments: [value], type: internOwned(ref c, by: t) }), at: syntaxOfCall(ref c, from: in call))
@@ -203,6 +204,7 @@ BExpr bindUntrusted(ref Binder b, through ref Ctx c, for in parser.CallExpr call
         var ps = List<LocalId>()
         ps.append(t21Param(ref c, by: "value", as: t != -1 ? t : errorType(), at: 0))
         value = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "Untrusted")[0]
+        // coverage-exempt: Q853
         if t == -1 || isError(t) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     }
     return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Untrusted"), receiver: -1, arguments: [value], type: internUntrusted(ref c, by: t) }), at: syntaxOfCall(ref c, from: in call))

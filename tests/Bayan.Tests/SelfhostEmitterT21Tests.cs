@@ -259,6 +259,36 @@ public sealed class SelfhostEmitterT21Tests
             i64 v
         }
 
+        struct Early {
+            Late l = Late()
+        }
+
+        struct Late {
+            i64 x = 1
+        }
+
+        struct Pair<T> {
+            T a
+        }
+
+        interface IShower {
+            string show<T>(T x)
+        }
+
+        void viaParam<S>(S s) where S : IShower {
+            let r = s.show(1)
+        }
+
+        void trusted(Untrusted<i64> v) {
+            let n = 5
+            let a = trust(move v, reason: "checked")
+            let b = trust(move n, reason: "checked")
+            let la = List()
+            let pa = Pair()
+            let e = Early()
+            let op = Order.paid { id: 1 }
+        }
+
         void r() => 0..3
 
         void l() => [1]

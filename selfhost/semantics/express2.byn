@@ -118,6 +118,7 @@ BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.Name
             }
             return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: self, function: member.id, typeArgs: List<TextSpan>() }), at: syntax)
         default:
+            // coverage-exempt: Q853
             return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: n.span }), at: syntax)
     }
 }

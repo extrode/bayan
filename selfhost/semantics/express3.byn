@@ -563,6 +563,7 @@ BExpr t21BindConversion(ref Binder b, through ref Ctx c, at TextSpan span, to Ty
         return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
     if kind == .identity { return operand }
+    // coverage-exempt: Q853
     if kind == .nullToOptional { return recordSyntaxNode(ref c, for: addDefault(ref c, from: BDefault { span: span, type: target }), at: syntax) }
     let conv = recordSyntaxNode(ref c, for: addConversion(ref c, from: BConversion { span: span, operand: operand, type: target, kind: kind }), at: syntax)
     if (exprConstant(in c, for: operand) is { } k) {

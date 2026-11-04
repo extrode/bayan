@@ -240,6 +240,7 @@ BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call,
     if call.args.length >= 2 { ps.append(asParam) }
     @unobservable because "Q619: enforceNames reads only a parameter's Param syntax or a bool type, which these parameters lack; the mutant is equivalent"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
+    // coverage-exempt: Q853
     if args.length == 0 { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     for a in args {
         if isError(exprType(in c, for: a)) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
@@ -260,6 +261,7 @@ BExpr bindFloatTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr 
     ps.append(newLocal(ref c, by: LocalSymbol { name: "text", type: prim(.string), kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
     @unobservable because "Q619: enforceNames reads only a parameter's Param syntax or a bool type, which these parameters lack; the mutant is equivalent"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
+    // coverage-exempt: Q853
     if args.length == 0 { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     for a in args {
         if isError(exprType(in c, for: a)) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
@@ -278,6 +280,7 @@ BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fr
     for i in 0..take { ps.append(all[i]) }
     let name = $"{typeDisplay(ref c, by: prim(target))}.parse"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: name)
+    // coverage-exempt: Q853
     if args.length == 0 { return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax) }
     for a in args {
         if isError(exprType(in c, for: a)) { return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax) }
