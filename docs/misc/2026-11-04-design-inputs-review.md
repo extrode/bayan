@@ -4,6 +4,20 @@ Consistency review of the docs filed on 2026-11-04 (`bayan-views.md`, `bayan-con
 
 Also: `bayan-handoff.md` "After v0.1" puts fibers and `Io.Evented` in v0.3; `bayan-concurrency.md` says v0.2 (with C3). The user's copies of `bayan-library-tiers.md`, `HANDOFF-014-tooling.md` and `addendum-A2-diagnostic-codes.md` are the originals of the filed versions (tooling spec renumbered 014 → 015); they were not re-filed.
 
+## Status (2026-11-04)
+
+User decisions:
+
+- D-A (C1, A1, C2): `scope`/`spawn` replaces `async`/`await` and `Io.group()`. Round 4 removes them from spec §13 and Appendix A by revision. C3 follows: spec in round 4, runtime v0.2.
+- D-B (C6): the block deadline is `scope(timeout:)` / `until:`; round 4 removes `provide timeout: d { … }`.
+- D-C (C7): style and idiom lints take `x900–x999` of their area per A2 (revision 0017).
+
+Per row:
+
+- applied: C1, C2, C3, C5, C6, C7, C10, C11, C12, C14, C15, C22, C25, C26, I3, I4, I5, I6, I7, I9, I12, S1, S2, S4, S5, S6, S9, A1
+- open: C4, C8, C9, C13, C16-C21, C23, C24, I1, I2, I8, I10, I11, I13-I16, S3, S7, S8, A2, A3, A4
+- notes: I6 is applied in the filed docs only; bayan-spec.md:633 (`cancelled`) stays until the round-4 revision. I1/I2 keep their names (no rename). C13: the views manifest example is unchanged.
+
 ## 1. Contradictions
 
 | # | Severity | Where | vs | Issue | Suggested resolution |

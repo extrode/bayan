@@ -1,6 +1,6 @@
 # Bayān — Markup and views
 
-Nov 1, 2026 · Accepted as a provisional design. The mechanism is fixed in principle; details are expected to change once a real product is built with it. Syntax follows round 3 plus the round-4 clause order (`where → expects → uses → becomes → fails`). Library names under `kit.*` are illustrative.
+Nov 1, 2026 · Accepted as a provisional design. The mechanism is fixed in principle; details are expected to change once a real product is built with it. Syntax follows round 3 plus the proposed round-4 clause order (`where → expects → uses → becomes → fails`). Library names under `kit.*` are illustrative.
 
 ## 1. Decisions
 
@@ -261,11 +261,13 @@ struct ReviewApi {
 
     @post("/products/{id}/reviews")
     public Fragment add(ProductId id, from Untrusted<FormData> data) uses net, suspend, alloc fails DbError {
-        let form = ReviewForm.fromForm(data) catch error => {
-            let reviews = try loadReviews(id, from: pool)
-            return Fragment(ReviewSection { product: id, reviews: reviews, errors: error.violations })
+        let form = ReviewForm.fromForm(data) catch switch {
+            ValidationError error => {
+                let reviews = try loadReviews(id, from: pool)
+                return Fragment(ReviewSection { product: id, reviews: reviews, errors: error.violations })
+            }
         }
-        let _ = try addReview(form, for: id, to: pool)
+        _ = try addReview(form, for: id, to: pool)
         let reviews = try loadReviews(id, from: pool)
         return Fragment(ReviewSection { product: id, reviews: reviews })
     }
