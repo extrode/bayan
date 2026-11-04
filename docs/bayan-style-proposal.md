@@ -1,6 +1,6 @@
 # Bayān Style — Proposal
 
-Status: decided (all items in §5 settled). Layout rules land in `bayan format` and docs/bayan-style.md; one rule (§3.4) needs a small grammar revision.
+Status: decided (all items in §5 settled; C21 revised 2026-11-04). Layout rules land in `bayan format` and docs/bayan-style.md in round 4; no grammar revision is needed. One open question in §3.4.
 
 ---
 
@@ -55,7 +55,7 @@ public Money quote(Cart cart, for Customer customer) expects cart.lines.length >
 ```
 
 ```cs
-// After
+// After (multi-clause header layout: §3.4 open question)
 public Money quote(Cart cart, for Customer customer)
     expects cart.lines.length > 0
     uses db
@@ -153,11 +153,24 @@ Same run rule: single-line arms align `=>`. A multi-line arm ends the run.
 
 ### 3.4 Wrapped headers
 
-When a function signature or a control-flow head (`if`, `while`, `for`) doesn't fit the width, or a signature has two or more clauses:
-- each clause goes on its own line, indented one level, in the proposed round-4 order (`where` → `expects` → `uses` → `becomes` → `fails`);
-- the opening `{` goes **on its own line** at the header's indent.
+One brace rule (user decision 2026-11-04, review row C21): **`{` always ends the line.** There is no `braces` knob and no own-line `{`.
 
-The own-line brace is what separates the last clause from the first statement. Without it, an indented `fails QuoteError` and an indented `let rates = …` look alike. rustfmt uses the same rule for multi-line `where` clauses.
+- A parameter list that doesn't fit wraps like any other list (§3.6): one parameter per line, a trailing comma, and the closer on its own line, where it shares the line with `{` as `) {` (as rustfmt does). There is never a `)` line followed by a `{` line.
+- Control heads (`if`, `while`, `for`) have no parentheses in Bayān, so they are not lists. A wrapped condition breaks before `and`/`or` and ends with ` {`. `conditions.named` suggests naming it instead.
+- Clauses (`where` → `expects` → `uses` → `becomes` → `fails`, the proposed round-4 order) follow the closer on the `) {` line when they fit: `) uses net fails BookingError {`.
+
+```cs
+Booking book(
+    Carrier carrier,
+    Route route,
+    Date date,
+) uses net, suspend fails BookingError {
+    let quote = try carrier.quote(route, on: date)
+    …
+}
+```
+
+**Open question (C21 follow-up):** a header whose clauses do not fit on one line. Each clause then gets its own line, and an indented `fails QuoteError {` looks like an indented `let rates = …` below it. The same holds for a wrapped condition's last line. Candidates: indent header continuations two levels (8) so the body's one level stands apart (PEP 8's hanging indent), or accept the likeness because `conditions.named` and short clause lists make it rare.
 
 ```cs
 // Before
@@ -171,8 +184,7 @@ if order is .paid and order.total >= freeShippingThreshold and customer.region.s
 if order is .paid
     and order.total >= freeShippingThreshold
     and customer.region.shipsFree
-    and not order.hasOversizedItems
-{
+    and not order.hasOversizedItems {
     order.shipping = .free
 }
 ```
@@ -187,7 +199,7 @@ let shipsFree = order is .paid
 order.shipping = .free if shipsFree
 ```
 
-**Grammar dependency:** a `{` at line start must continue an open header. A header is never complete without its body, so this is a natural waṣl case. It needs one row in the waqf table, as a numbered revision. Short headers keep `{` on the same line, and `} else {` stays mandatory.
+No grammar change: `{` never starts a line, so the waqf table needs no new row (the earlier own-line rule needed one). `} else {` stays mandatory.
 
 ### 3.5 Chains and queries
 
@@ -226,7 +238,7 @@ let shipment = carrier.book(
 ```
 
 Rules:
-- If the list fits, it stays on one line. Otherwise there is one item per line, a trailing comma, and the closing bracket on its own line.
+- If the list fits, it stays on one line. Otherwise there is one item per line, a trailing comma, and the closing bracket on its own line. This is the one list rule: arguments, literals and parameter lists alike (§3.4 for `) {`).
 - **Trailing comma as intent** (Black's "magic trailing comma"): if the author writes a trailing comma, the list stays one-per-line even when it would fit. This is how an author keeps a short particle call vertical.
 - Continuation indent is always one level (4). Nothing aligns to an opening parenthesis, since that alignment shifts every line on a rename.
 
@@ -295,7 +307,7 @@ One blank line between top-level declarations. Consecutive one-line declarations
 | **Layout** | `bayan format` rewrites; no diagnostics | a few knobs | indent, width, blank lines, wrapping, alignment, spacing |
 | **Idioms** | style lints, `x900–x999` of the matching area (A2) | severity per lint | postfix guards, `it` lambdas, nesting depth |
 
-Layout never produces a warning. You don't fix it, you run the formatter. That is the gofmt lesson. Idioms are judgement calls, so they are lints with the same severity model as `dotnet_diagnostic.X.severity`.
+Layout is never compiler-enforced; idiom lints are diagnostics, `.suggestion` by default, with severity set per lint in `package.byn` (review row C9: spec :2104 and bayan-style.md:5 get this wording in round 4). Layout never produces a warning. You don't fix it, you run the formatter. That is the gofmt lesson. Idioms are judgement calls, so they are lints with the same severity model as `dotnet_diagnostic.X.severity`.
 
 Style and idiom lints take codes in the `x900–x999` range of their area (addendum A2, docs/revisions/0017-addendum-a2-diagnostic-codes.md): 0xxx project, files, `package.byn`, CLI and tools; 1xxx syntax, 2xxx types, 3xxx memory, 4xxx control flow and failure, 5xxx grammar and naming, 6xxx effects and concurrency, 7xxx typestate and contracts, 8xxx trust and security, 9xxx build, C backend, toolchain and runtime traps. Numbers are assigned at the round-4 renumbering. A lint's area follows A2 rule 2 (the mistake the user made): if the only mistake is the spelling, 19xx; otherwise the area of what the user misunderstood. Whether a lint has a fix-it does not decide its area (user decision 2026-11-04).
 
@@ -359,7 +371,7 @@ This reuses the existing `because` purpose clause, and `bayan audit` lists every
 ### 4.5 Tooling
 
 - **One engine.** The formatter is in the compiler and works on the lossless syntax tree, so comments and trivia are preserved. It is a Wadler-style group/break printer, as in Prettier: a group that doesn't fit breaks into one item per line.
-- **CLI.** `bayan format` writes. `bayan format --check` exits non-zero and prints a diff, for CI. `bayan format --range a:b` formats a selection.
+- **CLI.** `bayan format` writes. `bayan format --check` writes nothing, lists each file that would change and exits 1 (spec :2243, unchanged); `--check --diff` prints the diff instead, for CI logs (review row C23). `bayan format --range a:b` formats a selection.
 - **LSP.** `formatting`, `rangeFormatting` and `onTypeFormatting` call the same engine, so Visual Studio and VS Code format on save identically. Lints arrive as ordinary diagnostics with code actions.
 - **Guarantees.** The formatter is idempotent (the existing 5.2b test), output re-parses to the same AST, and generated code goes through the same formatter, so it stays readable.
 
@@ -371,10 +383,19 @@ This reuses the existing `because` purpose clause, and `bayan audit` lists every
 | --- | --- | --- |
 | 1 | Indent | 4 by default; not semantic, consistency only; `indent` knob stays |
 | 2 | Width | **120** |
-| 3 | Wrapped headers | **own-line `{`** for any wrapped signature or control head (§3.4); needs a waqf revision |
+| 3 | Wrapped headers | **`{` always ends the line**; a wrapped parameter list closes with `) {` and a trailing comma (§3.4, C21 2026-11-04); no `braces` knob, no waqf revision |
 | 4 | Alignment | **`.runs`** by default; projects may set `.none` |
 | 5 | Config | **`package.byn`** is the source of truth |
 | 6 | Style lints | **x900–x999 of the matching area** (A2), assigned at renumbering |
 | 7 | Opt-out | **`@unformatted because "…"`** only |
 
-Timing: layout rules and lints touch only `bayan format` and docs/bayan-style.md, so they can land without disrupting in-flight work. Only item 3 needs a numbered revision.
+Timing: layout rules and lints touch `bayan format`, docs/bayan-style.md and the `style` knobs, which the C# manifest check (src/Bayan.Syntax/Packages/Manifest.cs:35) and its self-hosted port (selfhost/semantics/manifest.byn) validate. They land in the round-4 revision, after self-hosting.
+
+Round-4 edits (review row C8, user decision 2026-11-04: drop `braces`, take this proposal's knobs):
+
+| Site | Change |
+| --- | --- |
+| spec §19.2 manifest example (:2088-2094), bayan-style.md:11-14 and :72-74 | `maxLine: 100` → `width: 120`; drop `braces`; `trailingCommas: true` → `.multiline` (or `.never`); add `align: .runs` (or `.none`) and `lints` |
+| Manifest.cs:35, :179-183 and selfhost/semantics/manifest.byn | the same knob set and types; an old knob name gets the manifest migration (review rows C24, I14) |
+| spec :2104, bayan-style.md:5 | C9 wording (§4.1) |
+

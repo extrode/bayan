@@ -327,28 +327,28 @@ This section follows bayan-style-proposal.md:
 
 - Indentation is consistency-only.
 - Width is 120.
-- `{` goes on its own line after a wrapped signature or control head.
+- `{` always ends the line; a wrapped parameter list closes with `) {` (style proposal §3.4, C21).
 - Alignment is `.runs` by default, with `.none` allowed.
 - `package.byn` is the source of truth.
 - Style lints are `TBD (x9xx of their area, A2)`: `lambdas.it` and `guards.postfix` in 1xxx syntax (spelling only), `nesting.depth` and `conditions.named` in 4xxx control flow, `functions.length` in 0xxx project and tools.
 - `@unformatted because "…"` is the only opt-out.
 
-**Wrapped lists:** each item goes on its own line, indented once, and `)` closes on the last item's line. A wrapped signature or control head then puts `{` on its own line.
+**Wrapped lists:** each item goes on its own line, indented once, with a trailing comma; the closer goes on its own line and shares it with `{` as `) {` (user decision 2026-11-04, review row C21).
 
 ```cs
 Matrix4 lookAt(
     Vec3 eye,
     Vec3 target,
-    Vec3 up)
-{
+    Vec3 up,
+) {
     …
 }
 
 public Grams shippingWeight(
     Order        order,
     by Carrier   carrier,
-    at Timestamp when)
-{
+    at Timestamp when,
+) {
     …
 }
 ```
