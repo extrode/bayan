@@ -125,7 +125,7 @@ Rules:
 - **Alignment in runs.** A run is consecutive lines of the same shape with no blank line or comment line between them. Within a run, align the name column (fields, properties) and the `=>` column (properties). A blank line ends the run, which keeps diff noise local. This is gofmt's model, and it matters more in Bayān than in Go: type-first declarations put a variable-width type before every name.
 - One blank line between member groups: fields, `states`, properties, static members, methods. One blank line between methods.
 - Blocks with statements always span lines; only `=>` bodies stay on one line.
-- Attributes go on their own line above types and functions, and inline before fields and parameters (`Untrusted<string> note`).
+- Attributes go on their own line above types and functions, and inline before fields and parameters (`@json(name: "note") string note`).
 
 ### 3.3 Switch arms
 
