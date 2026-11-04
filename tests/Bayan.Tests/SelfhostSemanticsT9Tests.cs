@@ -54,6 +54,10 @@ public sealed class SelfhostSemanticsT9Tests
         ("path isRooted", "findPath(ref c, for: \"isRooted\")", B.FindPath("isRooted")),
         ("path relative", "findPath(ref c, for: \"relative\")", B.FindPath("relative")),
         ("path fileName", "findPath(ref c, for: \"fileName\")", B.FindPath("fileName")),
+        ("path directoryName", "findPath(ref c, for: \"directoryName\")", B.FindPath("directoryName")),
+        ("path combine", "findPath(ref c, for: \"combine\")", B.FindPath("combine")),
+        ("path fullPath", "findPath(ref c, for: \"fullPath\")", B.FindPath("fullPath")),
+        ("Path.combine(paths)", "t9Function(ref c, for: \"Path.combine(paths)\")", B.PathCombineSpan),
         ("Symbol.intern", "t9Function(ref c, for: \"Symbol.intern\")", B.SymbolIntern),
     ];
 
