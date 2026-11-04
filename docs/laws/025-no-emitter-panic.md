@@ -1,19 +1,19 @@
 ---
 id: L025
 title: No emitter panic
-status: proposed
+status: enacted
 kind: property
 scope: selfhost/emitter/
 proof: tests/Bayan.Tests/SelfhostEmitterNoPanicLawTests.cs
 check: dotnet test -v q --filter "Law=L025"
 timeout: 1200
-enacted:
+enacted: 2026-11-04
 ---
 
 ## Statement
 
-For every program in the corpus (every `tests/cases/run/` input, the inputs `CliTests` and
-`CacheTests` pass to `--emit-c`, and the 010 generator's programs on the fixed seeds, well-typed or
+For every program in the corpus (every `tests/cases/run/` input, among them `run/hello.byn`
+(byte-identical to `examples/hello/main.byn`, which `CliTests` passes to `--emit-c`), and the 010 generator's programs on the fixed seeds, well-typed or
 corrupted) and every `BuildMode` (`debug`, `safe`, `fast` today), `bayan-emit` terminates and each input exits 0 or 1:
 it never panics, never exits through the runtime's trap paths, and no `bayan-emit --many` run (one mode, one batch) takes
 longer than 120 s. Exit 2 is a usage error (`selfhost/emitter/main.byn:29` `exitUsage`) and never occurs on file input.
@@ -52,3 +52,5 @@ quick seeds 7127/3075/3100, corrupted 414/400/398, run 249/225/222; full seeds 1
 so the figures are per run, never summed over modes, and the largest is 17 s against the 120 s bound. The worst case is 3 corpora x 3 modes x
 120 s = 1080 s, so `timeout:` is 1200, not 300, to keep the whole-check limit above the per-run bounds. `laws-check.js --run` runs the quick tier
 (`BAYAN_LAW_TIER` unset).
+
+Enacted by the agent under the standing self-host authorization (2026-10-21; decisions 2026-11-03: the agent enacts L024/L025 after proof; spec 011 T19), after L018 and L023 were enacted, with T14's proof passing: `dotnet test -v q --filter "Law=L025"` 1 passed (`SelfhostEmitterNoPanicLawTests.BayanEmitNeverPanicsOnSeedsCorruptionsAndRunInputs`) on 2026-11-04, 47 s test time (55 s wall; both include rebuilding `bayan-emit`, which the Proof notes' 21 s quick figure does not). The app `CacheTests.cs:192` passes to `--emit-c` (the `bayan new` template) is not in this law's corpus, which is only the generator seeds and the `tests/cases/run/` inputs (handoff Q890).
