@@ -44,7 +44,8 @@ public string t6Run(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for i
     let symbolIndex = t6SymbolTable(ref cc, to: ref statics)
     let types = emitTypes(ref cc, from: ref c)
     var enums = StrBuf()
-    for m in 0..c.modules.length {
+    for j in 0..c.moduleOrder.length {
+        let m = c.moduleOrder[j]
         for k in 0..c.modules[m].enums.length {
             enums.append($"typedef int32_t {cType(ref cc, from: ref c, for: semantics.enumTypeOf(c.modules[m].enums[k]))};\n")
         }

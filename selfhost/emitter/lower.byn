@@ -36,7 +36,8 @@ public LoweredProgram lower(ref Ctx c, to ref LCtx l) uses alloc {
     var functions = List<LoweredFunction>()
     var tests = List<TestId>()
     var testFunctions = List<LoweredFunction>()
-    for m in 0..c.modules.length {
+    for k in 0..c.moduleOrder.length {
+        let m = c.moduleOrder[k]
         for i in 0..c.modules[m].allFunctions.length {
             let fn = c.modules[m].allFunctions[i]
             if c.functions[fn].body == -1 || c.functions[fn].kind == .testKeyword || semantics.functionIsGeneric(ref c, by: fn) { continue }

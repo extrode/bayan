@@ -5,14 +5,11 @@ using Bayan.Semantics;
 namespace Bayan.Tests;
 
 /// <summary>
-/// 011 T12 parity: <c>bayan-emit</c> against the C# compiler on the golden inputs (R1, R5). Error inputs compare
-/// stderr and exit code with <c>bayan build --emit-c</c> today; the emission rows are skipped until T13 replaces
-/// the stand-ins of T2-T11.
+/// 011 T12/T13 parity: <c>bayan-emit</c> against the C# compiler on the golden inputs (R1, R5): the emitted C of every
+/// <c>run/</c> input, test input and example project, and the stderr and exit code of <c>bayan build --emit-c</c> on error inputs.
 /// </summary>
 public sealed class SelfhostEmitterParityTests
 {
-    private const string SkipUntilT13 = "bayan-emit prints C only once T13 has integrated T2-T11";
-
     public static TheoryData<string> RunCases => Golden.Cases("run");
 
     public static TheoryData<string> RunTestCases => Golden.Cases("run", ".test.byn");
@@ -32,7 +29,7 @@ public sealed class SelfhostEmitterParityTests
     /// Every <c>run/</c> input in its mode, compiled alone with its directory as package root (RunTests.cs:80-82); a <c>*.test.byn</c> goes
     /// to <see cref="TestInputEmitsTheSameC"/> as <c>Execute</c> routes it (RunTests.cs:79).
     /// </summary>
-    [Theory(Skip = SkipUntilT13)]
+    [Theory]
     [MemberData(nameof(RunCases))]
     public void RunInputsEmitTheSameC(string name)
     {
@@ -52,7 +49,7 @@ public sealed class SelfhostEmitterParityTests
     }
 
     /// <summary>Every <c>*.test.byn</c> as <c>bayan test -v</c> builds it: alone in a work directory, the directory compiled with tests, no <c>--mode</c> (Safe).</summary>
-    [Theory(Skip = SkipUntilT13)]
+    [Theory]
     [MemberData(nameof(RunTestCases))]
     public void RunTestInputsEmitTheSameC(string name) => TestInputEmitsTheSameC(name);
 
@@ -67,7 +64,7 @@ public sealed class SelfhostEmitterParityTests
     }
 
     /// <summary>The inputs <c>CliTests.BuildEmitsC</c> and <c>CacheTests</c> pass to <c>--emit-c</c>, over every example project.</summary>
-    [Theory(Skip = SkipUntilT13)]
+    [Theory]
     [MemberData(nameof(Examples))]
     public void ExamplesEmitTheSameC(string name)
     {
@@ -76,7 +73,7 @@ public sealed class SelfhostEmitterParityTests
     }
 
     /// <summary>The app of <c>CacheTests.cs:135-153</c> with the callee that copies its argument (the C is compared; the storing callee is in <c>SelfhostEmitterHarnessTests</c>).</summary>
-    [Fact(Skip = SkipUntilT13)]
+    [Fact]
     public void CacheAppEmitsTheSameC()
     {
         var app = SelfhostEmitterHarness.CacheApp("cache-copies", stores: false);
@@ -110,7 +107,7 @@ public sealed class SelfhostEmitterHarnessTests
 
     /// <summary>
     /// A diag input the C# compiler rejects: <c>CliApp.Run(["build", "--emit-c", copy])</c> against <c>bayan-emit copy</c>, stderr and exit
-    /// (R1 errors). An input the C# accepts reaches the emitter proper and belongs to the skipped rows.
+    /// (R1 errors). An input the C# accepts reaches the emitter proper and belongs to the emission rows.
     /// </summary>
     [Theory]
     [MemberData(nameof(DiagCases))]
@@ -268,7 +265,7 @@ public sealed class SelfhostEmitterHarnessTests
 
     /// <summary>
     /// A clean input exits 0 on every path the C# exits 0 on (<c>build --emit-c</c>, a compilation without errors); the C text itself
-    /// is compared in the rows skipped until T13, since it passes through the T2-T11 stand-ins.
+    /// is compared in <see cref="SelfhostEmitterParityTests.RunInputsEmitTheSameC"/> and the other emission rows.
     /// </summary>
     [Fact]
     public void CleanInputsExitLikeBuild()
