@@ -25,7 +25,7 @@ public sealed class SelfhostSemanticsEquivalenceLawTests(ITestOutputHelper outpu
     /// <summary>The measured domain: diag cases that parse clean, and those outside L022 (Q658).</summary>
     private const int PinnedClean = 463;
 
-    private const int PinnedExcluded = 92;
+    private const int PinnedExcluded = 90;
 
     private static string Root => Path.Combine(Golden.RepoRoot, "tmp", "l022");
 
