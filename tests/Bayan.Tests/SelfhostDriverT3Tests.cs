@@ -19,11 +19,7 @@ public sealed class SelfhostDriverT3Tests
     private const string ProbeMain = """
         i32 main(ReadOnlySpan<string> args) {
             if args[0] == "triple" {
-                Io.stdout.write($"{targetTriple(args[1]) ?? "null"} {targetExecutableName("tally", for: args[1])}\n")
-                return 0
-            }
-            if args[0] == "host" {
-                Io.stdout.write($"{ccHostIsWindows()}\n")
+                Io.stdout.write($"{targetTriple(args[1]) ?? "null"} {targetExecutableName("tally", for: args[1])} {targetIsKnown(args[1])}\n")
                 return 0
             }
             if args[0] == "refusal" {
@@ -33,7 +29,9 @@ public sealed class SelfhostDriverT3Tests
                 return 0
             }
             var cc = ZigOrCc {}
-            let r = cc.compile(args[1], from: args[2], to: args[3], by: args[4], for: args[5])
+            // `target ?? Targets.Host` of Toolchain.Build: an empty argument is no `--target`.
+            let target = args[5] == "" ? (targetHost() ?? "") : args[5]
+            let r = cc.compile(args[1], from: args[2], to: args[3], by: args[4], for: target)
             if r.succeeded { return 0 }
             ccReportToolchain(in r)
             return 4
@@ -96,9 +94,9 @@ public sealed class SelfhostDriverT3Tests
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 
-    /// <summary>A fake compiler: records its argv beside itself and creates the file after <c>-o</c>.</summary>
+    /// <summary>A fake compiler: records its own name and its argv beside itself and creates the file after <c>-o</c>.</summary>
     private const string Recording = """
-        printf '%s\n' "$@" > "${0%/*}/argv"
+        printf '%s\n' "${0##*/}" "$@" > "${0%/*}/argv"
         prev=
         for a in "$@"; do
           if [ "$prev" = "-o" ]; then : > "$a"; fi
@@ -206,6 +204,19 @@ public sealed class SelfhostDriverT3Tests
         SelfhostEmitterHarness.AssertSame("argv with clang and gcc", r.CsArgv, r.BynArgv);
     }
 
+    [Theory]
+    [InlineData("cc", "clang")]
+    [InlineData("clang", "gcc")]
+    [InlineData("cc", "gcc")]
+    public void TheFirstOfCcClangGccIsChosen(string first, string second)
+    {
+        var bin = Bin($"bin-{first}-{second}", Recording, first, second);
+        var r = Both(bin, "safe", "", $"order-{first}-{second}");
+        Assert.Equal(0, r.Cs.Exit);
+        Assert.StartsWith(first + "\n", r.CsArgv);
+        SelfhostEmitterHarness.AssertSame($"compiler chosen from {first} and {second}", r.CsArgv, r.BynArgv);
+    }
+
     [Fact]
     public void GccIsTheLastResort()
     {
@@ -271,6 +282,26 @@ public sealed class SelfhostDriverT3Tests
         SelfhostEmitterHarness.AssertSame("stderr of a rejected build", r.Cs.Err, r.Byn.Err);
     }
 
+    /// <summary>
+    /// The C# finds a non-executable <c>cc</c> (<c>File.Exists</c>) and fails to start it; the driver finds a program by starting it,
+    /// so the same message needs a <c>cc</c> that starts once (the probe) and is gone for the build (Q954). The OS message is cut.
+    /// </summary>
+    [Fact]
+    public void ACompilerThatCannotBeStartedIsReportedAsToolchain()
+    {
+        var plain = Fresh("bin-no-exec");
+        File.WriteAllText(Path.Combine(plain, "cc"), "#!/bin/sh\nexit 0\n");
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Path.Combine(plain, "cc"), UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        var cs = Start(Cli, plain, ["build", Hello, "-o", Path.Combine(Fresh("no-exec"), "cs-out")]);
+        Assert.Equal(4, cs.Exit);
+        var expected = cs.Err.Replace(plain + "/", "");
+        Assert.StartsWith("bayan: cannot run the C compiler `cc`: ", expected);
+        var vanishing = Bin("bin-vanishing", "/bin/rm -- \"$0\"\nexit 0\n", "cc");
+        var (exit, _, err) = Start(Probe(), vanishing, ["compile", Fresh("vanishing"), "int main(void){return 0;}", "program", "safe", ""]);
+        Assert.Equal(4, exit);
+        Assert.Equal(expected[..(expected.IndexOf("`:", StringComparison.Ordinal) + 1)] + "\n", err);
+    }
+
     [Fact]
     public void ACompilerThatLeavesNoExecutableIsAFailure()
     {
@@ -314,7 +345,7 @@ public sealed class SelfhostDriverT3Tests
     [InlineData("not-a-target")]
     public void TargetsAsCSharp(string name)
     {
-        var expected = $"{Targets.Triple(name) ?? "null"} {Targets.ExecutableName("tally", name)}\n";
+        var expected = $"{Targets.Triple(name) ?? "null"} {Targets.ExecutableName("tally", name)} {Targets.IsKnown(name)}\n".Replace("True", "true").Replace("False", "false");
         var (exit, stdout, _) = Start(Probe(), Fresh("bin-triple"), ["triple", name]);
         Assert.Equal(0, exit);
         SelfhostEmitterHarness.AssertSame($"triple and executable of {name}", expected, stdout);
@@ -338,11 +369,32 @@ public sealed class SelfhostDriverT3Tests
         SelfhostEmitterHarness.AssertSame($"refusal for {target} with {compiler}", expected.Errors + "\n", stdout);
     }
 
+    /// <summary>A path to <c>zig.exe</c> is zig to the C# (Toolchain.cs:192), so there is no refusal and the build goes on to fail at the start.</summary>
     [Fact]
-    public void HostIsWindowsAsTargetsHost()
+    public void ZigIsNamedWithoutItsExtensionAsToolchain()
     {
-        var (exit, stdout, _) = Start(Probe(), Fresh("bin-host"), ["host"]);
+        var saved = Environment.GetEnvironmentVariable("BAYAN_CC");
+        Environment.SetEnvironmentVariable("BAYAN_CC", "/nonexistent/zig.exe cc");
+        NativeBuild expected;
+        try { expected = Toolchain.Build("int main(void){return 0;}", BuildMode.Safe, null, "linux-x64"); }
+        finally { Environment.SetEnvironmentVariable("BAYAN_CC", saved); }
+        Assert.StartsWith("cannot run the C compiler `/nonexistent/zig.exe cc`", expected.Errors);
+        var (exit, stdout, _) = Start(Probe(), Fresh("bin-zigexe"), ["refusal", "linux-x64", "/nonexistent/zig.exe", "cc"]);
         Assert.Equal(0, exit);
-        Assert.Equal((Targets.Host ?? "").StartsWith("windows-", StringComparison.Ordinal) ? "true\n" : "false\n", stdout);
+        Assert.Equal("\n", stdout);
+    }
+
+    /// <summary>Q954: <c>targetHost()</c> is a stub returning <c>""</c>, so the driver treats the host's own name as a cross build; the C# builds it with plain <c>cc</c>. Fails when the stub is ported.</summary>
+    [Fact]
+    public void TheHostNameIsACrossBuildWhileTargetHostIsAStub()
+    {
+        if (Targets.Host is not { } host) return;
+        var bin = Bin("bin-host-name", Recording, "cc");
+        var scratch = Fresh("host-name");
+        var cs = Start(Cli, bin, ["build", Hello, "-o", Path.Combine(scratch, "cs-out"), "--target", host]);
+        Assert.Equal(0, cs.Exit);
+        var (exit, _, err) = Start(Probe(), bin, ["compile", scratch, "int main(void){return 0;}", Path.Combine(scratch, "out"), "safe", host]);
+        Assert.Equal(4, exit);
+        Assert.StartsWith($"bayan: building for {host} on this machine needs zig", err);
     }
 }

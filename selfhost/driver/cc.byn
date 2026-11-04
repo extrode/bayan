@@ -17,7 +17,7 @@ public struct NativeBuild {
     public bool rejected = false
 }
 
-/// Targets.cs:11 `Table`'s names, in its order (`All`).
+/// Targets.cs:22 `All`'s names, in the order of `Table` (:11).
 List<string> targetNames() {
     var names = List<string>()
     names.append("linux-x64")
@@ -30,7 +30,12 @@ List<string> targetNames() {
     return names
 }
 
-/// Targets.cs:30 `Triple`: null for a name that is not in the table.
+/// Targets.cs:24 `IsKnown`.
+bool targetIsKnown(string name) {
+    return targetTriple(name) is not null
+}
+
+/// Targets.cs:26 `Triple`: null for a name that is not in the table.
 string? targetTriple(string name) {
     if name == "linux-x64" { return "x86_64-linux-musl" }
     if name == "linux-arm64" { return "aarch64-linux-musl" }
@@ -42,21 +47,21 @@ string? targetTriple(string name) {
     return null
 }
 
-/// Targets.cs:43 `ExecutableName`: `tally`, `tally.exe` or `tally.wasm`.
+/// Targets.cs:29 `Host` (`DetectHost` :31-41): the machine this runs on, null on one with no Bayan target.
+// stub: T3 Targets.Host (blocked: Q954)
+string? targetHost() {
+    return ""
+}
+
+/// Targets.cs:44 `ExecutableName`: `tally`, `tally.exe` or `tally.wasm`.
 string targetExecutableName(string name, for string target) {
     if target.startsWith("windows-") { return $"{name}.exe" }
     if target == "wasm32" { return $"{name}.wasm" }
     return $"{name}"
 }
 
-/// Toolchain.cs:151 `FindOnPath`: `Io.run` searches `PATH` itself, so the program is found by starting it with `probe`.
-bool ccOnPath(string name, through string probe) uses alloc, process {
-    let args: string[1] = [probe]
-    let _ = Io.run(name, args.span) catch return false
-    return true
-}
-
 /// Toolchain.cs:83 `FindCompiler` without `$BAYAN_CC` (spec Q1): `zig cc`, else `cc`, `clang` or `gcc`; empty (C#'s null) when none is found.
+/// The names are not paths: `PATH` cannot be read (Q954).
 List<string> ccFindCompiler() uses alloc, process {
     var found = List<string>()
     if ccOnPath("zig", through: "version") {
@@ -77,6 +82,48 @@ List<string> ccFindCompiler() uses alloc, process {
         return found
     }
     return found
+}
+
+/// Toolchain.cs:151 `FindOnPath`: `PATH` cannot be read (Q954), so `Io.run` searches it and the program is found by starting it with `probe`.
+bool ccOnPath(string name, through string probe) uses alloc, process {
+    let args: string[1] = [probe]
+    let _ = Io.run(name, args.span) catch return false
+    return true
+}
+
+/// The command as the C# prints it: `string.Join(" ", compiler)`.
+string ccJoin(in List<string> compiler) {
+    var joined = StrBuf()
+    for i in 0..compiler.length {
+        if i > 0 { joined.append(" ") }
+        joined.append(compiler[i])
+    }
+    return joined.finish()
+}
+
+/// The `Toolchain.cs:189-194` refusals of `BuildCached`, in its order; an empty string when the compiler can build for `target`.
+string ccRefusal(in List<string> compiler, for string target) {
+    if compiler.length == 0 { return "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC" }
+    let cross = target != targetHost()
+    if cross && targetTriple(target) is null {
+        var all = StrBuf()
+        let names = targetNames()
+        for i in 0..names.length {
+            if i > 0 { all.append(", ") }
+            all.append(names[i])
+        }
+        return $"unknown target `{target}`; targets are {all.finish()}"
+    }
+    if cross && !(compiler.length > 1 && compiler[1] == "cc" && ccWithoutExtension(Path.fileName(compiler[0])) == "zig") {
+        return $"building for {target} on this machine needs zig (https://ziglang.org); the C compiler is `{ccJoin(in compiler)}`"
+    }
+    return ""
+}
+
+/// `Path.GetFileNameWithoutExtension` of a file name (Toolchain.cs:192).
+string ccWithoutExtension(string fileName) {
+    let dot = fileName.lastPosition(".") ?? -1
+    return dot < 0 ? fileName : fileName[0..dot]
 }
 
 /// Toolchain.cs:196-204: the flags every build takes, then the mode's (`debug`, else `safe` or `fast`); `triple` is null for the host.
@@ -101,17 +148,12 @@ List<string> ccFlags(string mode, for string? triple) {
     return flags
 }
 
-/// Whether the host is Windows (C#'s `Targets.Host` starting with `windows-`, Toolchain.cs:189): no OS builtin, so the separator `Path.combine` joins with says.
-bool ccHostIsWindows() uses alloc {
-    return Path.combine("a", "b") == "a\\b"
-}
-
-/// Toolchain.cs:284-290: the arguments after the compiler's own (`compiler[1..]`), for scratch files in `dir`. `target` is empty for the host.
+/// Toolchain.cs:284-290: the arguments after the compiler's own (`compiler[1..]`), for scratch files in `dir`.
 List<string> ccArguments(in List<string> compiler, for string dir, to string output, by string mode, through string target) {
     var args = List<string>()
     for i in 1..compiler.length { args.append(compiler[i]) }
     var triple: string? = null
-    if target != "" { triple = targetTriple(target) }
+    if target != targetHost() { triple = targetTriple(target) }
     let flags = ccFlags(mode, for: triple)
     for f in flags { args.append(f) }
     // Debug info names `main.c`, not the scratch directory.
@@ -123,37 +165,12 @@ List<string> ccArguments(in List<string> compiler, for string dir, to string out
     args.append("-o")
     args.append(output)
     // `CommandLineToArgvW` (program arguments) is in shell32.
-    // coverage-exempt: Q955 the host-is-Windows operand is true only on a Windows machine; `HostIsWindowsAsTargetsHost` compares `ccHostIsWindows` there
-    args.append(target.startsWith("windows") || (target == "" && ccHostIsWindows()) ? "-lshell32" : "-lm")
+    args.append(target.startsWith("windows") ? "-lshell32" : "-lm")
     return args
 }
 
-/// The `Toolchain.cs:189-194` refusals of `BuildCached`, in its order; an empty string when the compiler can build for `target`.
-string ccRefusal(in List<string> compiler, for string target) {
-    if compiler.length == 0 { return "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC" }
-    let cross = target != ""
-    if cross && targetTriple(target) is null {
-        var all = StrBuf()
-        let names = targetNames()
-        for i in 0..names.length {
-            if i > 0 { all.append(", ") }
-            all.append(names[i])
-        }
-        return $"unknown target `{target}`; targets are {all.finish()}"
-    }
-    if cross && !(compiler.length > 1 && compiler[1] == "cc" && compiler[0] == "zig") {
-        var joined = StrBuf()
-        for i in 0..compiler.length {
-            if i > 0 { joined.append(" ") }
-            joined.append(compiler[i])
-        }
-        return $"building for {target} on this machine needs zig (https://ziglang.org); the C compiler is `{joined.finish()}`"
-    }
-    return ""
-}
-
 interface ICCompiler {
-    /// Writes `source` and the runtime into `dir` and links `output`; `target` is empty for the host.
+    /// Writes `source` and the runtime into `dir` and links `output`; `target` is the `--target` value, else `targetHost()` (Toolchain.cs:174).
     NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string target) uses alloc, fs, process
 }
 
@@ -177,8 +194,7 @@ struct ZigOrCc : ICCompiler {
         for i in 0..names.length {
             Io.writeFile(Path.combine(dir, names[i]), texts[i].bytes) catch return NativeBuild { errors: $"cannot write the build output ({dir})" }
         }
-        // coverage-exempt: Q955 `ccFindCompiler` has just started this program, so the second start fails only if it vanished in between
-        let r = Io.run(compiler[0], args.span) catch return NativeBuild { errors: $"cannot run the C compiler `{compiler[0]}`" }
+        let r = Io.run(compiler[0], args.span) catch return NativeBuild { errors: $"cannot run the C compiler `{ccJoin(in compiler)}`" }
         if r.exitCode != 0 || !t1FileExists(output) {
             return NativeBuild { errors: $"C compiler failed (exit {r.exitCode}):\n{r.stdout}{r.stderr}", rejected: true }
         }
