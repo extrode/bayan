@@ -7,13 +7,13 @@ R4. Every hit of the token regex in `tests/Bayan.Tests/CInventoryTests.cs` is on
 | src/runtime/bayan-rt.h:18 | `__attribute__((noreturn))` | Marks `BYN_NORETURN` panics so the compiler drops dead code after them. C11 replacement: `_Noreturn`. |
 | src/runtime/bayan-rt.h:19 | `__attribute__((cold))` | Marks `BYN_COLD` failure paths unlikely. C11 replacement: none needed, drop it (hint only). |
 | src/runtime/bayan-rt.h:20 | `__builtin_expect` | `BYN_UNLIKELY` branch hint. C11 replacement: none needed, `#define BYN_UNLIKELY(x) (x)`. |
-| src/runtime/bayan-rt.h:470 | `__builtin_add_overflow` | Checked `+` traps on overflow. C11 replacement: range test before the add in unsigned arithmetic. |
-| src/runtime/bayan-rt.h:472 | `__builtin_sub_overflow` | Checked `-` traps on overflow. C11 replacement: range test before the subtract. |
-| src/runtime/bayan-rt.h:474 | `__builtin_mul_overflow` | Checked `*` traps on overflow. C11 replacement: division-based range test or a wider type. |
-| src/runtime/bayan-rt.h:476 | `__builtin_sub_overflow` | Checked negation as `0 - a`. C11 replacement: `a == MIN` test. |
-| src/runtime/bayan-rt.h:498 | `__builtin_add_overflow` | Saturating `+` needs the overflow flag. C11 replacement: as 470. |
-| src/runtime/bayan-rt.h:500 | `__builtin_sub_overflow` | Saturating `-` needs the overflow flag. C11 replacement: as 472. |
-| src/runtime/bayan-rt.h:502 | `__builtin_mul_overflow` | Saturating `*` needs the overflow flag. C11 replacement: as 474. |
+| src/runtime/bayan-rt.h:473 | `__builtin_add_overflow` | Checked `+` traps on overflow. C11 replacement: range test before the add in unsigned arithmetic. |
+| src/runtime/bayan-rt.h:475 | `__builtin_sub_overflow` | Checked `-` traps on overflow. C11 replacement: range test before the subtract. |
+| src/runtime/bayan-rt.h:477 | `__builtin_mul_overflow` | Checked `*` traps on overflow. C11 replacement: division-based range test or a wider type. |
+| src/runtime/bayan-rt.h:479 | `__builtin_sub_overflow` | Checked negation as `0 - a`. C11 replacement: `a == MIN` test. |
+| src/runtime/bayan-rt.h:501 | `__builtin_add_overflow` | Saturating `+` needs the overflow flag. C11 replacement: as 473. |
+| src/runtime/bayan-rt.h:503 | `__builtin_sub_overflow` | Saturating `-` needs the overflow flag. C11 replacement: as 475. |
+| src/runtime/bayan-rt.h:505 | `__builtin_mul_overflow` | Saturating `*` needs the overflow flag. C11 replacement: as 477. |
 | src/Bayan.Backend.C/CEmitter.cs:47 | `asm` | In the reserved-identifier list; reserved word, not a use; no replacement needed. |
 | src/Bayan.Backend.C/CEmitter.cs:47 | `typeof` | In the reserved-identifier list; reserved word, not a use; no replacement needed. |
 | selfhost/emitter/cprint/cctx.byn:61 | `asm` | Port of `CEmitter.cs:47`'s reserved-identifier list; reserved word, not a use; no replacement needed. |

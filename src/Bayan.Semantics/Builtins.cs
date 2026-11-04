@@ -117,6 +117,7 @@ public sealed class Builtins
         PathIsRooted = Make("isRooted", BuiltinFunction.PathIsRooted, PrimitiveType.Bool, ("path", PrimitiveType.String));
         PathRelative = Make("relative", BuiltinFunction.PathRelative, PrimitiveType.String, ("from", PrimitiveType.String), ("to", PrimitiveType.String));
         PathFileName = Make("fileName", BuiltinFunction.PathFileName, PrimitiveType.String, ("path", PrimitiveType.String));
+        PathDirectoryName = Make("directoryName", BuiltinFunction.PathDirectoryName, new OptionalType(PrimitiveType.String), ("path", PrimitiveType.String));
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
         var iterationFile = new FileContext(Module, SyntaxTree.Parse(SourceText.FromString("<builtin>", IterationSource)));
@@ -259,12 +260,16 @@ public sealed class Builtins
     /// <summary><c>string Path.fileName(string path)</c>: as .NET <c>Path.GetFileName</c> on this OS, a fresh copy from <c>context.allocator</c>.</summary>
     public FunctionSymbol PathFileName { get; }
 
+    /// <summary><c>string? Path.directoryName(string path)</c>: as .NET <c>Path.GetDirectoryName</c> on this OS (null for a root or an empty path), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathDirectoryName { get; }
+
     /// <summary>A static member of <c>Path</c>, or null.</summary>
     public FunctionSymbol? FindPath(string name) => name switch
     {
         "isRooted" => PathIsRooted,
         "relative" => PathRelative,
         "fileName" => PathFileName,
+        "directoryName" => PathDirectoryName,
         _ => null,
     };
 

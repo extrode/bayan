@@ -318,6 +318,9 @@ int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to);
 bool byn_path_is_rooted(byn_str p);
 /* `Path.fileName`: .NET `Path.GetFileName` on this OS, copied into `to`. */
 byn_str byn_path_file_name(byn_str p, byn_alloc* to);
+/* `Path.directoryName`: .NET `Path.GetDirectoryName` on this OS, copied into `*out` (runs of separators collapsed, and on Windows
+   each one `\`). False, where .NET returns null, for an empty path (on Windows a blank one) or a root. */
+bool byn_path_directory_name(byn_str p, byn_str* out, byn_alloc* to);
 /* `Path.relative(from, to)`: .NET `Path.GetRelativePath(from, to)` on this OS, copied into `to`; both paths are made full against
    the working directory first. Panics on an empty path or one with a NUL byte, where .NET throws `ArgumentException`. */
 byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line);
