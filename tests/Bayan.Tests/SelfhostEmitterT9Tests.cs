@@ -13,9 +13,8 @@ namespace Bayan.Tests;
 /// <summary>
 /// 011 T9: <c>selfhost/emitter/cprint/func.byn</c> (CEmitter.cs 1173-1236, 1254-1616) against the C#
 /// <c>FunctionEmitter</c> as an in-process oracle. Both sides build the same lowered bodies by hand from the fixture's
-/// bound nodes, so each statement kind is reached without a full lowering. The T7 and T10 stubs return "", so the C#
-/// text of each callee still a stub on feat (T7 <c>OwnClaim</c>/<c>OwnSet</c>, T10 <c>Expr</c>/<c>Call</c>) is masked
-/// to "" (Q802).
+/// bound nodes, so each statement kind is reached without a full lowering. The T10 stubs return "", so the C#
+/// text of each callee still a stub on feat (T10 <c>Expr</c>/<c>Call</c>) is masked to "" (Q802).
 /// </summary>
 public sealed class SelfhostEmitterT9Tests
 {
@@ -27,10 +26,8 @@ public sealed class SelfhostEmitterT9Tests
 
         type CCtx = cprint.CCtx
         type CFunc = cprint.CFunc
-        type BField = semantics.BField
         type BFormatSpec = semantics.BFormatSpec
         type BSetOnPanic = semantics.BSetOnPanic
-        type BTupleElement = semantics.BTupleElement
         type LClaim = ltree.LClaim
         type LFailingCall = ltree.LFailingCall
         type LGoto = ltree.LGoto
@@ -147,7 +144,6 @@ public sealed class SelfhostEmitterT9Tests
             for p in c.functions[fn].parameters { params.append(p) }
             var xs = List<BExpr>()
             for p in params { xs.append(t9Local(ref c, at: span, for: p)) }
-            let isH = c.functions[fn].name == "h"
             stmts.append(inner)
             stmts.append(ltree.addLLabel(ref t, from: LLabel { span: span, name: "L0" }))
             stmts.append(ltree.addLGoto(ref t, from: LGoto { span: span, label: "L0" }))
@@ -160,7 +156,7 @@ public sealed class SelfhostEmitterT9Tests
             stmts.append(ltree.addLSetContext(ref t, from: LSetContext { span: span, slot: 0 }))
             stmts.append(ltree.addLPushPanicHandler(ref t, from: LPushPanicHandler { span: span, slot: 0, body: inner }))
             stmts.append(ltree.addLPopPanicHandler(ref t, from: LPopPanicHandler { span: span, slot: 0 }))
-            if !isH && params.length > 0 { stmts.append(ltree.addLClaim(ref t, from: LClaim { span: span, local: params[0] })) }
+            if params.length > 0 { stmts.append(ltree.addLClaim(ref t, from: LClaim { span: span, local: params[0] })) }
             stmts.append(ltree.addLPanic(ref t, from: LPanic { span: span, message: "boom" }))
             var skipped = List<BInterpolationPart>()
             skipped.append(BInterpolationPart { text: "" })
@@ -176,7 +172,7 @@ public sealed class SelfhostEmitterT9Tests
                 stmts.append(ltree.addLSetContext(ref t, from: LSetContext { span: span, arena: q, slot: 0 }))
                 stmts.append(ltree.addLFreeArena(ref t, from: LFreeArena { span: span, arena: q }))
                 if locals.length > 0 { stmts.append(ltree.addLPushPanicHandler(ref t, from: LPushPanicHandler { span: span, slot: 0, panic: locals[0], body: inner })) }
-                if !isH { stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span, value: q })) }
+                stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span, value: q }))
             }
             if calls.length >= 2 && locals.length >= 2 {
                 stmts.append(ltree.addLFailingCall(ref t, from: LFailingCall { span: span, error: locals[0], call: calls[0], result: locals[1] }))
@@ -298,9 +294,16 @@ public sealed class SelfhostEmitterT9Tests
                     let has = cprint.hasSlot(ref cc, for: ref fe, from: ref c, at: l)
                     sb.append($"slot {has ? "true" : "false"} {cprint.slot(ref cc, for: ref fe, from: ref c, at: l)}\n")
                 }
+                // A by-reference parameter of an owned type is stored through its pointer.
+                if c.functions[fn].name == "rq" {
+                    let span = semantics.nodeSpan(in c, for: body)
+                    let zm = t9Local(ref c, at: span, for: c.functions[fn].parameters[1])
+                    let zr = t9Local(ref c, at: span, for: c.functions[fn].parameters[0])
+                    sb.append($"store {cprint.checkedStore(ref cc, for: ref fe, from: ref c, through: t, at: zm, to: zr) ?? "null"}\n")
+                }
                 if c.functions[fn].name == "w" {
                     let lv = ltree.addLVoid(ref t, from: LVoid { span: semantics.nodeSpan(in c, for: body) })
-                    sb.append(t9Claims(ref cc, through: ref fe, from: ref c, by: in t, at: in locals, for: lv))
+                    sb.append(t9Claims(ref cc, through: ref fe, from: ref c, by: ref t, at: locals, for: lv))
                 }
             }
             sb.append("== helpers\n")
@@ -309,7 +312,7 @@ public sealed class SelfhostEmitterT9Tests
         }
 
         /// The ownership-check entry points T10 calls, on `w`'s frame.
-        string t9Claims(ref CCtx cc, through ref CFunc f, from ref Ctx c, by in LTree t, at in List<LocalId> locals, for BExpr lv) uses alloc {
+        string t9Claims(ref CCtx cc, through ref CFunc f, from ref Ctx c, by ref LTree t, at List<LocalId> locals, for BExpr lv) uses alloc {
             var sb = StrBuf()
             let fn = f.fn
             let span = semantics.nodeSpan(in c, for: c.functions[fn].body)
@@ -333,6 +336,16 @@ public sealed class SelfhostEmitterT9Tests
             sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: temp, to: q) ?? "null"}\n")
             let k8 = t9Local(ref c, at: span, for: locals[7])
             sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: k8, to: q, claim: false) ?? "null"}\n")
+            // Targets of an owned type with no root: a lowered and a bound node (`Place`'s `Expr` arms).
+            let mt = c.locals[locals[7]].type
+            let lix = ltree.addLOptionalValue(ref t, from: LOptionalValue { span: span, optional: q, type: mt })
+            c.bIndexes.append(BIndex { span: span, target: q, index: q, type: mt })
+            let bix = semantics.makeBound(.index, at: c.bIndexes.length - 1)
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: lix, to: q) ?? "null"}\n")
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: bix, to: q, claim: false) ?? "null"}\n")
+            // An owned local passed by pointer is claimed after the call.
+            cprint.claimAfterCall(ref cc, for: ref f, from: ref c, through: t, at: k8, to: span)
+            for x in f.afterCalls { sb.append($"afterc {x}\n") }
             var call: BExpr = -1
             for s in c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements {
                 if call == -1 && !ltree.isLowered(s) && semantics.boundKind(s) == .assign { call = c.bAssigns[s & 0xFFFFFFFF].target }
@@ -538,14 +551,13 @@ public sealed class SelfhostEmitterT9Tests
         var assigns = body.Statements.OfType<BoundAssign>()
             .Select(a => a.Target is BoundBuiltinCall { Member: BuiltinMember.MapSlot, Arguments.Length: 1 } b ? a with { Target = b with { Arguments = [.. b.Arguments, new BoundDefault(syn, b.Type)] } } : a).ToList();
         var xs = fn.Parameters.Select(p => (BoundExpr)new BoundLocal(syn, p)).ToList();
-        var isH = fn.Name == "h";
         var stmts = new List<BoundStmt>
         {
             inner, new LLabel(syn, "L0"), new LGoto(syn, "L0"), new LLoop(syn, inner), new LLoop(syn, new BoundBlock(syn, [new LLabel(syn, "L1")])),
         };
         if (locals.Count > 0 && locals[0].Type == PrimitiveType.I64) stmts.Add(new LClaim(syn, locals[0]));
         stmts.AddRange([new LSetContext(syn, null, 0), new LPushPanicHandler(syn, 0, null, inner), new LPopPanicHandler(syn, 0)]);
-        if (!isH && fn.Parameters.Count > 0) stmts.Add(new LClaim(syn, fn.Parameters[0]));
+        if (fn.Parameters.Count > 0) stmts.Add(new LClaim(syn, fn.Parameters[0]));
         stmts.Add(new LPanic(syn, "boom"));
         stmts.Add(new LWrite(syn, WriteSink.Panic, null, [new BoundInterpolationPart("", null), new BoundInterpolationPart(null, null)]));
         stmts.AddRange(assigns);
@@ -555,7 +567,6 @@ public sealed class SelfhostEmitterT9Tests
         {
             masks.Add(Expr(a.Target));
             masks.Add(Expr(a.Value));
-            if (a.Target is BoundBuiltinCall { Receiver: { } map }) masks.Add(emitter.OwnClaim(map.Type));
         }
         foreach (var x in xs) masks.Add(Expr(x));
         if (xs.Count > 0)
@@ -568,8 +579,7 @@ public sealed class SelfhostEmitterT9Tests
             stmts.Add(new LSetContext(syn, q, 0));
             stmts.Add(new LFreeArena(syn, q));
             if (locals.Count > 0) stmts.Add(new LPushPanicHandler(syn, 0, locals[0], inner));
-            if (!isH) stmts.Add(new LReturn(syn, q));
-            if (isH) masks.Add(emitter.OwnSet(q.Type));
+            stmts.Add(new LReturn(syn, q));
         }
         if (calls.Count >= 2 && locals.Count >= 2)
         {
@@ -621,7 +631,6 @@ public sealed class SelfhostEmitterT9Tests
             locals.Add(new LocalSymbol("pb", null, PrimitiveType.I64, LocalKind.PatternVariable) { BorrowsSubject = true });
             masks.Add(Expr(fv));
             masks.Add(Expr(owned));
-            masks.Add(emitter.OwnClaim(owned.Type));
         }
         if (fn.Name == "lm")
         {
@@ -651,7 +660,7 @@ public sealed class SelfhostEmitterT9Tests
     private static List<string> Lines(string text) => text.Split('\n').Where(s => s.Length > 0).ToList();
 
     // The helpers T9 and the T8 `format` register; the C# `Expr` (T10 `emitExpr`) and ownership (T7) register the rest, which the stubs do not.
-    private static bool T9Helper(string name) => name.StartsWith("bynh_w_", StringComparison.Ordinal) || name.StartsWith("bynh_debug_", StringComparison.Ordinal) || name.StartsWith("bynh_fmt_", StringComparison.Ordinal);
+    private static bool T9Helper(string name) => name.StartsWith("bynh_w_", StringComparison.Ordinal) || name.StartsWith("bynh_debug_", StringComparison.Ordinal) || name.StartsWith("bynh_fmt_", StringComparison.Ordinal) || name.StartsWith("bynh_chk_", StringComparison.Ordinal);
 
     private static Dictionary<string, List<string>> EmitOracle(Compilation c, bool checks)
     {
@@ -674,6 +683,11 @@ public sealed class SelfhostEmitterT9Tests
             var slots = Frame(emitter, f);
             foreach (var l in fn.Parameters.Concat<LocalSymbol>(locals))
                 emit.Add($"slot {((bool)Call(slots, "HasSlot", l)! ? "true" : "false")} {Call(slots, "Slot", l)}");
+            if (fn.Name == "rq")
+            {
+                var (zm, zr) = (new BoundLocal(fn.Body!.Syntax, fn.Parameters[1]), new BoundLocal(fn.Body!.Syntax, fn.Parameters[0]));
+                emit.Add($"store {Mask((string?)Call(slots, "CheckedStore", zm, zr, true) ?? "null", [(string)Call(slots, "Expr", zr)!])}");
+            }
             if (fn.Name == "w") emit.AddRange(ClaimsOracle(emitter, slots, fn, locals));
         }
         var helpers = new List<string>();
@@ -697,7 +711,7 @@ public sealed class SelfhostEmitterT9Tests
         var p = (StructSymbol)locals[5].Type;
         var field = new BoundField(syn, new BoundLocal(syn, locals[5]), p.Fields[0]);
         var tuple = new BoundTupleElement(syn, new BoundLocal(syn, locals[0]), 0, PrimitiveType.I64);
-        var masks = new List<string> { emitter.OwnClaim(field.Type), emitter.OwnClaim(tuple.Type) };
+        var masks = new List<string>();
         string Claimed(BoundExpr r) => Mask((string)Call(fe, "Claimed", "x()", r, syn)!, masks);
         var lines = new List<string> { $"claimed {Claimed(q)}", $"claimed {Claimed(field)}", $"claimed {Claimed(tuple)}" };
         Call(fe, "ClaimAfterCall", q, syn);
@@ -710,7 +724,15 @@ public sealed class SelfhostEmitterT9Tests
         var lv = new LVoid(syn);
         lines.Add($"store {(string?)Call(fe, "CheckedStore", lv, q, true) ?? "null"}");
         lines.Add($"store {(string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[^5]), q, true) ?? "null"}");
-        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[7]), q, false) ?? "null", [emitter.OwnSet(locals[7].Type), (string)Call(fe, "Expr", q)!])}");
+        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[7]), q, false) ?? "null", [(string)Call(fe, "Expr", q)!])}");
+        var mt = locals[7].Type;
+        BoundExpr lix = new LOptionalValue(syn, q, mt);
+        BoundExpr bix = new BoundIndex(syn, q, q, false, mt);
+        string Expr(BoundExpr e) => (string)Call(fe, "Expr", e)!;
+        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", lix, q, true) ?? "null", [Expr(lix), Expr(q)])}");
+        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", bix, q, false) ?? "null", [Expr(bix), Expr(q)])}");
+        Call(fe, "ClaimAfterCall", new BoundLocal(syn, locals[7]), syn);
+        foreach (var x in (List<string>)Field(fe, "_afterCalls")!) lines.Add($"afterc {x}");
         lines.Add($"claimed {Claimed(fn.Body.Statements.OfType<BoundAssign>().First().Target)}");
         lines.Add($"claimed {Claimed(lv)}");
         return lines;

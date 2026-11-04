@@ -179,13 +179,11 @@ LocalId root(Ctx c, for BExpr e) {
 
 /// CEmitter.cs:1284 `Place`: a store target as an lvalue, without checking its local was not moved.
 string placeOf(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e) uses alloc {
-    // coverage-blocked: Q799 T7 ownsStorage
     unless ltree.isLowered(e) {
         let i = e & 0xFFFFFFFF
         switch semantics.boundKind(e) {
             case .local:
                 let l = c.bLocals[i].local
-                // coverage-blocked: Q799 T7 ownsStorage
                 return c.locals[l].isParameter && semantics.paramIsByRef(ref c, by: l) ? $"(*{f.names[l]})" : f.names[l]
             case .field:
                 let receiver = placeOf(ref cc, for: ref f, from: ref c, through: t, at: c.bFields[i].receiver)
@@ -193,11 +191,9 @@ string placeOf(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree
             case .tupleElement:
                 let receiver = placeOf(ref cc, for: ref f, from: ref c, through: t, at: c.bTupleElements[i].receiver)
                 return $"{receiver}.item{c.bTupleElements[i].index + 1}"
-            // coverage-blocked: Q799 T7 ownsStorage
             default: return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: e)
         }
     }
-    // coverage-blocked: Q799 T7 ownsStorage
     return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: e)
 }
 
@@ -209,13 +205,11 @@ public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, throug
     if !ltree.isLowered(target) && semantics.boundKind(target) == .local { local = c.bLocals[target & 0xFFFFFFFF].local }
     let hasLocalSlot = local != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: local)
     let type = ltree.typeOf(in c, through: in t, for: target)
-    // coverage-blocked: Q799 T7 ownsStorage through 214
     if (r != -1 && c.locals[r].kind == .temp) || (!hasLocalSlot && !ownsStorage(ref c, for: type)) { return null }
     let claims = claim && r != -1 && isOwner(c, for: r) ? "true" : "false"
     let set = ownSet(ref cc, from: ref c, for: type)
     let p = placeOf(ref cc, for: ref f, from: ref c, through: t, at: target)
     let v = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
-    // coverage-blocked: Q799 T7 ownsStorage
     let s = hasLocalSlot ? $"&{slot(ref cc, for: ref f, from: ref c, at: local)}" : "NULL"
     return $"{set}(&{p}, {v}, {s}, {claims}, {loc(in c, by: in f, at: ltree.spanOf(in c, through: in t, for: target))})"
 }
@@ -235,7 +229,6 @@ public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through
     // coverage-blocked: Q799 T10 emitExpr
     if r == -1 || f.moved.contains(r) { return }
     let type = ltree.typeOf(in c, through: in t, for: place)
-    // coverage-blocked: Q799 T7 ownsStorage through 242
     unless ownsStorage(ref c, for: type) { return }
     let claim = ownClaim(ref cc, from: ref c, for: type)
     let p = placeOf(ref cc, for: ref f, from: ref c, through: t, at: place)
@@ -376,7 +369,6 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree
                 line(ref sb, by: in f, for: $"byn_panic_pop(&ph{t.popPanicHandlers[i].slot});")
             case .claim:
                 let l = t.claims[i].local
-                // coverage-blocked: Q799 T7 ownsStorage through 382
                 if cc.ownershipChecks && isOwner(c, for: l) && ownsStorage(ref c, for: c.locals[l].type) {
                     let claim = ownClaim(ref cc, from: ref c, for: c.locals[l].type)
                     line(ref sb, by: in f, for: $"{claim}(&{f.names[l]}, {loc(in c, by: in f, at: t.claims[i].span)});")
@@ -465,7 +457,6 @@ void returnStmt(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTre
 /// CEmitter.cs:1500 `Returned`.
 string returned(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr value) uses alloc {
     let type = ltree.typeOf(in c, through: in t, for: value)
-    // coverage-blocked: Q799 T7 ownsStorage through 471
     if cc.ownershipChecks && ownsStorage(ref c, for: type) {
         let r = ownReturn(ref cc, from: ref c, for: type)
         return $"{r}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)})"

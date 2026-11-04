@@ -633,27 +633,13 @@ public sealed class SelfhostEmitterT6Tests
         ((List<string>)Field(e, "_vtableOrder")).Add("v1");
     }
 
-    /// <summary>
-    /// <c>Run</c> of an empty program with <c>EmitTypes</c>' text cut out: it is T7's, a stub still (Q786). A second emitter in the
-    /// same state gives that text, as <c>EmitMain</c> has registered the error type by then.
-    /// </summary>
-    private static string RunWithoutTypes(Compilation c, string flag, bool prepare)
+    /// <summary><c>Run</c> of an empty program; <c>EmitTypes</c> is real since T7 landed, so nothing is cut.</summary>
+    private static string RunOf(Compilation c, string flag, bool prepare)
     {
         if (flag == "noerrors") c.ErrorVariants.Clear();
-        CEmitter Make()
-        {
-            var e = WithFlag(new LoweredProgram(c, [], null, []), flag);
-            if (prepare) Prepare(e);
-            return e;
-        }
-        var text = (string)Call(Make(), "Run")!;
-        var second = Make();
-        Call(second, "EmitMain");
-        var types = (string)Call(second, "EmitTypes")!;
-        Assert.Contains(types, text);
-        // The `#line` numbers the cut types shifted (the resets all follow them).
-        var cut = types.Count(ch => ch == '\n');
-        return System.Text.RegularExpressions.Regex.Replace(text.Replace(types, ""), @"(?m)^#line (\d+) ""main\.c""$", m => $"#line {int.Parse(m.Groups[1].Value) - cut} \"main.c\"");
+        var e = WithFlag(new LoweredProgram(c, [], null, []), flag);
+        if (prepare) Prepare(e);
+        return (string)Call(e, "Run")!;
     }
 
     [Theory]
@@ -667,7 +653,7 @@ public sealed class SelfhostEmitterT6Tests
     public void Run_SectionsAndSubstitutionMatchCSharp(string which, string flag) => WithFixture(which == "full" ? Full : Library, path =>
     {
         var c = Compile(path);
-        SelfhostSemanticsHarness.AssertSection(RawMode("run", path, flag), "", Lines(RunWithoutTypes(c, flag, prepare: true)));
+        SelfhostSemanticsHarness.AssertSection(RawMode("run", path, flag), "", Lines(RunOf(c, flag, prepare: true)));
     });
 
     [Theory]
@@ -676,26 +662,18 @@ public sealed class SelfhostEmitterT6Tests
     public void Emit_OfAnEmptyProgramMatchesCSharp(string which, string flag) => WithFixture(which == "full" ? Full : Library, path =>
     {
         var c = Compile(path);
-        SelfhostSemanticsHarness.AssertSection(RawMode("emit", path, flag), "", Lines(RunWithoutTypes(c, flag, prepare: false)));
+        SelfhostSemanticsHarness.AssertSection(RawMode("emit", path, flag), "", Lines(RunOf(c, flag, prepare: false)));
     });
 
     private const string Lowered = "void f() {\n}\n\ntest \"t\" {\n}\n";
 
-    // T9: `Emit` of a lowered function and test, so `Run` emits their prototypes and bodies; `EmitTypes`' text cut as above.
+    // T9: `Emit` of a lowered function and test, so `Run` emits their prototypes and bodies.
     [Theory]
     [InlineData("")]
     [InlineData("debug")]
     public void Emit_OfLoweredFunctionsMatchesCSharp(string flag) => WithFixture(Lowered, path =>
     {
-        var c = Compile(path);
-        var p = Lowerer.Lower(c);
-        var text = CEmitter.Emit(p, flag == "debug");
-        var second = WithFlag(p, flag);
-        Call(second, "EmitMain");
-        var types = (string)Call(second, "EmitTypes")!;
-        Assert.Contains(types, text);
-        var cut = types.Count(ch => ch == '\n');
-        var expected = System.Text.RegularExpressions.Regex.Replace(text.Replace(types, ""), @"(?m)^#line (\d+) ""main\.c""$", m => $"#line {int.Parse(m.Groups[1].Value) - cut} \"main.c\"");
+        var expected = CEmitter.Emit(Lowerer.Lower(Compile(path)), flag == "debug");
         SelfhostSemanticsHarness.AssertSection(RawMode("lowered", path, flag), "", Lines(expected));
     });
 }
