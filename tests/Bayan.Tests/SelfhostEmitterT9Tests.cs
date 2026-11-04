@@ -12,10 +12,10 @@ namespace Bayan.Tests;
 
 /// <summary>
 /// 011 T9: <c>selfhost/emitter/cprint/func.byn</c> (CEmitter.cs 1173-1236, 1254-1616) against the C#
-/// <c>FunctionEmitter</c> as an in-process oracle. Both sides build the same lowered bodies by hand (T3's statement
-/// lowering is a stub), from the fixture's bound nodes. The siblings' stubs return "", so the C# text of each stubbed
-/// callee (T6 names and literals, T7 helper names, T8 <c>Format</c>, T10 <c>Expr</c>/<c>Call</c>) is masked to "" and
-/// the C# file and <c>#line</c> path are set to the stubs' "" (Q800).
+/// <c>FunctionEmitter</c> as an in-process oracle. Both sides build the same lowered bodies by hand from the fixture's
+/// bound nodes, so each statement kind is reached without a full lowering. The T7 and T10 stubs return "", so the C#
+/// text of each callee still a stub on feat (T7 <c>OwnClaim</c>/<c>OwnSet</c>, T10 <c>Expr</c>/<c>Call</c>) is masked
+/// to "" (Q802).
 /// </summary>
 public sealed class SelfhostEmitterT9Tests
 {
@@ -274,7 +274,7 @@ public sealed class SelfhostEmitterT9Tests
 
         string t9PrintEmit(ref Ctx c, by bool checks) uses alloc {
             var sb = StrBuf()
-            var cc = CCtx { ownershipChecks: checks }
+            var cc = CCtx { packageRoot: c.packageRoot, ownershipChecks: checks }
             sb.append("== emit\n")
             for fn in t9Functions(ref c) {
                 var t = LTree {}
@@ -328,6 +328,11 @@ public sealed class SelfhostEmitterT9Tests
             sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: q, to: q, claim: false) ?? "null"}\n")
             sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: field, to: q) ?? "null"}\n")
             sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: lv, to: q) ?? "null"}\n")
+            // A temp target needs no hook; a slotted local stored without a claim.
+            let temp = t9Local(ref c, at: span, for: locals[locals.length - 5])
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: temp, to: q) ?? "null"}\n")
+            let k8 = t9Local(ref c, at: span, for: locals[7])
+            sb.append($"store {cprint.checkedStore(ref cc, for: ref f, from: ref c, through: t, at: k8, to: q, claim: false) ?? "null"}\n")
             var call: BExpr = -1
             for s in c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements {
                 if call == -1 && !ltree.isLowered(s) && semantics.boundKind(s) == .assign { call = c.bAssigns[s & 0xFFFFFFFF].target }
@@ -339,7 +344,7 @@ public sealed class SelfhostEmitterT9Tests
 
         /// `main`'s body as it is bound: a local declaration has no C.
         string t9Fail(ref Ctx c) uses alloc {
-            var cc = CCtx {}
+            var cc = CCtx { packageRoot: c.packageRoot }
             for fn in t9Functions(ref c) {
                 if c.functions[fn].name != "main" { continue }
                 let t = LTree {}
@@ -506,9 +511,6 @@ public sealed class SelfhostEmitterT9Tests
     private static object? Field(object target, string name) =>
         target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target);
 
-    private static void SetField(object target, string name, object? value) =>
-        target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
-
     private static CEmitter NewEmitter(LoweredProgram p, bool checks) =>
         (CEmitter)Activator.CreateInstance(typeof(CEmitter), BindingFlags.Instance | BindingFlags.NonPublic, null, [p, checks], null)!;
 
@@ -516,14 +518,7 @@ public sealed class SelfhostEmitterT9Tests
     private static List<FunctionSymbol> Functions(Compilation c) =>
         c.Modules.SelectMany(m => m.AllFunctions).Where(fn => fn.Body is not null && fn.Kind != FunctionKind.Test && !fn.IsGeneric && fn.Name != "formatInto").ToList();
 
-    /// <summary>A <c>FunctionEmitter</c> with the file and <c>#line</c> path the T6 stubs give (<c>fileName</c> "", <c>cString</c> "").</summary>
-    private static FunctionEmitter Frame(CEmitter emitter, LoweredFunction f)
-    {
-        var fe = new FunctionEmitter(emitter, f);
-        SetField(fe, "_file", "");
-        SetField(fe, "_linePath", f.Symbol.File is null ? null : "");
-        return fe;
-    }
+    private static FunctionEmitter Frame(CEmitter emitter, LoweredFunction f) => new(emitter, f);
 
     /// <summary>The C# twin of the generated main's <c>t9Build</c>, collecting the text each stubbed callee gives in C#.</summary>
     private static (List<BoundStmt> Stmts, List<LocalSymbol> Locals) Body(Compilation c, CEmitter emitter, FunctionSymbol fn, List<string> masks)
@@ -552,7 +547,6 @@ public sealed class SelfhostEmitterT9Tests
         stmts.AddRange([new LSetContext(syn, null, 0), new LPushPanicHandler(syn, 0, null, inner), new LPopPanicHandler(syn, 0)]);
         if (!isH && fn.Parameters.Count > 0) stmts.Add(new LClaim(syn, fn.Parameters[0]));
         stmts.Add(new LPanic(syn, "boom"));
-        masks.Add(CEmitter.CString("boom"));
         stmts.Add(new LWrite(syn, WriteSink.Panic, null, [new BoundInterpolationPart("", null), new BoundInterpolationPart(null, null)]));
         stmts.AddRange(assigns);
         var probe = Frame(emitter, new LoweredFunction(fn, locals, 1, 1, body));
@@ -626,15 +620,6 @@ public sealed class SelfhostEmitterT9Tests
             locals.Add(new LocalSymbol("pv", null, PrimitiveType.I64, LocalKind.PatternVariable));
             locals.Add(new LocalSymbol("pb", null, PrimitiveType.I64, LocalKind.PatternVariable) { BorrowsSubject = true });
             masks.Add(Expr(fv));
-            foreach (var lit in new[] { "K { ", "kf: ", ", kg: ", "G { ", "ga: " }) masks.Add(CEmitter.StringLiteral(lit));
-            masks.Add(CEmitter.StringLiteral("a"));
-            masks.Add(CEmitter.StringLiteral("b"));
-            masks.Add(CEmitter.StringLiteral(", y: "));
-            masks.Add(emitter.SymbolText(Expr(xs[4])));
-            masks.Add(CEmitter.StringLiteral("P { "));
-            masks.Add(CEmitter.StringLiteral("x: "));
-            masks.Add(CEmitter.StringLiteral(" }"));
-            masks.Add(CEmitter.StringLiteral("Q {}"));
             masks.Add(Expr(owned));
             masks.Add(emitter.OwnClaim(owned.Type));
         }
@@ -673,7 +658,6 @@ public sealed class SelfhostEmitterT9Tests
         var p = Lowerer.Lower(c);
         var emitter = NewEmitter(p, checks);
         var functions = Functions(c);
-        var names = c.Modules.SelectMany(m => m.AllFunctions).Where(fn => fn.Body is not null && !fn.IsGeneric).Select(fn => emitter.FunctionName(fn)).ToList();
         functions.Single(fn => fn.Name == "e0").File = null;
         var emit = new List<string>();
         foreach (var fn in functions)
@@ -682,11 +666,11 @@ public sealed class SelfhostEmitterT9Tests
             var (stmts, locals) = Body(c, emitter, fn, masks);
             var f = new LoweredFunction(fn, locals, 1, 1, new BoundBlock(fn.Body!.Syntax, [.. stmts]));
             emit.Add($"fn {fn.Name}");
-            emit.Add($"sig {Mask(Frame(emitter, f).Signature(), names)}");
+            emit.Add($"sig {Frame(emitter, f).Signature()}");
             var fe = Frame(emitter, f);
             var text = fe.Emit();
             var signature = text[..text.IndexOf('\n')];
-            emit.AddRange(Lines(Mask(signature, names) + Mask(text[text.IndexOf('\n')..], [.. masks, .. names])));
+            emit.AddRange(Lines(signature + Mask(text[text.IndexOf('\n')..], masks)));
             var slots = Frame(emitter, f);
             foreach (var l in fn.Parameters.Concat<LocalSymbol>(locals))
                 emit.Add($"slot {((bool)Call(slots, "HasSlot", l)! ? "true" : "false")} {Call(slots, "Slot", l)}");
@@ -696,16 +680,12 @@ public sealed class SelfhostEmitterT9Tests
         var order = (List<string>)Field(emitter, "_helperOrder")!;
         var bodies = (System.Collections.IDictionary)Field(emitter, "_helpers")!;
         var t9Masks = new List<string>();
-        var pFields = c.Modules.SelectMany(m => m.Structs).SelectMany(s => s.Fields).ToList();
         foreach (var fn in functions) Body(c, emitter, fn, t9Masks);
         foreach (var n in order.Where(T9Helper))
         {
             var (proto, body) = ((string, string))bodies[n]!;
             helpers.Add($"{n} {proto}");
-            // `fieldName` and `functionName` are still stubs (program.byn): a field read in a debug helper is `v.`, a call has no name.
-            var text = Mask(body, [.. t9Masks, .. names]);
-            foreach (var f in pFields) text = text.Replace("v." + CEmitter.FieldName(f.Name), "v.");
-            helpers.AddRange(Lines(text));
+            helpers.AddRange(Lines(Mask(body, t9Masks)));
         }
         return new() { ["emit"] = emit, ["helpers"] = helpers };
     }
@@ -717,9 +697,8 @@ public sealed class SelfhostEmitterT9Tests
         var p = (StructSymbol)locals[5].Type;
         var field = new BoundField(syn, new BoundLocal(syn, locals[5]), p.Fields[0]);
         var tuple = new BoundTupleElement(syn, new BoundLocal(syn, locals[0]), 0, PrimitiveType.I64);
-        // The T6 `fieldName` stub gives "" where the C# names the field.
         var masks = new List<string> { emitter.OwnClaim(field.Type), emitter.OwnClaim(tuple.Type) };
-        string Claimed(BoundExpr r) => Mask((string)Call(fe, "Claimed", "x()", r, syn)!, masks).Replace("." + CEmitter.FieldName(p.Fields[0].Name) + ",", ".,");
+        string Claimed(BoundExpr r) => Mask((string)Call(fe, "Claimed", "x()", r, syn)!, masks);
         var lines = new List<string> { $"claimed {Claimed(q)}", $"claimed {Claimed(field)}", $"claimed {Claimed(tuple)}" };
         Call(fe, "ClaimAfterCall", q, syn);
         Call(fe, "ClaimAfterCall", field, syn);
@@ -730,6 +709,8 @@ public sealed class SelfhostEmitterT9Tests
         lines.Add($"store {(string?)Call(fe, "CheckedStore", field, q, true) ?? "null"}");
         var lv = new LVoid(syn);
         lines.Add($"store {(string?)Call(fe, "CheckedStore", lv, q, true) ?? "null"}");
+        lines.Add($"store {(string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[^5]), q, true) ?? "null"}");
+        lines.Add($"store {Mask((string?)Call(fe, "CheckedStore", new BoundLocal(syn, locals[7]), q, false) ?? "null", [emitter.OwnSet(locals[7].Type), (string)Call(fe, "Expr", q)!])}");
         lines.Add($"claimed {Claimed(fn.Body.Statements.OfType<BoundAssign>().First().Target)}");
         lines.Add($"claimed {Claimed(lv)}");
         return lines;
@@ -757,9 +738,8 @@ public sealed class SelfhostEmitterT9Tests
         var fn = Functions(c).Single(f => f.Name == "main");
         var f = new LoweredFunction(fn, [], 0, 0, fn.Body!);
         var e = Assert.Throws<TargetInvocationException>(() => typeof(FunctionEmitter).GetMethod("Emit")!.Invoke(Frame(NewEmitter(Lowerer.Lower(c), false), f), null));
-        Assert.StartsWith("cannot emit ", e.InnerException!.Message);
         var (exit, _, stderr) = Run(mode, false, path);
         Assert.NotEqual(0, exit);
-        Assert.Contains("cannot emit ", stderr);
+        Assert.Contains($"panic: {e.InnerException!.Message}\n", stderr);
     });
 }
