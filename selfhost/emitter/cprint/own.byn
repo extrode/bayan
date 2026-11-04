@@ -1,34 +1,119 @@
 // T7: CEmitter.cs 682-778 (`StorageParts`, `OwnsStorage`, `OwnStatements`, `OwnClaim`, `OwnSet`, `OwnMove`, `OwnReturn`).
-// Header only (T1): final signatures.
 
 import semantics
 
-/// CEmitter.cs `OwnsStorage`: whether a value of `t` owns heap storage the ownership checker tracks.
-public bool ownsStorage(ref Ctx c, for Type t) {
-    return false
+/// A tuple of `StorageParts`' `(Storage, Place, Type)`.
+struct T7Part {
+    string storage
+    string place
+    string type
 }
 
-/// CEmitter.cs:732 `OwnClaim` (Q845): the name of the helper by which `*p` of type `t` claims its storage, registering it.
-public string ownClaim(ref CCtx cc, from ref Ctx c, for Type t) {
-    return ""
+/// The three lambdas `OwnStatements` is called with (D5: no delegates).
+enum T7OwnLine {
+    claim
+    drop
+    release
 }
 
-/// CEmitter.cs:742 `OwnSet` (Q845): the name of the helper that stores into `*p` of type `t` through the ownership checker, registering it.
-public string ownSet(ref CCtx cc, from ref Ctx c, for Type t) {
-    return ""
+/// CEmitter.cs:686 `StorageParts`: the storage a `t` at lvalue `at` owns by value: a List's elements, a Map's keys, a growable
+/// StrBuf's bytes, an Owned box, through struct fields and tuple items (not optionals, unions or arrays).
+void t7StorageParts(ref Ctx c, for Type t, at string at, to ref List<T7Part> parts) uses alloc {
+    let i = i64(t & 0xFFFFFFFF)
+    switch semantics.kindOf(t) {
+        case .list: parts.append(T7Part { storage: $"{at}.ptr", place: $"&{at}", type: semantics.typeDisplay(ref c, by: t) })
+        case .map: parts.append(T7Part { storage: $"{at}.keys", place: $"&{at}", type: semantics.typeDisplay(ref c, by: t) })
+        case .builtin:
+            if semantics.builtinKindOf(i) == .strBuf {
+                parts.append(T7Part { storage: $"({at}.mode == BYN_WRITE_GROW ? {at}.buf : NULL)", place: $"&{at}", type: semantics.typeDisplay(ref c, by: t) })
+            }
+        case .owned: parts.append(T7Part { storage: at, place: $"&{at}", type: semantics.typeDisplay(ref c, by: t) })
+        case .untrusted: t7StorageParts(ref c, for: c.untrustedTypes[i], at: at, to: ref parts)
+        case .tuple:
+            var types = List<Type>()
+            for f in c.tupleTypes[i] { types.append(f.type) }
+            for k in 0..types.length { t7StorageParts(ref c, for: types[k], at: $"{at}.item{k + 1}", to: ref parts) }
+        case .structType:
+            var fields = List<semantics.FieldId>()
+            for f in c.structs[i].fields { fields.append(f) }
+            for f in fields { t7StorageParts(ref c, for: c.fields[f].type, at: $"{at}.{fieldName(c.fields[f].name)}", to: ref parts) }
+        case .state: t7StorageParts(ref c, for: semantics.makeType(.structType, at: c.stateTypes[i].s), at: at, to: ref parts)
+        default: return
+    }
 }
 
-/// CEmitter.cs:752 `OwnMove` (Q845): the name of the helper that moves a local of type `t`, recording where, registering it.
-public string ownMove(ref CCtx cc, from ref Ctx c, for Type t) {
-    return ""
+/// CEmitter.cs:722 `OwnsStorage`: whether a value of `t` owns heap storage the ownership checker tracks.
+public bool ownsStorage(ref Ctx c, for Type t) uses alloc {
+    var parts = List<T7Part>()
+    t7StorageParts(ref c, for: t, at: "v", to: ref parts)
+    return parts.length > 0
 }
 
-/// CEmitter.cs:763 `OwnReturn` (Q845): the name of the helper that releases a returned value of type `t`, registering it.
-public string ownReturn(ref CCtx cc, from ref Ctx c, for Type t) {
-    return ""
+/// CEmitter.cs:729 `OwnStatements`: `line` of each of the storage parts of `t` at `at`, one statement each.
+string t7OwnStatements(ref Ctx c, for Type t, at string at, as T7OwnLine line) uses alloc {
+    var parts = List<T7Part>()
+    t7StorageParts(ref c, for: t, at: at, to: ref parts)
+    var sb = StrBuf()
+    for p in parts {
+        switch line {
+            case .claim: sb.append($"    byn_own_claim({p.storage}, {p.place}, {cString(p.type)}, file, line);\n")
+            case .drop: sb.append($"    byn_own_drop({p.storage}, {p.place});\n")
+            case .release: sb.append($"    byn_own_release({p.storage});\n")
+        }
+    }
+    return $"{sb.finish()}"
 }
 
-/// CEmitter.cs:771 `IntSuffix` (Q845): the runtime suffix (`i8` .. `u64`) of integer type `t`.
-public string intSuffix(Type t) {
-    return ""
+/// CEmitter.cs:732 `OwnClaim`: the name of the helper by which `*p` of type `t` claims its storage, registering it.
+public string ownClaim(ref CCtx cc, from ref Ctx c, for Type t) uses alloc {
+    let ct = cType(ref cc, from: ref c, for: t)
+    let name = $"bynh_chk_claim_{key(ref c, for: t)}"
+    let proto = $"static void {name}({ct}* p, const char* file, int line)"
+    return helper(ref cc, for: name, from: proto, as: $"{{\n{t7OwnStatements(ref c, for: t, at: "(*p)", as: .claim)}}}\n")
+}
+
+/// CEmitter.cs:742 `OwnSet`: the name of the helper that stores into `*p` of type `t` through the ownership checker, registering it.
+public string ownSet(ref CCtx cc, from ref Ctx c, for Type t) uses alloc {
+    let ct = cType(ref cc, from: ref c, for: t)
+    let name = $"bynh_chk_set_{key(ref c, for: t)}"
+    let proto = $"static {ct} {name}({ct}* p, {ct} v, byn_own_slot* s, bool claim, const char* file, int line)"
+    // The body registers `OwnClaim`'s helper, so the pair of `Helper`'s halves brackets it (Q763).
+    if helperReserve(ref cc, for: name, from: proto) {
+        let drops = t7OwnStatements(ref c, for: t, at: "(*p)", as: .drop)
+        let claim = ownClaim(ref cc, from: ref c, for: t)
+        let _ = helperFill(ref cc, for: name, from: proto, as: $"{{\n{drops}    *p = v;\n    if (s) s->line = 0;\n    if (claim) {claim}(p, file, line);\n    return v;\n}}\n")
+    }
+    return name
+}
+
+/// CEmitter.cs:752 `OwnMove`: the name of the helper that moves a local of type `t`, recording where, registering it.
+public string ownMove(ref CCtx cc, from ref Ctx c, for Type t) uses alloc {
+    let ct = cType(ref cc, from: ref c, for: t)
+    let name = $"bynh_chk_move_{key(ref c, for: t)}"
+    let proto = $"static {ct}* {name}({ct}* p, byn_own_slot* s, const char* file, int line)"
+    let read = $"    if (s) byn_own_read(s, {cString(semantics.typeDisplay(ref c, by: t))}, file, line);\n"
+    let releases = t7OwnStatements(ref c, for: t, at: "(*p)", as: .release)
+    return helper(ref cc, for: name, from: proto, as: $"{{\n{read}{releases}    if (s) {{\n        s->file = file;\n        s->line = line;\n    }}\n    return p;\n}}\n")
+}
+
+/// CEmitter.cs:763 `OwnReturn`: the name of the helper that releases a returned value of type `t`, registering it.
+public string ownReturn(ref CCtx cc, from ref Ctx c, for Type t) uses alloc {
+    let ct = cType(ref cc, from: ref c, for: t)
+    let name = $"bynh_chk_ret_{key(ref c, for: t)}"
+    let proto = $"static {ct} {name}({ct} v)"
+    return helper(ref cc, for: name, from: proto, as: $"{{\n{t7OwnStatements(ref c, for: t, at: "v", as: .release)}    return v;\n}}\n")
+}
+
+/// CEmitter.cs:771 `IntSuffix`: the runtime suffix (`i8` .. `u64`) of integer type `t`.
+public string intSuffix(Type t) uses alloc {
+    // C# `(PrimitiveType)t` throws on any other type.
+    if semantics.kindOf(t) != .primitive { panic("intSuffix of a non-primitive type") }
+    let k = semantics.primKindOf(i64(t & 0xFFFFFFFF))
+    switch k {
+        case .isize: return "i64"
+        case .usize: return "u64"
+        // `primitiveName` says `rune`; the C# lower-cases the kind's name.
+        case .char: return "char"
+        default: return semantics.primitiveName(k)
+    }
 }
