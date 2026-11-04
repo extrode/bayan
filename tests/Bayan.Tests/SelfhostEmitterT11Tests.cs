@@ -5,6 +5,7 @@ using Bayan.Lowering;
 using Bayan.Semantics;
 using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Text;
 
@@ -16,7 +17,8 @@ namespace Bayan.Tests;
 /// Every builtin call, unary, binary, conversion, index and slice of the unlowered bodies is numbered in
 /// <c>BoundTree.Descendants</c> order. A case whose children are all plain locals is emitted by both sides, with every
 /// local's C# name set to "" (the selfhost <c>emitExpr</c> is T10's stub, which returns ""), and the text, the helpers
-/// and the type order are compared. A case that reaches another task's stub runs but is not compared (Q811).
+/// and the type order are compared. A case with another child, or one that reaches another task's stub, runs but is not
+/// compared (Q811).
 /// </summary>
 public sealed class SelfhostEmitterT11Tests
 {
@@ -33,7 +35,7 @@ public sealed class SelfhostEmitterT11Tests
         i32 main(ReadOnlySpan<string> args) {
             var rest = List<string>()
             for i in 3..args.length { rest.append(args[i]) }
-            let symbols = semantics.t26Symbols(false)
+            let symbols = semantics.t26Symbols(ascii: false)
             let o = semantics.t26ParseBuildOptions(in rest, allowSpans: false) ?? return 2
             var reported = List<semantics.T26Reported>()
             var ok = false
@@ -69,7 +71,7 @@ public sealed class SelfhostEmitterT11Tests
         string t11Cases(ref Ctx c, at string file, for string flags) uses alloc {
             var cc = CCtx {}
             var scratch = CCtx {}
-            let t = ltree.LTree {}
+            let t = LTree {}
             var sb = StrBuf()
             sb.append("== cases\n")
             var n: i64 = 0
@@ -77,7 +79,7 @@ public sealed class SelfhostEmitterT11Tests
                 var f = CFunc { fn: fn, file: file }
                 for e in semantics.descendants(in c, for: c.functions[fn].body) {
                     let k = semantics.boundKind(e)
-                    unless k == .builtinCall || k == .unary || k == .binary || k == .conversion || k == .index || k == .slice { continue }
+                    if !(k == .builtinCall || k == .unary || k == .binary || k == .conversion || k == .index || k == .slice) { continue }
                     let flag = n < flags.length ? flags[n..n + 1] : "0"
                     if flag == "1" { sb.append($"{n} {t11Case(ref cc, for: ref f, from: ref c, through: t, at: e)}\n") }
                     if flag == "2" { sb.append($"{n} {t11Case(ref scratch, for: ref f, from: ref c, through: t, at: e)}\n") }
@@ -233,16 +235,17 @@ public sealed class SelfhostEmitterT11Tests
                     flags[index] = '2';
                     continue;
                 }
-                if (!PlainChildren(n)) continue;
+                var plain = PlainChildren(n);
                 foreach (var fe in new[] { emitters[fn], probes[fn] })
                 {
                     var names = (Dictionary<LocalSymbol, string>)Field(fe, "_names")!;
-                    foreach (var ch in BoundTree.Children(n)) names[((BoundLocal)ch).Local] = "";
+                    foreach (var ch in BoundTree.Children(n).OfType<BoundLocal>()) names[ch.Local] = "";
                 }
                 var m = typeof(FunctionEmitter).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!;
                 try { m.Invoke(probes[fn], [n]); }
                 catch (TargetInvocationException) { continue; }
-                if (ReachesStub(n))
+                // A child that is not a plain local is T10's `emitExpr`, still a stub, so the text cannot match yet (Q811).
+                if (!plain || ReachesStub(n))
                 {
                     flags[index] = '2';
                     run.Add(index);
@@ -253,7 +256,8 @@ public sealed class SelfhostEmitterT11Tests
             }
         }
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
-        var helperLines = ((List<string>)Field(emitter, "_helperOrder")!).Select(h => $"{h} {helpers[h].Proto} | {helpers[h].Body}").ToList();
+        var helperLines = ((List<string>)Field(emitter, "_helperOrder")!).Select(h => $"{h} {helpers[h].Proto} | {helpers[h].Body}")
+            .SelectMany(h => h.Split('\n')).Where(l => l.Length > 0).ToList();
         return new(file, new string(flags.ToArray()), flags.Count, cases, run, helperLines, typeOrder.Skip(typeBase).ToList());
     }
 
@@ -306,36 +310,32 @@ public sealed class SelfhostEmitterT11Tests
     // ── A fixture of plain locals: every case kind on the types the port switches on ────────────────────────────
 
     private const string Fixture = """
-        enum Color { red, green }
-
-        struct P {
-            i64 x
+        enum Color {
+            red
+            green
         }
 
-        error E {
-            bad(i64 code)
-        }
-
-        interface Shape {
-            i64 area()
-        }
-
-        struct Sq: Shape {
-            i64 side
-            i64 area() => side * side
-        }
-
-        void strings(string s, string t, i64 n, i64 m, char ch, bool b, StrBuf w, Span<u8> bs, Span<string> ss, Radix r) {
+        void strings() {
+            var s = "ab"
+            var t = "cd"
+            var n = 0
+            var m = 1
+            var ch = 'x'
+            var w = StrBuf()
+            var ss = List<string>()
             let a = s.length
             let e = s.isEmpty
             let rc = s.runeCount
             let ascii = s.isAscii
             let by = s.bytes
-            let st = bs.toString()
-            let p = s.parse(i32, radix: r)
-            let q = s.parse(u8, radix: r)
-            let pf = s.parse(f64)
-            let pf32 = s.parse(f32)
+            var bs = by.copy()
+            var bsp = bs.span
+            let st = string(bsp)
+            let it = string(n)
+            let p = i32.tryParse(s)
+            let q = u8.tryParse(s)
+            let pf = f64.tryParse(s)
+            let pf32 = f32.tryParse(s)
             let j = ss.joined(by: s)
             let lt = s < t
             let ge = s >= t
@@ -343,25 +343,31 @@ public sealed class SelfhostEmitterT11Tests
             let sl2 = s[n..=m]
             let sl3 = s[..m]
             let cv = ch.value
-            let ts = n.toString(radix: r)
             let wl = w.length
-            let ws = w.asString()
+            let ws = w.finish()
+            let sw = s.startsWith(t)
+            let ew = s.endsWith(t)
+            let co = s.contains(t)
+            let tr = s.trimmed()
+            let lo = s.lowercased()
+            let up = s.uppercased()
         }
 
-        void lists(List<i64> xs, List<string> ys, Span<i64> sp, i64 i, i64 k, bool b, Arena ar, i64[4] arr) {
+        void lists() {
+            var xs = List<i64>()
+            var ys = List<string>()
+            var i = 0
+            var k = 1
             var zs = xs.copy()
-            let s1 = xs.asSpan()
+            let s1 = xs.span
+            var sp = xs.span
             let n = xs.length
             let e = xs.isEmpty
             let g = xs.tryGet(i)
             let v = xs[i]
             let w = sp[i]
-            let u = arr[i]
             let s2 = sp[i..k]
-            let s3 = arr[i..k]
             let s4 = xs[i..k]
-            let al = arr.length
-            let asp = arr.asSpan()
             let sc = sp.copy()
             let sn = sp.length
             zs.sort()
@@ -372,10 +378,19 @@ public sealed class SelfhostEmitterT11Tests
             zs.remove(from: i, until: k)
             zs.remove(from: i, through: k)
             zs.remove(at: i)
-            ar.reset()
         }
 
-        void numbers(i64 a, i64 b, f64 x, f64 y, f32 z, f32 zz, u8 c, bool p, bool q, i32 h, u32 g, char ch) {
+        void numbers() {
+            var a = 1
+            var b = 2
+            var x = 1.5
+            var y = 2.5
+            var z = f32(1.5)
+            var zz = f32(2.5)
+            var p = true
+            var q = false
+            var h = i32(3)
+            var g = u32(4)
             let r1 = a & b
             let r2 = a | b
             let r3 = a ^ b
@@ -392,14 +407,15 @@ public sealed class SelfhostEmitterT11Tests
             let r14 = f64(a)
             let r15 = i64(h)
             let r16 = f32(x)
-            let r17 = char(g)
-            let r18 = char(h)
+            let r17 = rune(g)
+            let r18 = rune(h)
         }
 
-        void options(i64 a, i64? o, List<i64> xs, Owned<i64> ow, Color col) {
+        void options() {
+            var a = 1
+            var xs = List<i64>()
+            var col = Color.red
             let p: i64? = a
-            let s: Span<i64> = xs
-            let v = ow.value
             let ord = col.ordinal
         }
 
@@ -408,6 +424,129 @@ public sealed class SelfhostEmitterT11Tests
 
     [Fact]
     public void Fixture_MatchesCSharp() => WithFixture(Fixture, path =>
+    {
+        var o = RunAndCompare(path);
+        Assert.True(o.Cases.Count >= 20, $"only {o.Cases.Count} cases compared");
+    });
+
+    // More builtins, operators and conversions on plain locals: text views, ranges, maps, arrays, error cases.
+    private const string Fixture2 = """
+        union error E {
+            bad(i64 code)
+            gone
+        }
+
+        i64 risky(i64 n) fails E {
+            fail .gone if n < 0
+            return n
+        }
+
+        void strings2() uses console, alloc {
+            var s = "a,b"
+            var t = ","
+            var n = 0
+            var k = 2
+            var ch = 'x'
+            var eq = s.equals(t)
+            let po = s.position(t)
+            let po2 = s.position(t, from: n)
+            let lp = s.lastPosition(t)
+            let cn = s.count(t)
+            let tr = s.trimmed()
+            var rl = List<rune>()
+            var rsp = rl.span
+            let tb = s.trimmed(by: rsp)
+            let rp = s.replaced(t, by: s)
+            let rr = s.repeated(k)
+            let pd = s.padded(to: k, by: ch)
+            var ps = s.parts(by: t)
+            var ps2 = s.parts(by: t, limit: k)
+            var pr = s.parts(by: ch)
+            var pr2 = s.parts(by: ch, limit: k)
+            var rs = s.runes
+            let rt = rs.take(k)
+            let rk = rs.skip(k)
+            let rl = rs.takeLast(k)
+            var us = s.utf16
+            let uc = us.copy()
+            var ls = s.lines
+            let sc = s.copy()
+            var so = Io.stdout
+            so.write(s)
+        }
+
+        void lists2() {
+            var xs = List<i64>()
+            var ys = List<i64>()
+            var i = 0
+            var j: i64 = 1
+            var r = i..j
+            var sp = ys.span
+            xs.replace(at: r, by: sp)
+            var ms = xs.mutableSpan()
+            xs.remove(at: r)
+            var w = StrBuf()
+            w.clear()
+            var ch = 'x'
+            var k = 2
+            var s = "ab"
+            w.appendRepeated(ch, by: k)
+            w.insert(s, at: i)
+            var m = Map<i64, i64>()
+            let ml = m.length
+            m.clear()
+            var arr = [1, 2, 3]
+            let al = arr.length
+            let asp = arr.span
+            var amp = arr.mutableSpan()
+            let av = arr[i]
+            let asl = arr[i..i]
+            var u = 3
+            let xu = sp[u]
+        }
+
+        void numbers2() {
+            var a = 1
+            var b = 2
+            var u = u8(1)
+            var v = u8(2)
+            var x = 1.5
+            let s1 = a + b
+            let s2 = x - x
+            let s3 = x * x
+            let s4 = x / x
+            let s5 = x > x
+            let s6 = x <= x
+            let s7 = x >= x
+            let s8 = x == x
+            let s9 = u & v
+            let s10 = i64(u)
+            let s11 = u8(a)
+            let s12 = i64(x)
+            let st = string(u)
+        }
+
+        void errors2() {
+            var e = E.gone
+            let same = e == .gone
+            let bare = e == .bad
+            var n = 1
+            let full = e == .bad(n)
+            let left = E.bad == e
+            let ne = e != .bad
+            var p = true
+            var q = false
+            let ba = p & q
+            let bo = p | q
+            let bx = p ^ q
+            let none: i64? = null
+        }
+
+        void main() { }
+        """;
+
+    [Fact]
+    public void Fixture2_MatchesCSharp() => WithFixture(Fixture2, path =>
     {
         var o = RunAndCompare(path);
         Assert.True(o.Cases.Count >= 20, $"only {o.Cases.Count} cases compared");
