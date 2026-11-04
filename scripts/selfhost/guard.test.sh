@@ -51,6 +51,7 @@ STUB
 mkdir -p src/Bayan.Cli/bin/Debug/net10.0
 cat > src/Bayan.Cli/bin/Debug/net10.0/bayan <<'STUB'
 #!/bin/bash
+[ "$1" = parse ] && { grep -q '^fn ' "${@: -1}" && echo "Function f"; echo "Program"; exit 0; }
 echo "$@" > $AUX/mutate-args.txt; echo "$@" >> $AUX/mutate-args-all.txt
 [ -f $AUX/mismatch ] && { echo "bayan: (any text: the guard keys on the exit code)" >&2; exit 1; }
 [ -f $AUX/usage ] && { echo "bayan: usage" >&2; exit 2; }
@@ -86,7 +87,7 @@ badbase=$(ALLOWX=,tests/quality-baseline.json g --mutate selfhost/semantics/a.by
 touch $aux/recordfail; recordfail=$(g --mutate selfhost/semantics/a.byn); rm $aux/recordfail
 rm $aux/record.txt; plain=$(g); [ -f $aux/record.txt ] && plainrec=1 || plainrec=0; ls tmp/guard-run/quality-*.json > /dev/null 2>&1 && plainrep=1 || plainrep=0
 printf x > "stray file.txt"; space=$(g); rm "stray file.txt"
-mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(g --mutate selfhost/semantics/a.byn)
+mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(g --mutate selfhost/semantics/a.byn); mv $aux/bayan src/Bayan.Cli/bin/Debug/net10.0/bayan
 # cov <covered> <total> <missed lines> <unknown lines> <branches [line, column, outcome, status]>: the coverage report of a.byn
 cov() { python3 -I -c 'import json, sys
 f, covered, total, missed, unknown, branches = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), *map(json.loads, sys.argv[4:])
@@ -120,6 +121,9 @@ printf 'fn h() -> int {\n    return 1\n}\n' > selfhost/semantics/b.byn
 a=$r/selfhost/semantics/b.byn cov 0 1 '[2]' '[]' '[]'
 printf '{"version": 1, "files": {"%s": [{"span": [1, 3], "lines": [0, 1], "branches": [0, 0]}]}}\n' "$r/selfhost/semantics/b.byn" > $aux/fns.json
 covnew=$(ALLOWX=,selfhost/semantics/b.byn g)
+# a changed file with only constants, absent from the report, has nothing to cover (info line, no FAIL item)
+printf 'const k: string = "x"\n' > selfhost/semantics/c.byn
+covconst=$(ALLOWX=,selfhost/semantics/b.byn,selfhost/semantics/c.byn g)
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$pass" | grep -q '^GUARD PASS$' || fail "all killed (one marked) did not pass" "$pass"
@@ -163,6 +167,7 @@ echo "$covtouch" | grep -q '^- coverage: missed line selfhost/semantics/a.byn:2;
 echo "$covnew" | grep -q '^- coverage: missed line selfhost/semantics/b.byn:2; ' || fail "a function of a file new since --base was not gated" "$covnew"
 echo "$covnew" | grep -qxF -- "- coverage: selfhost/semantics/a.byn is in no build under --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' (no entry in tmp/guard-run/coverage/bayan-quality.json), so its touched functions are unchecked" \
   && ! echo "$covnew" | grep -q '^- coverage: selfhost/semantics/b.byn is in no build' || fail "a changed file absent from the coverage report was not a FAIL item naming it" "$covnew"
+echo "$covconst" | grep -qxF -- "coverage: selfhost/semantics/c.byn declares no function; nothing to cover" && ! echo "$covconst" | grep -q '^- coverage: selfhost/semantics/c.byn' || fail "a const-only file absent from the report was not an info line" "$covconst"
 echo "$covpass" | grep -q 'is in no build' && fail "a changed file in the coverage report was reported absent" "$covpass"
 echo "$covnone" | grep -q "^- coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' builds a selfhost program with selfhost/semantics/a.byn$" \
   || fail "a coverage run without a report (an earlier run's left in place) did not fail" "$covnone"
