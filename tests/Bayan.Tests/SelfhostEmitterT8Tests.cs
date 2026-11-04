@@ -13,8 +13,7 @@ namespace Bayan.Tests;
 /// <summary>
 /// 011 T8: <c>selfhost/emitter/cprint/helpers.byn</c> (CEmitter.cs 779-1046: <c>Equal</c>, <c>KeyHash</c>, <c>KeyEq</c>,
 /// <c>MapMethod</c>, <c>Format</c>, <c>FormatInto</c>, <c>FormatIntoWithSpec</c>) against the C# as an in-process oracle. The types
-/// are the parameters of the fixture's <c>eqN</c>, <c>fmtN</c> and <c>mapN</c> functions; the cases that reach <c>fieldName</c>,
-/// <c>stringLiteral</c>, <c>enumNames</c>, <c>symbolText</c> or <c>functionName</c> (T6 stubs) are left out (Q793).
+/// are the parameters of the fixture's <c>eqN</c>, <c>fmtN</c> and <c>mapN</c> functions.
 /// </summary>
 public sealed class SelfhostEmitterT8Tests
 {
@@ -35,8 +34,8 @@ public sealed class SelfhostEmitterT8Tests
             var ok = false
             var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
             let mode = args[0]
-            if mode == "corpus" or mode == "corpusNoBody" {
-                Io.stdout.write(t8Corpus(ref c, by: mode == "corpus"))
+            if mode == "corpus" {
+                Io.stdout.write(t8Corpus(ref c))
                 Io.stdout.write(t8FormatInto(ref c))
             }
             if mode == "failEq" {
@@ -61,7 +60,7 @@ public sealed class SelfhostEmitterT8Tests
             return -1
         }
 
-        string t8Corpus(ref Ctx c, by bool bodies) uses alloc {
+        string t8Corpus(ref Ctx c) uses alloc {
             var cc = CCtx {}
             var sb = StrBuf()
             sb.append("== corpus\n")
@@ -86,9 +85,7 @@ public sealed class SelfhostEmitterT8Tests
             }
             sb.append($"hashes {cc.hashes}\n")
             sb.append("== helpers\n")
-            // A body that names a field or writes a literal goes through `fieldName` or `stringLiteral` (T6 stubs, Q793): the
-            // payload fixture compares name and prototype only.
-            for n in cc.helperOrder { sb.append($"{n} {cc.helpers[n].proto} | {bodies && n != "bynh_eq_err" ? cc.helpers[n].body : "-"}\n") }
+            for n in cc.helperOrder { sb.append($"{n} {cc.helpers[n].proto} | {cc.helpers[n].body}\n") }
             return $"{sb.finish()}"
         }
 
@@ -121,7 +118,7 @@ public sealed class SelfhostEmitterT8Tests
     private static readonly string[] Fmt =
     [
         "i64", "u8", "i8", "i16", "u16", "u32", "f64", "f32", "bool", "rune", "string", "i32", "u64", "ParseError", "Owned<i64>",
-        "i64?", "string?", "Result<i64, ParseError>", "Result<string, ParseError>", "Owned<i64?>",
+        "i64?", "string?", "Result<i64, ParseError>", "Result<string, ParseError>", "Owned<i64?>", "Color", "Symbol",
     ];
 
     private static readonly string[] Maps =
@@ -270,6 +267,7 @@ public sealed class SelfhostEmitterT8Tests
             void zbadFmt(Plain a) { }
             void zbadFmtList(List<i64> a) { }
             void zbadEqBuf(ref StrBuf a) { }
+            void zbadFmtBuf(ref StrBuf a) { }
 
             """);
         if (payload) sb.Append(PayloadTypes);
@@ -338,7 +336,7 @@ public sealed class SelfhostEmitterT8Tests
     private static readonly BuiltinMember[] Members =
         [BuiltinMember.MapIndexSet, BuiltinMember.MapSlot, BuiltinMember.MapIndex, BuiltinMember.MapTryGet, BuiltinMember.MapContains, BuiltinMember.MapRemove];
 
-    private static string Oracle(Compilation c, bool bodies)
+    private static string Oracle(Compilation c)
     {
         var emitter = NewEmitter(Lowerer.Lower(c));
         var sb = new StringBuilder("== corpus\n");
@@ -352,7 +350,7 @@ public sealed class SelfhostEmitterT8Tests
         }
         sb.Append($"hashes {((bool)Field(emitter, "_hashes")!).ToString().ToLowerInvariant()}\n== helpers\n");
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
-        foreach (var n in (List<string>)Field(emitter, "_helperOrder")!) sb.Append($"{n} {helpers[n].Proto} | {(bodies && n != "bynh_eq_err" ? helpers[n].Body : "-")}\n");
+        foreach (var n in (List<string>)Field(emitter, "_helperOrder")!) sb.Append($"{n} {helpers[n].Proto} | {helpers[n].Body}\n");
         sb.Append("== formatinto\n");
         foreach (var name in new[] { "Plain", "One", "Two", "Both", "Wrong", "Static", "Fails", "ByValue", "NotBuf", "Three", "SpecRef", "Reverse", "StaticSpec", "FailsSpec", "SpecByValue", "SpecNotBuf" })
         {
@@ -367,8 +365,8 @@ public sealed class SelfhostEmitterT8Tests
     [InlineData(true)]
     public void Corpus_MatchesCSharp(bool payload) => WithFixture(path =>
     {
-        var expected = SelfhostSemanticsHarness.Sections(Oracle(Compile(path), !payload));
-        var (exit, stdout, stderr) = Run(payload ? "corpusNoBody" : "corpus", "-", path);
+        var expected = SelfhostSemanticsHarness.Sections(Oracle(Compile(path)));
+        var (exit, stdout, stderr) = Run("corpus", "-", path);
         Assert.True(exit == 0 && stderr.Length == 0, $"generated main exited {exit}:\n{stderr}");
         var actual = SelfhostSemanticsHarness.Sections(stdout);
         foreach (var section in new[] { "corpus", "helpers", "formatinto" })
@@ -380,6 +378,7 @@ public sealed class SelfhostEmitterT8Tests
     [InlineData("failEq", "zbadEqBuf")]
     [InlineData("failFmt", "zbadFmt")]
     [InlineData("failFmt", "zbadFmtList")]
+    [InlineData("failFmt", "zbadFmtBuf")]
     public void NoEqualityOrFormat_FailsLikeCSharp(string mode, string function) => WithFixture(path =>
     {
         var c = Compile(path);
