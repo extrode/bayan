@@ -13,7 +13,9 @@
 # sibling task T<k> ports its stub <fn> (not dead in the C#: the Question cites the line and the stub). It holds only while T<k> is
 # unticked in <tasks.md> and is not the task under guard (<T<n>>): every marker in <dir>'s .byn files naming the guarded task or a
 # ticked one is a FAIL item, so the stub's owner covers the lines and removes the marker before it lands, and integration sees none.
-# Without the three optional arguments a coverage-blocked marker is a FAIL item. The other functions of the file are one info line (covered/total), never a FAIL: the task's --filter tests are
+# Without the three optional arguments a coverage-blocked marker is a FAIL item.
+# A file outside <dir> that exists at <merge-base> is another spec's port (an 011 task editing selfhost/semantics): only the
+# lines the work tree adds or changes in it are gated, since the rest of its functions is the owning spec's coverage (Q871). The other functions of the file are one info line (covered/total), never a FAIL: the task's --filter tests are
 # not meant to cover other tasks' functions. A source file absent from the work tree has no markers. An unreadable report, function or source file, or a failing git, exits 1 naming it.
 import json, os, re, subprocess, sys
 
@@ -120,8 +122,11 @@ def main():
             skip, blocked, bad = exempt(p, open_=open_, task=task)
             for b in bad: print('- ' + b)
             touched = [fn for fn in fns if lines is None or any(fn['span'][0] <= n <= fn['span'][1] for n in lines)]
+            foreign = root is not None and lines is not None and not (p + '/').startswith(os.path.normpath(root) + '/')
+            if foreign: print('coverage: %s: outside %s, so only its changed lines are gated (Q871)' % (p, root))
 
             def gated(n):
+                if foreign: return n in lines
                 holding = [fn for fn in fns if fn['span'][0] <= n <= fn['span'][1]]
                 return bool(holding) and min(holding, key=lambda fn: fn['span'][1] - fn['span'][0]) in touched
 
