@@ -1,1 +1,3 @@
 selfhost/lexer/lexer.byn -> FullyQualifiedName~SelfhostLexer
+selfhost/parser/p.byn -> FullyQualifiedName~SelfhostParser
+selfhost/semantics/a.byn -> FullyQualifiedName~SelfhostSemanticsATests
