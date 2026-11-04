@@ -37,7 +37,7 @@ public sealed class SelfhostEmitterApiTests
     {
         var index = File.ReadAllText(Path.Combine(Golden.RepoRoot, "docs", "specs", "011-self-hosted-emitter", "011-api.md"));
         Assert.Contains("`LoweredNodes.cs:118`", index);
-        Assert.Contains("`CEmitter.cs:1912-1913`, `1918-1921`, `1937`", index);
+        Assert.Contains("`CEmitter.cs:1919`, `1924-1927`, `1943`", index);
         var tree = File.ReadAllText(Path.Combine(SelfhostEmitterHarness.EmitterDir, "ltree", "ltree.byn"));
         Assert.Matches(@"// Q1: round 4 redoes this[^\n]*\n\s*public LocalId env", tree);
     }
