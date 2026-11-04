@@ -122,7 +122,7 @@ string literalDecimalText(string text) {
 }
 
 /// Signed decimal text, like `Int128.ToString()`.
-string bigText(Big n) {
+public string bigText(Big n) uses alloc {
     if n.lo == 0 && n.hi == 0 { return "0" }
     let neg = bigIsNeg(n)
     var m = neg ? bigNeg(n) : n
