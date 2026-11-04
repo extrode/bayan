@@ -16,10 +16,15 @@
       "coverage": 1.0,
       "branches": 1.0
     },
+    "selfhost/emitter/cprint/expr.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
     "selfhost/emitter/cprint/func.byn": {
       "mutation": null,
-      "coverage": 0.9898,
-      "branches": 0.9748
+      "coverage": 0.9974,
+      "branches": 0.9906
     },
     "selfhost/emitter/cprint/helpers.byn": {
       "mutation": null,
