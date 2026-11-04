@@ -405,8 +405,11 @@ Stmt parseBody(ref Parser p, by Token keyword, to ref i64 header, for ref Braces
     let gapStart = p.prevEnd
     let errors = p.errorCount()
     let seen = p.lexed.diagnostics.length
+    let bodyPos = p.pos
     let body = parseStatement(ref p)
     if p.errorCount() != errors && isErrorStmt(in body) { return body }
+    // At the end of the file the statement takes no token: there is no text to wrap in braces.
+    if p.pos == bodyPos { return body }
     // Only an inner fix overlaps the braces fix; a diagnostic without one (e.g. BYN1006) leaves it applicable.
     var clean = true
     for i in seen..p.lexed.diagnostics.length {

@@ -128,6 +128,14 @@ public sealed class RuntimeNativeTests
         Assert.Equal("flushed\n", stdout.Replace("\r\n", "\n"));
     }
 
+    /// <summary>Seeded random checks of float and int formatting, UTF-8, search, sort, maps and hex against reference models.</summary>
+    [Fact]
+    public void RuntimePropertiesHold()
+    {
+        var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "runtime-properties.c"));
+        Assert.Equal("ok\n", Run(Build(driver), []).Replace("\r\n", "\n"));
+    }
+
     private static string Build(string cSource)
     {
         var build = Toolchain.Build(cSource, BuildMode.Debug);
