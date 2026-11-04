@@ -92,6 +92,8 @@ bool t1FileExists(string path) {
 
 /// CliApp.cs:362 `IsScript`: a file whose first two bytes are `#!`. A copy of `semantics/cli.byn` `t26IsScript` (private there); T28 merges copies.
 bool t1IsScript(string path) {
+    unless t1FileExists(path) { return false }
+    // coverage-exempt: Q918 the catch is an unreadable file, where the C# `IsScript` throws: no oracle
     let bytes = Io.readFile(path) catch return false
     return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
 }
@@ -103,7 +105,7 @@ i32 refuse(string what) {
 }
 
 /// CliApp.cs:370 `RefuseLibrary`: a library has nothing to build or run; `command` is the refused verb (`build`, `run`).
-bool refuseLibrary(in semantics.Ctx compiled, by string command) {
+bool refuseLibrary(semantics.Ctx compiled, by string command) {
     unless compiled.library { return false }
     Io.stderr.write($"bayan: `{compiled.packageName}` is a library, so there is no program to {command}; `bayan test` runs its tests\n")
     return true
