@@ -35,7 +35,8 @@ test_files = [p for p in allow if p.endswith('Tests.cs')]
 # A — oracle
 ORACLE = re.compile(r'\b(Compilation\.(Create|FromPath|FromProject)|Manifest\.(Read|Parse)|DiagnosticRenderer\.|new (Binder|Compilation|Parser)\b'
                     r'|typeof\((Compilation|Binder|Conversions|Conformance)\)|(Conversions|ConstantFolding|TypeFacts|Conformance|BinderExpressions|Lexicon)\.[A-Z]'
-                    r'|\.GetType\("Bayan\.Semantics)')
+                    r'|\.GetType\("Bayan\.Semantics'
+                    r'|CliApp\.(Run|EmitC)\(|SyntaxTree\.Parse\(|SelfhostEmitterHarness\.SameAsCli\()')  # 011: the C# CLI and parser, and the harness over the CLI
 HAND = re.compile(r'(\bexpected\w*\s*=\s*(new\s*(List<string>)?\s*(\(\))?\s*\{|\[)\s*")|(AssertSection\([^;]*,\s*(new\s*(List<string>)?\s*\{|\[)\s*")')
 for t in test_files:
     src = read(t)
