@@ -35,3 +35,9 @@ L024 does not cover. Corrupted seeds come from the 010 no-panic test's corruptio
 laws share a generator. Quick and full tiers as L024 (`BAYAN_LAW_TIER`). Where a counterexample is
 the C# front end's (a parser or binder panic reproduced by the imported checker), it is recorded as
 L023's and does not count against this law, as L018/L023 do today (handoff Q662, Q663). Enacted only after L018 and L023.
+
+Proof (T14): `SelfhostEmitterNoPanicLawTests.BayanEmitNeverPanicsOnSeedsCorruptionsAndRunInputs` (`Law=L025`) runs
+`bayan-emit --many` in the three modes over the tier's valid and faulty generator programs (N = 256 seeds quick,
+1,024 full), 1,000 (full: 10,000) corrupted copies of the 8 fixed seeds' programs, and the flat `run/` inputs. It asserts
+exit 0, no `panic:` on stderr, only `exit 1` lines, and for the seed programs that `exit 1` is printed exactly for the
+inputs the C# checker rejects. Measured 2026-11-04: quick 20 s, full 58 s.

@@ -38,3 +38,11 @@ in memory, or for `*.test.byn` with what `ExecuteTests` builds. `BAYAN_LAW_TIER`
 seeds, N measured at T14 to fit about 3 minutes and written here); `BAYAN_LAW_TIER=full` runs every seed. A
 difference fails naming the input, the mode and the first differing line. Mutant and coverage output
 (`--mutate`, `--coverage`) is outside the law: only the C# backend produces it (spec 011, non-goals).
+
+Proof (T14): `SelfhostEmitterEquivalenceLawTests.BayanEmitEqualsTheCSharpBackendOnSeedsAndRunInputs` (`Law=L024`) runs
+`bayan-emit --mode m --many <dir>` once per corpus and mode and compares each `== name` section with the C# text.
+Seeds: the generator's 8 fixed seeds then a xorshift64 chain from the first, N = 256 (quick; `GenerateValid` writes 15 feature programs and 3 per seed, so 2,632 comparisons in about 15 s) or 1,024 (`BAYAN_LAW_TIER=full`, 9,544 comparisons in
+65 s on 2026-11-04). The flat `run/` inputs are in the mode of their `// mode:` line, the `*.test.byn` ones in `safe`
+through `TestRunC`. The R6 break-test is `ADeliberateChangeToTheCSharpTextFailsAtLeastOneSeed` (a dropped
+`(int64_t)` cast and two swapped struct field lines in the C# text); `BAYAN_L024_BREAK=cast|fields` applies the same
+change inside the law test, which then fails.
