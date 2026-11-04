@@ -76,25 +76,50 @@
       "coverage": 0.9206,
       "branches": 0.767
     },
+    "selfhost/semantics/binder.byn": {
+      "mutation": null,
+      "coverage": 0.9143,
+      "branches": 0.8442
+    },
     "selfhost/semantics/binder2.byn": {
       "mutation": null,
-      "coverage": 0.6128,
-      "branches": 0.5452
+      "coverage": 0.9248,
+      "branches": 0.9323
+    },
+    "selfhost/semantics/binder3.byn": {
+      "mutation": null,
+      "coverage": 0.9648,
+      "branches": 0.8092
     },
     "selfhost/semantics/bound.byn": {
       "mutation": null,
-      "coverage": 0.7762,
-      "branches": 0.4091
+      "coverage": 0.991,
+      "branches": 0.9891
     },
     "selfhost/semantics/builtins.byn": {
       "mutation": null,
       "coverage": 0.9702,
       "branches": 0.7679
     },
+    "selfhost/semantics/calls.byn": {
+      "mutation": null,
+      "coverage": 0.8993,
+      "branches": 0.8206
+    },
     "selfhost/semantics/calls2.byn": {
       "mutation": null,
-      "coverage": 0.8652,
-      "branches": 0.7282
+      "coverage": 0.9754,
+      "branches": 0.8811
+    },
+    "selfhost/semantics/calls3.byn": {
+      "mutation": null,
+      "coverage": 0.9032,
+      "branches": 0.8161
+    },
+    "selfhost/semantics/calls4.byn": {
+      "mutation": null,
+      "coverage": 0.959,
+      "branches": 0.8757
     },
     "selfhost/semantics/cli.byn": {
       "mutation": null,
@@ -116,15 +141,30 @@
       "coverage": 0.8997,
       "branches": 0.824
     },
+    "selfhost/semantics/errorcases.byn": {
+      "mutation": null,
+      "coverage": 0.9892,
+      "branches": 0.9535
+    },
     "selfhost/semantics/express.byn": {
       "mutation": null,
-      "coverage": 0.8273,
-      "branches": 0.7556
+      "coverage": 0.9325,
+      "branches": 0.8984
     },
     "selfhost/semantics/express2.byn": {
       "mutation": null,
-      "coverage": 0.8891,
-      "branches": 0.7808
+      "coverage": 0.9732,
+      "branches": 0.8931
+    },
+    "selfhost/semantics/express3.byn": {
+      "mutation": null,
+      "coverage": 0.9841,
+      "branches": 0.9126
+    },
+    "selfhost/semantics/express4.byn": {
+      "mutation": null,
+      "coverage": 0.9784,
+      "branches": 0.9282
     },
     "selfhost/semantics/generics.byn": {
       "mutation": null,
@@ -145,6 +185,11 @@
       "mutation": null,
       "coverage": 0.9696,
       "branches": 0.8798
+    },
+    "selfhost/semantics/states.byn": {
+      "mutation": null,
+      "coverage": 0.8525,
+      "branches": 0.8206
     },
     "selfhost/semantics/symbols.byn": {
       "mutation": null,

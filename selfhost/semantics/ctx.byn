@@ -439,6 +439,9 @@ public struct Ctx {
     public Map<i64, Constant> constants = []
     /// The `syntax…` bits of bound.byn (what C# reads from `BoundNode.Syntax`), by node handle.
     public Map<i64, i64> syntaxFlags = []
+    /// C# `BoundNode.Syntax` when it is an `Expr` (T21, Q850): the recorded syntax nodes, and each bound node's handle into them.
+    public List<ExprSyntax> exprSyntaxNodes = List<ExprSyntax>()
+    public Map<i64, i64> exprSyntaxOf = []
     /// C# `Compilation.Checks`: each struct's `requires` check; `checksOf` maps a `StructId` to its index.
     public List<StructChecks> checks = List<StructChecks>()
     public Map<StructId, i64> checksOf = []
