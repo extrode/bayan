@@ -249,7 +249,7 @@ public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
         }
     }
 
-    // A frame built by hand holds no line starts, so `lineOf` counts newlines (T2, T10 and T11 build such frames). args: the file to check.
+    // A frame built by hand gets its line starts from `lineStartsOf`, as T2, T10 and T11 build theirs. args: the file to check.
     private const string HandFrameMain = """
         import semantics
         import emitter.cprint
@@ -269,7 +269,7 @@ public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
             let p = lower(ref c, to: ref l)
             var sb = StrBuf()
             for i in 0..p.functions.length {
-                let f = CFunc { fn: p.functions[i].symbol, file: "x" }
+                let f = CFunc { fn: p.functions[i].symbol, file: "x", lineStarts: cprint.lineStartsOf(in c, for: c.functions[p.functions[i].symbol].file) }
                 sb.append($"{c.functions[f.fn].name} {cprint.lineOf(in c, by: in f, at: semantics.nodeSpan(in c, for: p.functions[i].body))}\n")
             }
             Io.stdout.write($"{sb.finish()}")
@@ -278,7 +278,7 @@ public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
         """;
 
     /// <summary>
-    /// <c>lineOf</c> on a frame without the line starts (the newline count) gives the line of <c>LineOf</c> for each function body.
+    /// <c>lineOf</c> on a frame built by hand with <c>lineStartsOf</c> gives the line of <c>LineOf</c> for each function body.
     /// </summary>
     [Fact]
     public void LineOfOnAFrameBuiltByHandMatchesTheCSharp()

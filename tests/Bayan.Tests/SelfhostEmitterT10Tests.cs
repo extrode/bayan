@@ -91,7 +91,7 @@ public sealed class SelfhostEmitterT10Tests
 
         CFunc t10Func(in Ctx c, at string file, for string linePath) uses alloc {
             let g = t10G(in c)
-            var f = CFunc { fn: g, file: file, linePath: linePath }
+            var f = CFunc { fn: g, file: file, linePath: linePath, lineStarts: cprint.lineStartsOf(in c, for: c.functions[g].file) }
             if linePath == "-" { f.linePath = null }
             for p in c.functions[g].parameters { f.names[p] = $"p_{c.locals[p].name}" }
             var n = 0

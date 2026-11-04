@@ -76,11 +76,9 @@ public sealed class SelfhostEmitterNoPanicLawTests(ITestOutputHelper output)
             var clock = Stopwatch.StartNew();
             var (exit, o, e) = RunBounded(corpus, mode, dir);
             var lastHeader = o.Split('\n').LastOrDefault(l => l.StartsWith("== ", StringComparison.Ordinal)) ?? "(none)";
-            Assert.NotEqual(2, exit);
             Assert.True(exit == 0, $"{corpus} ({mode}): exit {exit} after {lastHeader}\n{e}");
             Assert.DoesNotContain("panic:", e);
             var exits = o.Split('\n').Where(l => l.StartsWith("exit ", StringComparison.Ordinal)).Distinct().ToList();
-            Assert.DoesNotContain("exit 2", exits);
             Assert.True(exits.All(l => l == "exit 1"), $"{corpus} ({mode}): {string.Join(", ", exits)}");
             if (rejected is not null)
             {
@@ -128,7 +126,7 @@ public sealed class SelfhostEmitterNoPanicLawTests(ITestOutputHelper output)
         Assert.Contains("killed", failure.Message);
     }
 
-    /// <summary>The check the law makes can fail: <c>bayan-emit --many</c> on a missing directory exits 2, which the corpus runner rejects.</summary>
+    /// <summary>The check the law makes can fail: <c>bayan-emit --many</c> on a missing directory exits 2, the usage error the law excludes for file input.</summary>
     [Fact]
     public void AnExitOutsideZeroAndOneIsNoticed()
     {

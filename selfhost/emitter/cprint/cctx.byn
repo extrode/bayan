@@ -97,6 +97,6 @@ public struct CFunc {
     /// `_afterCalls`: claims for the owned places the statement passes by pointer, run once it is done.
     public List<string> afterCalls = List<string>()
     // ── T14 state
-    /// The line starts of the function's file, taken from `CCtx.lineStarts` by `emitFunction`; empty on a frame that did not (R7).
+    /// The line starts of the function's file, taken from `CCtx.lineStarts` by `emitFunction`; a frame built by hand sets it with `lineStartsOf` (R7).
     public List<i64> lineStarts = List<i64>()
 }

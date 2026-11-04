@@ -300,6 +300,7 @@ public sealed class SelfhostEmitterT9Tests
                 sb.append($"sig {cprint.signature(ref cc, from: ref c, through: t, for: f)}\n")
                 sb.append(cprint.emitFunction(ref cc, from: ref c, through: in t, for: in f))
                 var fe = cprint.functionEmitter(ref cc, from: ref c, for: in f)
+                if c.functions[fn].file != -1 { fe.lineStarts = cprint.lineStartsOf(in c, for: c.functions[fn].file) }
                 var owned = List<LocalId>()
                 for p in c.functions[fn].parameters { owned.append(p) }
                 for l in locals { owned.append(l) }
