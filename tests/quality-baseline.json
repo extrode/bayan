@@ -49,7 +49,7 @@
     "selfhost/emitter/lower.byn": {
       "mutation": null,
       "coverage": 1.0,
-      "branches": 0.989
+      "branches": 0.9892
     },
     "selfhost/emitter/lowerassert.byn": {
       "mutation": null,
