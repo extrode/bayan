@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using Bayan.Backend.C;
 using Bayan.Lowering;
 using Bayan.Semantics;
@@ -123,13 +122,6 @@ public sealed class SelfhostEmitterT11Tests
             var n: i64 = 0
             for x in lf.locals {
                 f.names[x] = c.locals[x].kind == .temp ? $"t{n}" : $"l{n}_{c.locals[x].name}"
-                n += 1
-            }
-            // Q877: T4's lowerer leaves some of the C#'s locals out (a `switch` arm's bindings), so the binder's locals it
-            // left out are named after it; the oracle then compares those functions' text unnumbered.
-            for x in c.functions[fn].locals {
-                if f.names.contains(x) { continue }
-                f.names[x] = $"l{n}_{c.locals[x].name}"
                 n += 1
             }
             return f
@@ -281,7 +273,7 @@ public sealed class SelfhostEmitterT11Tests
     }
 
     private sealed record Oracle(string File, string Flags, int Count, Dictionary<int, string> Cases, List<int> Run, List<string> Helpers, List<string> Types,
-        HashSet<BuiltinMember> Emitted, HashSet<BuiltinMember> Compared, List<string> Locals, Dictionary<int, int> Owners);
+        HashSet<BuiltinMember> Emitted, HashSet<BuiltinMember> Compared, List<string> Locals);
 
     /// <summary>Numbers the cases as the generated main does; a case is compared when the C# does not throw.
     /// <paramref name="force"/> marks one more case to run, for the failure path.</summary>
@@ -301,15 +293,12 @@ public sealed class SelfhostEmitterT11Tests
         var run = new List<int>();
         var emitted = new HashSet<BuiltinMember>();
         var compared = new HashSet<BuiltinMember>();
-        var order = p.Functions.Select((lf, i) => (lf.Symbol, i)).ToDictionary(x => x.Symbol, x => x.i);
-        var owners = new Dictionary<int, int>();
         string file = "-";
         void Case(FunctionSymbol fn, BoundNode n)
         {
             if (Method(n) is not { } method) return;
             var index = flags.Count;
             flags.Add('0');
-            owners[index] = order[fn];
             if (force?.Invoke(n) == true)
             {
                 flags[index] = '2';
@@ -345,22 +334,18 @@ public sealed class SelfhostEmitterT11Tests
         var helperLines = ((List<string>)Field(emitter, "_helperOrder")!).Select(h => $"{h} {helpers[h].Proto} | {helpers[h].Body}")
             .SelectMany(h => h.Split('\n')).Where(l => l.Length > 0).ToList();
         return new(file, new string(flags.ToArray()), flags.Count, cases, run, helperLines, typeOrder.Skip(typeBase).ToList(), emitted, compared,
-            p.Functions.Select(lf => lf.Symbol.Name + ":" + string.Concat(lf.Locals.Select(l => " " + (l.Kind == LocalKind.Temp ? "t" : l.Name)))).ToList(), owners);
+            p.Functions.Select(lf => lf.Symbol.Name + ":" + string.Concat(lf.Locals.Select(l => " " + (l.Kind == LocalKind.Temp ? "t" : l.Name)))).ToList());
     }
 
-    /// <summary>The differences between the selfhost run and <paramref name="o"/>, one line each. When T4's lowerer gives
-    /// a function other locals than <c>Lowerer.cs</c> (Q877), the locals' numbers in its cases' text cannot match, so
-    /// those cases are compared with <c>l&lt;n&gt;_</c> and <c>t&lt;n&gt;</c> unnumbered and counted in
-    /// <paramref name="unnumbered"/>.</summary>
-    private static List<string> Compare(Oracle o, string stdout, out int unnumbered)
+    /// <summary>The differences between the selfhost run and <paramref name="o"/>, one line each.</summary>
+    private static List<string> Compare(Oracle o, string stdout)
     {
         var sections = SelfhostSemanticsHarness.Sections(stdout);
         var failures = new List<string>();
         var locals = sections.GetValueOrDefault("locals") ?? [];
         if (locals.Count != o.Locals.Count) failures.Add($"locals: expected {o.Locals.Count} functions, actual {locals.Count}");
-        bool Differs(int i) => locals.Count != o.Locals.Count || locals[o.Owners[i]] != o.Locals[o.Owners[i]];
-        static string Unnumbered(string t) => Regex.Replace(t, @"\bl\d+_|\bt\d+\b", m => m.Value[0] == 'l' ? "l_" : "t");
-        unnumbered = o.Cases.Keys.Count(Differs);
+        for (var i = 0; i < Math.Min(locals.Count, o.Locals.Count); i++)
+            if (locals[i] != o.Locals[i]) failures.Add($"locals of function {i}\n expected: {o.Locals[i]}\n   actual: {locals[i]}");
         var got = new Dictionary<int, string>();
         var count = -1;
         foreach (var line in sections.GetValueOrDefault("cases") ?? [])
@@ -373,7 +358,7 @@ public sealed class SelfhostEmitterT11Tests
         foreach (var (i, text) in o.Cases)
         {
             if (!got.TryGetValue(i, out var a)) failures.Add($"case {i}: expected {text}, actual <missing>");
-            else if (Differs(i) ? Unnumbered(a) != Unnumbered(text) : a != text) failures.Add($"case {i}\n expected: {text}\n   actual: {a}");
+            else if (a != text) failures.Add($"case {i}\n expected: {text}\n   actual: {a}");
         }
         foreach (var i in o.Run)
             if (!got.ContainsKey(i)) failures.Add($"case {i}: run-only case missing");
@@ -397,9 +382,8 @@ public sealed class SelfhostEmitterT11Tests
         var o = CSharp(Compile(path), errors: errors);
         var (exit, stdout, stderr) = Run(path, o.File, o.Flags, errors);
         Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
-        var failures = Compare(o, stdout, out var unnumbered);
+        var failures = Compare(o, stdout);
         Assert.True(failures.Count == 0, string.Join('\n', failures.Take(8)));
-        Assert.True(unnumbered == 0, $"{unnumbered} cases in functions T4's lowerer gave other locals than the C#");
         return o;
     }
 
@@ -810,7 +794,6 @@ public sealed class SelfhostEmitterT11Tests
         var failures = new ConcurrentBag<string>();
         var compared = 0;
         var cases = 0;
-        var unnumberedCases = 0;
         var emitted = new HashSet<BuiltinMember>();
         var comparedMembers = new HashSet<BuiltinMember>();
         Build();
@@ -826,9 +809,8 @@ public sealed class SelfhostEmitterT11Tests
                 failures.Add($"{Path.GetFileName(corpus)}: exited {exit}: {stderr}");
                 return;
             }
-            var differences = Compare(o, stdout, out var unnumbered);
+            var differences = Compare(o, stdout);
             foreach (var f in differences) failures.Add($"{Path.GetFileName(corpus)} {f}");
-            Interlocked.Add(ref unnumberedCases, unnumbered);
             lock (emitted)
             {
                 emitted.UnionWith(o.Emitted);
@@ -840,8 +822,6 @@ public sealed class SelfhostEmitterT11Tests
         Assert.True(compared > 100, $"only {compared} corpus files compared:\n{string.Join('\n', failures.Order(StringComparer.Ordinal).Take(4))}");
         Assert.True(failures.IsEmpty, $"{failures.Count} mismatches:\n{string.Join('\n', failures.Order(StringComparer.Ordinal).Take(8))}");
         Assert.True(cases > 100, $"only {cases} cases compared");
-        // Q877: the cases compared unnumbered; a fix in T4 lowers this, a new divergence raises it.
-        Assert.True(unnumberedCases <= 1116, $"{unnumberedCases} of {cases} cases compared unnumbered (Q877)");
         // The fixtures' own tests compare their text; here they add to the two sets.
         foreach (var fixture in new[] { Fixture, Fixture2, Fixture3 })
             WithFixture(fixture, path =>
