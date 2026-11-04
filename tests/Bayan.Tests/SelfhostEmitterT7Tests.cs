@@ -51,6 +51,7 @@ public sealed class SelfhostEmitterT7Tests
             if mode == "thunk" { Io.stdout.write(t7PrintThunk(ref c, for: args[1], by: args[2])) }
             if mode == "vtablefail" { Io.stdout.write(t7VtableFail(ref c)) }
             if mode == "iface" { Io.stdout.write(t7PrintIface(ref c)) }
+            if mode == "suffixfail" { Io.stdout.write(cprint.intSuffix(c.locals[c.functions[t7Func(ref c, for: "f")].parameters[0]].type)) }
             return 0
         }
 
@@ -352,38 +353,45 @@ public sealed class SelfhostEmitterT7Tests
     // ── Masks ────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// What a stub sibling's result can change, replaced on both sides alike: helper bodies that print <c>cString</c> or a function's name
-    /// (and the thunk names), and with <paramref name="corpus"/> also every member line (<c>fieldName</c>) and the vtable and helper detail.
-    /// A masked line stays a line, so counts and order are still compared.
+    /// The text a stub sibling prints (<c>cString</c>, <c>functionName</c>, <c>fieldName</c> all return ""), cut out on both sides alike:
+    /// the type-name literal of <c>byn_own_read</c> and <c>byn_own_claim</c>, the function name in a <c>bynh_fnthunk_</c> name and in a thunk's call, and the field and
+    /// variant names of payload lines. With <paramref name="corpus"/> also every member line (<c>fieldName</c> of the corpus's fields) and the
+    /// vtable and helper detail. A masked line stays a line, so counts and order are still compared.
     /// </summary>
     private static List<string> Mask(string section, List<string> lines, bool corpus)
     {
         var r = new List<string>();
         var maskBody = false;
+        var thunkBody = false;
         var detail = false;
-        foreach (var line in lines)
+        foreach (var raw in lines)
         {
+            var line = Regex.Replace(raw, @"bynh_fnthunk_[A-Za-z0-9_]*", "bynh_fnthunk_");
+            // `cString` of a type's name, before the `file, line` arguments of `byn_own_read`/`byn_own_claim`.
+            line = Regex.Replace(line, @", (?:""(?:[^""\\]|\\.)*"")?, file, line\)", ", , file, line)");
             if (section == "dyn" && corpus && line.StartsWith("count ", StringComparison.Ordinal)) detail = true;
             if (section == "dyn" && corpus && detail) {
                 // Slots whose `fieldName` is "" share a thunk name, so `Helper` drops some: only the vtable count is comparable.
                 if (line.StartsWith("count ", StringComparison.Ordinal)) r.Add(line);
                 continue;
             }
-            if (section == "thunk" && line.StartsWith("bynh_fnthunk_", StringComparison.Ordinal)) { r.Add("bynh_fnthunk_"); continue; }
             if (line.StartsWith("helper ", StringComparison.Ordinal))
             {
                 var name = line["helper ".Length..];
-                var masked = name.StartsWith("bynh_chk_claim_", StringComparison.Ordinal) || name.StartsWith("bynh_chk_move_", StringComparison.Ordinal)
-                    || name.StartsWith("bynh_vt_", StringComparison.Ordinal) || name.StartsWith("bynh_fnthunk_", StringComparison.Ordinal) || corpus;
-                maskBody = masked;
-                r.Add(name.StartsWith("bynh_fnthunk_", StringComparison.Ordinal) ? "helper bynh_fnthunk_" : line);
-                // The next line is the prototype; `static ... bynh_fnthunk_<name>(` loses the name, which `functionName` gives.
+                maskBody = corpus;
+                thunkBody = name.StartsWith("bynh_fnthunk_", StringComparison.Ordinal) || name.StartsWith("bynh_vt_", StringComparison.Ordinal);
+                r.Add(line);
                 continue;
             }
             if (maskBody && !line.StartsWith("static ", StringComparison.Ordinal)) { r.Add("."); continue; }
-            if (maskBody && line.Contains("bynh_fnthunk_", StringComparison.Ordinal)) { r.Add(Regex.Replace(line, @"bynh_fnthunk_\S*?\(", "bynh_fnthunk_(")); maskBody = true; continue; }
-            // Payload lines carry `fieldName` of the variants' fields (the prelude's errors have some); member lines of the corpus's structs too.
-            if (section == "types" && line.TrimStart().StartsWith("struct {", StringComparison.Ordinal)) { r.Add("        ."); continue; }
+            // A thunk's call names the function through `functionName`.
+            if (thunkBody) line = Regex.Replace(line, @"^(    (?:return )?)[A-Za-z_]\w*\(", "$1(");
+            // Payload lines carry `fieldName` of the variants' fields and of a union's variants; error variants are named `e{code}`.
+            if (section == "types" && line.TrimStart().StartsWith("struct {", StringComparison.Ordinal))
+            {
+                line = Regex.Replace(line, @" [A-Za-z_]\w*; ", " ; ");
+                line = Regex.Replace(line, @"\} (?!e\d+;)[A-Za-z_]\w*;$", "} ;");
+            }
             if (section == "types" && corpus && line.StartsWith("    ", StringComparison.Ordinal)) { r.Add("    ."); continue; }
             if (corpus && section == "dyn" && line.StartsWith("slot ", StringComparison.Ordinal)) { r.Add("slot ."); continue; }
             r.Add(line);
@@ -618,5 +626,70 @@ public sealed class SelfhostEmitterT7Tests
         var (exit, stdout, stderr) = Run("iface", path);
         Assert.True(exit == 0, $"exited {exit}: {stderr}");
         AssertSections("iface", expected, stdout, corpus: false);
+    });
+
+    [Fact]
+    public void IntSuffix_OfANonPrimitiveFailsLikeCSharp() => WithFixture("""
+        struct S {
+        }
+
+        void f(S s) { }
+
+        void main() { }
+        """, path =>
+    {
+        var c = Compile(path);
+        Assert.False(c.Diagnostics.HasErrors, string.Join('\n', c.Diagnostics.Items));
+        var type = Functions(c).First(f => f.Name == "f").Parameters[0].Type;
+        var thrown = Assert.Throws<TargetInvocationException>(() => Call(null, "IntSuffix", type));
+        Assert.IsType<InvalidCastException>(thrown.InnerException);
+        var (exit, stdout, _) = Run("suffixfail", path);
+        Assert.NotEqual(0, exit);
+        Assert.Equal("", stdout);
+    });
+
+    /// <summary>States and unions of unit variants only (no `u`) and with a payload (`u`); no struct field reaches `fieldName`.</summary>
+    private const string StateFixture = """
+        struct Lamp {
+            states {
+                on
+                off
+            }
+        }
+
+        struct Gate {
+            states {
+                closed
+                open(i64 width)
+            }
+        }
+
+        union Mode {
+            fast
+            slow
+        }
+
+        union Shape {
+            dot
+            square(i64 side)
+        }
+
+        i64 f1(Lamp l) => 0
+        i64 f2(Gate g) => 0
+        i64 f3(Mode m) => 0
+        i64 f4(Shape s) => 0
+
+        void main() {
+        }
+        """;
+
+    [Fact]
+    public void Types_Own_Dyn_MatchCSharpOnStatesAndUnions() => WithFixture(StateFixture, path =>
+    {
+        var c = Compile(path);
+        Assert.False(c.Diagnostics.HasErrors, string.Join('\n', c.Diagnostics.Items));
+        var (exit, stdout, stderr) = Run("corpus", path);
+        Assert.True(exit == 0, $"exited {exit}: {stderr}");
+        AssertSections("states", Oracle(c), stdout, corpus: false);
     });
 }
