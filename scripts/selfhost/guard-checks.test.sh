@@ -1,6 +1,7 @@
 #!/bin/bash
 # A Question citation fixed in the working tree after a commit that had it wrong is checked as it stands now.
 # A ctx.byn line committed outside the task's section and removed again in the working tree is not reported.
+# A task that adds its own `// ── Tn state` header with its fields stays inside its section; another task's edit there does not.
 # A cited directory path resolves exactly, a bare basename keeps the owned/semantics lookup, a missing path is reported.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -22,6 +23,11 @@ git commit -qm "test: stray ctx line" -- selfhost/semantics/ctx.byn; mv ctx.orig
 out3=$(python3 -I "$root/scripts/selfhost/guard-checks.py" base T99 'selfhost/semantics/a.byn,docs/bayan-handoff.md' || true)
 printf '# Handoff\n901. T99 cites `selfhost/parser/e.byn:2` `let y = 2`, a.byn:2 `let x = 1`, selfhost/parser/nope.byn:3.\n- **T99** landed.\n' > docs/bayan-handoff.md
 out2=$(python3 -I "$root/scripts/selfhost/guard-checks.py" base T99 'selfhost/semantics/a.byn,docs/bayan-handoff.md' || true)
+cp selfhost/semantics/ctx.byn ctx.orig
+printf 'struct Ctx {\n    // ── T99 state\n    a: int\n    // ── T98 state\n    // ── T97 state\n    b: int\n}\n' > selfhost/semantics/ctx.byn
+out4=$(python3 -I "$root/scripts/selfhost/guard-checks.py" base T97 'selfhost/semantics/a.byn,docs/bayan-handoff.md' || true)
+out5=$(python3 -I "$root/scripts/selfhost/guard-checks.py" base T98 'selfhost/semantics/a.byn,docs/bayan-handoff.md' || true)
+mv ctx.orig selfhost/semantics/ctx.byn
 rm -rf "$r"
 if echo "$out" | grep -q 'a.byn:9'; then echo "FAIL: stale committed citation reported"; exit 1; fi
 if echo "$out" | grep -q 'Progress log'; then echo "FAIL: working-tree Progress log entry not seen"; exit 1; fi
@@ -29,4 +35,6 @@ if echo "$out3" | grep -q '^ctx:'; then echo "FAIL: ctx.byn line removed in the 
 if echo "$out2" | grep -q 'e.byn:2'; then echo "FAIL: directory-path citation not resolved exactly"; echo "$out2"; exit 1; fi
 if echo "$out2" | grep -q ' a.byn:2'; then echo "FAIL: bare basename citation not resolved"; echo "$out2"; exit 1; fi
 echo "$out2" | grep -q 'nope.byn:3, but selfhost/parser/nope.byn does not exist' || { echo "FAIL: missing cited path not reported"; echo "$out2"; exit 1; }
+if echo "$out4" | grep -q '^ctx:'; then echo "FAIL: a task's own new section header reported"; echo "$out4"; exit 1; fi
+echo "$out5" | grep -q '^ctx: ctx.byn:5-6 is outside' || { echo "FAIL: another task's section edit not reported"; echo "$out5"; exit 1; }
 echo PASS
