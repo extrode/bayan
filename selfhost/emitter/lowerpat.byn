@@ -157,7 +157,7 @@ public void lowerClaim(ref Ctx c, through ref LCtx l, for BPattern p) uses alloc
     switch semantics.boundKind(p) {
         case .bindPattern:
             let local = c.bBindPatterns[i].local
-            if local != -1 && c.locals[local].borrowsSubject { emit(ref l, for: ltree.addLClaim(ref l.tree, from: LClaim { span: c.bBindPatterns[i].span, local: local })) }
+            if local != -1 && !c.locals[local].borrowsSubject { emit(ref l, for: ltree.addLClaim(ref l.tree, from: LClaim { span: c.bBindPatterns[i].span, local: local })) }
         case .notPattern:
             lowerClaim(ref c, through: ref l, for: c.bNotPatterns[i].operand)
         case .binaryPattern:

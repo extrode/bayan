@@ -793,6 +793,7 @@ public sealed class SelfhostEmitterT4Tests
             switch w {
                 case { n: 1, ys: let ys }: print("w")
                 case { n: let n } and not { n: 3 }: print("n")
+                case { n: 2 } wb: print("wb")
                 default: print("d")
             }
             switch r {
