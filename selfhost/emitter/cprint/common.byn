@@ -181,7 +181,7 @@ public void line(ref StrBuf sb, by in CFunc f, for string text) {
     sb.append("\n")
 }
 
-/// The offsets at which each line of `c.files[file]` starts (the `SourceText` line starts `GetLinePosition` searches, selfhost/lexer/source.byn:37).
+/// The offsets at which each line of `c.files[file]` starts (the `SourceText` line starts `GetLinePosition` searches, `ensureLineStarts`, selfhost/lexer/source.byn:32-38; `ComputeLineStarts`, SourceText.cs:67-75).
 public List<i64> lineStartsOf(in Ctx c, for semantics.FileId file) uses alloc {
     var starts = List<i64>()
     starts.append(0)
