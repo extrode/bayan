@@ -1877,6 +1877,15 @@ internal sealed class FunctionEmitter
                     $"{{\n    {opt} r = {{0}};\n    r.has = byn_path_directory_name(path, &r.value, byn_context);\n    return r;\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
             }
+            case BuiltinFunction.PathCombine:
+                return $"byn_path_combine({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, byn_context)";
+            case BuiltinFunction.PathCombineSpan:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_path_combine_span", $"static byn_str bynh_path_combine_span({span} paths)", () =>
+                    "{\n    return byn_path_combine_span(paths.ptr, paths.len, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
             case BuiltinFunction.HexEncode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);

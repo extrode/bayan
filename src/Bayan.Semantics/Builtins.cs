@@ -118,6 +118,8 @@ public sealed class Builtins
         PathRelative = Make("relative", BuiltinFunction.PathRelative, PrimitiveType.String, ("from", PrimitiveType.String), ("to", PrimitiveType.String));
         PathFileName = Make("fileName", BuiltinFunction.PathFileName, PrimitiveType.String, ("path", PrimitiveType.String));
         PathDirectoryName = Make("directoryName", BuiltinFunction.PathDirectoryName, new OptionalType(PrimitiveType.String), ("path", PrimitiveType.String));
+        PathCombine = Make("combine", BuiltinFunction.PathCombine, PrimitiveType.String, ("path1", PrimitiveType.String), ("path2", PrimitiveType.String));
+        PathCombineSpan = Make("combine", BuiltinFunction.PathCombineSpan, PrimitiveType.String, ("paths", new SpanType(PrimitiveType.String, readOnly: true)));
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
         var iterationFile = new FileContext(Module, SyntaxTree.Parse(SourceText.FromString("<builtin>", IterationSource)));
@@ -263,6 +265,12 @@ public sealed class Builtins
     /// <summary><c>string? Path.directoryName(string path)</c>: as .NET <c>Path.GetDirectoryName</c> on this OS (null for a root or an empty path), a fresh copy from <c>context.allocator</c>.</summary>
     public FunctionSymbol PathDirectoryName { get; }
 
+    /// <summary><c>string Path.combine(string path1, string path2)</c>: as .NET <c>Path.Combine</c> on this OS (a rooted <c>path2</c> wins), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathCombine { get; }
+
+    /// <summary><c>string Path.combine(ReadOnlySpan&lt;string&gt; paths)</c>: as .NET <c>Path.Combine(params string[])</c> on this OS (the last rooted part restarts the result), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathCombineSpan { get; }
+
     /// <summary>A static member of <c>Path</c>, or null.</summary>
     public FunctionSymbol? FindPath(string name) => name switch
     {
@@ -270,6 +278,7 @@ public sealed class Builtins
         "relative" => PathRelative,
         "fileName" => PathFileName,
         "directoryName" => PathDirectoryName,
+        "combine" => PathCombine,
         _ => null,
     };
 
