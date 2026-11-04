@@ -8,7 +8,7 @@
 # tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
 # holds a line added or changed against the merge base with --base; a new function counts) must be covered, each missed one
 # named (coverage-gate.py; `// coverage-exempt:` for code dead in the C#, `// coverage-blocked: Qnnn T<k> <fn>` for code
-# behind sibling T<k>'s stub while T<k> is open and not --task); each file's other functions get one info line, never a FAIL. The guard makes no baseline check of
+# behind sibling T<k>'s stub while T<k> is open and not --task); each file's other functions get one info line, never a FAIL; a changed file the report has no entry for is one (Q820). The guard makes no baseline check of
 # coverage: it leaves the report at tmp/guard-run/coverage/bayan-quality.json, and land.sh records it (raise-only) in
 # tests/quality-baseline.json. 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
 # mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
@@ -74,6 +74,11 @@ if [ $TX = 0 ] && [ -n "$COVER" ]; then
   if [ ! -f "$COV/bayan-quality.json" ]; then
     note "coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter '$FILTER' builds a selfhost program with $COVER"
   else
+    # a changed file no build under --filter compiles has no entry in the report, so none of its functions is checked (Q820);
+    # a malformed report fails in coverage-gate.py below, naming it
+    miss=$(python3 -I -c 'import json, os, sys; p = {os.path.realpath(f["path"]) for f in json.load(open(sys.argv[1]))["files"]}; print("\n".join(f for f in sys.argv[2].split(",") if os.path.realpath(f) not in p))' \
+      "$COV/bayan-quality.json" "$COVER" 2> /dev/null) || miss=""
+    while read -r f; do [ -n "$f" ] && note "coverage: $f is in no build under --filter '$FILTER' (no entry in tmp/guard-run/coverage/bayan-quality.json), so its touched functions are unchecked"; done <<< "$miss"
     out=$(python3 -I "$(dirname "$0")/coverage-gate.py" "$(git merge-base "$BASE" HEAD)" "$COV/bayan-quality.json" "$COV/functions.json" \
       "$SDIR/$STASKS" "$TASK" "$BYDIR" 2> "$LOG/coverage-gate.txt") \
       || note "coverage: $(tail -1 "$LOG/coverage-gate.txt")"
