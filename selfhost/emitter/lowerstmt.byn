@@ -167,7 +167,7 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         }
     } else if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall
         && (c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet
-        // coverage-exempt: Q780 through 175
+        // coverage-exempt: Q780 through 172
         || c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapSlot)
         && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].arguments.length > 0 {
         let k = i64(target & 0xFFFFFFFF)
