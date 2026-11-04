@@ -166,6 +166,110 @@ public sealed class SelfhostPathT4Tests
                 Log.debug("x")
             }
             """),
+        ("panic-handler-directory-name", """
+            void f(ReadOnlySpan<string> parts) {
+                defer panicking {
+                    let d = Path.directoryName("/a/b") ?? ""
+                    print(d)
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                f(parts.span)
+            }
+            """),
+        ("escape-directory-name", """
+            string f(ReadOnlySpan<string> parts) {
+                using let arena = Arena()
+                provide allocator: arena {
+                    return Path.directoryName("/a/b") ?? ""
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                print(f(parts.span))
+            }
+            """),
+        ("panic-handler-combine", """
+            void f(ReadOnlySpan<string> parts) {
+                defer panicking {
+                    let d = Path.combine("/a", "b")
+                    print(d)
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                f(parts.span)
+            }
+            """),
+        ("escape-combine", """
+            string f(ReadOnlySpan<string> parts) {
+                using let arena = Arena()
+                provide allocator: arena {
+                    return Path.combine("/a", "b")
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                print(f(parts.span))
+            }
+            """),
+        ("panic-handler-combine-span", """
+            void f(ReadOnlySpan<string> parts) {
+                defer panicking {
+                    let d = Path.combine(parts)
+                    print(d)
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                f(parts.span)
+            }
+            """),
+        ("escape-combine-span", """
+            string f(ReadOnlySpan<string> parts) {
+                using let arena = Arena()
+                provide allocator: arena {
+                    return Path.combine(parts)
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                print(f(parts.span))
+            }
+            """),
+        ("panic-handler-full-path", """
+            void f(ReadOnlySpan<string> parts) {
+                defer panicking {
+                    let d = Path.fullPath("x")
+                    print(d)
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                f(parts.span)
+            }
+            """),
+        ("escape-full-path", """
+            string f(ReadOnlySpan<string> parts) {
+                using let arena = Arena()
+                provide allocator: arena {
+                    return Path.fullPath("x")
+                }
+            }
+
+            void main() {
+                let parts = List<string>()
+                print(f(parts.span))
+            }
+            """),
         ("wrong-argument-type", """
             void main() uses alloc {
                 let a = Path.fullPath(1)
@@ -209,6 +313,14 @@ public sealed class SelfhostPathT4Tests
 
     /// <summary>The cases that must report something, so a pair of empty outputs cannot pass.</summary>
     [Theory]
+    [InlineData("panic-handler-directory-name")]
+    [InlineData("panic-handler-combine")]
+    [InlineData("panic-handler-combine-span")]
+    [InlineData("panic-handler-full-path")]
+    [InlineData("escape-directory-name")]
+    [InlineData("escape-combine")]
+    [InlineData("escape-combine-span")]
+    [InlineData("escape-full-path")]
     [InlineData("combine-arity")]
     [InlineData("missing-alloc")]
     [InlineData("unknown-member")]
