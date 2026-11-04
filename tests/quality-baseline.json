@@ -128,8 +128,8 @@
     },
     "selfhost/semantics/builtins.byn": {
       "mutation": null,
-      "coverage": 0.9702,
-      "branches": 0.7679
+      "coverage": 0.9804,
+      "branches": 0.9643
     },
     "selfhost/semantics/calls.byn": {
       "mutation": null,
@@ -169,7 +169,7 @@
     "selfhost/semantics/effects.byn": {
       "mutation": null,
       "coverage": 0.8997,
-      "branches": 0.824
+      "branches": 0.8275
     },
     "selfhost/semantics/errorcases.byn": {
       "mutation": null,
