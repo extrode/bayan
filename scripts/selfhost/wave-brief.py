@@ -72,6 +72,9 @@ for t in args[1:]:
     rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/', 'work/')) or re.fullmatch(r'[A-Z]+\.md', f)]
     byns = [f for f in files if f.endswith('.byn') and f not in rooted]
     tests = [f for f in files if f.endswith('.cs') and f not in rooted]
+    # a task naming its test files only with their directory (`tests/Bayan.Tests/X.cs`, 012 T4) is gated by those classes,
+    # not by a `<prefix><n>Tests` class it does not have (Q945); a task with bare test names keeps them alone (011 T14 re-pins)
+    if not tests: tests = [f.removeprefix('tests/Bayan.Tests/') for f in rooted if re.fullmatch(r'tests/Bayan\.Tests/[A-Za-z0-9]+Tests\.cs', f)]
     paths = [f if f.startswith('selfhost/') else f"{row['bydir']}/{f}" for f in byns] + [f'tests/Bayan.Tests/{f}' for f in tests] + rooted
     allow = ','.join(dict.fromkeys(paths + ['docs/bayan-handoff.md', f"{row['dir']}/{row['tasks']}"]))
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
