@@ -437,3 +437,60 @@ public LNode addLVoid(ref LTree t, from move LVoid n) uses alloc {
     t.voidValues.append(move n)
     return lNode(.voidValue, at: t.voidValues.length - 1)
 }
+
+/// `e.Type` for a bound or lowered expression (LoweredNodes.cs:83-127; Q856, moved from lower.byn `t2Type`).
+public Type typeOf(in semantics.Ctx c, through in LTree t, for LNode e) {
+    unless isLowered(e) { return semantics.exprType(in c, for: e) }
+    let i = lIndexOf(e)
+    switch lKindOf(e) {
+        case .optionalHas: return semantics.prim(.bool)
+        case .optionalValue: return t.optionalValues[i].type
+        case .unionTag: return semantics.prim(.i32)
+        case .unionField: return c.locals[c.unionVariants[t.unionFields[i].variant].fields[t.unionFields[i].index]].type
+        case .errorCode: return semantics.prim(.u32)
+        case .errorField: return c.locals[c.errorVariants[t.errorFields[i].variant].fields[t.errorFields[i].index]].type
+        case .assignExpr: return typeOf(in c, through: in t, for: t.assignExprs[i].target)
+        case .sequence: return typeOf(in c, through: in t, for: t.sequences[i].value)
+        case .indexUnchecked: return t.indexUncheckeds[i].type
+        case .nextChar: return semantics.prim(.char)
+        case .neverValue: return t.neverValues[i].type
+        case .functionValue: return t.functionValues[i].functionType
+        case .voidValue: return semantics.prim(.void)
+        // coverage-exempt: Q766
+        default: return semantics.errorType()
+    }
+}
+
+/// `n.Syntax.Span` for a bound or lowered node (Q856, moved from lower.byn `t2Span`).
+public TextSpan spanOf(in semantics.Ctx c, through in LTree t, for LNode n) {
+    unless isLowered(n) { return semantics.nodeSpan(in c, for: n) }
+    let i = lIndexOf(n)
+    switch lKindOf(n) {
+        case .label: return t.labels[i].span
+        case .gotoStmt: return t.gotoStmts[i].span
+        case .loop: return t.loops[i].span
+        case .returnStmt: return t.returnStmts[i].span
+        case .returnError: return t.returnErrors[i].span
+        case .failingCall: return t.failingCalls[i].span
+        case .write: return t.writes[i].span
+        case .panic: return t.panics[i].span
+        case .setContext: return t.setContexts[i].span
+        case .freeArena: return t.freeArenas[i].span
+        case .pushPanicHandler: return t.pushPanicHandlers[i].span
+        case .popPanicHandler: return t.popPanicHandlers[i].span
+        case .claim: return t.claims[i].span
+        case .optionalHas: return t.optionalHass[i].span
+        case .optionalValue: return t.optionalValues[i].span
+        case .unionTag: return t.unionTags[i].span
+        case .unionField: return t.unionFields[i].span
+        case .errorCode: return t.errorCodes[i].span
+        case .errorField: return t.errorFields[i].span
+        case .assignExpr: return t.assignExprs[i].span
+        case .sequence: return t.sequences[i].span
+        case .indexUnchecked: return t.indexUncheckeds[i].span
+        case .nextChar: return t.nextChars[i].span
+        case .neverValue: return t.neverValues[i].span
+        case .functionValue: return t.functionValues[i].span
+        case .voidValue: return t.voidValues[i].span
+    }
+}
