@@ -266,7 +266,16 @@ extern c {
 }
 ```
 
-The pool size is set in `package.byn`; when it is full, callers park.
+The pool size is set in `package.byn`; when it is full, callers park. All three pool sizes live in one manifest block (user decision 2026-11-04, review row I15), and code may override any of them (`Io.Evented(workers: n)` overrides `io`):
+
+```cs
+// package.byn
+workers: Workers {
+    io: .perCore,         // event-loop workers
+    compute: .perCore,    // scope(workers: .compute)
+    blocking: 64,         // @blocking C calls; provisional until Sūq measures it
+}
+```
 
 ## 8. Databases and other resources
 
@@ -412,7 +421,7 @@ User decisions 2026-11-04 (review rows C4, C16–C19). The round-4 revision make
 | §13.1 table (:1537-1543) | Drop `Io.Threaded`. `Io.Evented(workers: .perCore \| n)` is the server default; `bayan run` and scripts use `Io.Evented(workers: 1)`. `Io.Blocking` and `Io.Simulated` stay. | C16 |
 | §13.1 (:1545) | Keep "Libraries never choose an implementation". `#:io evented` / `#:io blocking` are the script overrides | C16 |
 | §13.1, new | `Io.Blocking` runs `spawn` children in order, inline. A child that would wait on something only a later sibling can provide (a channel receive, a join) is a runtime panic naming both, never a silent hang. | C16 |
-| §13.1, new | `workers: .compute` under `Io.Evented` is a separate pool from the I/O workers: default size one thread per core, set in `package.byn` like the blocking pool. Under `Io.Blocking` and `Io.Simulated` it runs inline. | C16 |
+| §13.1, new | `workers: .compute` under `Io.Evented` is a separate pool from the I/O workers: default size one thread per core. New `package.byn` block `workers: Workers { io, compute, blocking }` (defaults `.perCore`, `.perCore`, 64, the last provisional until Sūq measures it); code may override any (`Io.Evented(workers: n)` overrides `io`) (I15). Under `Io.Blocking` and `Io.Simulated` it runs inline. | C16 |
 | §13.2 (:1547-1564) | Replace `async`/`await`/`Future` with `scope`/`spawn`/`join()` (C1). Remove "`Canceled` is in every I/O error set" (:1551); cancellation is an unwind, not an error value. Replace `provide timeout:` with `scope(timeout:)`/`until:`, and `context.checkDeadline()` with `Fiber.checkCanceled()`. | C1, C4 |
 | §13.2, new | `shield(timeout: d) { }` is the one uncancelable region (default 5s); every `defer` body runs as one. At timeout the region is canceled: a pending cancel continues, otherwise `DeadlineError.exceeded`. Nested shields are capped by the outer one; a `defer`'s implicit shield is a grace period that counts while a cancel is pending during the body (not on a panic unwind) and never adds an error. `scope(timeout:)`/`until:` expiry fails the scope with `DeadlineError.exceeded` (new `union error DeadlineError { exceeded }`): a child's earlier failure wins, the set includes it only when `timeout:`/`until:` is given. Remove :1559 ("Expiry fails the suspended operation with `TimeoutError`"). | C4 |
 | §13.2, new | `Fiber.yieldNow()` (not `yield`, a reserved keyword) is a suspend point and unwinds on a pending cancel. | C4, I1 |

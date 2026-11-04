@@ -25,7 +25,7 @@ SPEC references are to `docs/bayan-spec.md`.
 | `some I` parameters | One-use bounds without naming a parameter | Can't be instantiated explicitly |
 | `Self` interfaces without a self argument | `where T : IOrder`, not `IOrder<T>` | Stdlib interface signatures change |
 | Shared parameter types | `Vec3 cross(Vec3 a, b)` | One more parse rule |
-| Target-typed statics `.zero` | Drops repeated type names in fields, arguments and returns | Type-check cost; gated on P7 |
+| Target-typed statics `.zero` | Drops repeated type names in fields, arguments and returns | Already in the spec (§6.2 target typing); S6 is a pointer |
 | Local type aliases + hidden-allocation lint | Short local names without hiding `List` | One more lint |
 | Case-indexed arrays `T[U]` | Per-case tables with no hashing; extends `T[N]` | Binder decides constant versus union in `[…]` |
 
@@ -261,7 +261,9 @@ let earlier = (Token a, b) => a.start < b.start
 - Inline refinements (J57): does `T a is .x, b` give `b` the refinement, the bare type, or is it an error?
 - Modes: sharing never crosses `ref`, `out` or `move` (the rules above), but can a bare name follow a moded parameter (`ref Vec3 a, b`), and what is `b`'s mode?
 
-### S6. Target-typed static members: `.member` (gated on P7)
+### S6. Target-typed static members: `.member` (existing rule)
+
+Not a proposal (user decision 2026-11-04, review row C20). Spec :554 and :865 already target-type `.member` to "a member of the expected type", which covers statics. Round 4 spells the rule out in the spec (Swift's rule): `.m` resolves to a case of the expected type, or to a static field or factory of it whose type is the expected type. No P7 gate. The current compiler already resolves a factory (`let b: Vec = .of(3)` checks); static fields are BYN2022 in v0.1, so `.zero` waits on static fields, not on this rule. Readability of nested leading dots is the 29xx lint. The examples and rules below stay as illustration.
 
 ```cs
 // before
@@ -474,7 +476,7 @@ public Grams shippingWeight(
 | S2, S3 | Binder: implicit type and error-set parameters; `some` desugaring; type-name length check. |
 | S4 | Stdlib interface declarations. |
 | S5 | `ParseParams` and typed lambda parameters: carry the type when a bare name follows `,`. |
-| S6 | Name lookup against the expected type; P7 budget measurement first. |
+| S6 | None: existing rule. Static fields (BYN2022 in v0.1) are a separate item. |
 | S7 | `ParseTypeAlias` at statement level; lint. |
 | §5 | Formatter: shared-type collapse, the wrapped-list rule. |
 | BYN2310 | Message text. |
