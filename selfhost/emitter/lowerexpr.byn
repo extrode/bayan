@@ -7,3 +7,8 @@ import semantics
 public BExpr lowerExpr(ref Ctx c, through ref LCtx l, for BExpr e) {
     return e
 }
+
+/// Lowerer.cs:1207 `Coalesce` (Q844): the lowered `??` expression `e`, with its statements appended to the current output list.
+public BExpr lowerCoalesce(ref Ctx c, through ref LCtx l, for BExpr e) {
+    return e
+}

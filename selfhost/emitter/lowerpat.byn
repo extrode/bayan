@@ -7,3 +7,7 @@ import semantics
 public BExpr lowerMatch(ref Ctx c, through ref LCtx l, for BPattern pattern, at BExpr subject) {
     return -1
 }
+
+/// Lowerer.cs:1889 `Claim` (Q844): takes ownership of what pattern `p` binds, appending to the current output list.
+public void lowerClaim(ref Ctx c, through ref LCtx l, for BPattern p) {
+}

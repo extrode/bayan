@@ -6,3 +6,13 @@ import semantics
 /// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
 public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
 }
+
+/// Lowerer.cs:1561 `BuiltinCall` (Q844): the lowered builtin call `e`, with its statements appended to the current output list.
+public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) {
+    return e
+}
+
+/// Lowerer.cs:1609 `Stable` (Q844): `place` with every operand that a later write could change spilled to a temporary.
+public BExpr lowerStable(ref Ctx c, through ref LCtx l, for BExpr place) {
+    return place
+}
