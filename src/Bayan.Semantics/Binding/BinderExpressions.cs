@@ -707,7 +707,7 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Path } path }:
                 if (_c.Builtins.FindPath(name) is { } pathMember) return new BoundMethodGroup(m, null, pathMember);
-                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, path.Name], help: Suggest(name, ["isRooted", "relative", "fileName", "directoryName"]) is { } nearPath ? $"did you mean `{nearPath}`?" : null);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, path.Name], help: Suggest(name, ["isRooted", "relative", "fileName", "directoryName", "combine"]) is { } nearPath ? $"did you mean `{nearPath}`?" : null);
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: PrimitiveType { IsString: true } str }:
             {

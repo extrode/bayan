@@ -73,6 +73,9 @@ internal sealed partial class Binder
             // `Utf8.decode(bytes, invalid: .replace)` is the lossy form, which never fails.
             case BoundMethodGroup g when g.Function == _c.Builtins.Utf8Decode && c.Args.Any(a => a.Name?.Text == "invalid"):
                 return BindFunctionCall(c, _c.Builtins.Utf8DecodeReplace, null, g.TypeArgs);
+            // `Path.combine(paths)`, one argument, is the span form; `Overload` does not see builtins.
+            case BoundMethodGroup g when g.Function == _c.Builtins.PathCombine && c.Args.Length == 1:
+                return BindFunctionCall(c, _c.Builtins.PathCombineSpan, null, g.TypeArgs);
             case BoundMethodGroup g:
                 return BindFunctionCall(c, Overload(g.Function, c), g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:

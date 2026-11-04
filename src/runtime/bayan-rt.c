@@ -2152,6 +2152,29 @@ bool byn_path_directory_name(byn_str s, byn_str* out, byn_alloc* to) {
     return true;
 }
 
+/* `Path.Combine(params string[])`: from the last rooted part on, each non-empty part, with the OS separator before it unless the
+   text so far ends in a separator. The two-argument `CombineInternal` gives the same bytes: a `b` that starts with a separator is rooted. */
+byn_str byn_path_combine_span(const byn_str* p, int64_t n, byn_alloc* to) {
+    int64_t first = 0, size = 0;
+    for (int64_t i = 0; i < n; i++)
+        if (p[i].len > 0 && byn_path_is_rooted(p[i])) first = i;
+    for (int64_t i = first; i < n; i++) size += p[i].len + 1;
+    uint8_t* d = size > 0 ? to->resize(to, NULL, 0, size) : NULL;
+    int64_t len = 0;
+    for (int64_t i = first; i < n; i++) {
+        if (p[i].len == 0) continue;
+        if (len > 0 && !byn_path_sep(d[len - 1])) d[len++] = BYN_PATH_SEP;
+        memcpy(d + len, p[i].ptr, (size_t)p[i].len);
+        len += p[i].len;
+    }
+    return (byn_str){d, len};
+}
+
+byn_str byn_path_combine(byn_str a, byn_str b, byn_alloc* to) {
+    byn_str parts[2] = {a, b};
+    return byn_path_combine_span(parts, 2, to);
+}
+
 static bool byn_path_usep(uint16_t c) { return c < 0x80 && byn_path_sep((uint8_t)c); }
 
 static bool byn_path_high(const uint16_t* u, int64_t i, int64_t n) {

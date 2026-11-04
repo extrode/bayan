@@ -11,8 +11,8 @@ using Bayan.Syntax.Text;
 namespace Bayan.Tests;
 
 /// <summary>
-/// Spec 014's slice (011 P2) and 014 T1: <c>Path.isRooted</c>, <c>Path.fileName</c>, <c>Path.directoryName</c> and <c>Path.relative</c> give what .NET's
-/// <c>Path.IsPathRooted</c>, <c>Path.GetFileName</c>, <c>Path.GetDirectoryName</c> and <c>Path.GetRelativePath</c> give on the same OS, over a seeded corpus
+/// Spec 014's slice (011 P2), 014 T1 and T2: <c>Path.isRooted</c>, <c>Path.fileName</c>, <c>Path.directoryName</c>, <c>Path.combine</c> (both forms) and <c>Path.relative</c> give what .NET's
+/// <c>Path.IsPathRooted</c>, <c>Path.GetFileName</c>, <c>Path.GetDirectoryName</c>, <c>Path.Combine</c> and <c>Path.GetRelativePath</c> give on the same OS, over a seeded corpus
 /// with Windows-shaped inputs. On Windows the .NET calls use Windows rules, so the same corpus checks both separators, drive
 /// letters, UNC and case-insensitive <c>relative</c> there. Both sides run in the test process's working directory, so relative
 /// inputs resolve alike.
@@ -123,6 +123,21 @@ public sealed class StdPathTests
             if (Relative(from, to) is not { } r) continue;
             source.Append($"print(Path.relative(from: {Literal(from)}, to: {Literal(to)}))\n");
             expected.Add(r);
+        }
+        // `combine` brackets its result: an empty one is a line too.
+        foreach (var (a, b) in Pairs(2014, 200))
+        {
+            source.Append($"print($\"[{{Path.combine({Literal(a)}, {Literal(b)})}}]\")\n");
+            expected.Add($"[{Path.Combine(a, b)}]");
+        }
+        // Spans of 0-4 parts from the atoms and the shapes, which hold rooted ones, so a later rooted part restarts the result.
+        var spanRandom = new Random(3014);
+        var spanParts = Atoms.Concat(Shapes).ToArray();
+        for (var i = 0; i < 300; i++)
+        {
+            var parts = Enumerable.Range(0, i % 5).Select(_ => spanParts[spanRandom.Next(spanParts.Length)]).ToArray();
+            source.Append($"print($\"[{{Path.combine([{string.Join(", ", parts.Select(Literal))}])}}]\")\n");
+            expected.Add($"[{Path.Combine(parts)}]");
         }
         Assert.True(expected.Count > 900, $"only {expected.Count} lines");
 
