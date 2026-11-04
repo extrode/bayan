@@ -409,7 +409,7 @@ Stmt parseBody(ref Parser p, by Token keyword, to ref i64 header, for ref Braces
     let body = parseStatement(ref p)
     if p.errorCount() != errors && isErrorStmt(in body) { return body }
     // At the end of the file the statement takes no token: there is no text to wrap in braces.
-    if p.pos == bodyPos { return body }
+    if p.pos == bodyPos && p.kind() == .endOfFile { return body }
     // Only an inner fix overlaps the braces fix; a diagnostic without one (e.g. BYN1006) leaves it applicable.
     var clean = true
     for i in seen..p.lexed.diagnostics.length {
@@ -423,10 +423,12 @@ Stmt parseBody(ref Parser p, by Token keyword, to ref i64 header, for ref Braces
 /// parses applied alone and BYN1018 has none of its own. Returns the header's report.
 i64 reportBraceless(ref Parser p, by Token keyword, from i64 gapStart, at TextSpan body, as bool clean, to i64 header,
     for ref BracesReport braces) {
-    let text = p.lexed.source.getText(TextSpan.fromBounds(body.start, until: p.prevEnd))
-    let gap = p.lexed.source.getText(TextSpan.fromBounds(gapStart, until: body.start))
+    // A body that took no token (an `errorExpr` before `}`) starts past `prevEnd`: the braces then wrap nothing.
+    let start = body.start < p.prevEnd ? body.start : p.prevEnd
+    let text = p.lexed.source.getText(TextSpan.fromBounds(start, until: p.prevEnd))
+    let gap = p.lexed.source.getText(TextSpan.fromBounds(gapStart, until: start))
     var gapHasNewline = false
-    for i in gapStart..body.start {
+    for i in gapStart..start {
         if p.lexed.source.bytes[i] == '\n' { gapHasNewline = true }
     }
     let openBrace = "{"
@@ -500,8 +502,7 @@ bool isParenthesizedCondition(ref Parser p) {
     if p.kind() != .openParen || inGroup(ref p, at: p.pos, for: .comma) { return false }
     let next = matchingClose(ref p, at: p.pos) + 1
     let kind = p.kindAt(next)
-    // C# reads `_tokens[next]` past `_count` when the `(` is unclosed; clamped like `kindAt`, the answer is the same
-    // (the end of file then gives `true` either way, work/todo.md).
+    // Mirrors C#'s clamp (`_tokens[Math.Min(next, _count - 1)]`) for an unclosed `(`, like `kindAt`.
     if kind == .openBrace || kind == .semicolon || p.lexed.tokens[next < p.count ? next : p.count - 1].hasNewlineBefore { return true }
     if kind == .identifier { return true }
     if lexer.isKeyword(kind) {

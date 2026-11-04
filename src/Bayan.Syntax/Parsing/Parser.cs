@@ -2427,7 +2427,7 @@ public sealed class Parser
         var body = ParseStatement();
         if (ErrorCount != errors && body is ErrorStmt) return body;
         // At the end of the file the statement takes no token: there is no text to wrap in braces.
-        if (_pos == bodyPos) return body;
+        if (_pos == bodyPos && Kind == TokenKind.EndOfFile) return body;
         // Only an inner fix overlaps the braces fix; a diagnostic without one (e.g. BYN1006) leaves it applicable.
         header = ReportBraceless(keyword, gapStart, body, _diagnostics.Items.Skip(seen).All(d => d.Fix is null), header);
         return body;
@@ -2443,8 +2443,10 @@ public sealed class Parser
     /// </summary>
     private Diagnostic? ReportBraceless(Token keyword, int gapStart, Stmt body, bool clean, Diagnostic? header)
     {
-        var text = _source.GetText(TextSpan.FromBounds(body.Span.Start, _prevEnd));
-        var gap = _source.GetText(TextSpan.FromBounds(gapStart, body.Span.Start));
+        // A body that took no token (an `ErrorExpr` before `}`) starts past `_prevEnd`: the braces then wrap nothing.
+        var start = Math.Min(body.Span.Start, _prevEnd);
+        var text = _source.GetText(TextSpan.FromBounds(start, _prevEnd));
+        var gap = _source.GetText(TextSpan.FromBounds(gapStart, start));
         string replacement;
         if (gap.Contains('\n'))
         {
