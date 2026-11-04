@@ -1,44 +1,625 @@
 // T5: Lowerer.cs 1376-1728 (`Printable`, `Assert`, `Write`, `SwitchExpr`, `TryFrom`).
-// Header only (T1): the entry point with its final signature.
+//
+// `Assert`, `AssertFails`, `Shown` and `IsLiteral` read `e.Syntax` through T21's `exprSyntax` (Q849); the source text
+// is `Ctx.files[...].text` of the lowered function's file. A `x with { ... }` copy of a bound node is a new node that
+// carries the old one's `Constant` and syntax facts (`t5Copied`).
 
 import semantics
+import parser
 import emitter.ltree
 
+type T5LGoto = ltree.LGoto
+type T5LLabel = ltree.LLabel
+type T5LNever = ltree.LNever
+type T5LOptionalValue = ltree.LOptionalValue
+type T5LPanic = ltree.LPanic
+type T5LVoid = ltree.LVoid
+type T5LWrite = ltree.LWrite
+
+/// Lowerer.cs:1376 `Printable`.
+public bool printable(Type t) {
+    return semantics.isInteger(t) || semantics.isFloat(t) || semantics.isBool(t) || semantics.isString(t) || semantics.kindOf(t) == .enumType
+}
+
+/// `e is BoundBuiltinCall { Member: member }`.
+bool t5IsBuiltin(Ctx c, for BExpr e, by semantics.BuiltinMember member) => !ltree.isLowered(e) && semantics.boundKind(e) == .builtinCall && c.bBuiltinCalls[e & 0xFFFFFFFF].member == member
+
+/// The `Constant` and syntax facts (Q537) of `old`, which `old with { ... }` keeps, set on its copy.
+BExpr t5Copied(ref Ctx c, from BExpr old, as BExpr copy) uses alloc {
+    if (c.constants.tryGet(at: old) is { } k) { c.constants[copy] = k }
+    if (c.syntaxFlags.tryGet(at: old) is { } f) { c.syntaxFlags[copy] = f }
+    return copy
+}
+
+/// `b with { Member = member, Receiver = receiver, Arguments = arguments }` for a builtin call `b`.
+BExpr t5Builtin(ref Ctx c, from BExpr b, as semantics.BuiltinMember member, to BExpr receiver, by move List<BExpr> arguments) uses alloc {
+    let i = i64(b & 0xFFFFFFFF)
+    let span = c.bBuiltinCalls[i].span
+    let type = c.bBuiltinCalls[i].type
+    let copy = semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: member, receiver: receiver, arguments: move arguments, type: type })
+    return t5Copied(ref c, from: b, as: copy)
+}
+
+/// The arguments of the builtin call `b`.
+List<BExpr> t5Arguments(Ctx c, for BExpr b) uses alloc {
+    var r = List<BExpr>()
+    for a in c.bBuiltinCalls[b & 0xFFFFFFFF].arguments { r.append(a) }
+    return r
+}
+
+/// Whether `m` is one of the members that change their receiver (Lowerer.cs:1582).
+bool t5Mutating(semantics.BuiltinMember m) {
+    switch m {
+        case .listAdd or .listClear or .listRemoveLast or .listRemoveRange or .listRemoveThrough or .listRemoveAt or .listRemoveAtRange: return true
+        case .listReplace or .listSort: return true
+        case .mapIndexSet or .mapSlot or .mapRemove or .mapClear: return true
+        case .strBufAppend or .strBufAppendRepeated or .strBufInsert or .strBufClear or .arrayAsSpan or .listMutableSpan or .arrayMutableSpan: return true
+        default: return false
+    }
+}
+
+/// A literal of `type` with constant `k`.
+BExpr t5Literal(ref Ctx c, at TextSpan span, by Type type, as Constant k) uses alloc {
+    return semantics.addLiteral(ref c, from: BLiteral { span: span, type: type, value: k })
+}
+
+/// `fits` and `value op bound` (C#'s local `Check`); `fits` -1 is C#'s null.
+BExpr t5Check(ref Ctx c, through LCtx l, at TextSpan span, for BExpr fits, by parser.BinaryOp op, to BExpr value, as BExpr bound) uses alloc {
+    let check = semantics.addBinary(ref c, from: BBinary { span: span, op: op, left: value, right: bound, type: semantics.prim(.bool) })
+    if fits == -1 { return check }
+    return andExpr(ref c, through: l, for: fits, by: check)
+}
+
+/// `_fn.File!.Source.GetText(TextSpan.FromBounds(start, end))`.
+string t5Source(Ctx c, through LCtx l, from i64 start, to i64 end) uses alloc => $"{Utf8.tryDecode(c.files[c.functions[l.fn].file].text.span[start..end]) ?? ""}"
+
+/// Lowerer.cs:1394 `Assert`'s local `After`: where the text after `left` resumes, its blanks skipped, before `end`.
+i64 t5After(Ctx c, through LCtx l, for TextSpan left, to i64 end) {
+    let bytes = c.files[c.functions[l.fn].file].text.span
+    var at = left.start + left.length
+    while at < end && (bytes[at] == 32 || bytes[at] == 9 || bytes[at] == 10 || bytes[at] == 13) { at += 1 }
+    return at
+}
+
+/// Lowerer.cs:1399 `Assert`'s local `Anchor`: where the value of the recorded syntax node `node` is hung.
+i64 t5Anchor(Ctx c, through LCtx l, for semantics.ExprSyntax node, to i64 end) {
+    switch node.kind {
+        case .parenExpr: return t5Anchor(c, through: l, for: semantics.exprSyntaxNode(c, at: node.inner), to: end)
+        case .memberExpr: return node.member.start
+        case .callExpr: return t5Anchor(c, through: l, for: semantics.exprSyntaxNode(c, at: node.callee), to: end)
+        case .binaryExpr: return t5After(c, through: l, for: semantics.exprSyntaxNode(c, at: node.left).span, to: end)
+        case .isExpr: return t5After(c, through: l, for: semantics.exprSyntaxNode(c, at: node.value).span, to: end)
+        case .indexExpr: return t5After(c, through: l, for: semantics.exprSyntaxNode(c, at: node.target).span, to: end)
+        case .conditionalExpr: return t5After(c, through: l, for: semantics.exprSyntaxNode(c, at: node.condition).span, to: end)
+        default: return node.span.start
+    }
+}
+
 /// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
-public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
+public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let a = i64(s & 0xFFFFFFFF)
+    if c.bAsserts[a].failsWith != -1 {
+        assertFails(ref c, through: ref l, for: s, by: c.bAsserts[a].failsWith)
+        return
+    }
+    let span = c.bAsserts[a].span
+    let start = span.start
+    // The parser ends the statement at its condition (`ExpectEnd` takes no `;`), so this is `syntax.Condition.Span.End`.
+    let end = span.start + span.length
+    var exprs = List<BExpr>()
+    var mayNotRuns = List<bool>()
+    shown(c, through: l, for: c.bAsserts[a].condition, by: false, to: ref exprs, as: ref mayNotRuns)
+    // The first (outermost) node at a column wins: an implicit conversion shares its operand's syntax.
+    var keys = List<i64>()
+    var columns = List<BExpr>()
+    var lazy = List<bool>()
+    for k in 0..exprs.length {
+        var anchor = ltree.spanOf(c, through: l.tree, for: exprs[k]).start // coverage-exempt: Q780
+        if (semantics.exprSyntax(c, for: exprs[k]) is { } syntax) { anchor = t5Anchor(c, through: l, for: syntax, to: end) }
+        let column = powerAssertColumn(t5Source(c, through: l, from: start, to: anchor))
+        var seen = false
+        for x in keys {
+            if x == column { seen = true }
+        }
+        if seen { continue }
+        keys.append(column)
+        columns.append(exprs[k])
+        lazy.append(mayNotRuns[k])
+        // Kept in column order (C#'s `SortedDictionary`).
+        var at = keys.length - 1
+        while at > 0 && keys[at - 1] > column {
+            keys[at] = keys[at - 1]
+            columns[at] = columns[at - 1]
+            lazy[at] = lazy[at - 1]
+            at -= 1
+        }
+        keys[at] = column
+        columns[at] = exprs[k]
+        lazy[at] = mayNotRuns[k]
+    }
+    l.showing = true
+    l.shown = Map<BExpr, BExpr>()
+    l.ran = Map<BExpr, LocalId>()
+    for k in 0..columns.length {
+        let e = columns[k]
+        l.shown[e] = -1
+        unless lazy[k] { continue }
+        let flag = newTemp(ref c, through: ref l, for: semantics.prim(.bool))
+        let at = ltree.spanOf(c, through: l.tree, for: e)
+        emitAssign(ref c, through: ref l, to: localExpr(ref c, at: at, for: flag), as: boolLiteral(ref c, at: at, by: false))
+        l.ran[e] = flag
+    }
+    let condition = lowerExpr(ref c, through: ref l, for: c.bAsserts[a].condition)
+    let values = l.shown.take()
+    let ran = l.ran.take()
+    l.showing = false
+    if isNeverExpr(condition) { return }
+    let statement = powerAssertFlatten(t5Source(c, through: l, from: start, to: end))
+    var kept = List<i64>()
+    var keptValues = List<BExpr>()
+    var flags = List<LocalId>()
+    var always = List<bool>()
+    for k in 0..columns.length {
+        let v = values[columns[k]]
+        if v == -1 || isNeverExpr(v) { continue }
+        kept.append(keys[k])
+        keptValues.append(v)
+        let flag = ran.tryGet(at: columns[k]) ?? -1
+        flags.append(flag)
+        always.append(flag == -1)
+    }
+    var panic: BStmt = -1
+    if kept.length == 0 { panic = ltree.addLPanic(ref l.tree, from: T5LPanic { span: span, message: statement }) } else {
+        var parts = List<BInterpolationPart>()
+        parts.append(BInterpolationPart { text: statement })
+        var guards = List<BExpr>()
+        guards.append(-1)
+        var guarded = false
+        for piece in powerAssertDiagram(kept, by: always) {
+            let guard = t5Guard(ref c, through: l, for: piece, at: span, by: flags)
+            if guard == -1 && piece.value < 0 && guards[guards.length - 1] == -1 && parts[parts.length - 1].value == -1 {
+                let text = parts[parts.length - 1].text ?? ""
+                parts[parts.length - 1] = BInterpolationPart { text: $"{text}{piece.text}" }
+            } else {
+                if piece.value < 0 { parts.append(BInterpolationPart { text: piece.text }) } else { parts.append(BInterpolationPart { value: keptValues[piece.value] }) }
+                guards.append(guard)
+                if guard != -1 { guarded = true }
+            }
+        }
+        var write = T5LWrite { span: span, sink: .panic, parts: move parts }
+        if guarded { write.guards = move guards }
+        panic = ltree.addLWrite(ref l.tree, from: move write)
+    }
+    var body = List<BStmt>()
+    body.append(panic)
+    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: notExpr(ref c, through: l, for: condition), then: block(ref c, at: span, for: move body), elseBranch: -1 }))
 }
 
-/// Lowerer.cs:1561 `BuiltinCall` (Q844): the lowered builtin call `e`, with its statements appended to the current output list.
-public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) {
-    return e
+/// Lowerer.cs:1437 `Assert`'s local `Guard`: the condition `piece` is written under (-1 for always), from the flags of the kept columns.
+BExpr t5Guard(ref Ctx c, through LCtx l, for PowerAssertPiece piece, at TextSpan span, by List<LocalId> flags) uses alloc {
+    var g: BExpr = -1
+    for k in piece.allShown {
+        let t = localExpr(ref c, at: span, for: flags[k])
+        g = g == -1 ? t : andExpr(ref c, through: l, for: g, by: t)
+    }
+    for k in piece.noneShown {
+        let t = notExpr(ref c, through: l, for: localExpr(ref c, at: span, for: flags[k]))
+        g = g == -1 ? t : andExpr(ref c, through: l, for: g, by: t)
+    }
+    if piece.anyFrom != -1 {
+        var t = localExpr(ref c, at: span, for: flags[piece.anyFrom])
+        for k in piece.anyFrom + 1..flags.length { t = orExpr(ref c, through: l, for: t, by: localExpr(ref c, at: span, for: flags[k])) } // coverage-exempt: Q780
+        g = g == -1 ? t : andExpr(ref c, through: l, for: g, by: t)
+    }
+    return g
 }
 
-/// Lowerer.cs:1609 `Stable` (Q844): `place` with every operand that a later write could change spilled to a temporary.
-public BExpr lowerStable(ref Ctx c, through ref LCtx l, for BExpr place) {
-    return place
+/// Lowerer.cs:1470 `AssertFails`'s local `Is`: whether the error in `error` is `v`.
+BExpr t5IsVariant(ref Ctx c, at TextSpan span, for LocalId error, by VariantId v) uses alloc {
+    let variant = semantics.addErrorVariant(ref c, from: BErrorVariant { span: span, variant: v, type: semantics.errorSetTypeOf(c.errorVariants[v].set) })
+    return semantics.addBinary(ref c, from: BBinary { span: span, op: .eq, left: localExpr(ref c, at: span, for: error), right: variant, type: semantics.prim(.bool) })
+}
+
+/// Lowerer.cs:1465 `AssertFails`: lowers `assert f() fails E[.x]` (`s`, whose error set is `set`), appending to the current output list.
+void assertFails(ref Ctx c, through ref LCtx l, for BStmt s, by semantics.ErrorSetId set) uses alloc {
+    let a = i64(s & 0xFFFFFFFF)
+    let span = c.bAsserts[a].span
+    let call = c.bAsserts[a].condition
+    let r = lowerFailingCall(ref c, through: ref l, for: call) ?? return
+    var expected: BExpr = -1
+    if c.bAsserts[a].failsCase != -1 { expected = t5IsVariant(ref c, at: span, for: r.error, by: c.bAsserts[a].failsCase) } else {
+        for v in t4Copy(c.errorSets[set].variants) {
+            let t = t5IsVariant(ref c, at: span, for: r.error, by: v)
+            expected = expected == -1 ? t : orExpr(ref c, through: l, for: expected, by: t)
+        }
+    }
+    let statement = powerAssertFlatten(t5Source(c, through: l, from: span.start, to: span.start + span.length))
+    var anchor = ltree.spanOf(c, through: l.tree, for: call).start // coverage-exempt: Q780
+    if (semantics.exprSyntax(c, for: call) is { } syntax) {
+        anchor = syntax.span.start
+        if syntax.callee != -1 && semantics.exprSyntaxNode(c, at: syntax.callee).kind == .memberExpr { anchor = semantics.exprSyntaxNode(c, at: syntax.callee).member.start }
+    }
+    let gap = " ".repeated(powerAssertColumn(t5Source(c, through: l, from: span.start, to: anchor)))
+    let failed = lowerFailed(ref c, through: ref l, at: span, for: r.error)
+    var parts = List<BInterpolationPart>()
+    parts.append(BInterpolationPart { text: $"{statement}\n{powerAssertIndent}{gap}{powerAssertBar}\n{powerAssertIndent}{gap}" })
+    parts.append(BInterpolationPart { text: "returned" })
+    var guards = List<BExpr>()
+    guards.append(-1)
+    guards.append(notExpr(ref c, through: l, for: failed))
+    let fn = c.bCalls[call & 0xFFFFFFFF].function
+    for e in t4Copy(c.functions[fn].errorSets) {
+        for v in t4Copy(c.errorSets[e].variants) {
+            let owner = semantics.errorSetDisplayName(ref c, by: c.errorVariants[v].set)
+            parts.append(BInterpolationPart { text: $"failed with {owner}.{c.errorVariants[v].name}" })
+            guards.append(t5IsVariant(ref c, at: span, for: r.error, by: v))
+        }
+    }
+    if printable(c.bCalls[call & 0xFFFFFFFF].type) {
+        parts.append(BInterpolationPart { text: " " })
+        parts.append(BInterpolationPart { value: r.result })
+        guards.append(notExpr(ref c, through: l, for: failed))
+        guards.append(notExpr(ref c, through: l, for: failed))
+    }
+    var body = List<BStmt>()
+    body.append(ltree.addLWrite(ref l.tree, from: T5LWrite { span: span, sink: .panic, parts: move parts, guards: move guards }))
+    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: notExpr(ref c, through: l, for: expected), then: block(ref c, at: span, for: move body), elseBranch: -1 }))
+}
+
+/// Lowerer.cs:1501 `Shown`: appends the sub-expressions of `e` shown on failure, outermost first, to `exprs`, and whether each may not run to `mayNotRuns`.
+void shown(Ctx c, through LCtx l, for BExpr e, by bool mayNotRun, to ref List<BExpr> exprs, as ref List<bool> mayNotRuns) uses alloc {
+    var literal = false // coverage-exempt: Q780
+    if (semantics.exprSyntax(c, for: e) is { } syntax) { literal = isLiteral(c, for: syntax) }
+    if printable(ltree.typeOf(c, through: l.tree, for: e)) && !literal {
+        exprs.append(e)
+        mayNotRuns.append(mayNotRun)
+    }
+    let i = i64(e & 0xFFFFFFFF)
+    switch semantics.boundKind(e) {
+        case .binary:
+            let op = c.bBinaries[i].op
+            if op == .logicalAnd || op == .logicalOr {
+                shown(c, through: l, for: c.bBinaries[i].left, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+                shown(c, through: l, for: c.bBinaries[i].right, by: true, to: ref exprs, as: ref mayNotRuns)
+                return
+            }
+        case .conditional:
+            shown(c, through: l, for: c.bConditionals[i].condition, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+            shown(c, through: l, for: c.bConditionals[i].whenTrue, by: true, to: ref exprs, as: ref mayNotRuns)
+            shown(c, through: l, for: c.bConditionals[i].whenFalse, by: true, to: ref exprs, as: ref mayNotRuns)
+            return
+        case .coalesce:
+            shown(c, through: l, for: c.bCoalesces[i].left, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+            shown(c, through: l, for: c.bCoalesces[i].right, by: true, to: ref exprs, as: ref mayNotRuns)
+            return
+        case .isExpr:
+            shown(c, through: l, for: c.bIses[i].value, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+            return
+        case .unary or .field or .tupleElement or .unionField or .call or .builtinCall or .conversion or .index: break
+        default: return
+    }
+    for child in semantics.children(c, for: e) { // coverage-exempt: Q780
+        if semantics.isExprKind(semantics.boundKind(child)) { shown(c, through: l, for: child, by: mayNotRun, to: ref exprs, as: ref mayNotRuns) }
+    }
+}
+
+/// Lowerer.cs:1519 `IsLiteral`: whether `syntax` is a literal, possibly parenthesized or signed.
+bool isLiteral(Ctx c, for semantics.ExprSyntax syntax) {
+    switch syntax.kind {
+        case .literalExpr: return true
+        case .parenExpr: return isLiteral(c, for: semantics.exprSyntaxNode(c, at: syntax.inner))
+        case .unaryExpr: return (syntax.op == .negate || syntax.op == .plus) && isLiteral(c, for: semantics.exprSyntaxNode(c, at: syntax.operand))
+        default: return false
+    }
 }
 
 /// Lowerer.cs:1528 `CallParts` (Q845): the call `e` with its receiver and arguments lowered, or -1 when one never returns.
-public BExpr lowerCallParts(ref Ctx c, through ref LCtx l, for BExpr e) {
-    return e
+public BExpr lowerCallParts(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
+    let i = i64(e & 0xFFFFFFFF)
+    let function = c.bCalls[i].function
+    let span = c.bCalls[i].span
+    let type = c.bCalls[i].type
+    let invoke = c.functions[function].kind == .invoke
+    let hasReceiver = c.bCalls[i].receiver != -1 && (semantics.functionHasThis(ref c, by: function) || invoke)
+    var ops = List<BExpr>()
+    var lvalues = List<bool>()
+    if hasReceiver {
+        let receiver = c.bCalls[i].receiver
+        ops.append(receiver)
+        lvalues.append(isLvalueShape(ref c, through: ref l, for: receiver))
+    }
+    let offset: i64 = hasReceiver ? 1 : 0
+    for k in 0..c.bCalls[i].arguments.length {
+        ops.append(c.bCalls[i].arguments[k])
+        let p = k
+        lvalues.append(p < c.functions[function].parameters.length && semantics.paramIsByRef(ref c, by: c.functions[function].parameters[p]))
+    }
+    var parts = List<BExpr>()
+    unless operands(ref c, through: ref l, for: ops, as: lvalues, to: ref parts) { return -1 }
+    var receiver: BExpr = -1
+    if hasReceiver {
+        receiver = parts[0]
+        // A function value is named twice in C (its code and its environment), so anything but a local is evaluated once first.
+        if !isLvalue(c, through: l, for: receiver)
+            // coverage-exempt: Q780
+            || invoke && (ltree.isLowered(receiver) || semantics.boundKind(receiver) != .local) {
+            receiver = spill(ref c, through: ref l, for: receiver)
+        }
+        // `map[k].f()` with `ref this` changes the stored value; reading through the panicking index first keeps a missing key out.
+        if t5IsBuiltin(c, for: receiver, by: .mapIndexSet) {
+            let place = lowerStable(ref c, through: ref l, for: receiver)
+            let read = t5Builtin(ref c, from: place, as: .mapIndex, to: c.bBuiltinCalls[place & 0xFFFFFFFF].receiver, by: t5Arguments(c, for: place))
+            emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: read }))
+            receiver = place
+        }
+    }
+    var arguments = List<BExpr>()
+    for k in offset..parts.length { arguments.append(parts[k]) }
+    let copy = semantics.addCall(ref c, from: BCall { span: span, function: function, receiver: receiver, arguments: move arguments, type: type })
+    return t5Copied(ref c, from: e, as: copy)
+}
+
+/// Lowerer.cs:1561 `BuiltinCall` (Q844): the lowered builtin call `e`, with its statements appended to the current output list.
+public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
+    let i = i64(e & 0xFFFFFFFF)
+    let member = c.bBuiltinCalls[i].member
+    let span = c.bBuiltinCalls[i].span
+    let type = c.bBuiltinCalls[i].type
+    let receiver = c.bBuiltinCalls[i].receiver
+    if member == .strBufAppend {
+        let first = c.bBuiltinCalls[i].arguments[0]
+        if !ltree.isLowered(first) && semantics.boundKind(first) == .interpolated {
+            let target = lowerLvalue(ref c, through: ref l, for: receiver)
+            if isNeverExpr(target) { return target }
+            return lowerWriteParts(ref c, through: ref l, for: e, by: .strBuf, to: target, as: first)
+        }
+    }
+    // `x.take()`: move the value out, then leave the type's empty value in the place, evaluated once.
+    if member == .listTake || member == .mapTake || member == .strBufTake || member == .optionalTake {
+        var place = lowerLvalue(ref c, through: ref l, for: receiver)
+        if isNeverExpr(place) { return place }
+        place = lowerStable(ref c, through: ref l, for: place)
+        // `map[k].take()` reads through the panicking index, so a missing key is not inserted.
+        var read = place
+        if t5IsBuiltin(c, for: place, by: .mapIndexSet) {
+            read = t5Builtin(ref c, from: place, as: .mapIndex, to: c.bBuiltinCalls[place & 0xFFFFFFFF].receiver, by: t5Arguments(c, for: place))
+        }
+        let taken = spill(ref c, through: ref l, for: read)
+        var empty: BExpr = -1
+        if member == .strBufTake {
+            empty = semantics.addCall(ref c, from: BCall { span: span, function: c.builtinStrBufGrow, type: type })
+        } else {
+            empty = semantics.addDefault(ref c, from: BDefault { span: span, type: type })
+        }
+        emitAssign(ref c, through: ref l, to: place, as: empty)
+        return taken
+    }
+    let mutating = t5Mutating(member)
+    var ops = List<BExpr>()
+    ops.append(receiver)
+    for a in c.bBuiltinCalls[i].arguments { ops.append(a) }
+    // `slot` inserts the value type's default: field initializers for a struct, zero otherwise.
+    if member == .mapSlot && ops.length == 2 {
+        if semantics.kindOf(type) == .structType {
+            let sid = i64(type & 0xFFFFFFFF)
+            var values = List<BExpr>()
+            for k in 0..c.structs[sid].fields.length {
+                let field = c.structs[sid].fields[k]
+                var value = c.fields[field].defaultValue
+                // coverage-exempt: Q780
+                if value == -1 { value = semantics.addDefault(ref c, from: BDefault { span: span, type: c.fields[field].type }) }
+                values.append(value)
+            }
+            ops.append(semantics.addStructLiteral(ref c, from: BStructLiteral { span: span, structId: sid, fields: move values, type: type }))
+        } else {
+            ops.append(semantics.addDefault(ref c, from: BDefault { span: span, type: type }))
+        }
+    }
+    var lvalues = List<bool>()
+    lvalues.append(mutating && isLvalueShape(ref c, through: ref l, for: receiver))
+    var parts = List<BExpr>()
+    unless operands(ref c, through: ref l, for: ops, as: lvalues, to: ref parts) {
+        return ltree.addLNever(ref l.tree, from: T5LNever { span: span, type: type })
+    }
+    var lowered = parts[0]
+    if mutating && !isLvalue(c, through: l, for: lowered) {
+        lowered = spill(ref c, through: ref l, for: lowered)
+    } else if !mutating && !isTrivial(c, through: l, for: lowered) && (member == .listAsSpan || member == .strBufAsString) {
+        lowered = spill(ref c, through: ref l, for: lowered)
+    }
+    var arguments = List<BExpr>()
+    for k in 1..parts.length { arguments.append(parts[k]) }
+    let copy = t5Copied(ref c, from: e, as: semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: member, receiver: lowered, arguments: move arguments, type: type }))
+    if semantics.isVoid(type) {
+        emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: copy }))
+        return ltree.addLVoid(ref l.tree, from: T5LVoid { span: span })
+    }
+    return copy
+}
+
+/// Lowerer.cs:1609 `Stable` (Q844): `place` with every operand that a later write could change spilled to a temporary.
+public BExpr lowerStable(ref Ctx c, through ref LCtx l, for BExpr place) uses alloc {
+    if ltree.isLowered(place) {
+        if ltree.lKindOf(place) == .optionalValue {
+            let i = ltree.lIndexOf(place)
+            let span = l.tree.optionalValues[i].span
+            let type = l.tree.optionalValues[i].type
+            let optional = lowerStable(ref c, through: ref l, for: l.tree.optionalValues[i].optional)
+            return ltree.addLOptionalValue(ref l.tree, from: T5LOptionalValue { span: span, optional: optional, type: type })
+        }
+    } else {
+        let i = i64(place & 0xFFFFFFFF)
+        switch semantics.boundKind(place) {
+            case .field:
+                let span = c.bFields[i].span
+                let field = c.bFields[i].field
+                let type = c.bFields[i].type
+                let receiver = lowerStable(ref c, through: ref l, for: c.bFields[i].receiver)
+                return t5Copied(ref c, from: place, as: semantics.addField(ref c, from: BField { span: span, receiver: receiver, field: field, type: type }))
+            case .tupleElement:
+                let span = c.bTupleElements[i].span
+                let index = c.bTupleElements[i].index
+                let type = c.bTupleElements[i].type
+                let receiver = lowerStable(ref c, through: ref l, for: c.bTupleElements[i].receiver)
+                return t5Copied(ref c, from: place, as: semantics.addTupleElement(ref c, from: BTupleElement { span: span, receiver: receiver, index: index, type: type }))
+            // A list's elements live behind its pointer, so a copy of a non-addressable list still names them.
+            case .index:
+                let span = c.bIndexes[i].span
+                let fromEnd = c.bIndexes[i].fromEnd
+                let type = c.bIndexes[i].type
+                let index = c.bIndexes[i].index
+                let target = lowerStable(ref c, through: ref l, for: c.bIndexes[i].target)
+                let at = isTrivial(c, through: l, for: index) ? index : spill(ref c, through: ref l, for: index)
+                return t5Copied(ref c, from: place, as: semantics.addIndex(ref c, from: BIndex { span: span, target: target, index: at, fromEnd: fromEnd, type: type }))
+            case .builtinCall:
+                let member = c.bBuiltinCalls[i].member
+                if member == .mapIndexSet || member == .mapSlot {
+                    let receiver = lowerStable(ref c, through: ref l, for: c.bBuiltinCalls[i].receiver)
+                    var arguments = List<BExpr>()
+                    for k in 0..c.bBuiltinCalls[i].arguments.length {
+                        let a = c.bBuiltinCalls[i].arguments[k]
+                        arguments.append(isTrivial(c, through: l, for: a) ? a : spill(ref c, through: ref l, for: a))
+                    }
+                    return t5Builtin(ref c, from: place, as: member, to: receiver, by: move arguments)
+                }
+            default: break
+        }
+    }
+    return isTrivial(c, through: l, for: place) || isLvalue(c, through: l, for: place) ? place : spill(ref c, through: ref l, for: place)
 }
 
 /// Lowerer.cs:1621 `Write` (Q845): the lowered write of interpolated `text` to `sink` (`target` -1 when the sink has none) for `call`.
-public BExpr lowerWrite(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.WriteSink sink, to BExpr target, as BExpr text) {
-    return call
+public BExpr lowerWrite(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.WriteSink sink, to BExpr target, as BExpr text) uses alloc {
+    return lowerWriteParts(ref c, through: ref l, for: call, by: sink, to: target, as: text)
 }
 
 /// Lowerer.cs:1624 `WriteParts` (Q845): as `lowerWrite`, with `level` (a log level or print stream, -1 for none) lowered after the parts and written as the target.
-public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.WriteSink sink, to BExpr target, as BExpr text, at BExpr level = -1) {
-    return call
+public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.WriteSink sink, to BExpr target, as BExpr text, at BExpr level = -1) uses alloc {
+    let ti = i64(text & 0xFFFFFFFF)
+    let span = ltree.spanOf(c, through: l.tree, for: call)
+    var values = List<BExpr>()
+    for k in 0..c.bInterpolateds[ti].parts.length {
+        let v = c.bInterpolateds[ti].parts[k].value
+        if v == -1 { continue }
+        // A `Symbol` writes its text (spec 008 R4).
+        let t = ltree.typeOf(c, through: l.tree, for: v)
+        if semantics.kindOf(t) == .builtin && semantics.builtinKindOf(i64(t & 0xFFFFFFFF)) == .symbol {
+            values.append(semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: ltree.spanOf(c, through: l.tree, for: v), member: .symbolText, receiver: v, type: semantics.prim(.string) }))
+        } else {
+            values.append(v)
+        }
+    }
+    if level != -1 { values.append(level) }
+    var lowered = List<BExpr>()
+    unless operands(ref c, through: ref l, for: values, as: List<bool>(), to: ref lowered) {
+        return ltree.addLNever(ref l.tree, from: T5LNever { span: span, type: ltree.typeOf(c, through: l.tree, for: call) })
+    }
+    var written = target
+    if level != -1 {
+        written = lowered[lowered.length - 1]
+        unless isTrivial(c, through: l, for: written) {
+            // Spilling the target evaluates it ahead of the call (the emitter would evaluate it last inside the
+            // call), so the parts before it are spilled first to keep them evaluated before it.
+            for j in 0..lowered.length - 1 {
+                unless isTrivial(c, through: l, for: lowered[j]) { lowered[j] = spill(ref c, through: ref l, for: lowered[j]) }
+            }
+            written = spill(ref c, through: ref l, for: written)
+        }
+    }
+    var parts = List<BInterpolationPart>()
+    var next: i64 = 0
+    for k in 0..c.bInterpolateds[ti].parts.length {
+        let p = c.bInterpolateds[ti].parts[k]
+        if p.value == -1 {
+            parts.append(p)
+        } else {
+            parts.append(BInterpolationPart { text: p.text, value: lowered[next], spec: p.spec })
+            next += 1
+        }
+    }
+    emit(ref l, for: ltree.addLWrite(ref l.tree, from: T5LWrite { span: span, sink: sink, target: written, parts: move parts }))
+    return ltree.addLVoid(ref l.tree, from: T5LVoid { span: span })
 }
 
 /// Lowerer.cs:1652 `SwitchExpr` (Q845): the lowered switch expression `e`, with its statements appended to the current output list.
-public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) {
-    return e
+public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
+    let si = i64(e & 0xFFFFFFFF)
+    let span = c.bSwitchExprs[si].span
+    let type = c.bSwitchExprs[si].type
+    var value = lowerExpr(ref c, through: ref l, for: c.bSwitchExprs[si].value)
+    if isNeverExpr(value) { return value }
+    unless isRepeatable(c, through: l, for: value) { value = spill(ref c, through: ref l, for: value) }
+    let result: LocalId = semantics.isNever(type) ? -1 : newTemp(ref c, through: ref l, for: type)
+    let end = newLabel(ref l, for: "switch_end")
+    for k in 0..c.bSwitchExprs[si].arms.length {
+        let arm = c.bSwitchExprs[si].arms[k]
+        let match = lowerMatch(ref c, through: ref l, for: arm.pattern, at: value)
+        captureBegin(ref l)
+        lowerClaim(ref c, through: ref l, for: arm.pattern)
+        let v = lowerExpr(ref c, through: ref l, for: arm.value)
+        if result != -1 {
+            emitAssign(ref c, through: ref l, to: localExpr(ref c, at: arm.span, for: result), as: v)
+        } else {
+            emitEffect(ref c, through: ref l, for: v)
+        }
+        emit(ref l, for: ltree.addLGoto(ref l.tree, from: T5LGoto { span: arm.span, label: end }))
+        let body = captureEnd(ref l)
+        if arm.guard == -1 {
+            emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move body) }))
+            continue
+        }
+        var pre = List<BStmt>()
+        let guard = captureExpr(ref c, through: ref l, for: arm.guard, lvalue: false, to: ref pre)
+        if pre.length == 0 {
+            emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: andExpr(ref c, through: l, for: match, by: guard), then: block(ref c, at: arm.span, for: move body) }))
+        } else {
+            pre.append(semantics.addIf(ref c, from: BIf { span: arm.span, condition: guard, then: block(ref c, at: arm.span, for: move body) }))
+            emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move pre) }))
+        }
+    }
+    emit(ref l, for: ltree.addLPanic(ref l.tree, from: T5LPanic { span: span, message: "no switch arm matched" }))
+    emit(ref l, for: ltree.addLLabel(ref l.tree, from: T5LLabel { span: span, name: end }))
+    if result == -1 { return ltree.addLNever(ref l.tree, from: T5LNever { span: span, type: type }) }
+    return localExpr(ref c, at: span, for: result)
 }
 
 /// Lowerer.cs:1692 `TryFrom` (Q845): the lowered `T.tryFrom` conversion `e`, with its statements appended to the current output list.
-public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) {
-    return e
+public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
+    let ti = i64(e & 0xFFFFFFFF)
+    let span = c.bTryFroms[ti].span
+    let target = c.bTryFroms[ti].target
+    let type = c.bTryFroms[ti].type
+    var value = lowerExpr(ref c, through: ref l, for: c.bTryFroms[ti].operand)
+    if isNeverExpr(value) { return value }
+    unless isRepeatable(c, through: l, for: value) { value = spill(ref c, through: ref l, for: value) }
+    let from = ltree.typeOf(c, through: l.tree, for: value)
+    var fits: BExpr = -1
+    if semantics.isInteger(target) && semantics.isFloat(from) {
+        let r = semantics.range(semantics.primKindOf(i64(target & 0xFFFFFFFF)))
+        let min = semantics.bigToF64(r.min)
+        let max = semantics.bigToF64(r.max)
+        // A value above min - 1 truncates into range; when min - 1 rounds to min in `from` (i64 from f64, i32
+        // from f32) no value lies between them, so the bound is min itself, inclusive.
+        let below = from == semantics.prim(.f32) ? f64(f32(min - 1.0)) : min - 1.0
+        if below == min {
+            fits = t5Check(ref c, through: l, at: span, for: fits, by: .ge, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .real, real: min }))
+        } else {
+            fits = t5Check(ref c, through: l, at: span, for: fits, by: .gt, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .real, real: below }))
+        }
+        fits = t5Check(ref c, through: l, at: span, for: fits, by: .lt, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .real, real: max + 1.0 }))
+    } else if semantics.isInteger(target) {
+        let r = semantics.range(semantics.primKindOf(i64(target & 0xFFFFFFFF)))
+        let fr = semantics.range(semantics.primKindOf(i64(from & 0xFFFFFFFF)))
+        if semantics.bigCmp(fr.min, as: r.min) < 0 {
+            fits = t5Check(ref c, through: l, at: span, for: fits, by: .ge, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .integer, integer: r.min }))
+        }
+        if semantics.bigCmp(r.max, as: fr.max) < 0 {
+            fits = t5Check(ref c, through: l, at: span, for: fits, by: .le, to: value, as: t5Literal(ref c, at: span, by: from, as: Constant { kind: .integer, integer: r.max }))
+        }
+    }
+    let converted = from == target ? value : semantics.addConversion(ref c, from: BConversion { span: span, operand: value, type: target, kind: .numericCast })
+    let some = semantics.addConversion(ref c, from: BConversion { span: span, operand: converted, type: type, kind: .toOptional })
+    if fits == -1 { return some }
+    let none = semantics.addDefault(ref c, from: BDefault { span: span, type: type })
+    return lowerExpr(ref c, through: ref l, for: semantics.addConditional(ref c, from: BConditional { span: span, condition: fits, whenTrue: some, whenFalse: none, type: type }))
 }

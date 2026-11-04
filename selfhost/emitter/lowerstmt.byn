@@ -52,7 +52,7 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses allo
             let value = lowerExpr(ref c, through: ref l, for: c.bExprStmts[i].expr)
             emitEffect(ref c, through: ref l, for: value)
         case .assertStmt:
-            // coverage-blocked: Q772 T5 lowerAssert
+            // T5's `lowerAssert` reads the condition's syntax through T21's `exprSyntax` (Q778).
             lowerAssert(ref c, through: ref l, for: s)
         case .setOnPanic:
             emit(ref l, for: s)
@@ -165,9 +165,10 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
             let stable = spill(ref c, through: ref l, for: index)
             target = semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[k].span, target: c.bIndexes[k].target, index: stable, fromEnd: c.bIndexes[k].fromEnd, type: c.bIndexes[k].type })
         }
-    // coverage-blocked: Q772 T5 lowerBuiltinCall through 178
     } else if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall
-        && (c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet || c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapSlot)
+        && (c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet
+        // coverage-exempt: Q780 through 172
+        || c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapSlot)
         && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].arguments.length > 0 {
         let k = i64(target & 0xFFFFFFFF)
         let key = c.bBuiltinCalls[k].arguments[0]
@@ -181,7 +182,6 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     // The old value is read before `v` runs, which may change or move the target.
     // `map[k] op= v` reads through the panicking index: only `slot` inserts a missing key.
     var current: BExpr = -1
-    // coverage-blocked: Q772 T5 lowerBuiltinCall through 190
     if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet {
         let k = i64(target & 0xFFFFFFFF)
         var arguments = List<BExpr>()
@@ -740,8 +740,9 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             let target = arrayTarget && !isLvalue(in c, through: in l, for: parts[0]) ? spill(ref c, through: ref l, for: parts[0]) : parts[0]
             return semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[i].span, target: target, index: parts[1], fromEnd: c.bIndexes[i].fromEnd, type: c.bIndexes[i].type })
         case .builtinCall:
-            // coverage-blocked: Q772 T5 lowerBuiltinCall through 745
-            if c.bBuiltinCalls[i].member == .mapIndexSet || c.bBuiltinCalls[i].member == .mapSlot {
+            if c.bBuiltinCalls[i].member == .mapIndexSet
+                // coverage-exempt: Q780
+                || c.bBuiltinCalls[i].member == .mapSlot {
                 return lowerBuiltinCall(ref c, through: ref l, for: e)
             }
             return spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: e))
@@ -759,7 +760,6 @@ public bool isLvalueShape(ref Ctx c, through ref LCtx l, for BExpr e) {
         case .local or .thisRef or .index or .staticArray:
             return true
         case .builtinCall:
-            // coverage-blocked: Q772 T5 lowerBuiltinCall
             return c.bBuiltinCalls[i].member == .mapIndexSet || c.bBuiltinCalls[i].member == .mapSlot
         case .field:
             return isLvalueShape(ref c, through: ref l, for: c.bFields[i].receiver)

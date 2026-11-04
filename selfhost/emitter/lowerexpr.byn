@@ -107,10 +107,8 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
         case .call:
             return lowerCall(ref c, through: ref l, for: e)
         case .builtinCall:
-            // coverage-blocked: Q774 T5 lowerBuiltinCall
             return lowerBuiltinCall(ref c, through: ref l, for: e)
         case .tryFrom:
-            // coverage-blocked: Q774 T5 lowerTryFrom
             return lowerTryFrom(ref c, through: ref l, for: e)
         case .unary:
             let operand = lowerExpr(ref c, through: ref l, for: c.bUnaries[i].operand)
@@ -127,13 +125,11 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             return t4Keep(ref c, from: e, to: n)
         case .conversion:
             let kind = c.bConversions[i].kind
-            // coverage-blocked: Q774 T5 lowerCallParts
             let lvalue = kind == .arrayToSpan || kind == .toDynRef
             var operand = lvalue ? lowerLvalue(ref c, through: ref l, for: c.bConversions[i].operand) : lowerExpr(ref c, through: ref l, for: c.bConversions[i].operand)
             if isNeverExpr(operand) { return t4Never(ref c, through: ref l, for: e) }
             if kind == .fromNever { return operand }
             if kind == .narrow { return ltree.addLOptionalValue(ref l.tree, from: T4LOptionalValue { span: span, optional: operand, type: c.bConversions[i].type }) }
-            // coverage-blocked: Q774 T5 lowerCallParts
             if kind == .listToSpan && !isTrivial(in c, through: in l, for: operand) { operand = spill(ref c, through: ref l, for: operand) }
             return t4Keep(ref c, from: e, to: semantics.addConversion(ref c, from: BConversion { span: span, operand: operand, type: c.bConversions[i].type, kind: kind }))
         case .conditional:
@@ -230,7 +226,6 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             unless isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
             return lowerMatch(ref c, through: ref l, for: pattern, at: value)
         case .switchExpr:
-            // coverage-blocked: Q774 T5 lowerSwitchExpr
             return lowerSwitchExpr(ref c, through: ref l, for: e)
         case .tryExpr:
             return lowerTry(ref c, through: ref l, for: e)
@@ -274,7 +269,6 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             return ltree.addLFunctionValue(ref l.tree, from: T4LFunctionValue { span: span, function: c.bLambdas[i].lambda, env: env, functionType: c.bLambdas[i].functionType })
         case .interpolated:
             // Outside an output call the text goes into a temporary growable `StrBuf` (from `context.allocator`).
-            // coverage-blocked: Q774 T5 lowerWriteParts through 282
             let buf = newTemp(ref c, through: ref l, for: semantics.builtinType(.strBuf))
             let grow = semantics.addCall(ref c, from: BCall { span: span, function: c.builtinStrBufGrow, receiver: -1, arguments: List<BExpr>(), type: semantics.builtinType(.strBuf) })
             emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: localExpr(ref c, at: span, for: buf), value: grow, op: null }))
@@ -288,7 +282,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
 /// `e.GetType().Name` for the expressions `lowerExprNode` cannot lower.
 string t4TypeName(BExpr e) {
     if ltree.isLowered(e) {
-        // coverage-exempt: Q774 through 306
+        // coverage-exempt: Q774 through 300
         switch ltree.lKindOf(e) {
             case .optionalHas: return "LOptionalHas"
             case .optionalValue: return "LOptionalValue"
@@ -308,7 +302,7 @@ string t4TypeName(BExpr e) {
     }
     switch semantics.boundKind(e) {
         case .spread: return "BoundSpread"
-        // coverage-exempt: Q774 through 318
+        // coverage-exempt: Q774 through 312
         case .errorExpr: return "BoundErrorExpr"
         case .typeRef: return "BoundTypeRef"
         case .moduleRef: return "BoundModuleRef"
@@ -353,7 +347,7 @@ BExpr lowerConditional(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     let whenTrue = captureExpr(ref c, through: ref l, for: c.bConditionals[i].whenTrue, lvalue: false, to: ref preTrue)
     var preFalse = List<BStmt>()
     let whenFalse = captureExpr(ref c, through: ref l, for: c.bConditionals[i].whenFalse, lvalue: false, to: ref preFalse)
-    // coverage-exempt: Q774 through 359
+    // coverage-exempt: Q774 through 353
     if preTrue.length == 0 && preFalse.length == 0 && !isNeverExpr(whenTrue) && !isNeverExpr(whenFalse)
         && !semantics.isNever(t2Type(in c, through: in l, for: whenTrue)) && !semantics.isNever(t2Type(in c, through: in l, for: whenFalse)) {
         return t4Keep(ref c, from: e, to: semantics.addConditional(ref c, from: BConditional { span: span, condition: condition, whenTrue: whenTrue, whenFalse: whenFalse, type: type }))
@@ -563,19 +557,16 @@ BExpr lowerCall(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     let fn = c.bCalls[i].function
     switch c.functions[fn].builtin {
         case .print:
-            // coverage-blocked: Q774 T5 lowerWriteParts through 570
             if semantics.boundKind(c.bCalls[i].arguments[0]) == .interpolated {
                 // The stream is the target, as a log level is.
                 return lowerWriteParts(ref c, through: ref l, for: e, by: .print, to: -1, as: c.bCalls[i].arguments[0], at: c.bCalls[i].arguments[1])
             }
         case .log:
-            // coverage-blocked: Q774 T5 lowerWriteParts through 576
             if semantics.boundKind(c.bCalls[i].arguments[0]) == .interpolated {
                 // The level is the target, evaluated after the text's parts as in the plain-string call.
                 return lowerWriteParts(ref c, through: ref l, for: e, by: .log, to: -1, as: c.bCalls[i].arguments[0], at: c.bCalls[i].arguments[1])
             }
         case .panic:
-            // coverage-blocked: Q774 T5 lowerWrite through 582
             if semantics.boundKind(c.bCalls[i].arguments[0]) == .interpolated {
                 let _ = lowerWrite(ref c, through: ref l, for: e, by: .panic, to: -1, as: c.bCalls[i].arguments[0])
                 return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bCalls[i].type })
@@ -584,7 +575,6 @@ BExpr lowerCall(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     }
     if c.functions[fn].hasFails { panic($"call of failing `{c.functions[fn].name}` outside try/catch") }
     let lowered = lowerCallParts(ref c, through: ref l, for: e)
-    // coverage-blocked: Q774 T5 lowerCallParts
     if lowered == -1 { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bCalls[i].type }) }
     if semantics.isNever(c.bCalls[i].type) {
         emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: lowered }))
@@ -618,7 +608,6 @@ public (LocalId error, BExpr result)? lowerFailingCall(ref Ctx c, through ref LC
         return (error: check, result: value)
     }
     let lowered = lowerCallParts(ref c, through: ref l, for: operand)
-    // coverage-blocked: Q774 T5 lowerCallParts
     if lowered == -1 { return null }
     let sets = t4Copy(in c.functions[fn].errorSets)
     let error = newTemp(ref c, through: ref l, for: semantics.errorUnionOf(ref c, for: in sets, as: in List<VariantId>()))
@@ -664,7 +653,6 @@ BExpr lowerCatch(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     let target = !ltree.isLowered(r.result) && semantics.boundKind(r.result) == .local ? r.result : -1
     captureBegin(ref l)
     let binding = c.bCatches[i].binding
-    // coverage-blocked: Q774 T5 lowerSwitchExpr through 670
     if binding != -1 {
         note(ref c, through: ref l, for: binding)
         emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: localExpr(ref c, at: span, for: binding), value: localExpr(ref c, at: span, for: r.error), op: null }))

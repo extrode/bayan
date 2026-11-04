@@ -419,7 +419,7 @@ bool operands(ref Ctx c, through ref LCtx l, for in List<BExpr> ops, as in List<
         for s in pres[i] { emit(ref l, for: s) }
         if isNeverExpr(values[i]) { return false }
         let lvalue = i < lvalues.length && lvalues[i]
-        // coverage-blocked: Q774 T5 lowerCallParts
+        // coverage-exempt: Q774
         if (i < barrier && !isTrivial(in c, through: in l, for: values[i]) || movedFirst[i]) && !lvalue && !isVoidExpr(values[i]) {
             values[i] = spill(ref c, through: ref l, for: values[i])
         }

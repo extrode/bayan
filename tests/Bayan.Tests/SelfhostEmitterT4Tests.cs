@@ -608,7 +608,7 @@ public sealed class SelfhostEmitterT4Tests
     public void Expr_LazySidesSpreadsPatternsMatchCSharp() => SameExprs(Lazy, "lazy");
 
     /// Never-returning operands (`nev`), the `Operands` orderings (`ops`), the remaining kinds (`kinds`), `requires` checks,
-    /// never-returning failing calls and narrowed union and error locals.
+    /// never-returning failing calls, narrowed union and error locals, and the T5 kinds reached through `Expr` (`fromT5`).
     private const string More = """
         union error E {
             x
@@ -783,6 +783,30 @@ public sealed class SelfhostEmitterT4Tests
             return 0
         }
 
+        i64 useSpan(ReadOnlySpan<i64> s) => 1
+
+        i64 two(i64 a, at i64 b) => a
+
+        i64 gk(i64 a) fails E => a
+
+        i64 fromT5(i64 k, at bool q, for i64[3] arr) fails E {
+            let t1 = u8.tryFrom(k)
+            let t2 = useSpan(arr)
+            let t3 = useSpan(mkList())
+            let t4 = $"a{k}"
+            print($"p{k}")
+            log($"l{k}")
+            let t5 = g() catch switch {
+                E.x => 1,
+                E.y => 2
+            }
+            if q { let t6 = $"{1 + panic("x")}" }
+            if q { panic($"n{k}") }
+            if q { let t7 = two(panic("x"), at: 1) }
+            if q { let t8 = try gk(panic("x")) }
+            return 0
+        }
+
         void main() { }
 
         i64 uni(U u, by E err) {
@@ -811,6 +835,7 @@ public sealed class SelfhostEmitterT4Tests
     [InlineData("feeOf")]
     [InlineData("errs")]
     [InlineData("lv")]
+    [InlineData("fromT5")]
     public void Expr_MoreMatchesCSharp(string fn) => SameExprs(More, fn);
 
     /// `Expr` while an `assert` shows each declaration's initializer, with and without a `ran` flag.
