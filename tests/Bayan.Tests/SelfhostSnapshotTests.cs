@@ -150,6 +150,17 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.Contains(Path.Combine(Golden.RepoRoot, "selfhost", "nope.byn") + " matches no compiled source", e.Message);
     }
 
+    /// <summary>Q820: a listed file that exists but is not in this compilation (the guard lists every changed file to
+    /// every build) is ignored for this build, so every compiled file is skipped. Break-test: drop <c>!File.Exists(k)</c>.</summary>
+    [Fact]
+    public void SnapshotFilesOnDiskButNotCompiledAreIgnored()
+    {
+        string[] compiled = [Path.Combine(Golden.RepoRoot, "selfhost", "a.byn"), Path.Combine(Golden.RepoRoot, "selfhost", "b.byn")];
+        var none = new HashSet<string>(StringComparer.Ordinal);
+        Assert.True(File.Exists(Path.Combine(Golden.RepoRoot, "selfhost", "parser", "decls.byn")));
+        Assert.Equal(compiled, SelfhostSemanticsHarness.SnapshotSkip(compiled, none, "selfhost/parser/decls.byn").Order(StringComparer.Ordinal));
+    }
+
     /// <summary>An imported module's file is compiled under a path relative to the compilation's <c>DisplayRoot</c>;
     /// <c>SnapshotSkip</c> resolves it against the root it is given, not the working directory.
     /// Break-test: resolve with <c>Path.GetFullPath(p)</c> again.</summary>

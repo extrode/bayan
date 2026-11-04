@@ -96,7 +96,8 @@ public static class SelfhostSemanticsHarness
 
     /// <summary>The files a snapshot build carries no sites in: <paramref name="generated"/>, and with
     /// <paramref name="files"/> (<c>BAYAN_SNAPSHOT_FILES</c>) every <paramref name="compiled"/> file it does not list;
-    /// an entry matching no compiled file throws, naming <paramref name="variable"/>. A relative compiled path (an
+    /// an entry on disk that this compilation does not compile is ignored for this build (Q820), and one that does not
+    /// exist throws, naming <paramref name="variable"/>. A relative compiled path (an
     /// imported module's file, relative to the compilation's <c>DisplayRoot</c>, Compilation.cs:209) resolves against
     /// <paramref name="root"/>.</summary>
     internal static HashSet<string> SnapshotSkip(IEnumerable<string> compiled, IReadOnlySet<string> generated, string? files, string variable = "BAYAN_SNAPSHOT_FILES", string? root = null)
@@ -108,7 +109,7 @@ public static class SelfhostSemanticsHarness
             .Select(f => Path.GetFullPath(f, Golden.RepoRoot)).ToHashSet(StringComparer.Ordinal);
         var full = (string p) => root is null ? Path.GetFullPath(p) : Path.GetFullPath(p, root);
         var all = paths.Select(full).ToHashSet(StringComparer.Ordinal);
-        if (keep.FirstOrDefault(k => !all.Contains(k)) is { } missing)
+        if (keep.FirstOrDefault(k => !all.Contains(k) && !File.Exists(k)) is { } missing)
             throw new InvalidOperationException($"{variable}: {missing} matches no compiled source");
         skip.UnionWith(paths.Where(p => !keep.Contains(full(p))));
         return skip;
