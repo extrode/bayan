@@ -6,7 +6,7 @@ namespace Bayan.Tests;
 /// <summary>
 /// 012 T2: <c>lex</c>, <c>parse --ast</c>, <c>types</c> and <c>check</c> of the driver against <see cref="CliApp.Run"/> (R2).
 /// The expected exit code and streams come from the C# run in-process; only the elapsed seconds of <c>check</c>'s summary are masked.
-/// No style flag is passed: the dumps and diagnostics render plain in the driver (Q941).
+/// No style flag is passed: the dumps and diagnostics render plain in the driver (no-style: Q947).
 /// </summary>
 public sealed class SelfhostDriverT2Tests
 {
