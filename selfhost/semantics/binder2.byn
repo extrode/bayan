@@ -870,6 +870,7 @@ BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpT
         report(ref b, through: ref c, for: .mutateTemporary, at: parser.exprSpan(in f.iterable), by: ("", "", "", "", ""),
             label: "a `ReadOnlySpan` cannot be written through")
     }
+    // coverage-exempt: Q882
     let kind: LocalKind = f.kind == .varKeyword ? .varKeyword : .forVariable
     let variable = f.names.length > 0 ? declareDiscard(ref b, through: ref c, at: f.variable, as: element, for: kind) : declareLocal(ref b, through: ref c, at: f.variable, as: element, for: kind)
     c.locals[variable].borrowsSubject = true

@@ -265,6 +265,40 @@ public sealed class SelfhostEmitterT22Tests
         return 0;
     });
 
+    // A tuple `for` in a field default's handler block binds with no function (Compilation.cs:1421 `new Binder(this, s.File,
+    // null, s)`, Binder.cs:145 `_fn?.Locals.Add`); the lowered `main` notes it where the default is inlined.
+    private const string FieldDefault = """
+        union error E {
+            gone
+        }
+
+        i64 risky(i64 n) fails E {
+            fail .gone if n < 0
+            return n
+        }
+
+        struct S {
+            i64 x = risky(1) catch {
+                for (a, b) in [(1, 2)] { let _ = a + b }
+                panic("x")
+            }
+        }
+
+        i32 main() {
+            let s = S {}
+            return i32(s.x)
+        }
+        """;
+
+    [Fact]
+    public void FieldDefault_LocalsMatchCSharp() => WithFixture(FieldDefault, path =>
+    {
+        var c = Compile(path);
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        Assert.Null(Compare(path));
+        return 0;
+    });
+
     /// <summary>Every fixture of the T2-T5 and T11 test classes that compiles alone.</summary>
     [Fact]
     public void Fixtures_LocalsMatchCSharp()
