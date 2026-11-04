@@ -1,0 +1,6 @@
+// Shared state of the driver (spec 012 D6): one `// ── Tn state` section per task, inside `DCtx`.
+
+/// Everything the driver reads and writes for one run. Each task adds its fields in its own `// ── Tn state` section.
+public struct DCtx {
+    // ── T1 state
+}
