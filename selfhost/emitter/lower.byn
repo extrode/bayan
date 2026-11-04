@@ -384,7 +384,6 @@ bool operands(ref Ctx c, through ref LCtx l, for in List<BExpr> ops, as in List<
     var pres = List<List<BStmt>>()
     for i in 0..n {
         var pre = List<BStmt>()
-        // coverage-blocked: Q774 T3 lowerLvalue
         values.append(captureExpr(ref c, through: ref l, for: ops[i], lvalue: i < lvalues.length && lvalues[i], to: ref pre))
         pres.append(move pre)
     }
@@ -419,8 +418,8 @@ bool operands(ref Ctx c, through ref LCtx l, for in List<BExpr> ops, as in List<
     for i in 0..n {
         for s in pres[i] { emit(ref l, for: s) }
         if isNeverExpr(values[i]) { return false }
-        // coverage-blocked: Q774 T3 lowerLvalue through 425
         let lvalue = i < lvalues.length && lvalues[i]
+        // coverage-blocked: Q774 T5 lowerCallParts
         if (i < barrier && !isTrivial(in c, through: in l, for: values[i]) || movedFirst[i]) && !lvalue && !isVoidExpr(values[i]) {
             values[i] = spill(ref c, through: ref l, for: values[i])
         }

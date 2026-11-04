@@ -122,7 +122,7 @@ public BExpr lowerMatch(ref Ctx c, through ref LCtx l, for BPattern pattern, at 
             return t4All(ref c, through: in l, for: in tests)
         default:
             // coverage-exempt: Q774 the binder makes only the pattern kinds above.
-            panic($"cannot lower pattern {semantics.boundKind(pattern)}")
+            panic($"cannot lower pattern {t4TypeName(pattern)}")
     }
 }
 

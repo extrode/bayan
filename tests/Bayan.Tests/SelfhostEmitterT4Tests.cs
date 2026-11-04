@@ -107,8 +107,8 @@ public sealed class SelfhostEmitterT4Tests
                 sb.append($"{names[d]}:")
                 var outs = List<BStmt>()
                 for s in l.outs[0] { outs.append(s) }
-                for s in outs { sb.append($" {t4Dump(in c, through: in l, for: s)}") }
-                sb.append($" => {t4Dump(in c, through: in l, for: r)} locals={l.locals.length}\n")
+                for s in outs { sb.append($" {t4Dump(ref c, through: in l, for: s)}") }
+                sb.append($" => {t4Dump(ref c, through: in l, for: r)} locals={l.locals.length}\n")
             }
             return $"{sb.finish()}"
         }
@@ -131,7 +131,7 @@ public sealed class SelfhostEmitterT4Tests
                 sb.append("claim:")
                 var outs = List<BStmt>()
                 for s in l.outs[0] { outs.append(s) }
-                for s in outs { sb.append($" {t4Dump(in c, through: in l, for: s)}") }
+                for s in outs { sb.append($" {t4Dump(ref c, through: in l, for: s)}") }
                 sb.append($" locals={l.locals.length}\n")
             }
             return $"{sb.finish()}"
@@ -152,7 +152,7 @@ public sealed class SelfhostEmitterT4Tests
                 sb.append("become:")
                 var outs = List<BStmt>()
                 for s in l.outs[0] { outs.append(s) }
-                for s in outs { sb.append($" {t4Dump(in c, through: in l, for: s)}") }
+                for s in outs { sb.append($" {t4Dump(ref c, through: in l, for: s)}") }
                 sb.append($" locals={l.locals.length}\n")
             }
             return $"{sb.finish()}"
@@ -165,7 +165,16 @@ public sealed class SelfhostEmitterT4Tests
             return $"{c.locals[x].name}#-"
         }
 
-        string t4Dump(in Ctx c, through in LCtx l, for BNode n) uses alloc {
+        string t4Value(in semantics.Constant k) uses alloc {
+            switch k.kind {
+                case .integer: return $"{k.integer.hi}:{k.integer.lo}"
+                case .text: return $"\"{k.text}\""
+                case .flag: return k.flag ? "true" : "false"
+                default: return "?"
+            }
+        }
+
+        string t4Dump(ref Ctx c, through in LCtx l, for BNode n) uses alloc {
             if n == -1 { return "null" }
             var sb = StrBuf()
             var kids = List<BNode>()
@@ -194,6 +203,10 @@ public sealed class SelfhostEmitterT4Tests
                     case .assignExpr:
                         kids.append(l.tree.assignExprs[i].target)
                         kids.append(l.tree.assignExprs[i].value)
+                    case .loop: kids.append(l.tree.loops[i].body)
+                    case .sequence:
+                        for x in l.tree.sequences[i].effects { kids.append(x) }
+                        kids.append(l.tree.sequences[i].value)
                     case .indexUnchecked:
                         kids.append(l.tree.indexUncheckeds[i].target)
                         kids.append(l.tree.indexUncheckeds[i].index)
@@ -206,13 +219,22 @@ public sealed class SelfhostEmitterT4Tests
                 sb.append($"{semantics.boundKind(n)}")
                 if semantics.boundKind(n) == .local { sb.append($" {t4Local(in c, through: in l, for: c.bLocals[i].local)}") }
                 if semantics.boundKind(n) == .call { sb.append($" {c.functions[c.bCalls[i].function].name}") }
+                if semantics.boundKind(n) == .binary { sb.append($" op{c.bBinaries[i].op.ordinal}") }
+                if semantics.boundKind(n) == .unary { sb.append($" op{c.bUnaries[i].op.ordinal}") }
+                if semantics.boundKind(n) == .builtinCall { sb.append($" m{c.bBuiltinCalls[i].member.ordinal}") }
+                if semantics.boundKind(n) == .literal { sb.append($" {t4Value(in c.bLiterals[i].value)}") }
                 for k in semantics.children(in c, for: n) { kids.append(k) }
+            }
+            let isExpr = ltree.isLowered(n) ? ltree.lKindOf(n).ordinal >= ltree.LKind.optionalHas.ordinal : semantics.isExprKind(semantics.boundKind(n))
+            if isExpr {
+                sb.append($":{semantics.typeDisplay(ref c, by: ltree.typeOf(in c, through: in l.tree, for: n))}")
+                if (semantics.exprConstant(in c, for: n) is { } k) { sb.append($"={t4Value(in k)}") }
             }
             if kids.length > 0 {
                 sb.append("(")
                 for k in 0..kids.length {
                     if k > 0 { sb.append(" ") }
-                    sb.append(t4Dump(in c, through: in l, for: kids[k]))
+                    sb.append(t4Dump(ref c, through: in l, for: kids[k]))
                 }
                 sb.append(")")
             }
@@ -311,6 +333,14 @@ public sealed class SelfhostEmitterT4Tests
         return char.ToLowerInvariant(bare[0]) + bare[1..];
     }
 
+    private static string Value(ConstantValue v) => v.Value switch
+    {
+        Int128 n => $"{(ulong)(n >> 64)}:{(ulong)n}",
+        string s => $"\"{s}\"",
+        bool b => b ? "true" : "false",
+        _ => "?",
+    };
+
     private static string Dump(BoundNode? n, List<LocalSymbol> locals)
     {
         if (n is null) return "null";
@@ -339,14 +369,25 @@ public sealed class SelfhostEmitterT4Tests
                 sb.Append($" {x.Function.Name}");
                 if (x.Env is not null) sb.Append($" {Local(x.Env)}");
                 break;
-            case LNever or LVoid or LSequence or LNextChar or LWrite or LPanic or LLoop or LReturn or LSetContext or LFreeArena
+            case LSequence x: kids.AddRange(x.Effects); kids.Add(x.Value); break;
+            case LLoop x: kids.Add(x.Body); break;
+            case LNever or LVoid or LNextChar or LWrite or LPanic or LReturn or LSetContext or LFreeArena
                 or LPushPanicHandler or LPopPanicHandler:
                 break;
             default:
                 if (n is BoundLocal bl) sb.Append($" {Local(bl.Local)}");
                 if (n is BoundCall bc) sb.Append($" {bc.Function.Name}");
+                if (n is BoundBinary bb) sb.Append($" op{(int)bb.Op}");
+                if (n is BoundUnary bu) sb.Append($" op{(int)bu.Op}");
+                if (n is BoundBuiltinCall bbc) sb.Append($" m{(int)bbc.Member}");
+                if (n is BoundLiteral lit) sb.Append($" {Value(lit.Value)}");
                 kids.AddRange(BoundTree.Children(n));
                 break;
+        }
+        if (n is BoundExpr e)
+        {
+            sb.Append($":{e.Type.DisplayName}");
+            if (e.Constant is { } k) sb.Append($"={Value(k)}");
         }
         if (kids.Count > 0) sb.Append('(').Append(string.Join(' ', kids.Select(k => Dump(k, locals)))).Append(')');
         return sb.ToString();
@@ -683,6 +724,25 @@ public sealed class SelfhostEmitterT4Tests
             return 0
         }
 
+        interface IShape {
+            i64 area()
+        }
+
+        struct Circle : IShape {
+            i64 r
+
+            i64 area() => r
+        }
+
+        i64 lv(i64 k, to i64? o, by List<i64[3]> ws, from Circle ci) {
+            let l2: dyn ref readonly IShape = ci
+            let l3 = ws[k][o ?? h()]
+            let l4 = o ?? return 0
+            let l5 = g() catch { return 1 }
+            let l6 = ws[k][1..2]
+            return l2.area() + l3 + l4 + l5
+        }
+
         i64 nev(i64 k, at bool q, by List<i64> xs, to i64? o, from List<i64?> os, for i64[3] arr) {
             if q { let a1 = E.y(panic("x")) }
             if q { let a2 = P { a: 1, b: panic("x") }.a }
@@ -749,6 +809,8 @@ public sealed class SelfhostEmitterT4Tests
     [InlineData("dieTry")]
     [InlineData("uni")]
     [InlineData("feeOf")]
+    [InlineData("errs")]
+    [InlineData("lv")]
     public void Expr_MoreMatchesCSharp(string fn) => SameExprs(More, fn);
 
     /// `Expr` while an `assert` shows each declaration's initializer, with and without a `ran` flag.
