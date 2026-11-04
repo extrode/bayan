@@ -35,6 +35,7 @@ public sealed class SelfhostEmitterT10Tests
         type LSequence = ltree.LSequence
         type LIndexUnchecked = ltree.LIndexUnchecked
         type LVoid = ltree.LVoid
+        type BMove = semantics.BMove
 
         i32 main(ReadOnlySpan<string> args) {
             var rest = List<string>()
@@ -48,6 +49,8 @@ public sealed class SelfhostEmitterT10Tests
             var l = LCtx {}
             if args[0] == "expr" { Io.stdout.write(t10Print(ref c, through: ref l, at: args[1], for: args[2])) }
             if args[0] == "fail" { Io.stdout.write(t10Fail(ref c, through: ref l, at: args[1], for: args[2])) }
+            if args[0] == "failbound" { Io.stdout.write(t10FailBound(ref c, through: ref l, at: args[1], for: args[2], as: t10Init(in c, for: "itp"))) }
+            if args[0] == "failspan" { Io.stdout.write(t10FailBound(ref c, through: ref l, at: args[1], for: args[2], as: c.bCalls[t10Init(in c, for: "vc") & 0xFFFFFFFF].arguments[0])) }
             return 0
         }
 
@@ -69,7 +72,13 @@ public sealed class SelfhostEmitterT10Tests
             return -1
         }
 
-        BExpr t10Init(in Ctx c, for string name) => c.bLocalDecls[t10Decl(in c, for: name)].initializer
+        /// A `try`'s operand: the call `Call` takes once lowering has split the `try` off.
+        BExpr t10Bare(in Ctx c, at BExpr e) {
+            if !ltree.isLowered(e) && semantics.boundKind(e) == .tryExpr { return c.bTries[e & 0xFFFFFFFF].operand }
+            return e
+        }
+
+        BExpr t10Init(in Ctx c, for string name) => t10Bare(in c, at: c.bLocalDecls[t10Decl(in c, for: name)].initializer)
 
         LocalId t10Var(in Ctx c, for string name) => c.bLocalDecls[t10Decl(in c, for: name)].local
 
@@ -100,16 +109,25 @@ public sealed class SelfhostEmitterT10Tests
             return cprint.emitExpr(ref cc, for: ref f, from: ref c, through: l.tree, at: v)
         }
 
+        /// `e`, a bound node lowering removes (an interpolated string, a `rest` span literal), emitted unlowered.
+        string t10FailBound(ref Ctx c, through ref LCtx l, at string file, for string linePath, as BExpr e) uses alloc {
+            var f = t10Func(in c, at: file, for: linePath)
+            var cc = CCtx {}
+            return cprint.emitExpr(ref cc, for: ref f, from: ref c, through: l.tree, at: e)
+        }
+
         string t10Print(ref Ctx c, through ref LCtx l, at string file, for string linePath) uses alloc {
             var f = t10Func(in c, at: file, for: linePath)
             var cc = CCtx {}
             let g = t10G(in c)
             let i64Type = c.locals[c.functions[g].parameters[0]].type
             var items = List<BExpr>()
-            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo"] { items.append(t10Init(in c, for: n)) }
+            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up"] { items.append(t10Init(in c, for: n)) }
             for s in c.bBlocks[c.functions[g].body & 0xFFFFFFFF].statements {
-                if !ltree.isLowered(s) && semantics.boundKind(s) == .exprStmt { items.append(c.bExprStmts[s & 0xFFFFFFFF].expr) }
+                if !ltree.isLowered(s) && semantics.boundKind(s) == .exprStmt { items.append(t10Bare(in c, at: c.bExprStmts[s & 0xFFFFFFFF].expr)) }
             }
+            items.append(semantics.addMove(ref c, from: BMove { span: t10At(in c, for: "te"), operand: t10Init(in c, for: "te") }))
+            items.append(semantics.addThis(ref c, from: BThis { span: t10At(in c, for: "a"), type: i64Type }))
             items.append(ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: t10At(in c, for: "o"), optional: t10Read(ref c, for: "o") }))
             items.append(ltree.addLOptionalValue(ref l.tree, from: LOptionalValue { span: t10At(in c, for: "o"), optional: t10Read(ref c, for: "o"), type: i64Type }))
             items.append(ltree.addLUnionTag(ref l.tree, from: LUnionTag { span: t10At(in c, for: "u0"), unionValue: t10Read(ref c, for: "u0") }))
@@ -152,11 +170,22 @@ public sealed class SelfhostEmitterT10Tests
 
         union error E {
             bad(i64 code)
+            gone
         }
 
         struct P { }
 
-        void g(i64 k, from move string s, to ref i64 ys, at (i64 q, i64 r) pair, by i64 -> i64 fv, for bool flag, as ReadOnlySpan<u8> bytes) uses alloc, clock, console {
+        struct Q { i64 x }
+
+        struct St {
+            i64 id
+            states {
+                draft
+                paid(i64 payment)
+            }
+        }
+
+        void g(i64 k, from move string s, to ref i64 ys, at (i64 q, i64 r) pair, by i64 -> i64 fv, for bool flag, as ReadOnlySpan<u8> bytes, through ReadOnlySpan<string> argv) fails uses alloc, clock, console, fs, process {
             var a = k
             var v = a
             var mv = move s
@@ -181,11 +210,45 @@ public sealed class SelfhostEmitterT10Tests
             var mn = Io.monotonicNanos()
             var hx = Hex.encode(bytes)
             var fo = Color.fromOrdinal(k)
+            var q0 = Q { x: k }
+            var mp = Map<string, i64>()
+            var o2: i64? = null
+            var e2: E = .gone
+            var buf = stackalloc u8[4]
+            var sbn = StrBuf(buf)
+            var sbo = StrBuf.over(buf)
+            var rf = try Io.readFile(str)
+            var rt = try Io.readText(str)
+            var ld = try Io.listDir(str)
+            var rn = try Io.run(str, argv)
+            var rb = try Io.runBatch(str, argv)
+            var ud = try Utf8.decode(bytes)
+            var ut = Utf8.tryDecode(bytes)
+            var ur = Utf8.decode(bytes, invalid: .replace)
+            var hd = try Hex.decode(str)
+            var ip = try i64.parse(str)
+            var pi = Path.isRooted(str)
+            var pre = Path.relative(str, str)
+            var pf = Path.fileName(str)
+            var iu = string.invalidUtf8At(bytes)
+            var so = Io.stdout
+            var se = Io.stderr
+            var si = Io.stdin
+            var tr = un.trustUnchecked() because "a fixture"
+            var itp = $"{a}"
+            var sd = St.draft { id: k }
+            var ea: i64[0] = []
+            var sb0 = StrBuf()
+            var up = try u8.parse(str)
+            var vc = total(k, a)
+            try Io.writeFile(str, bytes)
             print(str)
             log(str)
             panic(str)
             todo(str)
         }
+
+        i64 total(rest ReadOnlySpan<i64> xs) => 0
 
         void main() { }
         """;
@@ -255,16 +318,21 @@ public sealed class SelfhostEmitterT10Tests
     private static (string File, string LinePath) FileOf(object fe) =>
         ((string)Field(fe, "_file")!, (string?)Field(fe, "_linePath") ?? "\"a.byn\"");
 
+    /// <summary>A <c>try</c>'s operand: the call <c>Call</c> takes once lowering has split the <c>try</c> off.</summary>
+    private static BoundExpr Bare(BoundExpr e) => e is BoundTry t ? t.Operand : e;
+
     private static List<string> ExprOracle(Compilation c)
     {
         var (fe, g, decls) = NewEmitterFor(c);
-        BoundExpr Init(string n) => decls[n].Initializer!;
+        BoundExpr Init(string n) => Bare(decls[n].Initializer!);
         Node At(string n) => Init(n).Syntax;
         BoundExpr Read(string n) => new BoundLocal(At(n), decls[n].Local);
         var i64 = PrimitiveType.I64;
         var items = new List<BoundExpr>();
-        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn" }) items.Add(Init(n));
-        items.AddRange(g.Body!.Statements.OfType<BoundExprStmt>().Select(s => s.Expr));
+        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up" }) items.Add(Init(n));
+        items.AddRange(g.Body!.Statements.OfType<BoundExprStmt>().Select(s => Bare(s.Expr)));
+        items.Add(new BoundMove(At("te"), Init("te")));
+        items.Add(new BoundThis(At("a"), i64));
         items.Add(new LOptionalHas(At("o"), Read("o")));
         items.Add(new LOptionalValue(At("o"), Read("o"), i64));
         items.Add(new LUnionTag(At("u0"), Read("u0")));
@@ -310,7 +378,6 @@ public sealed class SelfhostEmitterT10Tests
         var (file, linePath) = FileOf(NewEmitterFor(c).Fe);
         var actual = RunMode("expr", path, file, linePath, out var exit, out var stderr);
         Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
-        File.WriteAllLines(Path.Combine(Golden.RepoRoot, "tmp", "t10.out"), ExprOracle(c)); // TEMP
         SelfhostSemanticsHarness.AssertSection(actual, "expr", ExprOracle(c));
     });
 
@@ -325,5 +392,22 @@ public sealed class SelfhostEmitterT10Tests
         RunMode("fail", path, file, linePath, out var exit, out var stderr);
         Assert.NotEqual(0, exit);
         Assert.Contains("cannot emit", stderr);
+    });
+
+    [Theory]
+    [InlineData("failbound")]
+    [InlineData("failspan")]
+    public void Expr_OfAnUnloweredBoundNodeFailsLikeCSharp(string mode) => WithFixture(Fixture, path =>
+    {
+        var c = Compile(path);
+        var (fe, _, decls) = NewEmitterFor(c);
+        // An interpolated string has no case in `Expr`; a `rest` span literal is a `BoundCollection` of no list, map or array type.
+        var node = mode == "failbound" ? decls["itp"].Initializer! : ((BoundCall)decls["vc"].Initializer!).Arguments[0];
+        var thrown = Assert.Throws<System.Reflection.TargetInvocationException>(() => Expr(fe, node));
+        Assert.StartsWith("cannot emit", thrown.InnerException!.Message);
+        var (file, linePath) = FileOf(fe);
+        RunMode(mode, path, file, linePath, out var exit, out var stderr);
+        Assert.NotEqual(0, exit);
+        Assert.Contains(mode == "failbound" ? "cannot emit" : thrown.InnerException!.Message, stderr);
     });
 }

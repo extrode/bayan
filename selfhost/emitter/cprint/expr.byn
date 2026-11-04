@@ -13,21 +13,11 @@ string t10Join(in List<string> parts) uses alloc {
     return $"{sb.finish()}"
 }
 
-/// T10 (private): `PrimitiveType.Bits` of an integer type (`primitiveBits` is private to `semantics`).
-i64 t10Bits(Type t) {
-    switch semantics.primKindOf(i64(t & 0xFFFFFFFF)) {
-        case .i8 or .u8: return 8
-        case .i16 or .u16: return 16
-        case .i32 or .u32 or .f32 or .char: return 32
-        case .i64 or .u64 or .isize or .usize or .f64: return 64
-        default: return 0
-    }
-}
-
 /// CEmitter.cs:1617 `FunctionEmitter.Expr`: the C text of expression `e`.
 public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at ltree.LNode e) uses alloc {
+    // coverage-blocked: Q806 T6 constant through 24
     if (semantics.exprConstant(in c, for: e) is { } konst) {
-        let ty = semantics.exprType(in c, for: e)
+        let ty = ltree.typeOf(in c, through: in t, for: e)
         var isParameter = false
         if semantics.boundKind(e) == .local { isParameter = c.locals[c.bLocals[e & 0xFFFFFFFF].local].isParameter }
         if semantics.kindOf(ty) == .primitive && !semantics.isVoid(ty) && !semantics.isNever(ty) && !isParameter {
@@ -44,16 +34,19 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             case .errorCode:
                 return $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.errorCodes[i].error)}.code"
             case .errorField:
+                // coverage-blocked: Q806 T6 fieldName through 40
                 let v = t.errorFields[i].variant
                 let owner = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.errorFields[i].error)
                 return $"{owner}.p.e{c.errorVariants[v].code}.{fieldName(c.locals[c.errorVariants[v].fields[t.errorFields[i].index]].name)}"
             case .unionField:
+                // coverage-blocked: Q806 T6 fieldName through 45
                 let v = t.unionFields[i].variant
                 let owner = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.unionFields[i].unionValue)
                 return $"{owner}.u.{fieldName(c.unionVariants[v].name)}.{fieldName(c.locals[c.unionVariants[v].fields[t.unionFields[i].index]].name)}"
             case .optionalValue:
                 return $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.optionalValues[i].optional)}.value"
             case .assignExpr:
+                // coverage-blocked: Q806 T9 checkedStore through 51
                 if (checkedStore(ref cc, for: ref f, from: ref c, through: t, at: t.assignExprs[i].target, to: t.assignExprs[i].value, claim: false) is { } stored) {
                     return stored
                 }
@@ -72,14 +65,16 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             case .indexUnchecked:
                 let target = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.indexUncheckeds[i].target)
                 let index = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.indexUncheckeds[i].index)
-                if semantics.kindOf(semantics.exprType(in c, for: t.indexUncheckeds[i].target)) == .array {
+                if semantics.kindOf(ltree.typeOf(in c, through: in t, for: t.indexUncheckeds[i].target)) == .array {
                     return $"{target}.v[{index}]"
                 }
                 return $"{target}.ptr[{index}]"
             case .nextChar:
                 return $"byn_str_next({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.nextChars[i].text)}, &{f.names[t.nextChars[i].position]})"
             // A named function goes through a thunk taking the environment; a lambda takes it already.
+            // Q1: round 4 redoes this (CEmitter.cs:1716-1720).
             case .functionValue:
+                // coverage-blocked: Q806 T6 functionName through 83
                 let fnType = t.functionValues[i].functionType
                 if c.functions[t.functionValues[i].function].kind == .lambda {
                     let ctype = cType(ref cc, from: ref c, for: fnType)
@@ -87,6 +82,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
                     let env = t.functionValues[i].env
                     return $"(({ctype}){{{name}, {env == -1 ? "NULL" : $"&{f.names[env]}"}}})"
                 }
+                // coverage-blocked: Q806 T7 functionThunk through 88
                 let ctype = cType(ref cc, from: ref c, for: fnType)
                 let thunk = functionThunk(ref cc, from: ref c, for: t.functionValues[i].function, as: fnType)
                 return $"(({ctype}){{{thunk}, NULL}})"
@@ -96,14 +92,17 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
     }
     switch semantics.boundKind(e) {
         case .literal:
+            // coverage-blocked: Q806 T6 constant through 97
             let value = c.bLiterals[i].value
             return constant(ref cc, from: ref c, for: value, as: c.bLiterals[i].type)
         case .symbolLiteral:
+            // coverage-blocked: Q806 T6 symbolLiteral
             return symbolLiteral(ref cc, for: c.bSymbolLiterals[i].text)
         case .defaultValue:
             return $"(({cType(ref cc, from: ref c, for: c.bDefaults[i].type)}){{0}})"
         case .local:
             let l = c.bLocals[i].local
+            // coverage-blocked: Q806 T9 hasSlot through 110
             if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
                 if f.hasDryRun { f.reads[l] = true }
                 let slotName = slot(ref cc, for: ref f, from: ref c, at: l)
@@ -118,6 +117,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             let operand = c.bMoves[i].operand
             if semantics.boundKind(operand) == .local {
                 let l = c.bLocals[operand & 0xFFFFFFFF].local
+                // coverage-blocked: Q806 T9 hasSlot through 126
                 if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
                     if f.hasDryRun { f.moves[l] = true }
                     let moveFn = ownMove(ref cc, from: ref c, for: c.bLocals[operand & 0xFFFFFFFF].type)
@@ -128,6 +128,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             }
             return emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: operand)
         case .field:
+            // coverage-blocked: Q806 T6 fieldName through 133
             let receiver = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bFields[i].receiver)
             return $"{receiver}.{fieldName(c.fields[c.bFields[i].field].name)}"
         case .tupleElement:
@@ -136,12 +137,16 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
         case .call:
             return call(ref cc, for: ref f, from: ref c, through: t, at: e, to: null)
         case .builtinCall:
+            // coverage-blocked: Q806 T11 emitBuiltin
             return emitBuiltin(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .unary:
+            // coverage-blocked: Q806 T11 unary
             return unary(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .binary:
+            // coverage-blocked: Q806 T11 binary
             return binary(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .conversion:
+            // coverage-blocked: Q806 T11 conversion
             return conversion(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .conditional:
             let condition = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bConditionals[i].condition)
@@ -154,6 +159,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             if state != -1 {
                 // A state literal: the fields in order, then the tag and the state's payload by name.
                 var payload = ""
+                // coverage-blocked: Q806 T6 fieldName through 168
                 if c.bStructLiterals[i].payload.length > 0 {
                     var items = List<string>()
                     for k in 0..c.bStructLiterals[i].payload.length {
@@ -167,6 +173,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
                     parts.append(emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bStructLiterals[i].fields[k]))
                 }
                 parts.append($".tag = {c.unionVariants[state].tag}")
+                // coverage-blocked: Q806 T6 fieldName
                 if c.bStructLiterals[i].payload.length > 0 { parts.append(payload) }
                 return $"(({ctype}){{{t10Join(in parts)}}})"
             }
@@ -187,6 +194,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
         case .unionNew:
             let ctype = cType(ref cc, from: ref c, for: c.bUnionNews[i].type)
             let variant = c.bUnionNews[i].variant
+            // coverage-blocked: Q806 T6 fieldName through 204
             if c.bUnionNews[i].payload.length == 0 { return $"(({ctype}){{.tag = {c.unionVariants[variant].tag}}})" }
             let fname = fieldName(c.unionVariants[variant].name)
             var parts = List<string>()
@@ -213,8 +221,10 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
                     panic("cannot emit BoundCollection")
             }
         case .index:
+            // coverage-blocked: Q806 T11 index
             return index(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .slice:
+            // coverage-blocked: Q806 T11 slice
             return slice(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .errorVariant:
             let ctype = errorCType(ref cc, from: ref c)
@@ -228,12 +238,14 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
         case .enumMember:
             return $"(({cType(ref cc, from: ref c, for: c.bEnumMembers[i].type)}){c.enumMembers[c.bEnumMembers[i].member].ordinal})"
         case .enumValues:
+            // coverage-blocked: Q806 T6 enumValues through 246
             let enumId = c.bEnumValues[i].enumId
             let ctype = cType(ref cc, from: ref c, for: c.bEnumValues[i].type)
             let etype = cType(ref cc, from: ref c, for: semantics.enumTypeOf(enumId))
             let values = enumValues(ref cc, from: ref c, for: enumId)
             return $"(({ctype}){{({etype}*){values}, {c.enums[enumId].members.length}}})"
         case .staticArray:
+            // coverage-blocked: Q806 T6 staticArray
             return staticArray(ref cc, from: ref c, for: c.bStaticArrays[i].constId)
         default:
             panic($"cannot emit {semantics.boundKind(e)}")
@@ -354,10 +366,11 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
             let ctype = cType(ref cc, from: ref c, for: rt)
             let signed = semantics.isSignedInteger(rt) ? "true" : "false"
             let _ = helper(ref cc, for: name, from: $"static {errType} {name}(byn_str s, byn_builtin_Radix radix, {ctype}* out)",
-                as: $"{{\n    int64_t v = 0;\n    int64_t at = byn_int_parse_at(s, {t10Bits(rt)}, {signed}, radix, &v);\n    if (at == -2) return ({errType}){{ .code = UINT32_C({overflow}) }};\n    if (at >= 0) return ({errType}){{ .code = UINT32_C({bad}), .p.e{bad} = {{ at }} }};\n    if (out) *out = ({ctype})v;\n    return ({errType}){{0}};\n}}\n")
+                as: $"{{\n    int64_t v = 0;\n    int64_t at = byn_int_parse_at(s, {semantics.primitiveBits(semantics.primKindOf(i64(rt & 0xFFFFFFFF)))}, {signed}, radix, &v);\n    if (at == -2) return ({errType}){{ .code = UINT32_C({overflow}) }};\n    if (at >= 0) return ({errType}){{ .code = UINT32_C({bad}), .p.e{bad} = {{ at }} }};\n    if (out) *out = ({ctype})v;\n    return ({errType}){{0}};\n}}\n")
             let text = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
             return $"{name}({text}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])}, {outArg})"
         case .symbolIntern:
+            // coverage-blocked: Q806 T6 symbolIntern
             return symbolIntern(ref cc, for: emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0]))
         case .pathIsRooted:
             return $"byn_path_is_rooted({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
@@ -397,6 +410,7 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
                 as: $"{{\n    if (i < 0 || i >= {members}) return ({opt}){{0}};\n    return ({opt}){{true, ({enumType})i}};\n}}\n")
             return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
         case .enumParse:
+            // coverage-blocked: Q806 T6 enumNames through 423
             let rt = c.functions[fn].returnType
             let inner = c.optionalTypes[rt & 0xFFFFFFFF]
             let members = c.enums[inner & 0xFFFFFFFF].members.length
@@ -413,16 +427,22 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     // Through `dyn ref` the conformer's method is the vtable slot; the receiver is a local, so naming it twice is safe.
     let receiver = c.bCalls[n].receiver
     var dyn: string? = null
-    if receiver != -1 && semantics.kindOf(semantics.exprType(in c, for: receiver)) == .dynRef {
+    // coverage-blocked: Q806 T7 slotName through 432
+    if receiver != -1 && semantics.kindOf(ltree.typeOf(in c, through: in t, for: receiver)) == .dynRef {
         dyn = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     }
     // Through a function value: its code with its environment first; lowering leaves the receiver a local, so naming it twice is safe.
+    // Q1: round 4 redoes this (CEmitter.cs:1912-1913).
     var value: string? = null
+    // coverage-blocked: Q806 T6 functionName
     if c.functions[fn].kind == .invoke {
         value = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     }
+    // coverage-blocked: Q806 T7 slotName through 443
     if (dyn is { } d) {
         args.append($"{d}.data")
+    // Q1: round 4 redoes this (CEmitter.cs:1918-1921).
+    // coverage-blocked: Q806 T6 functionName through 450
     } else if (value is { } v) {
         args.append($"{v}.env")
     } else if semantics.functionHasThis(ref c, by: fn) && c.functions[fn].kind != .constructor {
@@ -432,6 +452,7 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     for i in 0..argCount {
         let param = c.functions[fn].parameters[i]
         let argument = c.bCalls[n].arguments[i]
+        // coverage-blocked: Q806 T6 functionName through 465
         if semantics.paramIsByRef(ref c, by: param) { claimAfterCall(ref cc, for: ref f, from: ref c, through: t, at: argument, to: c.bCalls[n].span) }
         // An `out` argument initializes a moved-from local again.
         var outLocal: semantics.LocalId = -1
@@ -447,9 +468,12 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
         }
     }
     if (result is { } r) { args.append(r) }
+    // Q1: round 4 redoes this (CEmitter.cs:1937).
     var callee = ""
+    // coverage-blocked: Q806 T7 slotName through 475
     if (dyn is { } d2) {
         callee = $"{d2}.vt->{slotName(ref c, for: fn)}"
+    // coverage-blocked: Q806 T6 functionName through 480
     } else if (value is { } v2) {
         callee = $"{v2}.fn"
     } else {
