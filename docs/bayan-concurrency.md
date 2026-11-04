@@ -136,13 +136,31 @@ Without the `shield`, a cancel between `charge` and `commit` would leave the car
 | At timeout | Result |
 | --- | --- |
 | A cancel is pending (the usual case: a shield delays it) | The unwind continues outward as that cancel; nothing new is reported |
-| No cancel is pending | The shield fails with `TimeoutError`, as a `scope(timeout:)` does, so its `fails` list includes it |
+| No cancel is pending | The shield fails with `DeadlineError.exceeded`, as a `scope(timeout:)` does, so an explicit `shield`'s error set always includes it |
 
 A nested shield's timeout is capped at the enclosing shield's remaining time, so a shield inside a `defer` cannot outlast the `defer`.
 
 **A cancel can be delayed by cleanup.** Because every `defer` body is a shield, an unwind that runs several suspending `defer` bodies waits for each in turn: up to their timeouts added together (5s each by default), one per frame with such a `defer`. That is accepted. The debug watchdog reports a cancel that takes longer than a threshold to finish, naming the slow `defer`.
 
-**`scope(timeout:)` expiry fails the scope with `TimeoutError`.** The deadline belongs to the scope, so its caller can handle it; children see it as a cancel. A cancel from outside the scope is not a `TimeoutError`: it unwinds through the scope.
+An implicit shield around a `defer` body is a grace period: its timeout counts only while a cancel is unwinding, and at expiry the rest of the body is canceled. It never adds an error, so a `defer` never changes its function's error set.
+
+**`scope(timeout:)` or `until:` expiry fails the scope with `DeadlineError.exceeded`** (user decision 2026-11-04). The deadline belongs to the scope, so its caller can handle it; children see it as a cancel. A cancel from outside the scope is not a `DeadlineError`: it unwinds through the scope.
+
+- **First failure wins.** If a child has already failed and the deadline passes while the scope unwinds, the scope fails with the child's error, not `DeadlineError`. Under `policy: .collectAll` a child's failure does not fail the scope, so the deadline is the scope's own failure and each `join()` still returns its child's result.
+- **Inferred error set.** The scope's set includes `DeadlineError` only when `timeout:` or `until:` is given; otherwise it is the union of its children's sets and the body's.
+- **Naming.** A peer's timeout is a case of that I/O set (`DbError.timeout`, spec §8; `CarrierError.timeout`, §3.14). The scope's deadline is a separate set with a different case name, `union error DeadlineError { exceeded }`, so one `catch switch` tells them apart, and composing it with an I/O set never hits the shared-case error BYN3202:
+
+```cs
+let summary = dashboard(id, from: pool) catch switch {
+    DeadlineError.exceeded => Summary.partial(id),     // our 2s budget ran out
+    DbError.timeout        => Summary.unavailable,     // the database timed out
+    DbError e              => Summary.failed(e),
+}
+
+union error LoadError = DbError, DeadlineError        // valid: no case name is shared
+```
+
+`TimeoutError` is not used: the name reads as either kind, and spec §13.2 :1559 used it for per-operation expiry, which round 4 removes.
 
 ```cs
 void close(ref Socket socket) uses net, suspend fails NetError {
@@ -396,7 +414,7 @@ User decisions 2026-11-04 (review rows C4, C16–C19). The round-4 revision make
 | §13.1, new | `Io.Blocking` runs `spawn` children in order, inline. A child that would wait on something only a later sibling can provide (a channel receive, a join) is a runtime panic naming both, never a silent hang. | C16 |
 | §13.1, new | `workers: .compute` under `Io.Evented` is a separate pool from the I/O workers: default size one thread per core, set in `package.byn` like the blocking pool. Under `Io.Blocking` and `Io.Simulated` it runs inline. | C16 |
 | §13.2 (:1547-1564) | Replace `async`/`await`/`Future` with `scope`/`spawn`/`join()` (C1). Remove "`Canceled` is in every I/O error set" (:1551); cancellation is an unwind, not an error value. Replace `provide timeout:` with `scope(timeout:)`/`until:`, and `context.checkDeadline()` with `Fiber.checkCanceled()`. | C1, C4 |
-| §13.2, new | `shield(timeout: d) { }` is the one uncancelable region (default 5s); every `defer` body runs as one. At timeout the region is canceled: a pending cancel continues, otherwise `TimeoutError`. Nested shields are capped by the outer one. `scope(timeout:)` expiry fails the scope with `TimeoutError`. | C4 |
+| §13.2, new | `shield(timeout: d) { }` is the one uncancelable region (default 5s); every `defer` body runs as one. At timeout the region is canceled: a pending cancel continues, otherwise `DeadlineError.exceeded`. Nested shields are capped by the outer one; a `defer`'s implicit shield is a grace period that never adds an error. `scope(timeout:)`/`until:` expiry fails the scope with `DeadlineError.exceeded` (new `union error DeadlineError { exceeded }`): a child's earlier failure wins, the set includes it only when `timeout:`/`until:` is given. Remove :1559 ("Expiry fails the suspended operation with `TimeoutError`"). | C4 |
 | §13.2, new | `Fiber.yieldNow()` (not `yield`, a reserved keyword) is a suspend point and unwinds on a pending cancel. | C4, I1 |
 | §13.3 (:1565-1567) | Remove `Io.group()`; `scope` replaces it. | C1 |
 | §13.4 (:1568-1575) | Keep the guard rule. Add `unlock(move this)` as the one early release. No `Mutex.with`. | C19 |
