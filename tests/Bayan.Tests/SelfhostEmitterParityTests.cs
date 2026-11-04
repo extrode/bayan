@@ -308,7 +308,7 @@ public sealed class SelfhostEmitterHarnessTests
         SelfhostEmitterHarness.SameAsCli("missing --time", ["build", "--emit-c", missing], ["--time", missing]);
     }
 
-    /// <summary>A warning alone does not stop emission: stderr, stdout and exit as <c>build --emit-c</c> under every path; <c>--ascii</c> and a valid <c>--color</c> are consumed.</summary>
+    /// <summary>A warning alone does not stop emission: stderr, stdout and exit as <c>build --emit-c</c> by default and under <c>--package</c>.</summary>
     [Fact]
     public void WarningsDoNotStopEmission()
     {
@@ -318,8 +318,8 @@ public sealed class SelfhostEmitterHarnessTests
         var path = Path.Combine(dir, "a.byn");
         File.WriteAllText(path, "void main() {\n    var x = 1\n    print($\"{x}\")\n}\n");
         Assert.Equal(CliApp.ExitOk, CliApp.Run(["build", "--emit-c", path], new StringWriter(), new StringWriter()));
-        SelfhostEmitterHarness.SameAsCli("--ascii", ["--ascii", "build", "--emit-c", path], ["--ascii", path]);
-        SelfhostEmitterHarness.SameAsCli("--color=always", ["--color=always", "build", "--emit-c", path], ["--color=always", path]);
+        // --ascii and --color=always are not compared: Q646 (plain style only, renderAll has no style; T28).
+        SelfhostEmitterHarness.SameAsCli("default", ["build", "--emit-c", path], [path]);
         SelfhostEmitterHarness.SameAsCli("--package", ["build", "--emit-c", path], ["--package", dir, path], namedBy: dir);
     }
 
