@@ -1,6 +1,11 @@
 {
   "version": 1,
   "files": {
+    "selfhost/emitter/cprint/builtin.byn": {
+      "mutation": null,
+      "coverage": 0.9864,
+      "branches": 0.9922
+    },
     "selfhost/emitter/cprint/common.byn": {
       "mutation": null,
       "coverage": 1.0,
