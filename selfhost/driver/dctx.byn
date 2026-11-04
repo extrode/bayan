@@ -1,26 +1,16 @@
-// Shared state of the driver (spec 012 D6): one `// ── Tn state` section per task.
+// Shared state of the driver (spec 012 D6): one `// ── Tn state` section per task, inside `DCtx`.
 
-// ── T1 state
-
-/// One stream's style as `TerminalStyle.Decide` (TerminalStyle.cs:13) gives it. The palette is `Ansi16` whenever `color` (the
-/// truecolor palettes need `COLORTERM`, which has no builtin, Q919); `ascii` is `Symbols.Ascii`.
-struct DStyle {
-    bool color = false
+/// Everything the driver reads and writes for one run. Each task adds its fields in its own `// ── Tn state` section.
+public struct DCtx {
+    // ── T1 state
+    /// `--ascii` of `TakeGlobalOptions` (CliApp.cs:315), as given.
     bool ascii = false
-    i64 width = 100
-}
-
-/// The global options of `TakeGlobalOptions` (CliApp.cs:315), as given (`ascii`, `color`), and the state `Run` decides from
-/// them (CliApp.cs:29-31: `s_styleOut`, `s_styleErr`, `s_stderrTty`). Commands read the decided styles, not the raw flags.
-struct DCtx {
-    bool ascii = false
+    /// `--color` of `TakeGlobalOptions`, as given: auto, always or never.
     string color = "auto"
+    /// `s_styleOut` of `Run` (CliApp.cs:29), decided from `color` and `ascii`.
     DStyle styleOut = DStyle {}
+    /// `s_styleErr` of `Run` (CliApp.cs:30).
     DStyle styleErr = DStyle {}
+    /// `s_stderrTty` of `Run` (CliApp.cs:31).
     bool stderrTty = false
-}
-
-/// The state of a run before any option is read.
-DCtx newDCtx() {
-    return DCtx {}
 }
