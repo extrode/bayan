@@ -68,6 +68,47 @@ public sealed class SelfhostEmitterT11Tests
             }
         }
 
+        /// `BoundTree.Descendants`, also into an `LLoop`'s and an `LPushPanicHandler`'s body.
+        List<semantics.BNode> t11Lowered(in Ctx c, through in ltree.LTree t, for semantics.BNode n) uses alloc {
+            var result = List<semantics.BNode>()
+            var stack = List<semantics.BNode>()
+            stack.append(n)
+            while stack.length > 0 {
+                let m = stack.removeLast()
+                result.append(m)
+                if ltree.isLowered(m) {
+                    let i = ltree.lIndexOf(m)
+                    if ltree.lKindOf(m) == .loop { stack.append(t.loops[i].body) }
+                    if ltree.lKindOf(m) == .pushPanicHandler { stack.append(t.pushPanicHandlers[i].body) }
+                    continue
+                }
+                let ch = semantics.children(in c, for: m)
+                var j = ch.length - 1
+                while j >= 0 {
+                    stack.append(ch[j])
+                    j -= 1
+                }
+            }
+            return result
+        }
+
+        /// Whether `fn`'s body has a `for` over a text view or a map, the loops whose builtins only the lowerer builds.
+        bool t11Loops(ref Ctx c, through in ltree.LTree t, for FuncId fn) uses alloc {
+            for e in semantics.descendants(in c, for: c.functions[fn].body) {
+                if semantics.boundKind(e) != .forStmt { continue }
+                let k = semantics.kindOf(ltree.typeOf(in c, through: in t, for: c.bFors[i64(e & 0xFFFFFFFF)].iterable))
+                if k == .textView || k == .map { return true }
+            }
+            return false
+        }
+
+        /// A builtin call only the lowerer builds: the text-view and map `for` loops.
+        bool t11LowererMember(in Ctx c, for semantics.BNode e) {
+            if semantics.boundKind(e) != .builtinCall { return false }
+            let m = c.bBuiltinCalls[i64(e & 0xFFFFFFFF)].member
+            return m == .textViewMore || m == .textViewNext || m == .mapSlotCount || m == .mapSlotLive || m == .mapSlotEntry
+        }
+
         string t11Cases(ref Ctx c, at string file, for string flags) uses alloc {
             var cc = CCtx {}
             var scratch = CCtx {}
@@ -83,6 +124,21 @@ public sealed class SelfhostEmitterT11Tests
                     let flag = n < flags.length ? flags[n..n + 1] : "0"
                     if flag == "1" { sb.append($"{n} {t11Case(ref cc, for: ref f, from: ref c, through: t, at: e)}\n") }
                     if flag == "2" { sb.append($"{n} {t11Case(ref scratch, for: ref f, from: ref c, through: t, at: e)}\n") }
+                    n += 1
+                }
+            }
+            // Then the builtin calls only the lowerer builds (Lowerer.cs:668-693), in the lowered bodies of the functions
+            // with such a loop.
+            var l = LCtx {}
+            for fn in t11Functions(ref c) {
+                unless t11Loops(ref c, through: in l.tree, for: fn) { continue }
+                let lf = lowerFunction(ref c, through: ref l, for: fn)
+                var f = CFunc { fn: fn, file: file }
+                for e in t11Lowered(in c, through: in l.tree, for: lf.body) {
+                    unless t11LowererMember(in c, for: e) { continue }
+                    let flag = n < flags.length ? flags[n..n + 1] : "0"
+                    if flag == "1" { sb.append($"{n} {t11Case(ref cc, for: ref f, from: ref c, through: l.tree, at: e)}\n") }
+                    if flag == "2" { sb.append($"{n} {t11Case(ref scratch, for: ref f, from: ref c, through: l.tree, at: e)}\n") }
                     n += 1
                 }
             }
@@ -169,8 +225,7 @@ public sealed class SelfhostEmitterT11Tests
     private static readonly HashSet<BuiltinMember> StubMembers =
     [
         BuiltinMember.ListAdd, BuiltinMember.StrBufAppend, BuiltinMember.StrBufAppendRepeated, BuiltinMember.StrBufInsert,
-        BuiltinMember.SymbolText, BuiltinMember.EnumName, BuiltinMember.EnumField, BuiltinMember.MapIndex,
-        BuiltinMember.MapIndexSet, BuiltinMember.MapSlot, BuiltinMember.MapTryGet, BuiltinMember.MapContains, BuiltinMember.MapRemove,
+        BuiltinMember.SymbolText, BuiltinMember.EnumName, BuiltinMember.EnumField,
     ];
 
     private static readonly HashSet<BinaryOp> SuffixOps =
@@ -181,26 +236,71 @@ public sealed class SelfhostEmitterT11Tests
 
     private static bool Ordering(BinaryOp op) => op is BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge;
 
-    private static bool BareCase(BoundExpr e) => e switch
+    /// <summary>Whether <c>CEmitter.Equal(t, …)</c> (CEmitter.cs:779-857) names a field, through T6's <c>FieldName</c> stub.
+    /// It also covers a map key's <c>KeyHash</c>/<c>KeyEq</c> (CEmitter.cs:861-892), which name the fields Equal names.</summary>
+    private static bool NamesFields(Compilation c, TypeSymbol t) => t switch
     {
-        BoundErrorVariant { Payload.Length: 0, Variant.Fields.Count: > 0 } => true,
-        BoundConversion c => BareCase(c.Operand),
+        PrimitiveType or EnumSymbol or BuiltinType { Kind: BuiltinKind.Symbol } => false,
+        ErrorSetSymbol or ErrorUnionType => c.ErrorVariants.Any(v => v.Fields.Count > 0 && v.Fields.All(f => Compilation.IsEquatable(f.Type))),
+        OwnedType o => NamesFields(c, o.Inner),
+        UntrustedType u => NamesFields(c, u.Inner),
+        StateType st => NamesFields(c, st.Struct),
+        UnionSymbol u => u.Variants.Any(v => v.Fields.Count > 0),
+        StructSymbol s => s.Fields.Count > 0 || c.States.ContainsKey(s),
+        Bayan.Semantics.Symbols.ArrayType a => NamesFields(c, a.Element),
+        Bayan.Semantics.Symbols.OptionalType o => NamesFields(c, o.Inner),
+        ResultType r => NamesFields(c, r.Error) || NamesFields(c, r.Value),
+        Bayan.Semantics.Symbols.TupleType tt => tt.Fields.Any(f => NamesFields(c, f.Type)),
         _ => false,
     };
 
-    /// <summary>Whether the case calls a sibling stub (<c>IntSuffix</c>, <c>Claimed</c>, <c>MapMethod</c>, <c>SymbolText</c>,
-    /// <c>EnumNames</c>, <c>EnumField</c>, <c>Equal</c>, <c>Vtable</c>), so its text cannot match yet (Q811).</summary>
-    private static bool ReachesStub(BoundNode n) => n switch
+    private static readonly HashSet<BuiltinMember> MapMethods =
+    [
+        BuiltinMember.MapIndex, BuiltinMember.MapIndexSet, BuiltinMember.MapSlot, BuiltinMember.MapTryGet, BuiltinMember.MapContains,
+        BuiltinMember.MapRemove,
+    ];
+
+    /// <summary>Whether the case calls a sibling stub (<c>IntSuffix</c>, <c>Claimed</c>, <c>SymbolText</c>,
+    /// <c>EnumNames</c>, <c>EnumField</c>, <c>Vtable</c>, or <c>FieldName</c> under <c>Equal</c>/<c>MapMethod</c>), so its
+    /// text cannot match yet (Q811).</summary>
+    private static bool ReachesStub(Compilation comp, BoundNode n) => n switch
     {
-        BoundBuiltinCall b => StubMembers.Contains(b.Member),
+        BoundBuiltinCall b => StubMembers.Contains(b.Member)
+            || (MapMethods.Contains(b.Member) && NamesFields(comp, ((MapType)b.Receiver!.Type).KeyType)),
         BoundUnary u => u.Op == UnaryOp.Negate && u.Type.IsInteger,
         BoundBinary b => (b.Left.Type.IsInteger && SuffixOps.Contains(b.Op))
             || (b.Left.Type == BuiltinType.Symbol && Ordering(b.Op))
-            || (b.Op is BinaryOp.Eq or BinaryOp.Ne && !BareCase(b.Left) && !BareCase(b.Right)),
+            || (b.Op is BinaryOp.Eq or BinaryOp.Ne && NamesFields(comp, b.Left.Type)),
         BoundConversion c => c.Kind == ConversionKind.ToDynRef
             || (c.Kind is ConversionKind.NumericCast or ConversionKind.CharToInteger && c.Type.IsInteger),
         _ => false,
     };
+
+    /// <summary>The builtins only <c>Lowerer.cs</c> builds (the text-view and map <c>for</c> loops, Lowerer.cs:668-693).</summary>
+    private static readonly HashSet<BuiltinMember> LowererMembers =
+    [
+        BuiltinMember.TextViewMore, BuiltinMember.TextViewNext, BuiltinMember.MapSlotCount, BuiltinMember.MapSlotLive, BuiltinMember.MapSlotEntry,
+    ];
+
+    /// <summary><c>BoundTree.Descendants</c>, also into an <c>LLoop</c>'s and an <c>LPushPanicHandler</c>'s body; the generated
+    /// main's <c>t11Lowered</c>.</summary>
+    private static IEnumerable<BoundNode> LoweredDescendants(BoundNode node)
+    {
+        var stack = new Stack<BoundNode>();
+        stack.Push(node);
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            yield return n;
+            IEnumerable<BoundNode> children = n switch
+            {
+                LLoop l => [l.Body],
+                LPushPanicHandler h => [h.Body],
+                _ => BoundTree.Children(n),
+            };
+            foreach (var c in children.Reverse()) stack.Push(c);
+        }
+    }
 
     private sealed record Oracle(string File, string Flags, int Count, Dictionary<int, string> Cases, List<int> Run, List<string> Helpers, List<string> Types,
         HashSet<BuiltinMember> Emitted, HashSet<BuiltinMember> Compared);
@@ -225,41 +325,47 @@ public sealed class SelfhostEmitterT11Tests
         var emitted = new HashSet<BuiltinMember>();
         var compared = new HashSet<BuiltinMember>();
         string file = "-";
+        void Case(FunctionSymbol fn, BoundNode n)
+        {
+            if (Method(n) is not { } method) return;
+            var index = flags.Count;
+            flags.Add('0');
+            if (force?.Invoke(n) == true)
+            {
+                flags[index] = '2';
+                return;
+            }
+            var plain = PlainChildren(n);
+            foreach (var fe in new[] { emitters[fn], probes[fn] })
+            {
+                var names = (Dictionary<LocalSymbol, string>)Field(fe, "_names")!;
+                foreach (var ch in BoundTree.Children(n).OfType<BoundLocal>()) names[ch.Local] = "";
+            }
+            var m = typeof(FunctionEmitter).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!;
+            try { m.Invoke(probes[fn], [n]); }
+            catch (TargetInvocationException) { return; }
+            if (n is BoundBuiltinCall emittedCall) emitted.Add(emittedCall.Member);
+            // A child that is not a plain local is T10's `emitExpr`, still a stub, so the text cannot match yet (Q811).
+            if (!plain || ReachesStub(c, n))
+            {
+                flags[index] = '2';
+                run.Add(index);
+                return;
+            }
+            flags[index] = '1';
+            cases[index] = (string)m.Invoke(emitters[fn], [n])!;
+            if (n is BoundBuiltinCall comparedCall) compared.Add(comparedCall.Member);
+        }
         foreach (var fn in functions)
         {
             file = (string)Field(emitters[fn], "_file")!;
-            foreach (var n in BoundTree.Descendants(fn.Body!))
-            {
-                if (Method(n) is not { } method) continue;
-                var index = flags.Count;
-                flags.Add('0');
-                if (force?.Invoke(n) == true)
-                {
-                    flags[index] = '2';
-                    continue;
-                }
-                var plain = PlainChildren(n);
-                foreach (var fe in new[] { emitters[fn], probes[fn] })
-                {
-                    var names = (Dictionary<LocalSymbol, string>)Field(fe, "_names")!;
-                    foreach (var ch in BoundTree.Children(n).OfType<BoundLocal>()) names[ch.Local] = "";
-                }
-                var m = typeof(FunctionEmitter).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!;
-                try { m.Invoke(probes[fn], [n]); }
-                catch (TargetInvocationException) { continue; }
-                if (n is BoundBuiltinCall emittedCall) emitted.Add(emittedCall.Member);
-                // A child that is not a plain local is T10's `emitExpr`, still a stub, so the text cannot match yet (Q811).
-                if (!plain || ReachesStub(n))
-                {
-                    flags[index] = '2';
-                    run.Add(index);
-                    continue;
-                }
-                flags[index] = '1';
-                cases[index] = (string)m.Invoke(emitters[fn], [n])!;
-                if (n is BoundBuiltinCall comparedCall) compared.Add(comparedCall.Member);
-            }
+            foreach (var n in BoundTree.Descendants(fn.Body!)) Case(fn, n);
         }
+        // Then the builtin calls only the lowerer builds (Lowerer.cs:668-693), in the lowered bodies of the functions with
+        // such a loop (only those are lowered by the generated main: T4's stubs cannot lower every body yet, Q811).
+        foreach (var lf in p.Functions.Where(lf => BoundTree.Descendants(lf.Symbol.Body!).OfType<BoundFor>().Any(f => f.Iterable.Type is TextViewType or MapType)))
+            foreach (var n in LoweredDescendants(lf.Body))
+                if (n is BoundBuiltinCall { Member: var member } && LowererMembers.Contains(member)) Case(lf.Symbol, n);
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
         var helperLines = ((List<string>)Field(emitter, "_helperOrder")!).Select(h => $"{h} {helpers[h].Proto} | {helpers[h].Body}")
             .SelectMany(h => h.Split('\n')).Where(l => l.Length > 0).ToList();
@@ -558,7 +664,7 @@ public sealed class SelfhostEmitterT11Tests
     });
 
     // The member accessors the corpus reaches only through non-plain receivers, on plain locals: results, owned values,
-    // copies, panics, process results, format specs and input.
+    // copies, panics, process results, format specs, input, map methods, and the text-view and map loops.
     private const string Fixture3 = """
         union error E {
             bad(i64 code)
@@ -617,6 +723,29 @@ public sealed class SelfhostEmitterT11Tests
             let all = i.readAll()
         }
 
+        void loops() uses console, alloc {
+            var s = "a,b"
+            var t = ","
+            var n = 0
+            for r in s.runes { n += 1 }
+            for u in s.utf16 { n += 1 }
+            for ln in s.lines { n += 1 }
+            for p in s.parts(by: t) { n += 1 }
+            var m = Map<i64, i64>()
+            for e in m { n += 1 }
+        }
+
+        void maps() uses alloc {
+            var m = Map<i64, i64>()
+            var k = 1
+            var v = 2
+            m[k] = v
+            let x = m[k]
+            let g = m.tryGet(k)
+            let h = m.contains(k)
+            let d = m.remove(k)
+        }
+
         void radix(FormatSpec spec) uses alloc {
             var r = spec.radix
             var s = "ff"
@@ -633,6 +762,9 @@ public sealed class SelfhostEmitterT11Tests
     {
         var o = RunAndCompare(path);
         Assert.True(o.Cases.Count >= 15, $"only {o.Cases.Count} cases compared");
+        var want = LowererMembers.Concat([BuiltinMember.MapIndex, BuiltinMember.MapIndexSet, BuiltinMember.MapTryGet, BuiltinMember.MapContains, BuiltinMember.MapRemove]);
+        var missing = want.Where(m => !o.Compared.Contains(m)).ToList();
+        Assert.True(missing.Count == 0, $"not compared: {string.Join(", ", missing)}");
     });
 
     // ── The failure path: a builtin the emitter has no C for (CEmitter.cs:2292) ──────────────────────────────────
@@ -714,12 +846,6 @@ public sealed class SelfhostEmitterT11Tests
         [BuiltinMember.StrBufAppend] = "calls T9's `claimed`",
         [BuiltinMember.StrBufAppendRepeated] = "calls T9's `claimed`",
         [BuiltinMember.StrBufInsert] = "calls T9's `claimed`",
-        [BuiltinMember.MapIndex] = "calls T8's `mapMethod`",
-        [BuiltinMember.MapIndexSet] = "calls T8's `mapMethod`",
-        [BuiltinMember.MapSlot] = "calls T8's `mapMethod`",
-        [BuiltinMember.MapTryGet] = "calls T8's `mapMethod`",
-        [BuiltinMember.MapContains] = "calls T8's `mapMethod`",
-        [BuiltinMember.MapRemove] = "calls T8's `mapMethod`",
         [BuiltinMember.SymbolText] = "calls T6's `symbolText`",
         [BuiltinMember.EnumName] = "calls T6's `enumNames`",
         [BuiltinMember.EnumField] = "calls T6's `enumField`",

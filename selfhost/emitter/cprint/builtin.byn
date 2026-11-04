@@ -125,7 +125,6 @@ public string emitBuiltin(ref CCtx cc, for ref CFunc f, from ref Ctx c, through 
             let name = helper(ref cc, for: "bynh_utf16_copy", from: $"static {list} bynh_utf16_copy(byn_text_view v)", as: $"{{\n    {list} r = {{NULL, 0, 0, byn_context}};\n    r.ptr = byn_utf16_copy(v.s, &r.len, byn_context);\n    r.cap = r.len;\n    return r;\n}}\n")
             return $"{name}({t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)})"
         case .textViewMore:
-            // coverage-blocked: Q811 T3 statement through 135
             return $"byn_view_more({t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)}, {arg}, {ri})"
         case .textViewNext:
             switch semantics.textViewKindOf(ri) {
@@ -229,7 +228,6 @@ public string emitBuiltin(ref CCtx cc, for ref CFunc f, from ref Ctx c, through 
         case .mapClear:
             return $"byn_map_clear(&{t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)}.h)"
         case .mapSlotCount:
-            // coverage-blocked: Q811 T3 statement through 238
             return $"{t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)}.h.len"
         case .mapSlotLive:
             return $"(!{t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)}.h.dead[{arg}])"
@@ -343,7 +341,7 @@ public string unary(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.
         case .notKeyword: return $"(!{v})"
         case .complement: return $"(({cType(ref cc, from: ref c, for: type)})~{v})"
         // coverage-exempt: Q812
-        default: panic($"cannot emit unary {op == .notKeyword ? "Not" : csName($"{op}")}")
+        default: panic($"cannot emit unary {csName($"{op}")}")
     }
 }
 
