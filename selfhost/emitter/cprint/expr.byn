@@ -387,6 +387,21 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
             return $"byn_path_relative({base}, {target}, byn_context, {loc(in c, by: in f, at: c.bCalls[n].span)})"
         case .pathFileName:
             return $"byn_path_file_name({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, byn_context)"
+        case .pathDirectoryName:
+            let opt = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let name = helper(ref cc, for: "bynh_path_directory_name", from: $"static {opt} bynh_path_directory_name(byn_str path)",
+                as: $"{{\n    {opt} r = {{0}};\n    r.has = byn_path_directory_name(path, &r.value, byn_context);\n    return r;\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .pathCombine:
+            let first = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
+            return $"byn_path_combine({first}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])}, byn_context)"
+        case .pathCombineSpan:
+            let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
+            let name = helper(ref cc, for: "bynh_path_combine_span", from: $"static byn_str bynh_path_combine_span({span} paths)",
+                as: "{\n    return byn_path_combine_span(paths.ptr, paths.len, byn_context);\n}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .pathFullPath:
+            return $"byn_path_full_path({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, byn_context, {loc(in c, by: in f, at: c.bCalls[n].span)})"
         case .hexEncode:
             let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
             let name = helper(ref cc, for: "bynh_hex_encode", from: $"static byn_str bynh_hex_encode({span} bytes)",
