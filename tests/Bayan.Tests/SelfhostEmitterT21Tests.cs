@@ -39,8 +39,7 @@ public sealed class SelfhostEmitterT21Tests
                         sb.append($"assert {a.start}..{a.end}\n")
                         for e in descendants(in c, for: c.bAsserts[s & 0xFFFFFFFF].condition) {
                             let sp = nodeSpan(in c, for: e)
-                            let h = c.exprSyntaxOf.tryGet(at: e) ?? -1
-                            sb.append($"{sp.start}..{sp.end} {t21Node(in c, at: h)}\n")
+                            sb.append($"{sp.start}..{sp.end} {t21Top(in c, for: e)}\n")
                         }
                     }
                 }
@@ -57,17 +56,21 @@ public sealed class SelfhostEmitterT21Tests
                     if c.functions[fn].body == -1 { continue }
                     for e in descendants(in c, for: c.functions[fn].body) {
                         if !isExprKind(boundKind(e)) { continue }
-                        let h = c.exprSyntaxOf.tryGet(at: e) ?? -1
-                        sb.append($"{t21Node(in c, at: h)}\n")
+                        sb.append($"{t21Top(in c, for: e)}\n")
                     }
                 }
             }
             return $"{sb.finish()}"
         }
 
-        string t21Node(in Ctx c, at i64 h) uses alloc {
-            if h == -1 { return "-" }
-            let n = exprSyntaxNode(in c, at: h)
+        string t21Top(in Ctx c, for BNode e) uses alloc {
+            if (exprSyntax(in c, for: e) is { } n) { return t21Syntax(in c, for: n) }
+            return "-"
+        }
+
+        string t21Node(in Ctx c, at i64 h) uses alloc => h == -1 ? "-" : t21Syntax(in c, for: exprSyntaxNode(in c, at: h))
+
+        string t21Syntax(in Ctx c, for ExprSyntax n) uses alloc {
             var sb = StrBuf()
             sb.append($"{n.kind} {n.span.start}..{n.span.end}")
             if n.inner != -1 { sb.append($" inner({t21Node(in c, at: n.inner)})") }
@@ -232,9 +235,73 @@ public sealed class SelfhostEmitterT21Tests
         assert -(-5) == 5 && !true == false
         """;
 
+    private const string MoreFixture = """
+        union error A {
+            bad
+        }
+
+        union error B {
+            bad
+        }
+
+        struct Order {
+            i64 id
+            states {
+                draft
+                paid(i64 payment)
+            }
+            void pay(ref this is .draft, i64 amount) becomes .paid {
+                become .paid(amount)
+            }
+        }
+
+        struct Box {
+            i64 v
+        }
+
+        void r() => 0..3
+
+        void l() => [1]
+
+        void s() => stackalloc i64[4]
+
+        i64 both(i64 n) fails A, B {
+            return .bad
+        }
+
+        void inferred(i64 n) fails {
+            return .nope
+        }
+
+        void body() {
+            for i in 0..3 {
+                print($"{i}")
+            }
+            let m: Map<string, i64> = ["a": 1, "b": 2]
+            let e: Map<string, i64> = []
+            let xs = [1, 2]
+            let t = i64.tryFrom(nope)
+            let p = i64.parse()
+            let q = f64.tryParse()
+            let w = Owned()
+            let u = Untrusted()
+            let ys: List<string> = [..xs]
+            let bx = Box()
+            let call = nope(1)
+            var o = Order.draft { id: 7 }
+            o.pay(1)
+            o = Order.draft { id: 8 }
+            let bm: Map<string, i64> = [1]
+            let g = List<Nope>()
+            let ls: List<List<i64>> = [[1]]
+            let ms: List<List<i64>> = [..ls]
+        }
+        """;
+
     /// <summary>Folding, coalesce, range, conditional, cast, index/slice, interpolation, <c>with</c>, literals, lambda,
     /// switch, catch, tuple, map and <c>is</c>; then the error paths (unknown member/name, mismatched operands, constant
-    /// overflow, payload field, map index).</summary>
+    /// overflow, payload field, map index); then expression bodies, failure returns, builtin calls without arguments,
+    /// spreads and map targets in function bodies.</summary>
     [Fact]
     public void FixturesRecordTheCSharpSyntax()
     {
@@ -242,7 +309,7 @@ public sealed class SelfhostEmitterT21Tests
         try
         {
             var paths = new List<string>();
-            foreach (var (name, source) in new[] { ("valid", ValidFixture), ("errors", ErrorFixture) })
+            foreach (var (name, source) in new[] { ("valid", ValidFixture), ("errors", ErrorFixture), ("more", MoreFixture) })
             {
                 var path = Path.Combine(dir, name, "main.byn");
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
