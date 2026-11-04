@@ -219,7 +219,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             if bKind == .path {
                 let member = findPath(ref c, for: name)
                 if member == -1 {
-                    let near = suggest(name, by: in ["isRooted", "relative", "fileName"])
+                    let near = suggest(name, by: in ["isRooted", "relative", "fileName", "directoryName", "combine", "fullPath"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
                     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
                     return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)

@@ -103,6 +103,10 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fro
         if fn == t9Function(ref c, for: "Utf8.decode") && t20HasArgument(c, from: b.file, for: call, by: "invalid") {
             return t20BindGroupCall(ref b, through: ref c, for: call, from: call.callee, at: syntax, by: t9Function(ref c, for: "Utf8.decode(invalid)"), as: -1, explicit: explicit)
         }
+        // `Path.combine(paths)`, one argument, is the span form; `t20Overload` does not see builtins.
+        if fn == t9Function(ref c, for: "Path.combine") && call.args.length == 1 {
+            return t20BindGroupCall(ref b, through: ref c, for: call, from: call.callee, at: syntax, by: t9Function(ref c, for: "Path.combine(paths)"), as: -1, explicit: explicit)
+        }
         return t20BindGroupCall(ref b, through: ref c, for: call, from: call.callee, at: syntax, by: t20Overload(ref c, for: fn, from: b.file, by: call), as: receiver, explicit: explicit)
     }
     if kind == .builtinGroup {
