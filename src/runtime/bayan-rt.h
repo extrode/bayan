@@ -327,6 +327,9 @@ byn_str byn_path_combine(byn_str a, byn_str b, byn_alloc* to);
 /* `Path.combine(paths)`: .NET `Path.Combine(params string[])` on this OS, copied into `to`: empty parts are skipped and the
    last rooted part restarts the result. */
 byn_str byn_path_combine_span(const byn_str* p, int64_t n, byn_alloc* to);
+/* `Path.fullPath(p)`: .NET `Path.GetFullPath(p)` on this OS, copied into `to`; a relative path is made full against the working
+   directory. Panics on an empty path or one with a NUL byte, where .NET throws `ArgumentException`. */
+byn_str byn_path_full_path(byn_str p, byn_alloc* to, const char* file, int line);
 /* `Path.relative(from, to)`: .NET `Path.GetRelativePath(from, to)` on this OS, copied into `to`; both paths are made full against
    the working directory first. Panics on an empty path or one with a NUL byte, where .NET throws `ArgumentException`. */
 byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line);

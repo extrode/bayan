@@ -378,6 +378,7 @@ public enum BuiltinFunction
     PathDirectoryName,
     PathCombine,
     PathCombineSpan,
+    PathFullPath,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }
