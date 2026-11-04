@@ -259,6 +259,36 @@ public sealed class SelfhostEmitterT21Tests
             i64 v
         }
 
+        enum Planet(f64 mass) {
+            small(1.0)
+            big
+        }
+
+        struct Ship {
+            i64 id
+            states {
+                a(i64 p)
+                b(i64 q, i64 p)
+            }
+            i64 get(this is .b) => this.p
+        }
+
+        struct Hold {
+            i64 id
+            states {
+                a(i64 p)
+                c
+            }
+        }
+
+        void payloads(Ship s, by Hold h) {
+            let pp = Order.paid { id: 1, payment: 2 }
+            assert pp.payment == 2
+            let sp = s.p
+            let hp = h.p
+            let sn = s.nope
+        }
+
         struct Early {
             Late l = Late()
         }

@@ -805,13 +805,15 @@ void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {
                 if member == -1 || c.enumMembers[member].values.length != 0 { continue }
                 if m.args is null && d.value.params is null { continue }
                 let name = $"{c.enums[e].name}.{c.enumMembers[member].name}"
-                // C# `BindArguments(new CallExpr(d.Span, …, d.Args ?? []), …)`: `bindArgumentList` reads only the arguments and the span.
+                // C# `BindArguments(new CallExpr(d.Span, new NameExpr(d.Name.Span, …), d.Args ?? []), …)`: the arguments, the span,
+                // and that `CallExpr` as the `Syntax` of a missing argument's `BoundErrorExpr` (BinderCalls.cs:452).
+                let call = syntaxAppend(ref c, from: ExprSyntax { kind: .callExpr, span: m.span, callee: syntaxLeaf(ref c, as: .nameExpr, at: m.name) })
                 var args = List<BExpr>()
                 if (m.args is { } given) {
-                    args = bindArgumentList(ref b, through: ref c, for: in given, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name)
+                    args = t21BindArgumentList(ref b, through: ref c, for: in given, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name, syntax: call)
                 } else {
                     let none = List<parser.Argument>()
-                    args = bindArgumentList(ref b, through: ref c, for: in none, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name)
+                    args = t21BindArgumentList(ref b, through: ref c, for: in none, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name, syntax: call)
                 }
                 var values = List<Constant?>()
                 for i in 0..args.length { values.append(null) }

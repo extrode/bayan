@@ -387,9 +387,7 @@ BExpr t21BindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for 
 
         let states = statesOf(ref c, for: s)
         if states != -1 {
-            @unobservable because "Q607: statesOf and bindPayloadField are stubs; add a union-with-states payload read when T38 lands"
             let payload = t21BindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member, to: syntax)
-            @unobservable because "Q607: statesOf and bindPayloadField are stubs; add a union-with-states payload read when T38 lands"
             if payload != -1 { return payload }
         }
     } else if lk == .errorSet || lk == .errorUnion {
