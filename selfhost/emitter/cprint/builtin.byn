@@ -318,8 +318,14 @@ public string emitBuiltin(ref CCtx cc, for ref CFunc f, from ref Ctx c, through 
             let _ = helper(ref cc, for: name, from: $"static {cType(ref cc, from: ref c, for: bType)} {name}({res} r, const char* file, int line)", as: $"{{\n    if ({check}) byn_panic(\"{message}\", file, line);\n    return {field};\n}}\n")
             return $"{name}({t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)}, {loc(in c, by: in f, at: syntax)})"
         default:
-            panic($"cannot emit {member}")
+            panic($"cannot emit {csName($"{member}")}")
     }
+}
+
+/// The C# name of a selfhost enum case that is the C# member with its first letter lowered (`listTake` → `ListTake`);
+/// every `BuiltinMember`, `BinaryOp` and `ConversionKind` case is (Q812).
+string csName(string name) uses alloc {
+    return $"{rune(name.bytes[0] - 0x20)}{name[1..]}"
 }
 
 /// CEmitter.cs:2296 `Unary` (Q845): the C text of unary operation `e`.
@@ -337,7 +343,7 @@ public string unary(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.
         case .notKeyword: return $"(!{v})"
         case .complement: return $"(({cType(ref cc, from: ref c, for: type)})~{v})"
         // coverage-exempt: Q812
-        default: panic($"cannot emit unary {op}")
+        default: panic($"cannot emit unary {op == .notKeyword ? "Not" : csName($"{op}")}")
     }
 }
 
@@ -422,7 +428,7 @@ string opText(parser.BinaryOp op) uses alloc {
         case .logicalAnd: return "&&"
         case .logicalOr: return "||"
         // coverage-exempt: Q812
-        default: panic($"no C operator for {op}")
+        default: panic($"no C operator for {csName($"{op}")}")
     }
 }
 
@@ -465,7 +471,7 @@ public string conversion(ref CCtx cc, for ref CFunc f, from ref Ctx c, through l
             let vt = vtable(ref cc, from: ref c, for: i64(from & 0xFFFFFFFF), as: c.dynRefTypes[i64(to & 0xFFFFFFFF)].iface)
             return $"(({ct}){{&{v}, &{vt}}})"
         // coverage-exempt: Q812
-        default: panic($"cannot emit conversion {kind}")
+        default: panic($"cannot emit conversion {csName($"{kind}")}")
     }
 }
 

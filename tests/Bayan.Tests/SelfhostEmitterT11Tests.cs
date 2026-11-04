@@ -202,7 +202,8 @@ public sealed class SelfhostEmitterT11Tests
         _ => false,
     };
 
-    private sealed record Oracle(string File, string Flags, int Count, Dictionary<int, string> Cases, List<int> Run, List<string> Helpers, List<string> Types);
+    private sealed record Oracle(string File, string Flags, int Count, Dictionary<int, string> Cases, List<int> Run, List<string> Helpers, List<string> Types,
+        HashSet<BuiltinMember> Emitted, HashSet<BuiltinMember> Compared);
 
     /// <summary>Numbers the cases as the generated main does; a case is compared when its children are plain locals, it
     /// reaches no stub and the C# does not throw; it is run only when it reaches a stub. <paramref name="force"/> marks one
@@ -221,6 +222,8 @@ public sealed class SelfhostEmitterT11Tests
         var flags = new List<char>();
         var cases = new Dictionary<int, string>();
         var run = new List<int>();
+        var emitted = new HashSet<BuiltinMember>();
+        var compared = new HashSet<BuiltinMember>();
         string file = "-";
         foreach (var fn in functions)
         {
@@ -244,6 +247,7 @@ public sealed class SelfhostEmitterT11Tests
                 var m = typeof(FunctionEmitter).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!;
                 try { m.Invoke(probes[fn], [n]); }
                 catch (TargetInvocationException) { continue; }
+                if (n is BoundBuiltinCall emittedCall) emitted.Add(emittedCall.Member);
                 // A child that is not a plain local is T10's `emitExpr`, still a stub, so the text cannot match yet (Q811).
                 if (!plain || ReachesStub(n))
                 {
@@ -253,12 +257,13 @@ public sealed class SelfhostEmitterT11Tests
                 }
                 flags[index] = '1';
                 cases[index] = (string)m.Invoke(emitters[fn], [n])!;
+                if (n is BoundBuiltinCall comparedCall) compared.Add(comparedCall.Member);
             }
         }
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
         var helperLines = ((List<string>)Field(emitter, "_helperOrder")!).Select(h => $"{h} {helpers[h].Proto} | {helpers[h].Body}")
             .SelectMany(h => h.Split('\n')).Where(l => l.Length > 0).ToList();
-        return new(file, new string(flags.ToArray()), flags.Count, cases, run, helperLines, typeOrder.Skip(typeBase).ToList());
+        return new(file, new string(flags.ToArray()), flags.Count, cases, run, helperLines, typeOrder.Skip(typeBase).ToList(), emitted, compared);
     }
 
     /// <summary>The differences between the selfhost run and <paramref name="o"/>, one line each.</summary>
@@ -552,6 +557,84 @@ public sealed class SelfhostEmitterT11Tests
         Assert.True(o.Cases.Count >= 20, $"only {o.Cases.Count} cases compared");
     });
 
+    // The member accessors the corpus reaches only through non-plain receivers, on plain locals: results, owned values,
+    // copies, panics, process results, format specs and input.
+    private const string Fixture3 = """
+        union error E {
+            bad(i64 code)
+            gone
+        }
+
+        struct P {
+            i64 x
+        }
+
+        i64 results(Result<i64, E> r) {
+            let ok = r.isOk
+            let v = r.value
+            let e = r.err
+            return 0
+        }
+
+        i64 owned(Owned<P> o) {
+            let v = o.value
+            return 0
+        }
+
+        void copies(Arena arena) uses alloc {
+            var m = Map<i64, i64>()
+            var w = StrBuf()
+            var a = arena
+            var mc = m.copy(to: a)
+            var wc = w.copy(to: a)
+            a.reset()
+        }
+
+        void onCrash(Panic p) uses console {
+            let m = p.message
+        }
+
+        i32 process(ProcessResult r) {
+            let o = r.stdout
+            let e = r.stderr
+            return r.exitCode
+        }
+
+        struct B {
+            i64 n
+            public void formatInto(ref StrBuf output, as FormatSpec spec) {
+                let r = spec.radix
+                let d = spec.debug
+                let w = spec.width
+                let f = spec.fill
+                let al = spec.align
+                let dg = spec.digits
+            }
+        }
+
+        void input() uses console, alloc {
+            var i = Io.stdin
+            let all = i.readAll()
+        }
+
+        void radix(FormatSpec spec) uses alloc {
+            var r = spec.radix
+            var s = "ff"
+            var n = 5
+            let p = i32.tryParse(s, as: r)
+            let t = string(n, as: r)
+        }
+
+        void main() { }
+        """;
+
+    [Fact]
+    public void Fixture3_MatchesCSharp() => WithFixture(Fixture3, path =>
+    {
+        var o = RunAndCompare(path);
+        Assert.True(o.Cases.Count >= 15, $"only {o.Cases.Count} cases compared");
+    });
+
     // ── The failure path: a builtin the emitter has no C for (CEmitter.cs:2292) ──────────────────────────────────
 
     [Fact]
@@ -568,7 +651,7 @@ public sealed class SelfhostEmitterT11Tests
         var o = CSharp(c, n => n == take);
         var (exit, _, err) = Run(path, o.File, o.Flags);
         Assert.NotEqual(0, exit);
-        Assert.Contains($"panic: {e.InnerException!.Message}", err, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"panic: {e.InnerException!.Message}", err, StringComparison.Ordinal);
     });
 
     // ── The run/ corpus ──────────────────────────────────────────────────────────────────────────────────────────
@@ -583,6 +666,8 @@ public sealed class SelfhostEmitterT11Tests
         var failures = new ConcurrentBag<string>();
         var compared = 0;
         var cases = 0;
+        var emitted = new HashSet<BuiltinMember>();
+        var comparedMembers = new HashSet<BuiltinMember>();
         Build();
         Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, corpus => WithFixture(File.ReadAllText(corpus), path =>
         {
@@ -597,11 +682,46 @@ public sealed class SelfhostEmitterT11Tests
                 return;
             }
             foreach (var f in Compare(o, stdout)) failures.Add($"{Path.GetFileName(corpus)} {f}");
+            lock (emitted)
+            {
+                emitted.UnionWith(o.Emitted);
+                comparedMembers.UnionWith(o.Compared);
+            }
             Interlocked.Increment(ref compared);
             Interlocked.Add(ref cases, o.Cases.Count);
         }));
         Assert.True(compared > 100, $"only {compared} corpus files compared:\n{string.Join('\n', failures.Order(StringComparer.Ordinal).Take(4))}");
         Assert.True(failures.IsEmpty, $"{failures.Count} mismatches:\n{string.Join('\n', failures.Order(StringComparer.Ordinal).Take(8))}");
         Assert.True(cases > 100, $"only {cases} cases compared");
+        // The fixtures' own tests compare their text; here they add to the two sets.
+        foreach (var fixture in new[] { Fixture, Fixture2, Fixture3 })
+            WithFixture(fixture, path =>
+            {
+                var o = CSharp(Compile(path));
+                emitted.UnionWith(o.Emitted);
+                comparedMembers.UnionWith(o.Compared);
+            });
+        var missing = emitted.Where(b => !comparedMembers.Contains(b) && !Uncompared.ContainsKey(b)).Order().ToList();
+        Assert.True(missing.Count == 0, $"emitted but never compared: {string.Join(", ", missing)}");
+        var stale = Uncompared.Keys.Where(comparedMembers.Contains).Order().ToList();
+        Assert.True(stale.Count == 0, $"excluded but compared: {string.Join(", ", stale)}");
     }
+
+    /// <summary>The builtins the C# emits over the corpus and fixtures whose text is not compared, with why (Q811).</summary>
+    private static readonly Dictionary<BuiltinMember, string> Uncompared = new()
+    {
+        [BuiltinMember.ListAdd] = "calls T9's `claimed`",
+        [BuiltinMember.StrBufAppend] = "calls T9's `claimed`",
+        [BuiltinMember.StrBufAppendRepeated] = "calls T9's `claimed`",
+        [BuiltinMember.StrBufInsert] = "calls T9's `claimed`",
+        [BuiltinMember.MapIndex] = "calls T8's `mapMethod`",
+        [BuiltinMember.MapIndexSet] = "calls T8's `mapMethod`",
+        [BuiltinMember.MapSlot] = "calls T8's `mapMethod`",
+        [BuiltinMember.MapTryGet] = "calls T8's `mapMethod`",
+        [BuiltinMember.MapContains] = "calls T8's `mapMethod`",
+        [BuiltinMember.MapRemove] = "calls T8's `mapMethod`",
+        [BuiltinMember.SymbolText] = "calls T6's `symbolText`",
+        [BuiltinMember.EnumName] = "calls T6's `enumNames`",
+        [BuiltinMember.EnumField] = "calls T6's `enumField`",
+    };
 }
