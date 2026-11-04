@@ -7,6 +7,7 @@ import emitter.ltree
 /// CEmitter.cs:61 `Emit`: the C translation unit for `program`. The lowered nodes are in `t`.
 public string emit(ref Ctx c, from in ltree.LTree t, through in ltree.LoweredProgram program, by bool ownershipChecks) uses alloc {
     var cc = CCtx { ownershipChecks: ownershipChecks, packageRoot: c.packageRoot }
+    // coverage-blocked: Q787 T9 emitFunction
     for i in 0..program.testFunctions.length { cc.testIndex[program.testFunctions[i].symbol] = i }
     return t6Run(ref cc, from: ref c, through: in t, for: in program)
 }
@@ -15,6 +16,7 @@ public string emit(ref Ctx c, from in ltree.LTree t, through in ltree.LoweredPro
 public string t6Run(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredProgram program) uses alloc {
     var bodies = StrBuf()
     var protos = StrBuf()
+    // coverage-blocked: Q787 T9 emitFunction through 21
     for f in program.functions { t6EmitFunction(ref cc, from: ref c, through: in t, for: in f, to: ref protos, by: ref bodies) }
     for f in program.testFunctions { t6EmitFunction(ref cc, from: ref c, through: in t, for: in f, to: ref protos, by: ref bodies) }
     let main = t6EmitMain(ref cc, from: ref c, through: in program)
@@ -79,6 +81,7 @@ public string t6Run(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for i
 
 /// CEmitter.cs:69-73: `new FunctionEmitter(this, f)`, its signature as a prototype and its body.
 void t6EmitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f, to ref StrBuf protos, by ref StrBuf bodies) uses alloc {
+    // coverage-blocked: Q787 T9 emitFunction through 88
     protos.append(signature(ref cc, from: ref c, through: in t, for: in f))
     protos.append(";\n")
     bodies.append(emitFunction(ref cc, from: ref c, through: in t, for: in f))
@@ -123,6 +126,7 @@ string t6SymbolIndexes(string text, by in List<i64> symbolIndex) uses alloc {
                 n = n * 10 + i64(bytes[j]) - 48
                 j += 1
             }
+            // coverage-exempt: Q787
             if j > i + 1 && j < bytes.length && i64(bytes[j]) == 1 {
                 sb.append(text[start..i])
                 sb.append($"{symbolIndex[n]}")
@@ -178,6 +182,7 @@ public string t6EmitMain(ref CCtx cc, from ref Ctx c, through in ltree.LoweredPr
         sb.append("    if (argc == 3 && strcmp(argv[1], \"--test\") == 0) {\n        switch (atoi(argv[2])) {\n")
         for i in 0..program.tests.length {
             let fn = program.testFunctions[i].symbol
+            // coverage-exempt: Q787
             sb.append($"        case {i}: {c.functions[fn].hasFails ? "err = " : ""}{functionName(ref cc, from: ref c, for: fn)}(); break;\n")
         }
         sb.append("        default: return 2;\n        }\n")
@@ -279,6 +284,7 @@ i64 t6IndexOf(in List<semantics.FuncId> fns, for semantics.FuncId f) {
     for i in 0..fns.length {
         if fns[i] == f { return i }
     }
+    // coverage-exempt: Q787
     return -1
 }
 

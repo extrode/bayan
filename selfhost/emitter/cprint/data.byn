@@ -206,6 +206,7 @@ f64 t6BigToF64(semantics.Big n) {
 
 /// `semantics.realText` (not `public`, copied): C#'s `double.ToString("R")` under the invariant culture.
 string t6RealText(f64 v) uses alloc {
+    // coverage-exempt: Q787 through 213
     if v != v { return "NaN" }
     let s = $"{v}"
     if s == "inf" { return "Infinity" }

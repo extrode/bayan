@@ -33,6 +33,7 @@ public sealed class SelfhostEmitterT6Tests
             var c = semantics.fromPath(args[1], by: in CompilationOptions { includeTests: true })
             var l = LCtx {}
             var cc = CCtx { packageRoot: c.packageRoot, hashes: flag == "hashes", symbols: flag == "symbols", ownershipChecks: flag == "debug" }
+            if flag == "noerrors" { c.errorVariants = List<semantics.ErrorVariantSymbol>() }
             if flag.startsWith("root:") { cc.packageRoot = flag[5..flag.length] }
             if mode == "data" { Io.stdout.write(t6Data(ref cc, from: ref c)) }
             if mode == "consts" { Io.stdout.write(t6Consts(ref cc, from: ref c)) }
@@ -41,6 +42,7 @@ public sealed class SelfhostEmitterT6Tests
             if mode == "names" || mode == "main" || mode == "namefail" {
                 let program = lower(ref c, to: ref l)
                 for i in 0..program.testFunctions.length { cc.testIndex[program.testFunctions[i].symbol] = i }
+                if flag == "nofile" || flag == "nomodule" || flag == "relpath" { t6Mutate(ref c, through: in program, by: flag) }
                 if mode == "names" { Io.stdout.write(t6Names(ref cc, from: ref c, through: in program)) }
                 if mode == "main" { Io.stdout.write($"== main\n{cprint.t6EmitMain(ref cc, from: ref c, through: in program)}") }
                 if mode == "namefail" {
@@ -68,8 +70,10 @@ public sealed class SelfhostEmitterT6Tests
                 sb.append($"{cprint.enumNames(ref cc, from: ref c, for: e)}\n")
                 sb.append($"{cprint.enumNames(ref cc, from: ref c, for: e)}\n")
                 sb.append($"{cprint.enumValues(ref cc, from: ref c, for: e)}\n")
+                sb.append($"{cprint.enumValues(ref cc, from: ref c, for: e)}\n")
                 for j in 0..c.enums[e].fields.length {
                     let f = c.enums[e].fields[j]
+                    sb.append($"{cprint.enumField(ref cc, from: ref c, for: f)}\n")
                     sb.append($"{cprint.enumField(ref cc, from: ref c, for: f)}\n")
                 }
             }
@@ -108,12 +112,14 @@ public sealed class SelfhostEmitterT6Tests
             values.append(t6Int(0x8000000000000000, by: 0xFFFFFFFFFFFFFFFF))
             values.append(t6Int(0xFFFFFFFFFFFFFFFF, by: 0))
             values.append(t6Int(0, by: 1))
+            values.append(t6Int(0x8000000000000000, by: 0))
+            values.append(t6Int(0, by: 0x100000000))
             values.append(Constant { kind: .flag, flag: true })
             values.append(Constant { kind: .flag, flag: false })
             values.append(Constant { kind: .text, text: "a\"b\\c?\n" })
             values.append(Constant { kind: .rune, rune: 233 })
             let zero = 0.0
-            for r in [0.5, 5.0, 1.0e300, 1.0e-7, 123456789012345678.0, 0.1, -2.5, 100.0, 1.5e16] { values.append(Constant { kind: .real, real: r }) }
+            for r in [0.0, 0.001, 0.5, 5.0, 1.0e300, 1.0e-7, 123456789012345678.0, 0.1, -2.5, 100.0, 1.5e16] { values.append(Constant { kind: .real, real: r }) }
             values.append(Constant { kind: .real, real: zero / zero })
             values.append(Constant { kind: .real, real: 1.0 / zero })
             values.append(Constant { kind: .real, real: -1.0 / zero })
@@ -145,6 +151,16 @@ public sealed class SelfhostEmitterT6Tests
             return $"{sb.finish()}"
         }
 
+        /// Functions the corpus has none of: one with no file, one its module does not list, and files named relatively.
+        void t6Mutate(ref Ctx c, through in LoweredProgram program, by string flag) uses alloc {
+            for f in program.functions {
+                let fn = f.symbol
+                if flag == "nofile" && c.functions[fn].name == "apply" { c.functions[fn].file = -1 }
+                if flag == "nomodule" && c.functions[fn].name == "twice" { let _ = c.modules[c.functions[fn].module].functions.remove(c.functions[fn].name) }
+                if flag == "relpath" && c.functions[fn].file != -1 { c.files[c.functions[fn].file].path = "lib/rel.byn" }
+            }
+        }
+
         string t6Names(ref CCtx cc, from ref Ctx c, through in LoweredProgram program) uses alloc {
             var sb = StrBuf()
             sb.append("== names\n")
@@ -168,6 +184,10 @@ public sealed class SelfhostEmitterT6Tests
             cc.statics["st_b"] = $"/* {cprint.symbolLiteral(ref cc, for: "abc")} {cprint.symbolLiteral(ref cc, for: "zed")} */\n"
             cc.staticOrder.append("st_b")
             let h = cprint.helper(ref cc, for: "h1", from: "void h1(void)", as: "void h1(void) {\n}\n#line generated\nint x;\n")
+            cc.symbolTexts.append("zed")
+            if !cc.ownershipChecks { let blank = cprint.symbolLiteral(ref cc, for: "") }
+            cc.statics["st_c"] = $"{rune(1)}x {rune(1)}7x {rune(1)}12\n"
+            cc.staticOrder.append("st_c")
             cc.vtables["v1"] = "static const int v1 = 1;\n"
             cc.vtableOrder.append("v1")
         }
@@ -321,6 +341,10 @@ public sealed class SelfhostEmitterT6Tests
 
     private const string ArgsMain = "i32 main(ReadOnlySpan<string> args) {\n    return i32(args.length)\n}\n";
 
+    private const string VoidMain = "void main() {\n}\n";
+
+    private const string Script = "let x = 1\n";
+
     private const string Library = "i64 f(i64 x) => x\n\nbool g(bool b) => b\n";
 
     private const string Failing = "union error E {\n    bad\n}\n\ni32 main(ReadOnlySpan<string> args) fails E {\n    fail .bad if args.length > 5\n    return 0\n}\n";
@@ -341,8 +365,8 @@ public sealed class SelfhostEmitterT6Tests
         var sb = new StringBuilder();
         foreach (var en in c.EntryModule.Enums)
         {
-            sb.Append(e.EnumNames(en)).Append('\n').Append(e.EnumNames(en)).Append('\n').Append(e.EnumValues(en)).Append('\n');
-            foreach (var f in en.Fields) sb.Append(e.EnumField(f)).Append('\n');
+            sb.Append(e.EnumNames(en)).Append('\n').Append(e.EnumNames(en)).Append('\n').Append(e.EnumValues(en)).Append('\n').Append(e.EnumValues(en)).Append('\n');
+            foreach (var f in en.Fields) sb.Append(e.EnumField(f)).Append('\n').Append(e.EnumField(f)).Append('\n');
         }
         foreach (var k in c.EntryModule.AllConstants)
         {
@@ -368,10 +392,10 @@ public sealed class SelfhostEmitterT6Tests
         };
         var values = new List<object>
         {
-            (Int128)5, (Int128)(-5), (Int128)long.MinValue, (Int128)ulong.MaxValue, (Int128)1 << 64,
+            (Int128)5, (Int128)(-5), (Int128)long.MinValue, (Int128)ulong.MaxValue, (Int128)1 << 64, (Int128)long.MaxValue + 1, (Int128)1 << 96,
             true, false, "a\"b\\c?\n", new System.Text.Rune(233),
         };
-        foreach (var d in new[] { 0.5, 5.0, 1e300, 1e-7, 123456789012345678.0, 0.1, -2.5, 100.0, 1.5e16, double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+        foreach (var d in new[] { 0.0, 0.001, 0.5, 5.0, 1e300, 1e-7, 123456789012345678.0, 0.1, -2.5, 100.0, 1.5e16, double.NaN, double.PositiveInfinity, double.NegativeInfinity })
             values.Add(d);
         var lines = new List<string>();
         foreach (var v in values)
@@ -416,6 +440,25 @@ public sealed class SelfhostEmitterT6Tests
     [Fact]
     public void Names_FunctionsFilesAndPathsMatchCSharp() => Agree(Full, "names", "", NamesOracle);
 
+    [Theory]
+    [InlineData("nofile")]
+    [InlineData("nomodule")]
+    [InlineData("relpath")]
+    public void Names_OfFunctionsTheCorpusLacksMatchCSharp(string flag) => Agree(Full, "names", flag, (c, p, e) =>
+    {
+        foreach (var f in p.Functions.Select(f => f.Symbol))
+        {
+            if (flag == "nofile" && f.Name == "apply") f.File = null;
+            if (flag == "nomodule" && f.Name == "twice") f.Module.Functions.Remove(f.Name);
+            if (flag == "relpath" && f.File is { } file)
+                typeof(SourceText).GetField("<Path>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(file.Source, "lib/rel.byn");
+        }
+        return NamesOracle(c, p, e);
+    });
+
+    [Fact]
+    public void Names_OfAnImplicitMainMatchCSharp() => Agree(Script, "names", "", NamesOracle);
+
     // The root is a subdirectory of the file's, so the relative path starts with `..` and the file name stands (CEmitter.cs:393).
     [Fact]
     public void Names_PathOutsideTheRootUsesTheFileNameLikeCSharp() => WithFixture(Full, path =>
@@ -454,9 +497,11 @@ public sealed class SelfhostEmitterT6Tests
     [InlineData("args", "symbols")]
     [InlineData("failing", "")]
     [InlineData("library", "hashes")]
+    [InlineData("void", "")]
+    [InlineData("script", "")]
     public void Main_MatchesCSharp(string which, string flag)
     {
-        var source = which switch { "full" => Full, "args" => ArgsMain, "failing" => Failing, _ => Library };
+        var source = which switch { "full" => Full, "args" => ArgsMain, "failing" => Failing, "void" => VoidMain, "script" => Script, _ => Library };
         Agree(source, "main", flag, (c, p, e) => (string)Call(e, "EmitMain")!);
     }
 
@@ -474,6 +519,10 @@ public sealed class SelfhostEmitterT6Tests
         statics["st_b"] = $"/* {e.SymbolLiteral("abc")} {e.SymbolLiteral("zed")} */\n";
         order.Add("st_b");
         e.Helper("h1", "void h1(void)", () => "void h1(void) {\n}\n#line generated\nint x;\n");
+        ((List<string>)Field(e, "_symbolTexts")).Add("zed");
+        if (!e.OwnershipChecks) e.SymbolLiteral("");
+        statics["st_c"] = "\u0001x \u00017x \u000112\n";
+        order.Add("st_c");
         ((Dictionary<string, string>)Field(e, "_vtables"))["v1"] = "static const int v1 = 1;\n";
         ((List<string>)Field(e, "_vtableOrder")).Add("v1");
     }
@@ -484,6 +533,7 @@ public sealed class SelfhostEmitterT6Tests
     /// </summary>
     private static string RunWithoutTypes(Compilation c, string flag, bool prepare)
     {
+        if (flag == "noerrors") c.ErrorVariants.Clear();
         CEmitter Make()
         {
             var e = WithFlag(new LoweredProgram(c, [], null, []), flag);
@@ -505,6 +555,7 @@ public sealed class SelfhostEmitterT6Tests
     [InlineData("full", "debug")]
     [InlineData("full", "hashes")]
     [InlineData("library", "")]
+    [InlineData("library", "noerrors")]
     public void Run_SectionsAndSubstitutionMatchCSharp(string which, string flag) => WithFixture(which == "full" ? Full : Library, path =>
     {
         var c = Compile(path);
