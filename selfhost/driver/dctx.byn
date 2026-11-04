@@ -1,5 +1,14 @@
 // Shared state of the driver (spec 012 D6): one `// ── Tn state` section per task, inside `DCtx`.
 
+/// One stream's style as `TerminalStyle.Decide` (TerminalStyle.cs:13) gives it. The palette is `Ansi16` whenever `color` (the
+/// truecolor palettes need `COLORTERM`, which has no builtin, Q919); `ascii` is `Symbols.Ascii`. Declared before `DCtx` on the
+/// base: a field default naming a struct declared later crashes the C# lowerer (Q920).
+struct DStyle {
+    bool color = false
+    bool ascii = false
+    i64 width = 100
+}
+
 /// Everything the driver reads and writes for one run. Each task adds its fields in its own `// ── Tn state` section.
 public struct DCtx {
     // ── T1 state
