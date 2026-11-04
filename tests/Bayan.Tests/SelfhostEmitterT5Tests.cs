@@ -644,6 +644,7 @@ public sealed class SelfhostEmitterT5Tests
             print($"a{k}b{s}")
             print($"x{sy}")
             print($"{id(k)}{id(k)}")
+            print($"{k + 1}")
         }
 
         void places(ref List<P> ps, to ref Map<string, P> m, by ref List<i64> xs, as ref (i64 q, i64 r) t) {
@@ -683,7 +684,7 @@ public sealed class SelfhostEmitterT5Tests
         "builtins:7:builtin", "builtins:8:builtin", "builtins:9:builtin", "builtins:10:builtin", "builtins:11:builtin", "builtins:12:builtin",
         "builtins:14:builtin", "builtins:15:builtin", "builtins:13:switch", "builtins:16:builtin", "builtins:17:builtin", "builtins:18:builtin", "builtins:19:builtin",
         "opts:0:builtin", "opts:1:builtin", "opts:2:builtin", "opts:3:callParts", "compound:0:assign", "compound:1:assign", "compound:2:assign", "compound:3:assign", "compound:4:assign", "compound:5:assign", "compound:6:assign", "builtins:2:stable", "builtins:8:stable", "builtins:9:stable", "arrs:1:stable", "arrs:2:stable",
-        "writes:0:write", "writes:1:write", "writes:2:write", "writes:0:levelTrivial", "writes:2:levelTrivial", "writes:0:levelCall", "writes:2:levelCall",
+        "writes:0:write", "writes:1:write", "writes:2:write", "writes:0:levelTrivial", "writes:2:levelTrivial", "writes:0:levelCall", "writes:2:levelCall", "writes:3:levelCall",
         "places:1:stable", "places:2:stable", "places:3:stable", "places:4:stable", "places:5:stable", "places:6:stable",
         "tries:0:tryFrom", "tries:1:tryFrom", "tries:2:tryFrom", "tries:3:tryFrom", "tries:4:tryFrom", "tries:5:tryFrom", "tries:6:tryFrom",
         "tries:7:tryFrom", "tries:8:tryFrom", "tries:9:tryFrom", "tries:10:tryFrom", "tries:11:tryFrom", "tries:12:switch", "tries:13:tryFrom",

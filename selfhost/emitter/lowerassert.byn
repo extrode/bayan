@@ -309,7 +309,6 @@ public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by l
             // Spilling the target evaluates it ahead of the call (the emitter would evaluate it last inside the
             // call), so the parts before it are spilled first to keep them evaluated before it.
             for j in 0..lowered.length - 1 {
-                // coverage-blocked: Q779 T4 lowerExpr
                 unless isTrivial(in c, through: in l, for: lowered[j]) { lowered[j] = spill(ref c, through: ref l, for: lowered[j]) }
             }
             written = spill(ref c, through: ref l, for: written)
@@ -335,7 +334,6 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
     let si = i64(e & 0xFFFFFFFF)
     let span = c.bSwitchExprs[si].span
     let type = c.bSwitchExprs[si].type
-    // coverage-blocked: Q779 T4 lowerExpr
     var value = lowerExpr(ref c, through: ref l, for: c.bSwitchExprs[si].value)
     if isNeverExpr(value) { return value }
     unless isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
@@ -344,12 +342,9 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
     let end = newLabel(ref l, for: "switch_end")
     for k in 0..c.bSwitchExprs[si].arms.length {
         let arm = c.bSwitchExprs[si].arms[k]
-        // coverage-blocked: Q779 T4 lowerMatch
         let match = lowerMatch(ref c, through: ref l, for: arm.pattern, at: value)
         captureBegin(ref l)
-        // coverage-blocked: Q779 T4 lowerClaim
         lowerClaim(ref c, through: ref l, for: arm.pattern)
-        // coverage-blocked: Q779 T4 lowerExpr
         let v = lowerExpr(ref c, through: ref l, for: arm.value)
         // coverage-blocked: Q779 T4 lowerExpr
         if result != -1 {
@@ -360,7 +355,7 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
         }
         emit(ref l, for: ltree.addLGoto(ref l.tree, from: LGoto { span: arm.span, label: end }))
         let body = captureEnd(ref l)
-        // coverage-blocked: Q779 T4 lowerMatch through 375
+        // coverage-blocked: Q779 T4 lowerMatch through 370
         if arm.guard == -1 {
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move body) }))
             continue
@@ -387,7 +382,6 @@ public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc
     let span = c.bTryFroms[ti].span
     let target = c.bTryFroms[ti].target
     let type = c.bTryFroms[ti].type
-    // coverage-blocked: Q779 T4 lowerExpr
     var value = lowerExpr(ref c, through: ref l, for: c.bTryFroms[ti].operand)
     if isNeverExpr(value) { return value }
     unless isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
@@ -420,6 +414,5 @@ public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc
     let some = semantics.addConversion(ref c, from: BConversion { span: span, operand: converted, type: type, kind: .toOptional })
     if fits == -1 { return some }
     let none = semantics.addDefault(ref c, from: BDefault { span: span, type: type })
-    // coverage-blocked: Q779 T4 lowerExpr
     return lowerExpr(ref c, through: ref l, for: semantics.addConditional(ref c, from: BConditional { span: span, condition: fits, whenTrue: some, whenFalse: none, type: type }))
 }
