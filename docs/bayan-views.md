@@ -97,7 +97,7 @@ Package {
     uses: [.net, .env],
     dependencies: [
         "kit.web":   Dependency { version: "0.1", uses: [.net] },
-        "kit.db.pg": Dependency { version: "0.1", uses: [.net] },
+        "kit.db.pg": Dependency { version: "0.1", uses: [.net] },  // naming open: bayan-library-tiers.md Q1
     ],
     db: Database { connections: 32 },     // total across all workers
     style: Style { booleans: .words },
