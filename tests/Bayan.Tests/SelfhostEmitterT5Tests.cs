@@ -595,7 +595,7 @@ public sealed class SelfhostEmitterT5Tests
 
     // ── The fixture ──────────────────────────────────────────────────────────────
 
-    private const string Fixture = """
+    private static readonly string Fixture = """
         struct P {
             i64 a = 0
             string b = "x"
@@ -771,7 +771,7 @@ public sealed class SelfhostEmitterT5Tests
             if k > 0 { fail BE.other }
         }
 
-        void asserts(i64 k, from Q q, to List<i64> xs, by i64? o, as bool f, for string s, at i32 n) uses alloc {
+        void asserts(i64 k, from Q q, to List<i64> xs, by i64? o, as bool f, for string s, at i32 n, through i64 -> i64 g) uses alloc {
             assert k == 1
             assert f && k > 2
             assert f || id(k) == 3
@@ -790,11 +790,21 @@ public sealed class SelfhostEmitterT5Tests
             assert q.load() fails AE
             assert k == n
             assert k == (1)
+            assert k	== 1
+            assert k⏎== 1
+            assert (f ? g : g)(k) == 3
+            assert !f || -k == -(1)
+            assert s.isEmpty == f
+            assert f || id(panic("x")) == 3
             assert panic("x")
         }
 
+        void assertsNever() {
+            assert failing(panic("x")) fails AE
+        }
+
         void main() { }
-        """;
+        """.Replace("⏎", "\r");
 
     private static readonly string[] CaseSpecs =
     [
@@ -809,7 +819,8 @@ public sealed class SelfhostEmitterT5Tests
         "tries:7:tryFrom", "tries:8:tryFrom", "tries:9:tryFrom", "tries:10:tryFrom", "tries:11:tryFrom", "tries:12:switch", "tries:13:tryFrom",
         "narrows:1:callParts", "narrows:2:switch", "narrows:3:switch", "nevers:0:switch", "spans:0:builtin",
         "asserts:0:assert", "asserts:1:assert", "asserts:2:assert", "asserts:3:assert", "asserts:4:assert", "asserts:5:assert", "asserts:6:assert", "asserts:7:assert",
-        "asserts:8:assert", "asserts:9:assert", "asserts:10:assert", "asserts:11:assert", "asserts:12:assert", "asserts:13:assert", "asserts:14:assert", "asserts:15:assert", "asserts:16:assert", "asserts:0:stmt",
+        "asserts:8:assert", "asserts:9:assert", "asserts:10:assert", "asserts:11:assert", "asserts:12:assert", "asserts:13:assert", "asserts:14:assert", "asserts:15:assert", "asserts:16:assert",
+        "asserts:17:assert", "asserts:18:assert", "asserts:19:assert", "asserts:20:assert", "asserts:21:assert", "asserts:22:assert", "assertsNever:0:assert", "asserts:0:stmt",
     ];
 
     private static List<string> CasesOracle(Compilation c)

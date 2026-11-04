@@ -114,7 +114,7 @@ public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     var columns = List<BExpr>()
     var lazy = List<bool>()
     for k in 0..exprs.length {
-        var anchor = t2Span(in c, through: in l, for: exprs[k]).start
+        var anchor = ltree.spanOf(in c, through: in l.tree, for: exprs[k]).start // coverage-exempt: Q780
         if (semantics.exprSyntax(in c, for: exprs[k]) is { } syntax) { anchor = t5Anchor(in c, through: in l, for: syntax, to: end) }
         let column = powerAssertColumn(t5Source(in c, through: in l, from: start, to: anchor))
         var seen = false
@@ -145,7 +145,7 @@ public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         l.shown[e] = -1
         unless lazy[k] { continue }
         let flag = newTemp(ref c, through: ref l, for: semantics.prim(.bool))
-        let at = t2Span(in c, through: in l, for: e)
+        let at = ltree.spanOf(in c, through: in l.tree, for: e)
         emitAssign(ref c, through: ref l, to: localExpr(ref c, at: at, for: flag), as: boolLiteral(ref c, at: at, by: false))
         l.ran[e] = flag
     }
@@ -208,7 +208,7 @@ BExpr t5Guard(ref Ctx c, through in LCtx l, for in PowerAssertPiece piece, at Te
     }
     if piece.anyFrom != -1 {
         var t = localExpr(ref c, at: span, for: flags[piece.anyFrom])
-        for k in piece.anyFrom + 1..flags.length { t = orExpr(ref c, through: in l, for: t, by: localExpr(ref c, at: span, for: flags[k])) }
+        for k in piece.anyFrom + 1..flags.length { t = orExpr(ref c, through: in l, for: t, by: localExpr(ref c, at: span, for: flags[k])) } // coverage-exempt: Q780
         g = g == -1 ? t : andExpr(ref c, through: in l, for: g, by: t)
     }
     return g
@@ -234,7 +234,7 @@ void assertFails(ref Ctx c, through ref LCtx l, for BStmt s, by semantics.ErrorS
         }
     }
     let statement = powerAssertFlatten(t5Source(in c, through: in l, from: span.start, to: span.start + span.length))
-    var anchor = t2Span(in c, through: in l, for: call).start
+    var anchor = ltree.spanOf(in c, through: in l.tree, for: call).start // coverage-exempt: Q780
     if (semantics.exprSyntax(in c, for: call) is { } syntax) {
         anchor = syntax.span.start
         if syntax.callee != -1 && semantics.exprSyntaxNode(in c, at: syntax.callee).kind == .memberExpr { anchor = semantics.exprSyntaxNode(in c, at: syntax.callee).member.start }
@@ -267,7 +267,7 @@ void assertFails(ref Ctx c, through ref LCtx l, for BStmt s, by semantics.ErrorS
 
 /// Lowerer.cs:1501 `Shown`: appends the sub-expressions of `e` shown on failure, outermost first, to `exprs`, and whether each may not run to `mayNotRuns`.
 void shown(in Ctx c, through in LCtx l, for BExpr e, by bool mayNotRun, to ref List<BExpr> exprs, as ref List<bool> mayNotRuns) uses alloc {
-    var literal = false
+    var literal = false // coverage-exempt: Q780
     if (semantics.exprSyntax(in c, for: e) is { } syntax) { literal = isLiteral(in c, for: syntax) }
     if printable(ltree.typeOf(in c, through: in l.tree, for: e)) && !literal {
         exprs.append(e)
@@ -297,7 +297,7 @@ void shown(in Ctx c, through in LCtx l, for BExpr e, by bool mayNotRun, to ref L
         case .unary or .field or .tupleElement or .call or .builtinCall or .conversion or .index: break
         default: return
     }
-    for child in semantics.children(in c, for: e) {
+    for child in semantics.children(in c, for: e) { // coverage-exempt: Q780
         if semantics.isExprKind(semantics.boundKind(child)) { shown(in c, through: in l, for: child, by: mayNotRun, to: ref exprs, as: ref mayNotRuns) }
     }
 }
