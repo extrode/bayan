@@ -39,12 +39,12 @@
     "selfhost/emitter/cprint/program.byn": {
       "mutation": null,
       "coverage": 1.0,
-      "branches": 0.9804
+      "branches": 0.9902
     },
     "selfhost/emitter/cprint/types.byn": {
       "mutation": null,
       "coverage": 1.0,
-      "branches": 0.9881
+      "branches": 1.0
     },
     "selfhost/emitter/lower.byn": {
       "mutation": null,
@@ -80,6 +80,21 @@
       "mutation": null,
       "coverage": 1.0,
       "branches": 1.0
+    },
+    "selfhost/parser/decls.byn": {
+      "mutation": null,
+      "coverage": 0.9659,
+      "branches": 0.8364
+    },
+    "selfhost/parser/decls2.byn": {
+      "mutation": null,
+      "coverage": 0.9655,
+      "branches": 0.7863
+    },
+    "selfhost/parser/parser.byn": {
+      "mutation": null,
+      "coverage": 0.9423,
+      "branches": 0.9348
     },
     "selfhost/parser/recover.byn": {
       "mutation": null,
