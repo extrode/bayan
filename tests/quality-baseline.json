@@ -51,6 +51,16 @@
       "coverage": 1.0,
       "branches": 1.0
     },
+    "selfhost/parser/recover.byn": {
+      "mutation": null,
+      "coverage": 0.8652,
+      "branches": 0.7566
+    },
+    "selfhost/parser/stmts.byn": {
+      "mutation": null,
+      "coverage": 0.9206,
+      "branches": 0.767
+    },
     "selfhost/semantics/binder2.byn": {
       "mutation": null,
       "coverage": 0.6128,

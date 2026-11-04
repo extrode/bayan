@@ -40,7 +40,7 @@ public sealed class SelfhostEmitterT11Tests
             var reported = List<semantics.T26Reported>()
             var ok = false
             var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
-            if args[0] == "cases" { Io.stdout.write(t11Cases(ref c, at: args[1], for: args[2])) }
+            if args[0] == "cases" || args[0] == "errors" { Io.stdout.write(t11Cases(ref c, at: args[1], for: args[2], by: args[0] == "errors")) }
             return 0
         }
 
@@ -92,9 +92,14 @@ public sealed class SelfhostEmitterT11Tests
             return result
         }
 
-        /// Whether `fn`'s body has a `for` over a text view or a map, the loops whose builtins only the lowerer builds.
-        bool t11Loops(ref Ctx c, through in ltree.LTree t, for FuncId fn) uses alloc {
+        /// Whether `fn`'s body has a `for` over a text view or a map, the loops whose builtins only the lowerer builds; in
+        /// `errors` mode, whether it has a `catch` instead, whose failure test only the lowerer builds.
+        bool t11Loops(ref Ctx c, through in ltree.LTree t, for FuncId fn, by bool errors) uses alloc {
             for e in semantics.descendants(in c, for: c.functions[fn].body) {
+                if errors {
+                    if semantics.boundKind(e) == .catchExpr { return true }
+                    continue
+                }
                 if semantics.boundKind(e) != .forStmt { continue }
                 let k = semantics.kindOf(ltree.typeOf(in c, through: in t, for: c.bFors[i64(e & 0xFFFFFFFF)].iterable))
                 if k == .textView || k == .map { return true }
@@ -102,14 +107,20 @@ public sealed class SelfhostEmitterT11Tests
             return false
         }
 
-        /// A builtin call only the lowerer builds: the text-view and map `for` loops.
-        bool t11LowererMember(in Ctx c, for semantics.BNode e) {
+        /// A node only the lowerer builds: the text-view and map `for` loops' builtin calls; in `errors` mode, a `catch`'s
+        /// failure test, a comparison of an error code (`bareCase` over a lowered operand).
+        bool t11LowererMember(in Ctx c, for semantics.BNode e, by bool errors) {
+            if errors {
+                if semantics.boundKind(e) != .binary { return false }
+                let left = c.bBinaries[i64(e & 0xFFFFFFFF)].left
+                return ltree.isLowered(left) && ltree.lKindOf(left) == .errorCode
+            }
             if semantics.boundKind(e) != .builtinCall { return false }
             let m = c.bBuiltinCalls[i64(e & 0xFFFFFFFF)].member
             return m == .textViewMore || m == .textViewNext || m == .mapSlotCount || m == .mapSlotLive || m == .mapSlotEntry
         }
 
-        string t11Cases(ref Ctx c, at string file, for string flags) uses alloc {
+        string t11Cases(ref Ctx c, at string file, for string flags, by bool errors) uses alloc {
             var cc = CCtx {}
             var scratch = CCtx {}
             let t = LTree {}
@@ -117,6 +128,7 @@ public sealed class SelfhostEmitterT11Tests
             sb.append("== cases\n")
             var n: i64 = 0
             for fn in t11Functions(ref c) {
+                if errors { break }
                 var f = CFunc { fn: fn, file: file }
                 for e in semantics.descendants(in c, for: c.functions[fn].body) {
                     let k = semantics.boundKind(e)
@@ -131,11 +143,11 @@ public sealed class SelfhostEmitterT11Tests
             // with such a loop.
             var l = LCtx {}
             for fn in t11Functions(ref c) {
-                unless t11Loops(ref c, through: in l.tree, for: fn) { continue }
+                unless t11Loops(ref c, through: in l.tree, for: fn, by: errors) { continue }
                 let lf = lowerFunction(ref c, through: ref l, for: fn)
                 var f = CFunc { fn: fn, file: file }
                 for e in t11Lowered(in c, through: in l.tree, for: lf.body) {
-                    unless t11LowererMember(in c, for: e) { continue }
+                    unless t11LowererMember(in c, for: e, by: errors) { continue }
                     let flag = n < flags.length ? flags[n..n + 1] : "0"
                     if flag == "1" { sb.append($"{n} {t11Case(ref cc, for: ref f, from: ref c, through: l.tree, at: e)}\n") }
                     if flag == "2" { sb.append($"{n} {t11Case(ref scratch, for: ref f, from: ref c, through: l.tree, at: e)}\n") }
@@ -192,8 +204,8 @@ public sealed class SelfhostEmitterT11Tests
     private static Compilation Compile(string path) =>
         Compilation.Create([SourceText.FromFile(path)], Path.GetDirectoryName(path)!);
 
-    private static (int Exit, string Out, string Err) Run(string path, string file, string flags) =>
-        SelfhostParserTests.Run(Build(), ["cases", file, flags.Length == 0 ? "-" : flags, path]);
+    private static (int Exit, string Out, string Err) Run(string path, string file, string flags, bool errors = false) =>
+        SelfhostParserTests.Run(Build(), [errors ? "errors" : "cases", file, flags.Length == 0 ? "-" : flags, path]);
 
     private static object? Field(object target, string name) =>
         target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target);
@@ -279,7 +291,7 @@ public sealed class SelfhostEmitterT11Tests
     /// <summary>Numbers the cases as the generated main does; a case is compared when its children are plain locals, it
     /// reaches no stub and the C# does not throw; it is run only when it reaches a stub. <paramref name="force"/> marks one
     /// more case to run, for the failure path.</summary>
-    private static Oracle CSharp(Compilation c, Func<BoundNode, bool>? force = null)
+    private static Oracle CSharp(Compilation c, Func<BoundNode, bool>? force = null, bool errors = false)
     {
         var p = Lowerer.Lower(c);
         var emitter = NewEmitter(p);
@@ -316,6 +328,17 @@ public sealed class SelfhostEmitterT11Tests
             try { m.Invoke(probes[fn], [n]); }
             catch (TargetInvocationException) { return; }
             if (n is BoundBuiltinCall emittedCall) emitted.Add(emittedCall.Member);
+            // The error-code test: the C# text with its operands' text taken out, as the selfhost's stub `emitExpr` prints "".
+            if (errors && n is BoundBinary lowered)
+            {
+                var expr = typeof(FunctionEmitter).GetMethod("Expr", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                var text = (string)m.Invoke(emitters[fn], [n])!;
+                foreach (var operand in new[] { lowered.Left, lowered.Right })
+                    text = text.Replace((string)expr.Invoke(emitters[fn], [operand])!, "");
+                flags[index] = '1';
+                cases[index] = text;
+                return;
+            }
             // A child that is not a plain local is T10's `emitExpr`, still a stub, so the text cannot match yet (Q811).
             if (!plain || ReachesStub(n))
             {
@@ -329,14 +352,22 @@ public sealed class SelfhostEmitterT11Tests
         }
         foreach (var fn in functions)
         {
+            if (errors) break;
             file = (string)Field(emitters[fn], "_file")!;
             foreach (var n in BoundTree.Descendants(fn.Body!)) Case(fn, n);
         }
         // Then the builtin calls only the lowerer builds (Lowerer.cs:668-693), in the lowered bodies of the functions with
         // such a loop (only those are lowered by the generated main: T4's stubs cannot lower every body yet, Q811).
-        foreach (var lf in p.Functions.Where(lf => BoundTree.Descendants(lf.Symbol.Body!).OfType<BoundFor>().Any(f => f.Iterable.Type is TextViewType or MapType)))
+        // In `errors` mode, instead, the failure tests of the functions with a `catch` (a lowered error code compared).
+        foreach (var lf in p.Functions.Where(lf => errors
+                ? BoundTree.Descendants(lf.Symbol.Body!).OfType<BoundCatch>().Any()
+                : BoundTree.Descendants(lf.Symbol.Body!).OfType<BoundFor>().Any(f => f.Iterable.Type is TextViewType or MapType)))
             foreach (var n in LoweredDescendants(lf.Body))
-                if (n is BoundBuiltinCall { Member: var member } && LowererMembers.Contains(member)) Case(lf.Symbol, n);
+                if (errors ? n is BoundBinary { Left: LErrorCode } : n is BoundBuiltinCall { Member: var member } && LowererMembers.Contains(member))
+                {
+                    file = (string)Field(emitters[lf.Symbol], "_file")!;
+                    Case(lf.Symbol, n);
+                }
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
         var helperLines = ((List<string>)Field(emitter, "_helperOrder")!).Select(h => $"{h} {helpers[h].Proto} | {helpers[h].Body}")
             .SelectMany(h => h.Split('\n')).Where(l => l.Length > 0).ToList();
@@ -379,10 +410,10 @@ public sealed class SelfhostEmitterT11Tests
         return failures;
     }
 
-    private static Oracle RunAndCompare(string path)
+    private static Oracle RunAndCompare(string path, bool errors = false)
     {
-        var o = CSharp(Compile(path));
-        var (exit, stdout, stderr) = Run(path, o.File, o.Flags);
+        var o = CSharp(Compile(path), errors: errors);
+        var (exit, stdout, stderr) = Run(path, o.File, o.Flags, errors);
         Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
         var failures = Compare(o, stdout);
         Assert.True(failures.Count == 0, string.Join('\n', failures.Take(8)));
@@ -736,6 +767,33 @@ public sealed class SelfhostEmitterT11Tests
         var want = LowererMembers.Concat([BuiltinMember.MapIndex, BuiltinMember.MapIndexSet, BuiltinMember.MapTryGet, BuiltinMember.MapContains, BuiltinMember.MapRemove]);
         var missing = want.Where(m => !o.Compared.Contains(m)).ToList();
         Assert.True(missing.Count == 0, $"not compared: {string.Join(", ", missing)}");
+    });
+
+    // A `catch` lowers to a test of the error code (Lowerer.cs:1753, 1771), so `bareCase` meets a lowered operand
+    // (CEmitter.cs:2352).
+    private const string CatchFixture = """
+        union error E {
+            bad(i64 code)
+            gone
+        }
+
+        i64 risky(i64 n) fails E {
+            fail .gone if n < 0
+            return n
+        }
+
+        i64 safe(i64 n) {
+            return risky(n) catch 0
+        }
+
+        void main() { }
+        """;
+
+    [Fact]
+    public void CatchFailureTest_BareCaseOverLoweredOperand_MatchesCSharp() => WithFixture(CatchFixture, path =>
+    {
+        var o = RunAndCompare(path, errors: true);
+        Assert.True(o.Cases.Count > 0, "no lowered error-code comparison was compared");
     });
 
     // ── The failure path: a builtin the emitter has no C for (CEmitter.cs:2292) ──────────────────────────────────

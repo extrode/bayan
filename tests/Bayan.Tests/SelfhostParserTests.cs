@@ -417,6 +417,50 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
     }
 
+    /// <summary>010 T45: inputs the C# parser once threw on (<c>ParserTests.TruncatedInputReportsWithoutThrowing</c>) dump as the C# parser
+    /// dumps them, whose output is written under <c>tmp/parser-ref/</c>, and agree on the exit code.</summary>
+    [Theory]
+    [InlineData("first-primitive-name", "int()fails")]
+    [InlineData("first-primitive-name-group", "int(\"\"{])fails")]
+    [InlineData("if-comment-at-end", "if(/*")]
+    [InlineData("if-control-at-end", "if(\u0017")]
+    [InlineData("while-control-at-end", "while(\u0017")]
+    [InlineData("unless-unclosed-group", "unless ((((((((((((((((((()")]
+    public void TruncatedInputDumpsAsTheCSharpParser(string name, string source) => DumpsAsTheCSharpParser("truncated", name, source);
+
+    /// <summary>010 T45: the rest of <c>expectName</c> and <c>parseBody</c>: a C# primitive name past the first token, after a
+    /// <c>.</c> or not, and a braceless body that is itself an error.</summary>
+    [Theory]
+    [InlineData("primitive-name-later", "let int = 1\n")]
+    [InlineData("primitive-member", "let x = a.int\n")]
+    [InlineData("primitive-qualified-type", "let x: a.int = 1\n")]
+    [InlineData("primitive-function", "void f() {}\nvoid int() {}\n")]
+    [InlineData("braceless-error-body", "if (a) )\n")]
+    [InlineData("braceless-error-body-while", "while (a) ]\nf()\n")]
+    [InlineData("braceless-nested-fix", "if (a) if (b) f()\n")]
+    [InlineData("primitive-module-path", "import a.int\n")]
+    [InlineData("braceless-else-body", "if (a) else\n")]
+    [InlineData("braceless-goto-case-body", "while (a) goto case 1\nf()\n")]
+    public void BodyAndNameEdgesDumpAsTheCSharpParser(string name, string source) => DumpsAsTheCSharpParser("body-name", name, source);
+
+    /// <summary><paramref name="source"/>, written under <c>tmp/parser-&lt;kind&gt;/</c>, dumps as the C# parser dumps it (written under
+    /// <c>tmp/parser-ref/</c>), and the exit codes agree.</summary>
+    private void DumpsAsTheCSharpParser(string kind, string name, string source)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "parser-" + kind);
+        Directory.CreateDirectory(dir);
+        var input = Path.Combine(dir, name + ".byn");
+        File.WriteAllText(input, source);
+        var tree = SyntaxTree.Parse(SourceText.FromFile(input));
+        var refPath = Path.Combine(Golden.RepoRoot, "tmp", "parser-ref", kind + "_" + name + ".ast");
+        Directory.CreateDirectory(Path.GetDirectoryName(refPath)!);
+        File.WriteAllText(refPath, AstDump.Dump(tree));
+        var (exit, stdout, stderr) = Run(Built, input);
+        output.WriteLine(stderr);
+        if (Golden.Compare(refPath, stdout, update: false).Failure is { } failure) Assert.Fail(failure);
+        Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
+    }
+
     /// <summary>Q511: C# takes these nodes' spans before it parses their last child (argument order), so the child
     /// lies outside its parent; the port's <c>checkSpans</c> reports the same child under L018.</summary>
     [Theory]
