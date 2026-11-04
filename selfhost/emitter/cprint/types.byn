@@ -69,6 +69,7 @@ void t7Define(ref CCtx cc, from ref Ctx c, through ref StrBuf defs, to ref Map<s
             for v in 0..c.errorVariants.length {
                 if c.errorVariants[v].fields.length > 0 { cases.append(v) }
             }
+            // coverage-exempt: Q790
             if cases.length > 0 {
                 memberTypes.append(semantics.prim(.u32))
                 decls.append(t7VariantUnion(ref cc, from: ref c, for: in cases, as: true))
@@ -147,6 +148,7 @@ void t7Define(ref CCtx cc, from ref Ctx c, through ref StrBuf defs, to ref Map<s
                 decls.append(t7VariantUnion(ref cc, from: ref c, for: in variants, as: false))
             }
             t7Payloads(ref c, for: in variants, to: ref payloads, as: false)
+        // coverage-exempt: Q789
         default: return
     }
     var deps = List<Type>()

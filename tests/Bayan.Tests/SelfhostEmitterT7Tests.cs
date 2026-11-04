@@ -499,7 +499,7 @@ public sealed class SelfhostEmitterT7Tests
         {
             var c = Compile(path);
             if (c.Diagnostics.HasErrors) return;
-            // A `requires` makes the semantics port bind a checker function (a bool row) that the C# Gather does not see: Q792.
+            // The selfhost parser keeps a field rule that names another field on the field (C# moves it to the struct), so the checker gains a bool flag local: Q792.
             if (File.ReadAllText(corpus).Contains("requires ", StringComparison.Ordinal)) return;
             var (exit, stdout, stderr) = Run("corpus", path);
             if (exit != 0)
