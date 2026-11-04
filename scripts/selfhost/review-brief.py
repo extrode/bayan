@@ -39,10 +39,11 @@ for t in args[1:]:
     law = re.findall(r'`docs/laws/(\d{3})-[^`]*\.md`', head)  # a law-enact task's gate is its law's proof
     filt = f'Law=L{law[0]}' if law and not own_tests else f'FullyQualifiedName~{test_class}'
     if SPEC == '010' and not law and not own_tests and not byns: filt = 'FullyQualifiedName~SelfhostSemanticsApiTests'  # a docs-only task
-    # 011: every test class the task owns gates it, and T21 also counts the SelfhostSemantics* tests (Q867, Q870)
-    if SPEC != '010' and not law:
+    # 011: every test class the task owns gates it (a task with a law page and tests too, T14), and T21 also counts the SelfhostSemantics* tests (Q867, Q870)
+    if SPEC != '010' and (own_tests or not law):
         filt = '|'.join(f'FullyQualifiedName~{c[:-3]}' for c in own_tests) or filt
         if SPEC == '011' and t == 'T21': filt += '|FullyQualifiedName~SelfhostSemantics'
+        if SPEC == '011' and t == 'T13': filt += '|FullyQualifiedName~SelfhostEmitter'  # integration: every emitter class (Q886)
     shared = '`ctx.byn`' if SPEC == '010' else ' and '.join('`'+c+'`' for c in row['shared'].split(','))
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))
