@@ -153,6 +153,10 @@ public sealed class SelfhostEmitterT10Tests
                     sb.append($"{i} call-result {cprint.call(ref cc, for: ref f, from: ref c, through: l.tree, at: e & 0xFFFFFFFF, to: "R")}\n")
                 }
             }
+            sb.append("== helpers\n")
+            for name in cc.helperOrder {
+                if name.startsWith("bynh_from_ordinal_") { sb.append(cc.helpers[name].body) }
+            }
             return $"{sb.finish()}"
         }
         """;
@@ -321,7 +325,8 @@ public sealed class SelfhostEmitterT10Tests
     /// <summary>A <c>try</c>'s operand: the call <c>Call</c> takes once lowering has split the <c>try</c> off.</summary>
     private static BoundExpr Bare(BoundExpr e) => e is BoundTry t ? t.Operand : e;
 
-    private static List<string> ExprOracle(Compilation c)
+    /// <summary>The <c>expr</c> section, and in <paramref name="helpers"/> the <c>enumFromOrdinal</c> helpers it registered.</summary>
+    private static List<string> ExprOracle(Compilation c, out List<string> helpers)
     {
         var (fe, g, decls) = NewEmitterFor(c);
         BoundExpr Init(string n) => Bare(decls[n].Initializer!);
@@ -353,6 +358,11 @@ public sealed class SelfhostEmitterT10Tests
                 lines.Add($"{i} call-result {Call(typeof(FunctionEmitter), fe, "Call", call, "R")}");
             }
         }
+        var emitter = Field(fe, "_c")!;
+        var registered = (System.Collections.IDictionary)Field(emitter, "_helpers")!;
+        var bodies = ((List<string>)Field(emitter, "_helperOrder")!).Where(h => h.StartsWith("bynh_from_ordinal_", StringComparison.Ordinal))
+            .Select(h => (((string, string))registered[h]!).Item2);
+        helpers = string.Concat(bodies).Split('\n').SkipLast(1).ToList();
         return lines;
     }
 
@@ -378,7 +388,8 @@ public sealed class SelfhostEmitterT10Tests
         var (file, linePath) = FileOf(NewEmitterFor(c).Fe);
         var actual = RunMode("expr", path, file, linePath, out var exit, out var stderr);
         Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
-        SelfhostSemanticsHarness.AssertSection(actual, "expr", ExprOracle(c));
+        SelfhostSemanticsHarness.AssertSection(actual, "expr", ExprOracle(c, out var helpers));
+        SelfhostSemanticsHarness.AssertSection(actual, "helpers", helpers);
     });
 
     [Fact]
@@ -387,11 +398,11 @@ public sealed class SelfhostEmitterT10Tests
         var c = Compile(path);
         var (fe, _, decls) = NewEmitterFor(c);
         var thrown = Assert.Throws<System.Reflection.TargetInvocationException>(() => Expr(fe, new LVoid(decls["a"].Initializer!.Syntax)));
-        Assert.StartsWith("cannot emit", thrown.InnerException!.Message);
+        Assert.Equal("cannot emit LVoid", thrown.InnerException!.Message);
         var (file, linePath) = FileOf(fe);
         RunMode("fail", path, file, linePath, out var exit, out var stderr);
         Assert.NotEqual(0, exit);
-        Assert.Contains("cannot emit", stderr);
+        Assert.Equal(thrown.InnerException!.Message, PanicMessage(stderr));
     });
 
     [Theory]
@@ -404,10 +415,17 @@ public sealed class SelfhostEmitterT10Tests
         // An interpolated string has no case in `Expr`; a `rest` span literal is a `BoundCollection` of no list, map or array type.
         var node = mode == "failbound" ? decls["itp"].Initializer! : ((BoundCall)decls["vc"].Initializer!).Arguments[0];
         var thrown = Assert.Throws<System.Reflection.TargetInvocationException>(() => Expr(fe, node));
-        Assert.StartsWith("cannot emit", thrown.InnerException!.Message);
+        Assert.Equal(mode == "failbound" ? "cannot emit BoundInterpolated" : "cannot emit BoundCollection", thrown.InnerException!.Message);
         var (file, linePath) = FileOf(fe);
         RunMode(mode, path, file, linePath, out var exit, out var stderr);
         Assert.NotEqual(0, exit);
-        Assert.Contains(mode == "failbound" ? "cannot emit" : thrown.InnerException!.Message, stderr);
+        Assert.Equal(thrown.InnerException!.Message, PanicMessage(stderr));
     });
+
+    // The selfhost panic's message: its stderr line holding "cannot emit", from there to the end of the line.
+    private static string PanicMessage(string stderr)
+    {
+        var line = stderr.Split('\n').First(l => l.Contains("cannot emit"));
+        return line[line.IndexOf("cannot emit", StringComparison.Ordinal)..].TrimEnd('\r');
+    }
 }
