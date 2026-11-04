@@ -6,8 +6,10 @@
 name: mutation
 
 on:
-  schedule:
-    - cron: '0 3 * * *'
+  # Nightly schedule off (2026-11-04): each group re-records the shared law tests (~2h a group, 83 groups), so shards hit the
+  # 6h limit. Back on once groups share one recording per shard (handoff Q910).
+  # schedule:
+  #   - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions:

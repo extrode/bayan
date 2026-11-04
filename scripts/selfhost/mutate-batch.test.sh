@@ -117,7 +117,9 @@ echo "$outside" | grep -q '^group parser-p: report: .*quality-1-prog.json: path 
 [ "$m0_2x" != 0 ] && [ -z "$fail_matches" ] && [ -n "$fail_rej" ] || fail "a failed group's report was matched by the merge job's glob ($fail_matches)" "$m0_2"
 has() { echo "$wf" | grep -qE "$1" || fail "mutation.yml: $2" ""; }
 has '^permissions:' "no workflow-level permissions"; has '^  contents: read$' "permissions are not contents: read"
-[ "$(echo "$wf" | grep -c 'persist-credentials: false')" = 2 ] || fail "mutation.yml: every checkout needs persist-credentials: false" ""
+[ "$(echo "$wf" | grep -c 'git fetch -q --depth=1 --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$GITHUB_SHA"')" = 2 ] || fail "mutation.yml: both jobs need the tokenless shell checkout" ""
+echo "$wf" | grep -qE 'uses: actions/checkout@' && fail "mutation.yml: actions/checkout is back (it persists a token)" ""
+echo "$wf" | grep -qE '^  schedule:' && fail "mutation.yml: the nightly schedule is on before one recording per shard (Q910)" ""
 has '^concurrency:' "no concurrency group"; has 'group: mutation-\$\{\{ github.ref \}\}' "the concurrency group is not mutation-\${{ github.ref }}"
 has 'cancel-in-progress: false' "concurrency cancels runs in progress"
 [ "$(echo "$wf" | grep -c 'name: quality-baseline-')" = 0 ] || fail "mutation.yml: a shard uploads its own tests/quality-baseline.json" ""
