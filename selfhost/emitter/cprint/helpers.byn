@@ -256,10 +256,8 @@ public string format(ref CCtx cc, from ref Ctx c, for Type t, at string v, to st
                     return $"byn_w_u64({w}, (uint64_t)({v}));"
             }
         case .errorSet or .errorUnion: return $"byn_w_error({w}, {v}.code);"
-        // coverage-blocked: Q793 T6 enumNames
         case .enumType: return $"byn_w_str({w}, {enumNames(ref cc, from: ref c, for: i)}[{v}]);"
         case .builtin:
-            // coverage-blocked: Q793 T6 symbolText
             if t == semantics.builtinType(.symbol) { return $"byn_w_str({w}, {symbolText(ref cc, for: v)});" }
         case .owned: return format(ref cc, from: ref c, for: c.ownedTypes[i], at: $"(*{v})", to: w)
         default: let _ = 0
@@ -275,7 +273,6 @@ public string format(ref CCtx cc, from ref Ctx c, for Type t, at string v, to st
 
 /// `Text` of `Format`'s helper body: `s` written as a literal.
 string t8Text(ref CCtx cc, for string s) uses alloc {
-    // coverage-blocked: Q793 T6 stringLiteral
     return $"    byn_w_str(w, {stringLiteral(s)});\n"
 }
 
@@ -293,7 +290,6 @@ string t8FormatBody(ref CCtx cc, from ref Ctx c, for Type t) uses alloc {
         case .structType:
             let method = formatInto(ref c, for: i)
             if method == -1 { panic($"cannot format {semantics.typeDisplay(ref c, by: t)}") }
-            // coverage-blocked: Q793 T6 functionName
             let callee = functionName(ref cc, from: ref c, for: method)
             let spec = c.functions[method].parameters.length == 2 ? $", {t8NoFormatSpec}" : ""
             sb.append($"    {callee}(&v, w{spec});\n")
