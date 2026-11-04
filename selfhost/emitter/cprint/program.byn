@@ -12,7 +12,7 @@ public string emit(ref Ctx c, from in ltree.LTree t, through in ltree.LoweredPro
     return t6Run(ref cc, from: ref c, through: in t, for: in program)
 }
 
-/// CEmitter.cs:65 `Run`: the sections of the translation unit, in order.
+/// CEmitter.cs:63 `Run`: the sections of the translation unit, in order.
 public string t6Run(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredProgram program) uses alloc {
     var bodies = StrBuf()
     var protos = StrBuf()
@@ -88,7 +88,7 @@ void t6EmitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for i
     bodies.append("\n")
 }
 
-/// CEmitter.cs:119 `SymbolTable`: appends `byn_symtab`, the distinct literal texts sorted by UTF-8 bytes with `""` first (R2),
+/// CEmitter.cs:123 `SymbolTable`: appends `byn_symtab`, the distinct literal texts sorted by UTF-8 bytes with `""` first (R2),
 /// and returns each literal's index by first-seen number.
 List<i64> t6SymbolTable(ref CCtx cc, to ref StrBuf sb) uses alloc {
     var indexes = List<i64>()
@@ -112,7 +112,7 @@ List<i64> t6SymbolTable(ref CCtx cc, to ref StrBuf sb) uses alloc {
     return indexes
 }
 
-/// CEmitter.cs:105 `Regex.Replace(text, "\u0001(\\d+)\u0001", m => symbolIndex[int.Parse(m)])`.
+/// CEmitter.cs:118 `Regex.Replace(text, "\u0001(\\d+)\u0001", m => symbolIndex[int.Parse(m)])`.
 string t6SymbolIndexes(string text, by in List<i64> symbolIndex) uses alloc {
     var sb = StrBuf()
     let bytes = text.bytes
@@ -164,7 +164,7 @@ string t6ResolveResets(string text) uses alloc {
     return $"{sb.finish()}"
 }
 
-/// CEmitter.cs:290 `EmitMain`.
+/// CEmitter.cs:288 `EmitMain`.
 public string t6EmitMain(ref CCtx cc, from ref Ctx c, through in ltree.LoweredProgram program) uses alloc {
     var sb = StrBuf()
     sb.append($"int main(int argc, char** argv) {{\n    {errorCType(ref cc, from: ref c)} err = {{0}};\n")

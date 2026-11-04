@@ -29,6 +29,10 @@ public sealed class SelfhostEmitterT6Tests
 
         i32 main(ReadOnlySpan<string> args) {
             let mode = args[0]
+            if mode == "corpus" {
+                Io.stdout.write(t6Corpus(args))
+                return 0
+            }
             let flag = args[2]
             var c = semantics.fromPath(args[1], by: in CompilationOptions { includeTests: true })
             var l = LCtx {}
@@ -133,6 +137,34 @@ public sealed class SelfhostEmitterT6Tests
             values.append(Constant { kind: .real, real: -1.0 / zero })
             for v in values {
                 for t in types { sb.append($"{cprint.constant(ref cc, from: ref c, for: v, as: t)}\n") }
+            }
+            return $"{sb.finish()}"
+        }
+
+        /// The float and string constants of every input in `args[1..]`, each compiled alone, as the port prints them.
+        string t6Corpus(ReadOnlySpan<string> args) uses alloc, clock, fs {
+            var sb = StrBuf()
+            var cc = CCtx {}
+            var seen = Map<string, bool>()
+            for n in 1..args.length {
+                var c = semantics.fromPath(args[n], by: in CompilationOptions { includeTests: true }, wholeDirectory: false)
+                var found = List<Constant>()
+                for (handle, k) in c.constants { found.append(k) }
+                for k in found {
+                    var line = ""
+                    if k.kind == .real {
+                        line = $"r {k.real} {cprint.constant(ref cc, from: ref c, for: k, as: semantics.prim(.f64))} {cprint.constant(ref cc, from: ref c, for: k, as: semantics.prim(.f32))}"
+                    }
+                    if k.kind == .text {
+                        var bytes = StrBuf()
+                        for b in k.text.bytes { bytes.append($"{b},") }
+                        line = $"s {bytes.finish()} {cprint.constant(ref cc, from: ref c, for: k, as: semantics.prim(.i32))}"
+                    }
+                    if line.length > 0 && !seen.contains(line) {
+                        seen[line] = true
+                        sb.append($"{line}\n")
+                    }
+                }
             }
             return $"{sb.finish()}"
         }
@@ -427,6 +459,47 @@ public sealed class SelfhostEmitterT6Tests
             foreach (var t in types) lines.Add(e.Constant(new ConstantValue(v), t));
         SelfhostSemanticsHarness.AssertSection(RunMode("consts", path), "consts", lines);
     });
+
+    /// <summary>
+    /// Every float and string constant of every <c>run/</c> input (the corpus <see cref="Golden.Cases"/> lists), as Bayan's binder
+    /// finds it, printed by the port and by <c>CEmitter.Constant</c> (f64 and f32 for a float).
+    /// </summary>
+    [Fact]
+    public void Constants_OfTheRunCorpusMatchCSharp()
+    {
+        var paths = ((IEnumerable<object[]>)Golden.Cases("run")).Select(d => Path.Combine(Golden.CasesRoot, (string)d[0])).ToList();
+        var dir = Path.Combine(Path.GetTempPath(), "bayan-t6-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "a.byn");
+            File.WriteAllText(path, Library);
+            var e = NewEmitter(Lowerer.Lower(Compile(path)));
+            var (exit, stdout, stderr) = SelfhostParserTests.Run(Build(), ["corpus", .. paths]);
+            Assert.True(exit == 0 && stderr.Length == 0, $"generated main exited {exit}:\n{stderr}");
+            var lines = stdout.Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Assert.True(lines.Count(l => l[0] == 'r') > 20 && lines.Count(l => l[0] == 's') > 50, "the corpus has too few constants to mean anything");
+            foreach (var line in lines)
+            {
+                var parts = line.Split(' ', 3);
+                string expected;
+                if (parts[0] == "r")
+                {
+                    var rest = parts[2].Split(' ', 2);
+                    var d = parts[1] switch { "inf" => double.PositiveInfinity, "-inf" => double.NegativeInfinity, "nan" or "NaN" => double.NaN, var t => double.Parse(t, System.Globalization.CultureInfo.InvariantCulture) };
+                    expected = $"{e.Constant(new ConstantValue(d), PrimitiveType.F64)} {e.Constant(new ConstantValue(d), PrimitiveType.F32)}";
+                    Assert.Equal($"r {parts[1]} {expected}", line);
+                }
+                else
+                {
+                    var bytes = parts[1].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(byte.Parse).ToArray();
+                    expected = e.Constant(new ConstantValue(Encoding.UTF8.GetString(bytes)), PrimitiveType.I32);
+                    Assert.Equal($"s {parts[1]} {expected}", line);
+                }
+            }
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 
     [Fact]
     public void Strings_EscapeAndFieldNamesMatchCSharp() => WithFixture(Library, path =>
