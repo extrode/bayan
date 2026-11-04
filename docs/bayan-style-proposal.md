@@ -297,16 +297,16 @@ One blank line between top-level declarations. Consecutive one-line declarations
 
 Layout never produces a warning. You don't fix it, you run the formatter. That is the gofmt lesson. Idioms are judgement calls, so they are lints with the same severity model as `dotnet_diagnostic.X.severity`.
 
-Style and idiom lints take codes in the `x900–x999` range of their area (addendum A2, docs/revisions/0017-addendum-a2-diagnostic-codes.md): 0xxx project, files, `package.byn`, CLI and tools; 1xxx syntax, 2xxx types, 3xxx memory, 4xxx control flow and failure, 5xxx grammar and naming, 6xxx effects and concurrency, 7xxx typestate and contracts, 8xxx trust and security, 9xxx build, C backend, toolchain and runtime traps. Numbers are assigned at the round-4 renumbering.
+Style and idiom lints take codes in the `x900–x999` range of their area (addendum A2, docs/revisions/0017-addendum-a2-diagnostic-codes.md): 0xxx project, files, `package.byn`, CLI and tools; 1xxx syntax, 2xxx types, 3xxx memory, 4xxx control flow and failure, 5xxx grammar and naming, 6xxx effects and concurrency, 7xxx typestate and contracts, 8xxx trust and security, 9xxx build, C backend, toolchain and runtime traps. Numbers are assigned at the round-4 renumbering. A lint's area follows A2 rule 2 (the mistake the user made): if the only mistake is the spelling, 19xx; otherwise the area of what the user misunderstood. Whether a lint has a fix-it does not decide its area (user decision 2026-11-04).
 
 Initial lints (all `.suggestion` by default):
 
 | Code | Name | Flags |
 | --- | --- | --- |
-| TBD (x9xx of BYN4xxx control flow, A2) | `guards.postfix` | an `if` block whose only statement is `return`, `fail`, `break` or `continue` → `fail .x if c` |
+| TBD (x9xx of BYN1xxx syntax, A2) | `guards.postfix` | an `if` block whose only statement is `return`, `fail`, `break` or `continue` → `fail .x if c` |
 | TBD (x9xx of BYN1xxx syntax, A2) | `lambdas.it` | `x => x.f` with one parameter → `it.f` |
 | TBD (x9xx of BYN4xxx control flow, A2) | `nesting.depth` | blocks nested more than 4 deep → suggest early exit |
-| TBD (x9xx of BYN4xxx control flow, A2) | `functions.length` | body over N lines (off by default) |
+| TBD (x9xx of BYN0xxx project and tools, A2) | `functions.length` | body over N lines (off by default) |
 | TBD (x9xx of BYN4xxx control flow, A2) | `conditions.named` | a control head that wraps → suggest a named `let` |
 
 ### 4.2 Configuration: `package.byn` is the source of truth

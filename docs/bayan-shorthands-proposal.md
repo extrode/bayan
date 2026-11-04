@@ -252,7 +252,14 @@ let earlier = (Token a, b) => a.start < b.start
 - Adjacent parameters with no particle and no mode share the preceding type.
 - Sharing never crosses a particle, a mode or `rest`.
 - Fields stay one per line.
-- One canonical rule: the formatter collapses repeated types within a line, and a wrapped list gives each line its own type (§5). There's no style key.
+- Collapsing is not the formatter's job: `bayan format` changes layout only. An opt-in 19xx lint suggests `Vec3 a, b` for `Vec3 a, Vec3 b` on one line, and a wrapped list gives each line its own type (§5). The formatter could take this over only once the open questions below are settled and the grouping is equivalent in every position (user decision 2026-11-04).
+
+**Open questions (S5)**
+
+- Defaults: does `Vec3 a = .zero, b` share the type, and does `b` take the default?
+- Per-parameter attributes: does `@json(name: "x") Vec3 a, b` apply the attribute to `b`, and can `b` carry its own?
+- Inline refinements (J57): does `T a is .x, b` give `b` the refinement, the bare type, or is it an error?
+- Modes: sharing never crosses `ref`, `out` or `move` (the rules above), but can a bare name follow a moded parameter (`ref Vec3 a, b`), and what is `b`'s mode?
 
 ### S6. Target-typed static members: `.member` (gated on P7)
 
@@ -323,7 +330,7 @@ This section follows bayan-style-proposal.md:
 - `{` goes on its own line after a wrapped signature or control head.
 - Alignment is `.runs` by default, with `.none` allowed.
 - `package.byn` is the source of truth.
-- Style lints are `TBD (x9xx of their area, A2)`: `guards.postfix`, `nesting.depth`, `functions.length` and `conditions.named` in 4xxx control flow, `lambdas.it` in 1xxx syntax.
+- Style lints are `TBD (x9xx of their area, A2)`: `lambdas.it` and `guards.postfix` in 1xxx syntax (spelling only), `nesting.depth` and `conditions.named` in 4xxx control flow, `functions.length` in 0xxx project and tools.
 - `@unformatted because "…"` is the only opt-out.
 
 **Wrapped lists:** each item goes on its own line, indented once, and `)` closes on the last item's line. A wrapped signature or control head then puts `{` on its own line.
@@ -348,13 +355,13 @@ public Grams shippingWeight(
 
 **Spelling:** `u8[]`, `u8[64]`, `var u8[]`, `u8[]?`, `Vec3 a, b`, `.zero`; no inner spaces.
 
-**Lints (TBD, x9xx of their area, A2: nested leading dot in 2xxx types, hidden allocation and redundant `.span` in 3xxx memory, repeated adjacent types in 1xxx syntax):**
+**Lints (TBD, x9xx of their area, A2: nested leading dot in 2xxx types, hidden allocation and redundant `.span` in 3xxx memory, repeated adjacent types in 1xxx syntax, opt-in):**
 
 | Lint | Trigger | Fix |
 |---|---|---|
 | Nested leading dot | `.a(.b())` | Spell the inner type. |
 | Hidden allocation | an alias of an allocating type | Use the type directly. |
-| Repeated adjacent types | `Vec3 a, Vec3 b` on one line | Collapse. |
+| Repeated adjacent types (opt-in, off by default) | `Vec3 a, Vec3 b` on one line | Collapse. |
 | Redundant `.span` | `f(xs.span)` where §6.2 already borrows | Remove `.span`. |
 
 ---
@@ -396,7 +403,7 @@ public Grams shippingWeight(
 | explicit `<T>` in the implicit order | removed |
 | `IOrder<T>` on a `Self` interface | `IOrder` |
 | `T.zero` where `T` is expected | `.zero` (lint) |
-| `Vec3 a, Vec3 b` on one line | `Vec3 a, b` |
+| `Vec3 a, Vec3 b` on one line | `Vec3 a, b` (opt-in lint, not the formatter) |
 
 ---
 

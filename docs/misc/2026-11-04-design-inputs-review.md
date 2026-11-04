@@ -11,6 +11,8 @@ User decisions:
 - D-A (C1, A1, C2): `scope`/`spawn` replaces `async`/`await` and `Io.group()`. Round 4 removes them from spec §13 and Appendix A by revision. C3 follows: spec in round 4, runtime v0.2.
 - D-B (C6): the block deadline is `scope(timeout:)` / `until:`; round 4 removes `provide timeout: d { … }`.
 - D-C (C7): style and idiom lints take `x900–x999` of their area per A2 (revision 0017).
+- D-C follow-up (2026-11-04): area by A2 rule 2, spelling-only mistakes in 19xx (`lambdas.it`, `guards.postfix`, adjacent types as an opt-in lint), otherwise the area misunderstood (redundant `.span` and hidden allocation 39xx, nested leading dot 29xx, `nesting.depth`/`conditions.named` 49xx, `functions.length` 09xx); a fix-it does not decide the area. Adjacent types stay off the formatter; S5's open questions (defaults, attributes, refinements, modes) are in the shorthands doc.
+- C5 follow-up (2026-11-04): the example uses a deferred `var thumbnail: Image` (definite assignment, no optional). Deferred `let` (BYN2101 today) is not a round-4 item. BYN2311 already skips deferred `var`s (NeverReassignedVarLint.cs:20).
 
 Per row:
 

@@ -144,11 +144,12 @@ Only channels, `workers: .compute` scopes and `Arc` cross threads. Two marker in
 | `IShareable` | Can be read from several threads at once | Unsynchronized mutable state; `Mutex<T>` and `Atomic<T>` qualify |
 
 ```cs
-var thumbnail: Image? = null
+var thumbnail: Image
 scope(workers: .compute) {
     let job = spawn resize(move image, to: 256px)
     thumbnail = try job.join()
 }
+// definitely assigned here: `scope` is a block that runs once, not a closure (BYN2102 otherwise)
 
 scope(workers: .compute) {
     spawn render(session)
