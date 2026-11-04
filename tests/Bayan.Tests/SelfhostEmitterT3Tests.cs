@@ -98,7 +98,8 @@ public sealed class SelfhostEmitterT3Tests
                     let op = c.bBinaries[i].op.ordinal
                     let left = t3Expr(ref c, through: in l, for: c.bBinaries[i].left)
                     let right = t3Expr(ref c, through: in l, for: c.bBinaries[i].right)
-                    return $"({op} {left} {right})"
+                    let type = t3Type(ref c, by: c.bBinaries[i].type)
+                    return $"({op} {left} {right}):{type}"
                 case .index:
                     let target = t3Expr(ref c, through: in l, for: c.bIndexes[i].target)
                     let index = t3Expr(ref c, through: in l, for: c.bIndexes[i].index)
@@ -118,7 +119,8 @@ public sealed class SelfhostEmitterT3Tests
                 case .call:
                     let receiver = t3Expr(ref c, through: in l, for: c.bCalls[i].receiver)
                     let arguments = t3Args(ref c, through: in l, for: e)
-                    return $"call {c.functions[c.bCalls[i].function].name}({receiver}; {arguments})"
+                    let type = t3Type(ref c, by: c.bCalls[i].type)
+                    return $"call {c.functions[c.bCalls[i].function].name}({receiver}; {arguments}):{type}"
                 case .errorVariant: return "errvar"
                 case .conversion:
                     let operand = t3Expr(ref c, through: in l, for: c.bConversions[i].operand)
@@ -128,7 +130,8 @@ public sealed class SelfhostEmitterT3Tests
                     let member = c.bBuiltinCalls[i].member.ordinal
                     let receiver = t3Expr(ref c, through: in l, for: c.bBuiltinCalls[i].receiver)
                     let arguments = t3Args(ref c, through: in l, for: e)
-                    return $"bc{member}({receiver}; {arguments})"
+                    let type = t3Type(ref c, by: c.bBuiltinCalls[i].type)
+                    return $"bc{member}({receiver}; {arguments}):{type}"
                 default: return "?"
             }
         }
@@ -256,14 +259,14 @@ public sealed class SelfhostEmitterT3Tests
         LNever => "never",
         BoundLiteral x => $"lit:{x.Type.DisplayName} {Value(x.Value)}",
         BoundLocal x => x.Local.Name,
-        BoundBinary x => $"({(int)x.Op} {Expr(x.Left)} {Expr(x.Right)})",
+        BoundBinary x => $"({(int)x.Op} {Expr(x.Left)} {Expr(x.Right)}):{x.Type.DisplayName}",
         BoundIndex x => $"idx({Expr(x.Target)}, {Expr(x.Index)}, end={(x.FromEnd ? 1 : 0)}):{x.Type.DisplayName}",
         BoundField x => $"fld({Expr(x.Receiver)}).{x.Field.Name}",
         BoundTupleElement x => $"tup({Expr(x.Receiver)}).{x.Index}:{x.Type.DisplayName}",
         BoundConversion x => $"conv{(int)x.Kind}({Expr(x.Operand)}):{x.Type.DisplayName}",
-        BoundBuiltinCall x => $"bc{(int)x.Member}({Expr(x.Receiver)}; {string.Join(", ", x.Arguments.Select(Expr))})",
+        BoundBuiltinCall x => $"bc{(int)x.Member}({Expr(x.Receiver)}; {string.Join(", ", x.Arguments.Select(Expr))}):{x.Type.DisplayName}",
         BoundUnary x => $"un({(int)x.Op} {Expr(x.Operand)})",
-        BoundCall x => $"call {x.Function.Name}({Expr(x.Receiver)}; {string.Join(", ", x.Arguments.Select(Expr))})",
+        BoundCall x => $"call {x.Function.Name}({Expr(x.Receiver)}; {string.Join(", ", x.Arguments.Select(Expr))}):{x.Type.DisplayName}",
         BoundErrorVariant => "errvar",
         _ => "?",
     };

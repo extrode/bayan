@@ -675,11 +675,12 @@ void lowerSwitch(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     for k in 0..c.bSwitches[si].sections.length {
         let pattern = c.bSwitches[si].sections[k].pattern
         let sectionSpan = c.bSwitches[si].sections[k].span
-        // coverage-blocked: Q772 T4 lowerClaim through 709
+        // coverage-blocked: Q772 T4 lowerClaim
         if pattern == -1 {
             fallback = k
             continue
         }
+        // coverage-blocked: Q772 T4 lowerClaim through 710
         captureBegin(ref l)
         lowerClaim(ref c, through: ref l, for: pattern)
         l.scopes.append(LScope {})
@@ -748,7 +749,7 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             ops.append(indexTarget)
             ops.append(c.bIndexes[i].index)
             var lvalues = List<bool>()
-            // coverage-blocked: Q772 T4 lowerExpr through 757
+            // coverage-blocked: Q772 T4 lowerExpr through 758
             lvalues.append(arrayTarget && isLvalueShape(ref c, through: ref l, for: indexTarget))
             var parts = List<BExpr>()
             unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) {
@@ -757,7 +758,7 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             let target = arrayTarget && !isLvalue(in c, through: in l, for: parts[0]) ? spill(ref c, through: ref l, for: parts[0]) : parts[0]
             return semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[i].span, target: target, index: parts[1], fromEnd: c.bIndexes[i].fromEnd, type: c.bIndexes[i].type })
         case .builtinCall:
-            // coverage-blocked: Q772 T5 lowerBuiltinCall through 762
+            // coverage-blocked: Q772 T5 lowerBuiltinCall through 763
             if c.bBuiltinCalls[i].member == .mapIndexSet || c.bBuiltinCalls[i].member == .mapSlot {
                 return lowerBuiltinCall(ref c, through: ref l, for: e)
             }
