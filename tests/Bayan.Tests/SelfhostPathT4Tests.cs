@@ -363,9 +363,77 @@ public sealed class SelfhostPathT4Tests
     /// </summary>
     [Theory]
     [MemberData(nameof(T41Names))]
-    public void T41CorpusIsTheCSharps(string name) => new SelfhostSemanticsT41Tests().DiagnosticsAreTheCSharps(name);
+    public void T41CorpusIsTheCSharps(string name)
+    {
+        var section = $"diags.{name}";
+        var expected = (List<string>)T41("Sorted").Invoke(null, [T41("Expected").Invoke(null, [T41Dir(name), T41Flag(name)])])!;
+        var actual = new Dictionary<string, List<string>> { [section] = (List<string>)T41("Sorted").Invoke(null, [T41Sections.Value[section]])! };
+        // A program with no diagnostic and no summary prints nothing on either side.
+        if (expected.Count == 0) Assert.Empty(actual[section]);
+        else SelfhostSemanticsHarness.AssertSection(actual, section, expected);
+    }
 
     public static TheoryData<string> T41Names() => SelfhostSemanticsT41Tests.Names();
+
+    // T41's corpus, its main and its C# comparison, reached by reflection; only the program directories are this class's own,
+    // so no file under tmp/t41/ is shared with SelfhostSemanticsT41Tests running in parallel.
+    private static System.Reflection.MethodInfo T41(string method) =>
+        typeof(SelfhostSemanticsT41Tests).GetMethod(method, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    private static T T41Field<T>(string name) =>
+        (T)typeof(SelfhostSemanticsT41Tests).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+
+    private static string T41Flag(string name) => (string)T41("Flag").Invoke(null, [name])!;
+
+    private static string T41Dir(string name)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t4-t41", name.Replace('/', '-'));
+        var custom = T41Field<(string Name, (string Path, string Text)[] Files)[]>("Custom");
+        var files = custom.Any(p => p.Name == name)
+            ? custom.Single(p => p.Name == name).Files
+            : [("main.byn", File.ReadAllText(Path.Combine(Golden.CasesRoot, name + ".byn")))];
+        Directory.CreateDirectory(dir);
+        foreach (var (path, text) in files)
+        {
+            var file = Path.Combine(dir, path);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, text.EndsWith('\n') ? text : text + "\n");
+        }
+        return dir;
+    }
+
+    /// <summary>One selfhost run per chunk of cases; 29,000 argument characters leave room under the 32,767 limit for the program path.</summary>
+    private static readonly Lazy<Dictionary<string, List<string>>> T41Sections = new(() =>
+    {
+        var merged = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var chunks = new List<List<string>> { new() };
+        var used = 0;
+        foreach (var n in T41Field<string[]>("All"))
+        {
+            var chars = n.Length + T41Dir(n).Length + T41Flag(n).Length + 3;
+            if (used + chars > 29_000 && chunks[^1].Count > 0)
+            {
+                chunks.Add(new());
+                used = 0;
+            }
+            chunks[^1].Add(n);
+            used += chars;
+        }
+        foreach (var chunk in chunks)
+        {
+            var part = SelfhostSemanticsHarness.RunSections((string)T41("MainSource").Invoke(null, null)!, chunk.SelectMany(n => new[] { n, T41Dir(n), T41Flag(n) }).ToArray());
+            foreach (var (key, lines) in part)
+            {
+                if (key == "" && merged.TryGetValue("", out var preamble))
+                {
+                    Assert.Equal(preamble, lines);
+                    continue;
+                }
+                Assert.True(merged.TryAdd(key, lines), $"section '{key}' printed by two chunks");
+            }
+        }
+        return merged;
+    });
 
     /// <summary>The cases that must report something, so a pair of empty outputs cannot pass.</summary>
     [Theory]
