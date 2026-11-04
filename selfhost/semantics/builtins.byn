@@ -98,7 +98,7 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Make(ref c, by: m, for: "Arena", as: .arenaNew, to: builtinType(.arena), from: List<BuiltinParameter>(), at: "Arena")
     let bufferSpan = internSpan(ref c, by: prim(.u8), readOnly: false)
     let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufNew, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf(buffer)")
-    let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufGrow, to: builtinType(.strBuf), from: List<BuiltinParameter>(), at: "StrBuf")
+    c.builtinStrBufGrow = t9Make(ref c, by: m, for: "StrBuf", as: .strBufGrow, to: builtinType(.strBuf), from: List<BuiltinParameter>(), at: "StrBuf")
     let _ = t9Make(ref c, by: m, for: "StrBuf.over", as: .strBufOver, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf.over")
     // The value's type varies: the binder types each call (see `BindOwned`).
     let _ = t9Make(ref c, by: m, for: "Owned", as: .ownedNew, to: errorType(), from: List<BuiltinParameter>(), at: "Owned")
