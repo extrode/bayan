@@ -101,3 +101,19 @@ Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-
 Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-undeclared/main.by"···)
 Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-unhandled/main.byn")
 Bayan.Tests.SelfhostEmitterHarnessTests.ProjectDirectoriesAgree
+# 011 T13 (Q886): the same `/`-only paths (t11DirectoryName, compile.byn:1271; 014); measured on wp1, 2026-11-04, d3d398fd: 116 failed of 8849, these 15 plus the 100 above plus an OwnershipTableTests file-lock race (work/todo.md), not listed. 12 already failed on feat a4e62a40 (T21/T22 landed without a wp1 run); 3 are parity/T13 tests this task un-skipped or added.
+Bayan.Tests.SelfhostEmitterHarnessTests.CleanInputsExitLikeBuild
+Bayan.Tests.SelfhostEmitterHarnessTests.WarningsDoNotStopEmission
+Bayan.Tests.SelfhostEmitterParityTests.ExamplesEmitTheSameC(name: "hello")
+Bayan.Tests.SelfhostEmitterParityTests.ExamplesEmitTheSameC(name: "tally-lite")
+Bayan.Tests.SelfhostEmitterT13Tests.ModulesEmitInCompilationOrder
+Bayan.Tests.SelfhostEmitterT6Tests.Emit_OfLoweredFunctionsMatchesCSharp(flag: "")
+Bayan.Tests.SelfhostEmitterT6Tests.Emit_OfLoweredFunctionsMatchesCSharp(flag: "debug")
+Bayan.Tests.SelfhostEmitterT6Tests.Names_FunctionsFilesAndPathsMatchCSharp
+Bayan.Tests.SelfhostEmitterT6Tests.Names_OfAnImplicitMainMatchCSharp
+Bayan.Tests.SelfhostEmitterT6Tests.Names_OfFunctionsTheCorpusLacksMatchCSharp(flag: "nofile")
+Bayan.Tests.SelfhostEmitterT6Tests.Names_OfFunctionsTheCorpusLacksMatchCSharp(flag: "nomodule")
+Bayan.Tests.SelfhostEmitterT9Tests.Emit_MatchesCSharp(checks: False)
+Bayan.Tests.SelfhostEmitterT9Tests.Emit_MatchesCSharp(checks: True)
+Bayan.Tests.SelfhostEmitterT9Tests.Emit_NoArmFailsLikeCSharp
+Bayan.Tests.SelfhostEmitterTests.MainExitsZero

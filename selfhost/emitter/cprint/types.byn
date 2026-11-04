@@ -200,7 +200,7 @@ void t7Payloads(ref Ctx c, for in List<semantics.VariantId> variants, to ref Lis
     }
 }
 
-/// CEmitter.cs:602 `Slots`: the vtable slots of `i`: one per method and getter, defaults included.
+/// CEmitter.cs:603 `Slots`: the vtable slots of `i`: one per method and getter, defaults included.
 List<semantics.FuncId> t7Slots(in Ctx c, for semantics.InterfaceId i) uses alloc {
     var r = List<semantics.FuncId>()
     for m in c.interfaces[i].methods { r.append(m) }
@@ -238,10 +238,10 @@ string t7SlotSignature(ref CCtx cc, from ref Ctx c, for semantics.FuncId m, by s
     return $"{head} {declarator}({t7Join(in ps)})"
 }
 
-/// CEmitter.cs:627 `FunctionSignature`: a function type's C signature around `declarator`, in `Signature`'s `fails` convention
+/// CEmitter.cs:629 `FunctionSignature`: a function type's C signature around `declarator`, in `Signature`'s `fails` convention
 /// with `void* env` first; `args` are the names of the parameters after `env`.
 string t7FunctionSignature(ref CCtx cc, from ref Ctx c, for Type f, by string declarator, to ref List<string> args) uses alloc {
-    // Q1: round 4 redoes this (CEmitter.cs:627-644).
+    // Q1: round 4 redoes this (CEmitter.cs:629-645).
     let i = i64(f & 0xFFFFFFFF)
     let failing = c.functionTypes[i].errorSets.length > 0
     let ret = c.functionTypes[i].ret
