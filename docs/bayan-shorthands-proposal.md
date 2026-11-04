@@ -6,7 +6,7 @@ SPEC references are to `docs/bayan-spec.md`.
 
 ## Changes since draft 3
 
-- **D1 closed:** `T[N]` is already the fixed-array spelling (SPEC §3.5, §5, §6.2, §16). S2 is no longer a proposal; it is existing syntax that the view shorthand extends.
+- **D1 closed:** `T[N]` is already the fixed-array spelling (SPEC §3.5, §6.2, §11, §16). S2 is no longer a proposal; it is existing syntax that the view shorthand extends.
 - **D2 corrected:** SPEC §6.2 already borrows `List<T>`, `T[N]` and `string` as views at call arguments. Draft 3's "explicit `.span` only" is withdrawn.
 - **D3 specified:** a new derived `==` on views, in the §6.7 model. `==` is never user-defined in Bayān.
 - **S9 removed:** `?? break` and `?? continue` already exist (SPEC §6.1).
