@@ -44,7 +44,7 @@ wt_one() {
   local p="$1" b="$2" rel hit=0
   case "$p" in "$repo/.worktrees/"*) ;; *) return 0 ;; esac
   rel="${p#"$repo"/}"
-  case "$b" in chore/worker-011-*|chore/worker-docs-small-rows|chore/t13-probe|chore/011-merge-dev) hit=1 ;; esac
+  case "$b" in chore/worker-011-*|chore/worker-docs-small-rows|chore/t13-probe|chore/011-merge-dev|chore/mutation-cron-off|fix/mutation-shared-recording|chore/worker-mutation-shared|docs/011-q890|fix/011-wave-brief-no-covers|fix/review-2026-11-04-2) hit=1 ;; esac
   case "$rel" in .worktrees/dev-merge|.worktrees/docs-design-inputs) hit=1 ;; esac
   [ $hit -eq 1 ] || return 0
   seen=1
@@ -76,7 +76,7 @@ inwt="$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')"
 while read -r b; do
   case "$b" in
     dev|main|"$feat"|'') continue ;;
-    chore/worker-011-*|chore/worker-docs-small-rows|docs/review-small-rows|docs/defer-grace-headers-manifest|fix/011-feat-red-rows|fix/011-guard-unreported-file|docs/011-task-line-files|docs/011-t13-landed|chore/011-cleanup-branches|docs/011-t14-r7-scope|docs/011-t14-inventory-known-failures|fix/011-mutate-batch-emitter|chore/011-cleanup-t14|chore/011-merge-dev|chore/t13-probe|feat/011-p2|tmp/c20) ;;
+    chore/worker-011-*|chore/worker-docs-small-rows|docs/review-small-rows|docs/defer-grace-headers-manifest|fix/011-feat-red-rows|fix/011-guard-unreported-file|docs/011-task-line-files|docs/011-t13-landed|chore/011-cleanup-branches|docs/011-t14-r7-scope|docs/011-t14-inventory-known-failures|fix/011-mutate-batch-emitter|chore/011-cleanup-t14|chore/011-merge-dev|chore/t13-probe|feat/011-p2|tmp/c20|chore/mutation-cron-off|fix/mutation-shared-recording|chore/worker-mutation-shared|docs/011-q890|fix/011-wave-brief-no-covers|fix/011-parity-line-pins|fix/review-2026-11-04-1|fix/review-2026-11-04-2|docs/012-realign) ;;
     *) continue ;;
   esac
   if printf '%s\n' "$inwt" | grep -qxF -- "$b"; then printf 'keep:  %s (checked out in a worktree)\n' "$b"; continue; fi
