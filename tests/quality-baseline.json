@@ -11,6 +11,11 @@
       "coverage": 0.9691,
       "branches": 0.9516
     },
+    "selfhost/emitter/main.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
     "selfhost/semantics/binder2.byn": {
       "mutation": null,
       "coverage": 0.6128,
@@ -31,10 +36,20 @@
       "coverage": 0.8652,
       "branches": 0.7282
     },
+    "selfhost/semantics/cli.byn": {
+      "mutation": null,
+      "coverage": 0.7445,
+      "branches": 0.6604
+    },
     "selfhost/semantics/ctx.byn": {
       "mutation": null,
       "coverage": 1.0,
       "branches": 0.9167
+    },
+    "selfhost/semantics/diag.byn": {
+      "mutation": null,
+      "coverage": 0.941,
+      "branches": 0.8394
     },
     "selfhost/semantics/effects.byn": {
       "mutation": null,

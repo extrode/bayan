@@ -216,7 +216,7 @@ string render(in Ctx c, for in Diag d, by bool includePath) {
 /// Renders `diags` in source order (a stable sort by display path, then span start), separated by
 /// blank lines. Errors past `errorLimit` are skipped and counted in `omitted`; warnings never are
 /// (the C# `DiagnosticRenderer.RenderAll`).
-string renderAll(in Ctx c, from in List<Diag> diags, by bool includePath, until i64 errorLimit, to ref i64 omitted) {
+public string renderAll(in Ctx c, from in List<Diag> diags, by bool includePath, until i64 errorLimit, to ref i64 omitted) uses alloc {
     omitted = 0
     let order = sortOrder(in c, from: in diags)
     var sb = StrBuf()
