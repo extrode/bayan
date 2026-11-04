@@ -6,7 +6,7 @@ SPEC references are to `docs/bayan-spec.md`.
 
 ## Changes since draft 3
 
-- **D1 closed:** `T[N]` is already the fixed-array spelling (SPEC §3.5, §5, §6.2, §16). S2 is no longer a proposal; it is existing syntax that the view shorthand extends.
+- **D1 closed:** `T[N]` is already the fixed-array spelling (SPEC §3.5, §6.2, §11, §16). S2 is no longer a proposal; it is existing syntax that the view shorthand extends.
 - **D2 corrected:** SPEC §6.2 already borrows `List<T>`, `T[N]` and `string` as views at call arguments. Draft 3's "explicit `.span` only" is withdrawn.
 - **D3 specified:** a new derived `==` on views, in the §6.7 model. `==` is never user-defined in Bayān.
 - **S9 removed:** `?? break` and `?? continue` already exist (SPEC §6.1).
@@ -25,7 +25,7 @@ SPEC references are to `docs/bayan-spec.md`.
 | `some I` parameters | One-use bounds without naming a parameter | Can't be instantiated explicitly |
 | `Self` interfaces without a self argument | `where T : IOrder`, not `IOrder<T>` | Stdlib interface signatures change |
 | Shared parameter types | `Vec3 cross(Vec3 a, b)` | One more parse rule |
-| Target-typed statics `.zero` | Drops repeated type names in fields, arguments and returns | Type-check cost; gated on P7 |
+| Target-typed statics `.zero` | Drops repeated type names in fields, arguments and returns | Already in the spec (§6.2 target typing); S6 is a pointer |
 | Local type aliases + hidden-allocation lint | Short local names without hiding `List` | One more lint |
 | Case-indexed arrays `T[U]` | Per-case tables with no hashing; extends `T[N]` | Binder decides constant versus union in `[…]` |
 
@@ -54,7 +54,7 @@ void main() { … }                 // canonical when arguments are unused
 | Rule | How the shorthands follow it |
 |---|---|
 | Type-first declarations, name-first locals | `u8[] data`; `let xs: u8[] = buf.view`. |
-| `?` and `[N]` bind to the type they follow (§5) | `[]` binds the same way: `u8[]?`, `u8[4][]`. |
+| `?` and `[N]` bind to the type they follow (SPEC §3.16) | `[]` binds the same way: `u8[]?`, `u8[4][]`. |
 | Head-first keyword order | Applies to declaration keywords (`struct unique`, `type distinct`, `union error`), not to type modifiers. |
 | Type modifiers precede the type | Like `readonly u8*` and `rest`; the new ones follow suit: `var u8[]`, `some IShape`. |
 | Parameter slot order | particle → mode → modifier → type → name: `to ref var u8[] dst`. |
@@ -119,7 +119,7 @@ let v: u8[] = buf.span             // owned T[N] → view needs .span outside a 
 
 #### Nesting
 
-Postfix forms bind to the type they follow (§5) and apply left to right. `var` binds to the outermost view.
+Postfix forms bind to the type they follow (SPEC §3.16) and apply left to right. `var` binds to the outermost view.
 
 ```cs
 u8[4][] quads          // a view of u8[4] arrays
@@ -261,7 +261,9 @@ let earlier = (Token a, b) => a.start < b.start
 - Inline refinements (J57): does `T a is .x, b` give `b` the refinement, the bare type, or is it an error?
 - Modes: sharing never crosses `ref`, `out` or `move` (the rules above), but can a bare name follow a moded parameter (`ref Vec3 a, b`), and what is `b`'s mode?
 
-### S6. Target-typed static members: `.member` (gated on P7)
+### S6. Target-typed static members: `.member` (existing rule)
+
+Not a proposal (user decision 2026-11-04, review row C20). Spec :554 and :865 already target-type `.member` to "a member of the expected type", which covers statics. Round 4 spells the rule out in the spec (Swift's rule): `.m` resolves to a case of the expected type, or to a static field or factory of it whose type is the expected type. No P7 gate. The current compiler already resolves a factory (`let b: Vec = .of(3)` checks); static fields are BYN2022 in v0.1, so `.zero` waits on static fields, not on this rule. Readability of nested leading dots is the 29xx lint. The examples and rules below stay as illustration.
 
 ```cs
 // before
@@ -371,9 +373,9 @@ public Grams shippingWeight(
 | Name | Message | Fix |
 |---|---|---|
 | `SpanInput` | "`{0}` is an input form; write `{1}`" | yes |
-| `RestInput` (BYN1058) | "`{0}` is an input form; write `rest {1}[] {2}`" | yes |
+| `RestInput` (BYN1058) | "`{0}` is an input form; write `rest {1}[] {2}`" (round-4 text change; goldens change then) | yes |
 | `RestOnEntry` | "`main` cannot take `rest`; write `string[] args`" | yes |
-| BYN2310 | "`{0}` is never written through; write `{1}[]`" (updated) | yes |
+| BYN2310 | "`{0}` is never written through; write `{1}[]`" (updated; round-4 text change, goldens change then) | yes |
 | `ViewInExtern` | "`{0}` cannot cross `extern c`; pass `readonly {1}*` and a length" | no |
 | `SingleLetterType` | "type names need two or more characters; single letters are type parameters" | no |
 | `SomePosition` | "`some` is allowed only as a whole parameter type" | no |
@@ -387,7 +389,7 @@ public Grams shippingWeight(
 | Section | Edit |
 |---|---|
 | §3.5 | Add `T[]` / `var T[]` as the spellings of `ReadOnlySpan<T>` / `Span<T>`; add `T[U]` beside `T[N]`. |
-| §5 | "`?`, `[N]` and `[]` bind to the type they follow." |
+| §3.16 | "`?`, `[N]` and `[]` bind to the type they follow." (the rule exists there for `?` and `[N]`; `[]` is new; spec §5 is naming) |
 | §6.2 | Views row: restate it with the shorthands; the conversions are unchanged. |
 | §6.7 | Derived `==` for views; structs with view fields derive `==`. |
 | §10 | `rest T[] xs`; shared parameter types; implicit type and error-set parameters; `some I`. |
@@ -418,7 +420,7 @@ public Grams shippingWeight(
   - View `==`, including the `memcmp` fast path and the float and NaN path.
   - Derived `==` on structs with view fields.
   - The `T[]?` niche.
-- **Migration:** the round-4 batch migration, plus the C#-embedded tests that spell `ReadOnlySpan` or `Span` (J9).
+- **Migration:** a check that flags existing one-letter user type names (S2 rule); single capitals that are type parameters in a function signature, such as `T` and `E`, are exempt; the round-4 batch migration, plus the C#-embedded tests that spell `ReadOnlySpan` or `Span` (J9).
 - **`bayan migrate cs`** (post-v1; not a round-4 test): the mappings in S1.
 
 ---
@@ -468,13 +470,13 @@ public Grams shippingWeight(
 
 | Item | Where |
 |---|---|
-| S1, S8 | `ParseType` (`Parser.cs:757-812`): postfix `[]`, prefix `var`, left-to-right binding (next to the existing `[N]` and `?`). `ParseParams` (`:520-562`): `ref var`. `Nodes.cs` maps them to the existing span types. Binder resolves constant versus union in `[…]`. |
+| S1, S8 | `ParseType` (`Parser.cs`): postfix `[]`, prefix `var`, left-to-right binding (next to the existing `[N]` and `?`). `ParseParams`: `ref var`. `Nodes.cs` maps them to the existing span types. Binder resolves constant versus union in `[…]`. |
 | S1 equality | §6.7 derivation gains views; `memcmp` fast-path check; struct derivation picks up view fields. |
 | S1 literals | `Lowerer.cs`/`CEmitter.cs` caller-frame path (J62). |
 | S2, S3 | Binder: implicit type and error-set parameters; `some` desugaring; type-name length check. |
 | S4 | Stdlib interface declarations. |
 | S5 | `ParseParams` and typed lambda parameters: carry the type when a bare name follows `,`. |
-| S6 | Name lookup against the expected type; P7 budget measurement first. |
-| S7 | `ParseTypeAlias` (`:659-667`) at statement level; lint. |
+| S6 | None: existing rule. Static fields (BYN2022 in v0.1) are a separate item. |
+| S7 | `ParseTypeAlias` at statement level; lint. |
 | §5 | Formatter: shared-type collapse, the wrapped-list rule. |
 | BYN2310 | Message text. |

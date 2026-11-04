@@ -14,7 +14,7 @@ Order of work:
 
 Where this draft cites the spec, it relies on the round-3 plan, its consolidated summary and recorded decisions.
 
-Clause order changes in round 4 to `where → expects → uses → becomes → fails`; examples here use the new order. It lands as the first commit after 012: flip the canonical order in BYN1065, run `bayan format` over the repository (including the self-hosted compiler), regenerate goldens. No manual edits.
+Clause order changes in round 4 to `where → expects → uses → becomes → fails`; examples here use the new order. It lands as the first commit after 012: flip the canonical order in BYN1065, run `bayan format` over the repository (including the self-hosted compiler), regenerate goldens. No manual edits. Until then the order is proposed, not canonical. Round-4 edits: the BYN1065 message text (`ClauseOrder` in `DiagnosticCodes.cs`), `bayan-style.md:16` (signature clauses row), spec :147, :151 and :1592, and the order for function types (`() -> T fails DbError`, spec :556 and :595).
 
 ## 2. Retrospective: promises kept and broken
 
@@ -44,7 +44,7 @@ let n: int = count                       let n: i32 = count
 if !done && n > 0 { … }                  if not done and n > 0 { … }
 ```
 
-This is the dialect problem we cite against macros, in a smaller form. Proposal: keep the setting, but make the language server show either style (a display option or inlay hint, not a `bayan format` flag), and make docs and std use one.
+This is the dialect problem we cite against macros, in a smaller form. Decided (user 2026-11-04, review row A3): Appendix A stands (:2458, both spellings chosen per project by `style.booleans`/`style.primitives`). The only addition is display: the language server can show either style (a display option or inlay hint, not a `bayan format` flag), and docs and std use one. No language change.
 
 ### Word order
 
@@ -359,7 +359,7 @@ The last row gives scripts most of what people want from a GC. If the context al
 - [ ] How does 007 lower a function-typed parameter today: `{fn, env*}`, monomorphized, or boxed?
 - [ ] Order of `fails` and `uses` in function types, e.g. `(T -> bool fails E uses net)`? (`() -> T fails DbError` is already specified, spec :551.)
 - [ ] Renumber diagnostics before 1.0, with one edition of aliases?
-- [ ] Synonym styles: keep per-project, or one canonical style with a display option?
+- [x] Synonym styles: kept per-project (Appendix A); the language server adds a display option only (A3).
 - [ ] Lockfile and package registry: when?
 - [ ] Single-arena default for `bayan run`?
 - [ ] TinyCC coverage on macOS ARM64 and Windows ARM64, or system `cc` there?
