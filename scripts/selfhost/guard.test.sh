@@ -12,6 +12,7 @@
 # baseline check runs and no quality-coverage.json is left (F2); no report fails, a malformed report fails naming it, and a
 # red test run is not checked for coverage. The tests run with VSTEST_TESTHOST_SHUTDOWN_TIMEOUT of at least 60 s: the stub
 # writes no report without it, as vstest kills the test host before its exit handler merges ~1,100 counter files (T41).
+# A changed file the coverage report has no entry for (b.byn's run reports only b.byn) fails naming it (Q820).
 # A changed file whose name has a space is reported by its full name.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -160,6 +161,9 @@ echo "$space" | grep -qxF -- "- scope: stray file.txt is outside --allow (selfho
 echo "$covbad" | grep -q '^GUARD FAIL' && echo "$covbad" | grep -q "^- coverage: coverage-gate.py: $r/tmp/guard-run/coverage/bayan-quality.json is unreadable: " || fail "a malformed coverage report did not fail naming it" "$covbad"
 echo "$covtouch" | grep -q '^- coverage: missed line selfhost/semantics/a.byn:2; ' || fail "a deleted line in f did not make f gated" "$covtouch"
 echo "$covnew" | grep -q '^- coverage: missed line selfhost/semantics/b.byn:2; ' || fail "a function of a file new since --base was not gated" "$covnew"
+echo "$covnew" | grep -qxF -- "- coverage: selfhost/semantics/a.byn is in no build under --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' (no entry in tmp/guard-run/coverage/bayan-quality.json), so its touched functions are unchecked" \
+  && ! echo "$covnew" | grep -q '^- coverage: selfhost/semantics/b.byn is in no build' || fail "a changed file absent from the coverage report was not a FAIL item naming it" "$covnew"
+echo "$covpass" | grep -q 'is in no build' && fail "a changed file in the coverage report was reported absent" "$covpass"
 echo "$covnone" | grep -q "^- coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' builds a selfhost program with selfhost/semantics/a.byn$" \
   || fail "a coverage run without a report (an earlier run's left in place) did not fail" "$covnone"
 echo PASS
