@@ -171,3 +171,64 @@ Changes from the 2026-10-22 draft (written against `244edc1`, before 009–011 w
 - **Questions Q178–Q190** renumbered to spec-local Q1–Q9; handoff numbers come from the dispatcher (D6).
 - **Plan tasks**: the draft's T1 C# prerequisites (new builtins in `Builtins.cs`, `Lowerer`, `CEmitter`, runtime) dropped with R7; the T2 layout-move table and its renamed test classes dropped with R8; driver files regrouped (`driver-messages`, `driver-style`, `driver-paths`, `driver-options`, `driver-compile` are covered by `cli.byn` or `Path`, so they are not re-specified); P1 (`specs.tsv` row) and T8 (inventory) added; C# line ranges re-read on this branch (the draft's `CliApp.cs` "820 lines" and `Compilation.cs:63-73`, `:111-115` were stale).
 - **Q2 decided (user 2026-11-04):** the C# CLI gains `--package <root>` in T5, the same change as the driver's, so the stage harness never branches on the compiler; T1's harness builds stage 1 the same way once T5 lands.
+
+## Addendum Q970: Target.os/arch, Env.get, Fs file query (user 2026-11-05)
+
+Grounded at c2c71e90 by an audit worker; tasks T15–T19 in 012-tasks.md; open points are handoff Q971–Q977, defaults applied meanwhile.
+
+### Grounding (what the C# does today)
+- Host: `Targets.Host` = `os + "-" + arch`, where os is `linux|macos|windows` and arch is `x64|arm64`. It is null on any other OS or arch (`src/Bayan.Backend.C/Targets.cs:30-41`). The target names are in `Targets.cs:11-20`; `wasm32` has no os-arch split. `CliApp.HostTarget` is `Host ?? "host"` (`src/Bayan.Cli/CliApp.cs:446`). `--target host` becomes null (`:190-197`). `cross = target != Targets.Host` (`Toolchain.cs:184`). The exe suffix test is `targetOs.StartsWith("windows")` (`Toolchain.cs:194,212`, `Targets.cs:44-47`).
+- FindOnPath (`Toolchain.cs:151-161`) splits `PATH` on `Path.PathSeparator` and tries `name + ext`, with ext `.exe`, `.cmd`, `.bat` on Windows and `""` elsewhere. It does **not** read PATHEXT. It checks only `File.Exists`: true for a file, false for a directory, and **no executable-bit check on macOS or Linux**. FindCompiler (`:83-91`) tries `$BAYAN_CC`, then `zig` (as `zig cc`), then `cc`, `clang`, `gcc`. If none is found: `:189`. If the compiler cannot start (Win32Exception): `"cannot run the C compiler \`…\`: {msg}"` (`:215-217`).
+- Separate from that, the runtime's `Io.run` program lookup does read PATHEXT (`src/runtime/bayan-rt.c:2989-2997`), so it differs from FindOnPath on Windows.
+- How `Path` was added (the pattern to copy): `BuiltinKind.Path` / `BuiltinType.Path` (`Symbols/Types.cs:506-507,537`), `Make` rows (`Builtins.cs:117-123`), `FindPath` (`:279-287`), `BuiltinFunction` enum (`Symbols/Symbols.cs:375-381`), name binding (`BinderExpressions.cs:551`), member binding (`:708-711`), effects (`EffectAnalysis.cs:261-268`), region (`RegionAnalysis.cs:568,619`), panic check (`PanicHandlerCheck.cs:69`), emitter (`CEmitter.cs:1867-1890`), runtime (`bayan-rt.h:318-332`, `bayan-rt.c:1623-2294`).
+- Selfhost mirrors of that pattern: `selfhost/semantics/builtins.byn:136-142,285-287`, `symbols.byn:60-100`, `types.byn:82-94,590-603`, `express.byn:892`, `express2.byn:219-226`, `effects.byn:531-533`, `region2.byn:218,284`, `ownership.byn:979`, `calls.byn:107`. Emitter: `selfhost/emitter/cprint/expr.byn:382-404`.
+- `CompilationOptions` has no target: C# `Compilation.cs:14-15`, selfhost `compile.byn:12-18`. `Bayan.Semantics` does not reference `Bayan.Backend.C`, where `Targets` lives.
+- Tests that cover every run/ case: `SelfhostEmitterParityTests` and `MutantSchemataTests.PlainBuildEmitsTheSameC` (`:297-307`, which hashes into `tests/cases/emit/run-c.sha256`). The diag count is pinned by `SelfhostSemanticsEquivalenceLawTests.cs:26` (`PinnedClean = 468`).
+- `src/runtime/libc-uses.txt` (84 lines) has neither `getenv` nor `stat`. `selfhost/driver/runtime.byn` (T4) is generated from `bayan-rt.{h,c}`, so any runtime edit must regenerate it.
+- The selfhost already has a file-exists check: `cli.byn:45-49` `t26FileExists` (not a directory, plus `Io.readFile` succeeds). It works without item 3, but reads the whole binary.
+
+### Item 1: `Target.os`, `Target.arch` (compile-time)
+- **Type: `string`.** The C# works on strings (`Host` concatenation, `!= Host`, `StartsWith("windows")`), and `--target` arrives as a string. An enum would need a new enum symbol in both checkers (like `Utf8Invalid`, `Builtins.cs:100-104`) plus selfhost tables, and buys nothing for cc.byn.
+- **Values:** os is `linux`, `macos` or `windows`; arch is `x64` or `arm64`, spelled as in `Targets.cs:35-40`. `wasm32` gives os `wasi`, arch `wasm32` (OQ2). A host with no Bayan target gives `""` for both, which stands in for `Host == null` (OQ3). cc.byn rebuilds the host name as `targetHost() = os == "" ? none : arch == "wasm32" ? "wasm32" : $"{os}-{arch}"`.
+- **Meaning:** the constants name the target of the program being compiled, i.e. the machine the binary runs on. For the driver binary that is exactly the C# `Targets.Host`. `--target t` sets them from `t`; no `--target` (or `host`) uses the compiling compiler's host.
+- **C# changes:**
+  - `CompilationOptions` gets `string? Target = null`.
+  - Move `DetectHost` from `Targets.cs:33-41` to a new `src/Bayan.Semantics/HostTarget.cs`; `Targets.Host` delegates to it, so the logic exists once.
+  - `BuiltinKind.Target` / `BuiltinType.Target` (`Types.cs`); name binding beside `BinderExpressions.cs:551`. Member binding beside `:708` returns `new BoundLiteral(m, PrimitiveType.String, <os|arch>)`, the same node `ConstantLiteral` builds (`:610-612`). Any other member gives UnknownMember with suggestions `os`, `arch`.
+  - No effect, no runtime change, no `CEmitter` case: the existing string-literal emission writes them.
+  - CliApp: `Compile` passes `o.Target`, so `EmitC` follows `--target`; run, test and mutate keep `HostTarget`.
+- **Selfhost:** `compile.byn` `CompilationOptions.target: string?`. A null target defaults to the selfhost binary's own `Target.os`/`Target.arch`, which is the port of `Targets.Host`, so stage 0 must have item 1 first. Add `.target` to `types.byn:82-94` and the names `:590-603`, `express.byn:892`, and `express2.byn` (a literal through `addLiteral`, `bound.byn:1196`). The emitter needs nothing. `cli.byn`/the driver pass `--target`.
+
+### Item 2: `Env.get(string name) -> string?`
+- **C# changes:**
+  - `BuiltinKind.Env`, `Make("get", BuiltinFunction.EnvGet, new OptionalType(String), ("name", String))`, `FindEnv`, binding as for Path.
+  - Effects `["process","alloc"]` (OQ1 default) in `EffectAnalysis.cs:261-268`. Also add rows to the RegionAnalysis/PanicHandlerCheck fresh-allocation lists, as `PathDirectoryName`.
+  - `CEmitter`: an optional-return helper like `bynh_path_directory_name` (selfhost twin `expr.byn:390-394`).
+  - Runtime `bool byn_env_get(byn_str name, byn_str* out, byn_alloc*)`. POSIX uses `getenv` and copies the value. `_WIN32` uses `GetEnvironmentVariableW` with UTF-16→UTF-8 (the same branch style as the `Path` runtime; this is not a target `#ifdef`).
+  - Semantics follow .NET `Environment.GetEnvironmentVariable`: an empty value, invalid UTF-8 (replacement) and a NUL in the name are decided by a corpus against live .NET, never typed.
+  - `libc-uses.txt` gains `getenv`.
+- **Selfhost:** the `t9Make` row `"Env.get"`, `findEnv`, the BuiltinFunction enum, `express2.byn` suggestions, `effects.byn:531`, `region2.byn`, `ownership.byn:979`. Emitter: an `expr.byn` case. `SelfhostSemanticsT9Tests.cs:60`-style table rows.
+
+### Item 3: file query in `Fs` (FindOnPath)
+- The C# checks `File.Exists`, not the executable bit. To keep FindOnPath equal to the C#, the query must behave as `File.Exists`.
+- **Default name: `bool Fs.fileExists(string path) uses fs`** (OQ4). S4's `exists` also counts directories, so it would not match.
+- **C# changes:** `BuiltinKind.Fs`, `FsFileExists`, effects `["fs"]`, and a `CEmitter` case `byn_fs_file_exists(p)`. Runtime: POSIX `stat` and `!S_ISDIR`; `_WIN32` `GetFileAttributesW` and `!FILE_ATTRIBUTE_DIRECTORY`. Dangling symlinks, an empty path, a trailing separator and NUL are decided against live .NET on macOS and wp1. `libc-uses.txt` gains `stat`.
+- **Selfhost:** the same rows as item 2, plus an `expr.byn` case.
+
+### Tests
+- C# corpus tests against live .NET: `StdEnvTests` and `StdFsTests` (the `StdPathTests` pattern), plus `TargetTests`:
+  - stage 0 prints `{Target.os}-{Target.arch}`, which must equal `Targets.Host`;
+  - `build --emit-c --target windows-arm64` emits `"windows"` and `"arm64"`.
+  - Windows rows come from wp1.
+- run/ cases, host-independent so the selfhost parity and `run-c.sha256` stay stable:
+  - `run/target-host.byn` prints whether os is in the set.
+  - `run/env-get.byn`: `PATH` is present and an absent name gives `none`.
+  - `run/fs-file-exists.byn`: write a file, then check the file, `.`, and a missing name.
+  - Windows `.stdout` only via wp1 `BAYAN_UPDATE=1`.
+  - `MutantSchemataTests.CompileCase` pins `Target = "linux-x64"`, so the `run/target-host` hash is host-independent; existing lines do not change.
+- diag/ cases (no new codes): UnknownMember on `Target.name`, `Env.set`, `Fs.exists`; `Env.get` without `uses process`; `Fs.fileExists` without `uses fs`.
+- **Pins:**
+  - `PinnedClean` rises by the number of new diag cases (each parses clean); `PinnedExcluded` is unchanged.
+  - `run-c.sha256` gains 3 lines; no existing line changes.
+- **Existing programs:** emitted C must not change. No tests/cases or selfhost file references `Target`, `Env` or `Fs` as a name. User types still shadow builtins (`BinderExpressions.cs:540` before `:551`).
+- **Ordering:** the parity tests cover every run/ and diag/ case, so those goldens land with T18/T19, not with the C# tasks.
