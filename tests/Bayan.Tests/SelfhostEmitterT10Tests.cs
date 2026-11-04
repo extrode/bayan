@@ -14,8 +14,8 @@ namespace Bayan.Tests;
 /// <summary>
 /// 011 T10: <c>selfhost/emitter/cprint/expr.byn</c> (CEmitter.cs 1617-1944, minus the D3 branch at 1696-1699) against the C#
 /// <c>FunctionEmitter.Expr</c> and <c>Call</c> as an in-process oracle. A generated <c>main.byn</c> emits the same expressions of
-/// one fixture function as the C# does and prints the text (Q803). The siblings the two functions call are stubs until T6, T7, T9
-/// and T11 land, so the fixture reaches none of them (Q806).
+/// one fixture function as the C# does and prints the text (Q803). The T6 helpers run; the T7, T9 and T11 siblings the two
+/// functions call are stubs until those tasks land, so the fixture reaches none of them (Q806).
 /// </summary>
 public sealed class SelfhostEmitterT10Tests
 {
@@ -35,6 +35,8 @@ public sealed class SelfhostEmitterT10Tests
         type LSequence = ltree.LSequence
         type LIndexUnchecked = ltree.LIndexUnchecked
         type LVoid = ltree.LVoid
+        type LErrorField = ltree.LErrorField
+        type LFunctionValue = ltree.LFunctionValue
         type BMove = semantics.BMove
 
         i32 main(ReadOnlySpan<string> args) {
@@ -122,7 +124,7 @@ public sealed class SelfhostEmitterT10Tests
             let g = t10G(in c)
             let i64Type = c.locals[c.functions[g].parameters[0]].type
             var items = List<BExpr>()
-            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up"] { items.append(t10Init(in c, for: n)) }
+            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc"] { items.append(t10Init(in c, for: n)) }
             for s in c.bBlocks[c.functions[g].body & 0xFFFFFFFF].statements {
                 if !ltree.isLowered(s) && semantics.boundKind(s) == .exprStmt { items.append(t10Bare(in c, at: c.bExprStmts[s & 0xFFFFFFFF].expr)) }
             }
@@ -143,6 +145,25 @@ public sealed class SelfhostEmitterT10Tests
             let u1 = ltree.addLIndexUnchecked(ref l.tree, from: LIndexUnchecked { span: t10At(in c, for: "a"), target: t10Read(ref c, for: "arr"), index: t10Read(ref c, for: "a"), type: i64Type }) because "a node for the emitter; it is never run"
             items.append(u1)
             items.append(ltree.addLNextChar(ref l.tree, from: LNextChar { span: t10At(in c, for: "a"), text: t10Read(ref c, for: "str"), position: t10Var(in c, for: "a") }))
+            let ev = c.bErrorVariants[t10Init(in c, for: "er") & 0xFFFFFFFF].variant
+            items.append(ltree.addLErrorField(ref l.tree, from: LErrorField { span: t10At(in c, for: "er"), error: t10Read(ref c, for: "er"), variant: ev, index: 0 }))
+            let uv = c.bUnionNews[t10Init(in c, for: "ua") & 0xFFFFFFFF].variant
+            items.append(ltree.addLUnionField(ref l.tree, from: LUnionField { span: t10At(in c, for: "ua"), unionValue: t10Read(ref c, for: "ua"), variant: uv, index: 0 }))
+            let lam = c.bCalls[t10Init(in c, for: "ap") & 0xFFFFFFFF].arguments[0] & 0xFFFFFFFF
+            items.append(ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: t10At(in c, for: "ap"), function: c.bLambdas[lam].lambda, functionType: c.bLambdas[lam].functionType }))
+            items.append(ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: t10At(in c, for: "ap"), function: c.bLambdas[lam].lambda, env: t10Var(in c, for: "a"), functionType: c.bLambdas[lam].functionType }))
+            items.append(semantics.addLiteral(ref c, from: BLiteral { span: t10At(in c, for: "lb"), type: semantics.prim(.bool), value: Constant { kind: .flag, flag: true } }))
+            let kl = t10Read(ref c, for: "lb")
+            semantics.setConstant(ref c, for: kl, to: Constant { kind: .flag, flag: false })
+            items.append(kl)
+            let kp = localExpr(ref c, at: t10At(in c, for: "a"), for: c.functions[g].parameters[0])
+            semantics.setConstant(ref c, for: kp, to: Constant { kind: .flag, flag: true })
+            items.append(kp)
+            for kt in [c.locals[t10Var(in c, for: "q0")].type, semantics.prim(.void), semantics.prim(.neverKind)] {
+                let kth = semantics.addThis(ref c, from: BThis { span: t10At(in c, for: "a"), type: kt })
+                semantics.setConstant(ref c, for: kth, to: Constant { kind: .flag, flag: true })
+                items.append(kth)
+            }
             var sb = StrBuf()
             sb.append("== expr\n")
             for i in 0..items.length {
@@ -179,7 +200,25 @@ public sealed class SelfhostEmitterT10Tests
 
         struct P { }
 
-        struct Q { i64 x }
+        struct R {
+            i64 x
+
+            R(i64 x) {
+                this.x = x
+            }
+        }
+
+        struct Q {
+            i64 x
+
+            i64 get() => x
+
+            void bump(ref this) {
+                x += 1
+            }
+        }
+
+        const tbl: i64[3] = [1, 2, 3]
 
         struct St {
             i64 id
@@ -245,6 +284,29 @@ public sealed class SelfhostEmitterT10Tests
             var sb0 = StrBuf()
             var up = try u8.parse(str)
             var vc = total(k, a)
+            var li = 5
+            var lb = true
+            var lf = 1.5
+            var ls = "lit"
+            let kc = 3
+            var kd = kc
+            var cs = 2 + 3
+            var sy: Symbol = "sym"
+            var qx = q0.x
+            var sp = St.paid { id: k, payment: a }
+            var ua = U.a(k)
+            var cv = Color.values
+            var sa = tbl
+            var sn = Symbol.intern(str)
+            var cp = Color.parse(str)
+            var hc = h(k)
+            var qg = q0.get()
+            var ap = apply(x => x)
+            inc(ref a)
+            put(out v)
+            q0.bump()
+            put(out q0.x)
+            var rc = R(k)
             try Io.writeFile(str, bytes)
             print(str)
             log(str)
@@ -253,6 +315,18 @@ public sealed class SelfhostEmitterT10Tests
         }
 
         i64 total(rest ReadOnlySpan<i64> xs) => 0
+
+        i64 h(i64 x) => x
+
+        i64 apply(i64 -> i64 fn) => fn(1)
+
+        void inc(ref i64 x) {
+            x += 1
+        }
+
+        void put(out i64 x) {
+            x = 1
+        }
 
         void main() { }
         """;
@@ -334,7 +408,7 @@ public sealed class SelfhostEmitterT10Tests
         BoundExpr Read(string n) => new BoundLocal(At(n), decls[n].Local);
         var i64 = PrimitiveType.I64;
         var items = new List<BoundExpr>();
-        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up" }) items.Add(Init(n));
+        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc" }) items.Add(Init(n));
         items.AddRange(g.Body!.Statements.OfType<BoundExprStmt>().Select(s => Bare(s.Expr)));
         items.Add(new BoundMove(At("te"), Init("te")));
         items.Add(new BoundThis(At("a"), i64));
@@ -348,6 +422,16 @@ public sealed class SelfhostEmitterT10Tests
         items.Add(new LIndexUnchecked(At("a"), Read("lst"), Read("a"), i64));
         items.Add(new LIndexUnchecked(At("a"), Read("arr"), Read("a"), i64));
         items.Add(new LNextChar(At("a"), Read("str"), decls["a"].Local));
+        items.Add(new LErrorField(At("er"), Read("er"), ((BoundErrorVariant)Init("er")).Variant, 0));
+        items.Add(new LUnionField(At("ua"), Read("ua"), ((BoundUnionNew)Init("ua")).Variant, 0));
+        var lam = (BoundLambda)((BoundCall)Init("ap")).Arguments[0];
+        items.Add(new LFunctionValue(At("ap"), lam.Lambda, null, lam.FunctionType));
+        items.Add(new LFunctionValue(At("ap"), lam.Lambda, decls["a"].Local, lam.FunctionType));
+        items.Add(new BoundLiteral(At("lb"), PrimitiveType.Bool, new ConstantValue(true)));
+        items.Add(new BoundLocal(At("lb"), decls["lb"].Local) { Constant = new ConstantValue(false) });
+        items.Add(new BoundLocal(At("a"), g.Parameters[0]) { Constant = new ConstantValue(true) });
+        foreach (var kt in new TypeSymbol[] { decls["q0"].Local.Type, PrimitiveType.Void, PrimitiveType.Never })
+            items.Add(new BoundThis(At("a"), kt) { Constant = new ConstantValue(true) });
         var lines = new List<string>();
         for (var i = 0; i < items.Count; i++)
         {
