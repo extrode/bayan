@@ -36,6 +36,7 @@ public CFunc functionEmitter(ref CCtx cc, from ref Ctx c, for in ltree.LoweredFu
     }
     var n: i64 = 0
     for l in f.locals {
+        // coverage-blocked: Q799 T3 lowerStatement
         fe.names[l] = c.locals[l].kind == .temp ? $"t{n}" : $"l{n}_{c.locals[l].name}"
         n += 1
     }
@@ -45,6 +46,7 @@ public CFunc functionEmitter(ref CCtx cc, from ref Ctx c, for in ltree.LoweredFu
 /// CEmitter.cs:1192 `ReturnsValue`.
 bool returnsValue(in Ctx c, by FuncId fn) {
     let r = c.functions[fn].returnType
+    // coverage-exempt: Q800
     return !semantics.isVoid(r) && !semantics.isNever(r) && c.functions[fn].kind != .constructor
 }
 
@@ -104,6 +106,7 @@ public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t
     }
     for l in f.locals {
         let lt = c.locals[l].type
+        // coverage-blocked: Q799 T3 lowerStatement
         if semantics.isVoid(lt) || semantics.isNever(lt) { continue }
         line(ref sb, by: in fe, for: $"{cType(ref cc, from: ref c, for: lt)} {fe.names[l]} = {{0}};")
     }
@@ -138,6 +141,7 @@ public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t
 /// CEmitter.cs:1257 `IsOwner`: a local, owning pattern binding (of `switch move x`) or `move` parameter this function owns.
 bool isOwner(in Ctx c, for LocalId l) {
     let k = c.locals[l].kind
+    // coverage-blocked: Q799 T3 lowerStatement through 146
     return ((k == .letKeyword || k == .varKeyword || k == .patternVariable) && !c.locals[l].borrowsSubject)
         || (c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword)
 }
@@ -178,6 +182,7 @@ LocalId root(in Ctx c, for BExpr e) {
 
 /// CEmitter.cs:1284 `Place`: a store target as an lvalue, without checking its local was not moved.
 string placeOf(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at BExpr e) uses alloc {
+    // coverage-blocked: Q799 T7 ownsStorage through 201
     unless ltree.isLowered(e) {
         let i = e & 0xFFFFFFFF
         switch semantics.boundKind(e) {
@@ -203,20 +208,21 @@ public string? checkedStore(ref CCtx cc, for ref CFunc f, from ref Ctx c, throug
     var local: LocalId = -1
     if !ltree.isLowered(target) && semantics.boundKind(target) == .local { local = c.bLocals[target & 0xFFFFFFFF].local }
     let hasLocalSlot = local != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: local)
-    let type = t9Type(in c, through: in t, for: target)
+    let type = ltree.typeOf(in c, through: in t, for: target)
+    // coverage-blocked: Q799 T7 ownsStorage through 218
     if (r != -1 && c.locals[r].kind == .temp) || (!hasLocalSlot && !ownsStorage(ref c, for: type)) { return null }
     let claims = claim && r != -1 && isOwner(in c, for: r) ? "true" : "false"
     let set = ownSet(ref cc, from: ref c, for: type)
     let p = placeOf(ref cc, for: ref f, from: ref c, through: in t, at: target)
     let v = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
     let s = hasLocalSlot ? $"&{slot(ref cc, for: ref f, from: ref c, at: local)}" : "NULL"
-    return $"{set}(&{p}, {v}, {s}, {claims}, {loc(in c, by: in f, at: t9Span(in c, through: in t, for: target))})"
+    return $"{set}(&{p}, {v}, {s}, {claims}, {loc(in c, by: in f, at: ltree.spanOf(in c, through: in t, for: target))})"
 }
 
 /// CEmitter.cs:1305 `Claimed` (Q845): C `call` followed by the claim of owned `receiver`, or `call` alone.
 public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at string call, by BExpr receiver, to semantics.TextSpan span) uses alloc {
     if !cc.ownershipChecks || ownerRoot(in c, for: receiver) == -1 { return call }
-    let claim = ownClaim(ref cc, from: ref c, for: t9Type(in c, through: in t, for: receiver))
+    let claim = ownClaim(ref cc, from: ref c, for: ltree.typeOf(in c, through: in t, for: receiver))
     let p = placeOf(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     return $"({call}, {claim}(&{p}, {loc(in c, by: in f, at: span)}))"
 }
@@ -225,8 +231,10 @@ public string claimed(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltre
 public void claimAfterCall(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr place, to semantics.TextSpan span) uses alloc {
     unless cc.ownershipChecks { return }
     let r = ownerRoot(in c, for: place)
+    // coverage-blocked: Q799 T10 emitExpr
     if r == -1 || f.moved.contains(r) { return }
-    let type = t9Type(in c, through: in t, for: place)
+    let type = ltree.typeOf(in c, through: in t, for: place)
+    // coverage-blocked: Q799 T7 ownsStorage through 241
     unless ownsStorage(ref c, for: type) { return }
     let claim = ownClaim(ref cc, from: ref c, for: type)
     let p = placeOf(ref cc, for: ref f, from: ref c, through: in t, at: place)
@@ -241,8 +249,9 @@ void claimMapEntry(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltre
     let i = target & 0xFFFFFFFF
     let member = c.bBuiltinCalls[i].member
     let map = c.bBuiltinCalls[i].receiver
+    // coverage-blocked: Q799 T3 lowerLvalue
     if (member == .mapIndexSet || member == .mapSlot) && map != -1 && ownerRoot(in c, for: map) != -1 {
-        let claim = ownClaim(ref cc, from: ref c, for: t9Type(in c, through: in t, for: map))
+        let claim = ownClaim(ref cc, from: ref c, for: ltree.typeOf(in c, through: in t, for: map))
         let p = placeOf(ref cc, for: ref f, from: ref c, through: in t, at: map)
         line(ref sb, by: in f, for: $"{claim}(&{p}, {loc(in c, by: in f, at: semantics.nodeSpan(in c, for: a))});")
     }
@@ -267,6 +276,7 @@ void findUnsequenced(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in lt
     f.lastLineEnd = lastLineEnd
     var both = Map<LocalId, bool>()
     for (l, _) in f.reads {
+        // coverage-blocked: Q799 T10 emitExpr
         if f.moves.contains(l) { both[l] = true }
     }
     f.moved = f.moves.take()
@@ -302,7 +312,7 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
     let mark = sb.length
     let lastLine = f.lastLine
     let lastLineEnd = f.lastLineEnd
-    if !(isBlock || isLabel) { mapLine(ref sb, from: in c, through: ref f, at: t9Span(in c, through: in t, for: s)) }
+    if !(isBlock || isLabel) { mapLine(ref sb, from: in c, through: ref f, at: ltree.spanOf(in c, through: in t, for: s)) }
     let start = sb.length
     let i = s & 0xFFFFFFFF
     if lowered {
@@ -365,10 +375,12 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
                 line(ref sb, by: in f, for: $"byn_panic_pop(&ph{t.popPanicHandlers[i].slot});")
             case .claim:
                 let l = t.claims[i].local
+                // coverage-blocked: Q799 T7 ownsStorage through 381
                 if cc.ownershipChecks && isOwner(in c, for: l) && ownsStorage(ref c, for: c.locals[l].type) {
                     let claim = ownClaim(ref cc, from: ref c, for: c.locals[l].type)
                     line(ref sb, by: in f, for: $"{claim}(&{f.names[l]}, {loc(in c, by: in f, at: t.claims[i].span)});")
                 }
+            // coverage-exempt: Q800
             default: panic($"cannot emit {lk}")
         }
     } else {
@@ -398,6 +410,7 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
                 afterCalls(ref sb, for: ref f, at: in after)
                 block(ref cc, for: ref f, from: ref c, through: in t, to: ref sb, at: c.bIfs[i].then)
                 let elseBranch = c.bIfs[i].elseBranch
+                // coverage-blocked: Q799 T7 ownsStorage through 417
                 if elseBranch != -1 || after.length > 0 {
                     line(ref sb, by: in f, for: "} else {")
                     afterCalls(ref sb, for: ref f, at: in after)
@@ -409,6 +422,7 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
             default: panic($"cannot emit {semantics.boundKind(s)}")
         }
     }
+    // coverage-blocked: Q799 T7 ownsStorage
     for x in f.afterCalls { line(ref sb, by: in f, for: x) }
     f.afterCalls = List<string>()
     // A statement with no C (a claim without ownership checks) keeps no `#line` either.
@@ -422,6 +436,7 @@ void statement(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LT
 /// CEmitter.cs:1474 `AfterCalls`: the claims after an if's condition, at the start of a branch.
 void afterCalls(ref StrBuf sb, for ref CFunc f, at in List<string> claims) {
     f.indent += 1
+    // coverage-blocked: Q799 T7 ownsStorage
     for x in claims { line(ref sb, by: in f, for: x) }
     f.indent -= 1
 }
@@ -447,7 +462,8 @@ void returnStmt(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.L
 
 /// CEmitter.cs:1500 `Returned`.
 string returned(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at BExpr value) uses alloc {
-    let type = t9Type(in c, through: in t, for: value)
+    let type = ltree.typeOf(in c, through: in t, for: value)
+    // coverage-blocked: Q799 T7 ownsStorage through 469
     if cc.ownershipChecks && ownsStorage(ref c, for: type) {
         let r = ownReturn(ref cc, from: ref c, for: type)
         return $"{r}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)})"
@@ -485,7 +501,7 @@ void write(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree 
             if (part.spec is { } spec) {
                 write = formatWithSpec(ref cc, for: ref f, from: ref c, through: in t, at: part.value, by: spec)
             } else {
-                let vt = t9Type(in c, through: in t, for: part.value)
+                let vt = ltree.typeOf(in c, through: in t, for: part.value)
                 let vx = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: part.value)
                 write = format(ref cc, from: ref c, for: vt, at: vx, to: "w")
             }
@@ -500,7 +516,7 @@ void write(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree 
         }
     }
     if cc.ownershipChecks && sink == .strBuf && ownerRoot(in c, for: target) != -1 {
-        let claim = ownClaim(ref cc, from: ref c, for: t9Type(in c, through: in t, for: target))
+        let claim = ownClaim(ref cc, from: ref c, for: ltree.typeOf(in c, through: in t, for: target))
         line(ref sb, by: in f, for: $"{claim}(w, {loc(in c, by: in f, at: span)});")
     }
     if sink == .print {
@@ -516,11 +532,12 @@ void write(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree 
 /// CEmitter.cs:1542 `FormatWithSpec`: a hole with specs: the value is formatted into a stack buffer (a radix, fixed
 /// digits or the debug view), then written padded to the width in runes.
 string formatWithSpec(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at BExpr value, by BFormatSpec spec) uses alloc {
-    let type = t9Type(in c, through: in t, for: value)
+    let type = ltree.typeOf(in c, through: in t, for: value)
     let v = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: value)
     // A struct with a `formatInto` that takes the `FormatSpec` reads every spec itself, padding included, even when it also has the one-parameter form.
     if semantics.kindOf(type) == .structType {
         let method = formatIntoWithSpec(ref c, for: type & 0xFFFFFFFF)
+        // coverage-blocked: Q799 T8 formatIntoWithSpec through 546
         if method != -1 {
             let radix: i64 = spec.radix == 2 ? 0 : spec.radix == 8 ? 1 : spec.radix == 16 ? 3 : 2
             let align = spec.align > 0 ? spec.align : 0
@@ -544,7 +561,7 @@ string formatWithSpec(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in l
     // The 1024-byte cut drops a code point it would split.
     let pad = helper(ref cc, for: "bynh_w_padded", from: "static void bynh_w_padded(byn_writer* w, byn_str s, int64_t width, uint32_t fill, int align)", as:
         "{\n    if (s.len > 0) {\n        int64_t k = s.len - 1;\n        while (k > 0 && (s.ptr[k] & 0xC0) == 0x80) k--;\n        uint8_t c = s.ptr[k];\n        int64_t need = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : 4;\n        if (k + need > s.len) s.len = k;\n    }\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n    int64_t gap = width > runes ? width - runes : 0, before = align == 1 ? gap : align == 2 ? gap / 2 : 0;\n    for (int64_t i = 0; i < before; i++) byn_w_char(w, fill);\n    byn_w_str(w, s);\n    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n")
-    let l = loc(in c, by: in f, at: t9Span(in c, through: in t, for: value))
+    let l = loc(in c, by: in f, at: ltree.spanOf(in c, through: in t, for: value))
     let inner = formatInner(ref cc, from: ref c, for: type, at: v, by: spec, to: "sw")
     return $"{{ uint8_t sb[1024]; byn_writer sv = {{sb, 1024, 0, BYN_WRITE_TRUNCATE, {l}}}; byn_writer* sw = &sv; {inner} {pad}(w, (byn_str){{sb, sv.len}}, {spec.width}, {spec.fill}u, {align}); }}"
 }
@@ -577,6 +594,7 @@ string debug(ref CCtx cc, from ref Ctx c, for Type type, at string v, to string 
     if semantics.kindOf(type) != .structType { return format(ref cc, from: ref c, for: type, at: v, to: w) }
     let s = type & 0xFFFFFFFF
     let into = formatInto(ref c, for: s)
+    // coverage-blocked: Q799 T8 formatInto
     if into != -1 && c.functions[into].parameters.length == 2 { return format(ref cc, from: ref c, for: type, at: v, to: w) }
     let k = key(ref c, for: type)
     let name = $"bynh_debug_{k}"
@@ -616,61 +634,4 @@ void t9Truncate(ref StrBuf sb, to i64 mark) uses alloc {
     let keep = $"{sb.view[0..mark]}"
     sb.clear()
     sb.append(keep)
-}
-
-/// `e.Type` for a bound or lowered expression (LoweredNodes.cs:83-127); lower.byn's `t2Type` over an `LTree`.
-Type t9Type(in Ctx c, through in ltree.LTree t, for BExpr e) {
-    unless ltree.isLowered(e) { return semantics.exprType(in c, for: e) }
-    let i = ltree.lIndexOf(e)
-    switch ltree.lKindOf(e) {
-        case .optionalHas: return semantics.prim(.bool)
-        case .optionalValue: return t.optionalValues[i].type
-        case .unionTag: return semantics.prim(.i32)
-        case .unionField: return c.locals[c.unionVariants[t.unionFields[i].variant].fields[t.unionFields[i].index]].type
-        case .errorCode: return semantics.prim(.u32)
-        case .errorField: return c.locals[c.errorVariants[t.errorFields[i].variant].fields[t.errorFields[i].index]].type
-        case .assignExpr: return t9Type(in c, through: in t, for: t.assignExprs[i].target)
-        case .sequence: return t9Type(in c, through: in t, for: t.sequences[i].value)
-        case .indexUnchecked: return t.indexUncheckeds[i].type
-        case .nextChar: return semantics.prim(.char)
-        case .neverValue: return t.neverValues[i].type
-        case .functionValue: return t.functionValues[i].functionType
-        case .voidValue: return semantics.prim(.void)
-        // coverage-exempt: Q766
-        default: return semantics.errorType()
-    }
-}
-
-/// `n.Syntax.Span` for a bound or lowered node; lower.byn's `t2Span` over an `LTree`.
-TextSpan t9Span(in Ctx c, through in ltree.LTree t, for semantics.BNode n) {
-    unless ltree.isLowered(n) { return semantics.nodeSpan(in c, for: n) }
-    let i = ltree.lIndexOf(n)
-    switch ltree.lKindOf(n) {
-        case .label: return t.labels[i].span
-        case .gotoStmt: return t.gotoStmts[i].span
-        case .loop: return t.loops[i].span
-        case .returnStmt: return t.returnStmts[i].span
-        case .returnError: return t.returnErrors[i].span
-        case .failingCall: return t.failingCalls[i].span
-        case .write: return t.writes[i].span
-        case .panic: return t.panics[i].span
-        case .setContext: return t.setContexts[i].span
-        case .freeArena: return t.freeArenas[i].span
-        case .pushPanicHandler: return t.pushPanicHandlers[i].span
-        case .popPanicHandler: return t.popPanicHandlers[i].span
-        case .claim: return t.claims[i].span
-        case .optionalHas: return t.optionalHass[i].span
-        case .optionalValue: return t.optionalValues[i].span
-        case .unionTag: return t.unionTags[i].span
-        case .unionField: return t.unionFields[i].span
-        case .errorCode: return t.errorCodes[i].span
-        case .errorField: return t.errorFields[i].span
-        case .assignExpr: return t.assignExprs[i].span
-        case .sequence: return t.sequences[i].span
-        case .indexUnchecked: return t.indexUncheckeds[i].span
-        case .nextChar: return t.nextChars[i].span
-        case .neverValue: return t.neverValues[i].span
-        case .functionValue: return t.functionValues[i].span
-        case .voidValue: return t.voidValues[i].span
-    }
 }

@@ -48,8 +48,6 @@ public sealed class SelfhostEmitterT9Tests
         type LSequence = ltree.LSequence
         type LIndexUnchecked = ltree.LIndexUnchecked
         type LNextChar = ltree.LNextChar
-        type LNever = ltree.LNever
-        type LFunctionValue = ltree.LFunctionValue
         type LVoid = ltree.LVoid
 
         i32 main(ReadOnlySpan<string> args) {
@@ -190,6 +188,9 @@ public sealed class SelfhostEmitterT9Tests
                 let b = xs[2]
                 stmts.append(t9If(ref c, at: span, for: b, by: inner, to: -1))
                 stmts.append(t9If(ref c, at: span, for: b, by: inner, to: inner))
+                let elseIf = t9If(ref c, at: span, for: b, by: inner, to: -1)
+                stmts.append(t9If(ref c, at: span, for: b, by: inner, to: elseIf))
+                stmts.append(t9If(ref c, at: span, for: b, by: inner, to: ltree.addLLabel(ref t, from: LLabel { span: span, name: "L2" })))
                 var parts = List<BInterpolationPart>()
                 var guards = List<BExpr>()
                 parts.append(BInterpolationPart { text: "a" })
@@ -220,12 +221,12 @@ public sealed class SelfhostEmitterT9Tests
                 stmts.append(ltree.addLWrite(ref t, from: LWrite { span: span, sink: .strBuf, target: owned, parts: List<BInterpolationPart>() }))
                 stmts.append(t9SetOnPanic(ref c, at: span, for: fn))
             }
-            if c.functions[fn].name == "lm" { stmts.append(t9Lowered(ref c, through: ref t, at: span, for: xs[0], by: c.functions[fn].parameters[0], to: c.locals[locals[1]].type, from: fn)) }
+            if c.functions[fn].name == "lm" { stmts.append(t9Lowered(ref c, through: ref t, at: span, for: xs[0], by: c.functions[fn].parameters[0])) }
             stmts.append(ltree.addLReturn(ref t, from: LReturn { span: span }))
         }
 
-        /// A print of each lowered expression kind at width 1 (`t9Type`, `t9Span`).
-        BStmt t9Lowered(ref Ctx c, through ref LTree t, at TextSpan span, for BExpr q, by LocalId zq, to Type g, from FuncId fn) uses alloc {
+        /// A print of each lowered expression kind the C# `Expr` and `Format` accept, at width 1.
+        BStmt t9Lowered(ref Ctx c, through ref LTree t, at TextSpan span, for BExpr q, by LocalId zq) uses alloc {
             var ua: semantics.VariantId = -1
             for v in 0..c.unionVariants.length { if c.unionVariants[v].name == "ua9" { ua = v } }
             var eb: semantics.VariantId = -1
@@ -241,11 +242,8 @@ public sealed class SelfhostEmitterT9Tests
             var effects = List<BExpr>()
             effects.append(q)
             xs.append(ltree.addLSequence(ref t, from: LSequence { span: span, effects: move effects, value: q }))
-            xs.append(ltree.addLIndexUnchecked(ref t, from: LIndexUnchecked { span: span, target: q, index: q, type: semantics.prim(.i64) }) because "a probe of t9Type and t9Span; nothing reads it")
+            xs.append(ltree.addLIndexUnchecked(ref t, from: LIndexUnchecked { span: span, target: q, index: q, type: semantics.prim(.i64) }) because "a print part; nothing reads it")
             xs.append(ltree.addLNextChar(ref t, from: LNextChar { span: span, text: q, position: zq }))
-            xs.append(ltree.addLNever(ref t, from: LNever { span: span, type: semantics.prim(.i64) }))
-            xs.append(ltree.addLFunctionValue(ref t, from: LFunctionValue { span: span, function: fn, functionType: g }))
-            xs.append(ltree.addLVoid(ref t, from: LVoid { span: span }))
             var parts = List<BInterpolationPart>()
             for x in xs { parts.append(t9Part(x, by: BFormatSpec { width: 1 })) }
             return ltree.addLWrite(ref t, from: LWrite { span: span, sink: .print, target: q, parts: move parts })
@@ -265,6 +263,7 @@ public sealed class SelfhostEmitterT9Tests
                 var fl = List<LocalId>()
                 for l in locals { fl.append(l) }
                 let f = LoweredFunction { symbol: fn, locals: move fl, contextSlots: 1, panicSlots: 1, body: body }
+                if c.functions[fn].name == "e0" { c.functions[fn].file = -1 }
                 sb.append($"fn {c.functions[fn].name}\n")
                 sb.append($"sig {cprint.signature(ref cc, from: ref c, through: t, for: f)}\n")
                 sb.append(cprint.emitFunction(ref cc, from: ref c, through: in t, for: in f))
@@ -483,7 +482,7 @@ public sealed class SelfhostEmitterT9Tests
     {
         var fe = new FunctionEmitter(emitter, f);
         SetField(fe, "_file", "");
-        SetField(fe, "_linePath", f.Symbol.Body is null ? null : "");
+        SetField(fe, "_linePath", f.Symbol.File is null ? null : "");
         return fe;
     }
 
@@ -555,6 +554,8 @@ public sealed class SelfhostEmitterT9Tests
             var (q, s, b) = (xs[0], xs[1], xs[2]);
             stmts.Add(new BoundIf(syn, b, inner, null));
             stmts.Add(new BoundIf(syn, b, inner, inner));
+            stmts.Add(new BoundIf(syn, b, inner, new BoundIf(syn, b, inner, null)));
+            stmts.Add(new BoundIf(syn, b, inner, new LLabel(syn, "L2")));
             BoundInterpolationPart Part(BoundExpr v, BoundFormatSpec spec) => new(null, v) { Spec = spec };
             BoundFormatSpec Spec(int radix = 0, bool debug = false, long width = 0, uint fill = 32, int align = -1, int digits = -1) =>
                 new(radix, debug, width, fill, align, digits);
@@ -598,8 +599,7 @@ public sealed class SelfhostEmitterT9Tests
             [
                 new LOptionalHas(syn, q), new LOptionalValue(syn, q, PrimitiveType.I64), new LUnionTag(syn, q), new LUnionField(syn, q, ua, 0),
                 new LErrorCode(syn, q), new LErrorField(syn, q, eb, 0), new LAssignExpr(syn, q, q), new LSequence(syn, [q], q),
-                new LIndexUnchecked(syn, q, q, PrimitiveType.I64), new LNextChar(syn, q, fn.Parameters[0]), new LNever(syn, PrimitiveType.I64),
-                new LFunctionValue(syn, fn, null, (FunctionType)locals[1].Type), new LVoid(syn),
+                new LIndexUnchecked(syn, q, q, PrimitiveType.I64), new LNextChar(syn, q, fn.Parameters[0]),
             ];
             stmts.Add(new LWrite(syn, WriteSink.Print, q, [.. lowered.Select(x => new BoundInterpolationPart(null, x) { Spec = new BoundFormatSpec(0, false, 1, 32, -1, -1) })]));
             foreach (var x in lowered) masks.Add(emitter.Format(x.Type, Expr(x), "sw"));
@@ -626,6 +626,7 @@ public sealed class SelfhostEmitterT9Tests
         var emitter = NewEmitter(p, checks);
         var functions = Functions(c);
         var names = functions.Select(fn => emitter.FunctionName(fn)).ToList();
+        functions.Single(fn => fn.Name == "e0").File = null;
         var emit = new List<string>();
         foreach (var fn in functions)
         {
