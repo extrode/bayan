@@ -1,13 +1,13 @@
 ---
 id: L025
 title: No emitter panic
-status: proposed
+status: enacted
 kind: property
 scope: selfhost/emitter/
 proof: tests/Bayan.Tests/SelfhostEmitterNoPanicLawTests.cs
 check: dotnet test -v q --filter "Law=L025"
 timeout: 1200
-enacted:
+enacted: 2026-11-04
 ---
 
 ## Statement
@@ -52,3 +52,5 @@ quick seeds 7127/3075/3100, corrupted 414/400/398, run 249/225/222; full seeds 1
 so the figures are per run, never summed over modes, and the largest is 17 s against the 120 s bound. The worst case is 3 corpora x 3 modes x
 120 s = 1080 s, so `timeout:` is 1200, not 300, to keep the whole-check limit above the per-run bounds. `laws-check.js --run` runs the quick tier
 (`BAYAN_LAW_TIER` unset).
+
+Enacted by the agent under the standing self-host authorization (2026-10-21; decisions 2026-11-03: the agent enacts L024/L025 after proof; spec 011 T19), after L018 and L023 were enacted, with T14's proof passing: `dotnet test -v q --filter "Law=L025"` 1 passed (`SelfhostEmitterNoPanicLawTests.BayanEmitNeverPanicsOnSeedsCorruptionsAndRunInputs`) on 2026-11-04, 47 s test time (55 s wall, quick tier, `bayan-emit` rebuilt first).
