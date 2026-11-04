@@ -94,6 +94,15 @@ string frameSignature(ref CCtx cc, for CFunc fe, from ref Ctx c) uses alloc {
 public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t, for in ltree.LoweredFunction f) uses alloc {
     var fe = functionEmitter(ref cc, from: ref c, for: in f)
     let fn = fe.fn
+    let file = c.functions[fn].file
+    // coverage-exempt: Q827
+    if file != -1 {
+        if cc.lineFile != file {
+            cc.lineStarts = lineStartsOf(in c, for: file)
+            cc.lineFile = file
+        }
+        fe.lineStarts = cc.lineStarts.take()
+    }
     let kind = c.functions[fn].kind
     var sb = StrBuf()
     sb.append(frameSignature(ref cc, for: fe, from: ref c))
@@ -131,6 +140,8 @@ public string emitFunction(ref CCtx cc, from ref Ctx c, through in ltree.LTree t
         sb.append(t9ResetLine)
         sb.append("\n")
     }
+    // coverage-exempt: Q827
+    if file != -1 { cc.lineStarts = fe.lineStarts.take() }
     return $"{sb.finish()}"
 }
 

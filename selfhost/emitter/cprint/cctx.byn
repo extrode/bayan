@@ -47,6 +47,11 @@ public struct CCtx {
     /// `_vtables` by name (the `static const struct` text) and `_vtableOrder`.
     public Map<string, string> vtables = Map<string, string>()
     public List<string> vtableOrder = List<string>()
+    // ── T14 state
+    /// The file `lineStarts` belongs to, -1 before the first function with a file (R7).
+    public semantics.FileId lineFile = -1
+    /// The line starts of `c.files[lineFile]`, built once and lent to each frame while its function is emitted (`List.take`).
+    public List<i64> lineStarts = List<i64>()
 }
 
 /// `SymbolMark` (`'\u0001'`): the code point that stands for a symbol index until `Run` substitutes it.
@@ -91,4 +96,7 @@ public struct CFunc {
     public Map<semantics.LocalId, bool> moved = Map<semantics.LocalId, bool>()
     /// `_afterCalls`: claims for the owned places the statement passes by pointer, run once it is done.
     public List<string> afterCalls = List<string>()
+    // ── T14 state
+    /// The line starts of the function's file, taken from `CCtx.lineStarts` by `emitFunction`; a frame built by hand sets it with `lineStartsOf` (R7).
+    public List<i64> lineStarts = List<i64>()
 }

@@ -191,10 +191,10 @@ public sealed class SelfhostEmitterT2Tests
             sb.append("== lines\n")
             for fn in t2Functions(ref c) {
                 let span = semantics.nodeSpan(in c, for: c.functions[fn].body)
-                var withPath = CFunc { fn: fn, file: file, linePath: linePath }
+                var withPath = CFunc { fn: fn, file: file, linePath: linePath, lineStarts: cprint.lineStartsOf(in c, for: c.functions[fn].file) }
                 if linePath == "-" { withPath.linePath = null }
                 sb.append(t2LineCase(in c, through: ref withPath, at: span))
-                var without = CFunc { fn: fn, file: file, linePath: null }
+                var without = CFunc { fn: fn, file: file, linePath: null, lineStarts: cprint.lineStartsOf(in c, for: c.functions[fn].file) }
                 sb.append(t2LineCase(in c, through: ref without, at: span))
             }
             return $"{sb.finish()}"

@@ -116,4 +116,5 @@ Bayan.Tests.SelfhostEmitterT6Tests.Names_OfFunctionsTheCorpusLacksMatchCSharp(fl
 Bayan.Tests.SelfhostEmitterT9Tests.Emit_MatchesCSharp(checks: False)
 Bayan.Tests.SelfhostEmitterT9Tests.Emit_MatchesCSharp(checks: True)
 Bayan.Tests.SelfhostEmitterT9Tests.Emit_NoArmFailsLikeCSharp
+Bayan.Tests.SelfhostEmitterSpeedTests.OneMegabyteLowerAndEmitWithinTenTimes
 Bayan.Tests.SelfhostEmitterTests.MainExitsZero

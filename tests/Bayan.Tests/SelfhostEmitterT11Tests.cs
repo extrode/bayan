@@ -111,7 +111,7 @@ public sealed class SelfhostEmitterT11Tests
         /// as the oracle compares only the types named after its emitters are built.
         CFunc t11Func(ref CCtx scratch, from ref Ctx c, for in LoweredFunction lf, at string file) uses alloc {
             let fn = lf.symbol
-            var f = CFunc { fn: fn, file: file }
+            var f = CFunc { fn: fn, file: file, lineStarts: cprint.lineStartsOf(in c, for: c.functions[fn].file) }
             for p in c.functions[fn].parameters { f.names[p] = $"p_{c.locals[p].name}" }
             if c.functions[fn].captures.length > 0 {
                 var fields = List<TupleField>()
