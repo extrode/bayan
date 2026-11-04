@@ -50,6 +50,7 @@ public sealed class SelfhostEmitterT7Tests
             }
             if mode == "thunk" { Io.stdout.write(t7PrintThunk(ref c, for: args[1], by: args[2])) }
             if mode == "vtablefail" { Io.stdout.write(t7VtableFail(ref c)) }
+            if mode == "iface" { Io.stdout.write(t7PrintIface(ref c)) }
             return 0
         }
 
@@ -181,6 +182,17 @@ public sealed class SelfhostEmitterT7Tests
             }
             let thunk = cprint.functionThunk(ref cc, from: ref c, for: t7Func(ref c, for: name), as: type)
             return $"== thunk\n{thunk}\n{t7Helpers(in cc)}"
+        }
+
+        /// `EmitTypes` after `CType` of every interface: a type no case of the switch matches.
+        string t7PrintIface(ref Ctx c) uses alloc {
+            var cc = CCtx {}
+            for m in 0..c.modules.length {
+                var ifaces = List<semantics.InterfaceId>()
+                for k in c.modules[m].interfaces { ifaces.append(k) }
+                for k in ifaces { let _ = cprint.cType(ref cc, from: ref c, for: semantics.makeType(.interfaceType, at: k)) }
+            }
+            return $"== types\n{cprint.emitTypes(ref cc, from: ref c)}"
         }
 
         /// `Vtable` of struct `S` and interface `I`, which `S` does not conform to.
@@ -500,7 +512,7 @@ public sealed class SelfhostEmitterT7Tests
             var c = Compile(path);
             if (c.Diagnostics.HasErrors) return;
             // The selfhost parser keeps a field rule that names another field on the field (C# moves it to the struct), so the checker gains a bool flag local: Q792.
-            if (File.ReadAllText(corpus).Contains("requires ", StringComparison.Ordinal)) return;
+            if (Path.GetFileName(corpus) == "positional-requires.byn") return;
             var (exit, stdout, stderr) = Run("corpus", path);
             if (exit != 0)
             {
@@ -587,5 +599,24 @@ public sealed class SelfhostEmitterT7Tests
         var (exit, stdout, _) = Run("vtablefail", path);
         Assert.NotEqual(0, exit);
         Assert.Equal("", stdout);
+    });
+
+    [Fact]
+    public void Types_OfATypeNoCaseMatchesIsAnEmptyStructLikeCSharp() => WithFixture("""
+        interface IBox {
+            i64 n
+        }
+
+        void main() { }
+        """, path =>
+    {
+        var c = Compile(path);
+        Assert.False(c.Diagnostics.HasErrors, string.Join('\n', c.Diagnostics.Items));
+        var e = NewEmitter(c);
+        foreach (var i in c.Modules.SelectMany(m => m.Interfaces)) e.CType(i);
+        var expected = Section("types", (string)Call(e, "EmitTypes")!);
+        var (exit, stdout, stderr) = Run("iface", path);
+        Assert.True(exit == 0, $"exited {exit}: {stderr}");
+        AssertSections("iface", expected, stdout, corpus: false);
     });
 }

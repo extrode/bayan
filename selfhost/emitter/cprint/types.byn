@@ -129,6 +129,7 @@ void t7Define(ref CCtx cc, from ref Ctx c, through ref StrBuf defs, to ref Map<s
             memberTypes.append(semantics.prim(.i64))
             decls.append($"const struct {vt}* vt")
         case .function:
+            // Q1: round 4 redoes this (CEmitter.cs:557-560).
             // The code and the environment it is called with; parameter and return types need only their typedefs.
             var ignored = List<string>()
             memberTypes.append(semantics.prim(.i64))
@@ -148,8 +149,8 @@ void t7Define(ref CCtx cc, from ref Ctx c, through ref StrBuf defs, to ref Map<s
                 decls.append(t7VariantUnion(ref cc, from: ref c, for: in variants, as: false))
             }
             t7Payloads(ref c, for: in variants, to: ref payloads, as: false)
-        // coverage-exempt: Q789
-        default: return
+        // C# has no default: any other named type gets an empty definition.
+        default:
     }
     var deps = List<Type>()
     for m in memberTypes { deps.append(m) }
@@ -240,6 +241,7 @@ string t7SlotSignature(ref CCtx cc, from ref Ctx c, for semantics.FuncId m, by s
 /// CEmitter.cs:627 `FunctionSignature`: a function type's C signature around `declarator`, in `Signature`'s `fails` convention
 /// with `void* env` first; `args` are the names of the parameters after `env`.
 string t7FunctionSignature(ref CCtx cc, from ref Ctx c, for Type f, by string declarator, to ref List<string> args) uses alloc {
+    // Q1: round 4 redoes this (CEmitter.cs:627-644).
     let i = i64(f & 0xFFFFFFFF)
     let failing = c.functionTypes[i].errorSets.length > 0
     let ret = c.functionTypes[i].ret
@@ -271,6 +273,7 @@ string t7Join(in List<string> xs) uses alloc {
 
 /// CEmitter.cs:648 `FunctionThunk`: the name of the helper that calls named function `fn` as a value of function type `type`, registering it.
 public string functionThunk(ref CCtx cc, from ref Ctx c, for semantics.FuncId fn, as Type type) uses alloc {
+    // Q1: round 4 redoes this (CEmitter.cs:646-654).
     let name = $"bynh_fnthunk_{functionName(ref cc, from: ref c, for: fn)}"
     var args = List<string>()
     let proto = $"static {t7FunctionSignature(ref cc, from: ref c, for: type, by: name, to: ref args)}"
