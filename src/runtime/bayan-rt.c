@@ -2128,6 +2128,30 @@ static bool byn_path_effectively_empty(byn_str s) {
 #endif
 }
 
+/* `Path.GetDirectoryName`: `GetDirectoryNameOffset`, then `PathInternal.NormalizeDirectorySeparators` on the prefix. */
+bool byn_path_directory_name(byn_str s, byn_str* out, byn_alloc* to) {
+    if (byn_path_effectively_empty(s)) return false;
+    int64_t root = byn_path_root_length(s.ptr, s.len), end = s.len;
+    if (end <= root) return false;
+    while (end > root && !byn_path_sep(s.ptr[--end])) {}
+    while (end > root && byn_path_sep(s.ptr[end - 1])) end--;
+    uint8_t* d = end > 0 ? to->resize(to, NULL, 0, end) : NULL;
+    int64_t n = 0, i = 0;
+#ifdef _WIN32
+    /* Windows keeps a leading separator before a second one (UNC, device), as `\`. */
+    if (end > 0 && byn_path_sep(s.ptr[0])) {
+        d[n++] = '\\';
+        i = 1;
+    }
+#endif
+    for (; i < end; i++) {
+        if (byn_path_sep(s.ptr[i]) && i + 1 < end && byn_path_sep(s.ptr[i + 1])) continue;
+        d[n++] = byn_path_sep(s.ptr[i]) ? BYN_PATH_SEP : s.ptr[i];
+    }
+    *out = (byn_str){d, n};
+    return true;
+}
+
 static bool byn_path_usep(uint16_t c) { return c < 0x80 && byn_path_sep((uint8_t)c); }
 
 static bool byn_path_high(const uint16_t* u, int64_t i, int64_t n) {

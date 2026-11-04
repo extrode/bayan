@@ -11,8 +11,8 @@ using Bayan.Syntax.Text;
 namespace Bayan.Tests;
 
 /// <summary>
-/// Spec 014's slice (011 P2): <c>Path.isRooted</c>, <c>Path.fileName</c> and <c>Path.relative</c> give what .NET's
-/// <c>Path.IsPathRooted</c>, <c>Path.GetFileName</c> and <c>Path.GetRelativePath</c> give on the same OS, over a seeded corpus
+/// Spec 014's slice (011 P2) and 014 T1: <c>Path.isRooted</c>, <c>Path.fileName</c>, <c>Path.directoryName</c> and <c>Path.relative</c> give what .NET's
+/// <c>Path.IsPathRooted</c>, <c>Path.GetFileName</c>, <c>Path.GetDirectoryName</c> and <c>Path.GetRelativePath</c> give on the same OS, over a seeded corpus
 /// with Windows-shaped inputs. On Windows the .NET calls use Windows rules, so the same corpus checks both separators, drive
 /// letters, UNC and case-insensitive <c>relative</c> there. Both sides run in the test process's working directory, so relative
 /// inputs resolve alike.
@@ -113,6 +113,9 @@ public sealed class StdPathTests
             expected.Add(Path.IsPathRooted(p) ? "true" : "false");
             source.Append($"print(Path.fileName({Literal(p)}))\n");
             expected.Add(Path.GetFileName(p));
+            // .NET's null (a root, an empty path) prints as a marker no path in the corpus holds.
+            source.Append($"print(Path.directoryName({Literal(p)}) ?? \"<null>\")\n");
+            expected.Add(Path.GetDirectoryName(p) ?? "<null>");
         }
         foreach (var (from, to) in Pairs(1014, 400))
         {
