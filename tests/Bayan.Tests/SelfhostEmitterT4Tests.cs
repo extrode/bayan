@@ -97,7 +97,7 @@ public sealed class SelfhostEmitterT4Tests
                 var target = exprs[d]
                 if mode == "spread" { target = c.bCollections[target & 0xFFFFFFFF].elements[0] }
                 if mode == "failing" { target = c.bTries[target & 0xFFFFFFFF].operand }
-                if mode == "void" { target = ltree.addLVoid(ref l.tree, from: LVoid { span: semantics.nodeSpan(in c, for: target) }) }
+                if mode == "void" { target = ltree.addLVoid(ref l.tree, from: T4LVoid { span: semantics.nodeSpan(in c, for: target) }) }
                 if mode == "show" || mode == "showran" {
                     l.showing = true
                     l.shown[target] = -1

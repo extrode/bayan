@@ -14,25 +14,25 @@ type BConversion = semantics.BConversion
 type BErrorVariant = semantics.BErrorVariant
 type BField = semantics.BField
 type BIndex = semantics.BIndex
-type BMove = semantics.BMove
+type T4BMove = semantics.BMove
 type BRangePattern = semantics.BRangePattern
 type BSlice = semantics.BSlice
 type BTuple = semantics.BTuple
 type BTupleElement = semantics.BTupleElement
 type BUnionNew = semantics.BUnionNew
-type LErrorCode = ltree.LErrorCode
-type LErrorField = ltree.LErrorField
-type LFailingCall = ltree.LFailingCall
-type LFunctionValue = ltree.LFunctionValue
-type LGoto = ltree.LGoto
-type LIndexUnchecked = ltree.LIndexUnchecked
-type LLabel = ltree.LLabel
-type LLoop = ltree.LLoop
-type LNever = ltree.LNever
-type LOptionalHas = ltree.LOptionalHas
-type LOptionalValue = ltree.LOptionalValue
-type LReturnError = ltree.LReturnError
-type LVoid = ltree.LVoid
+type T4LErrorCode = ltree.LErrorCode
+type T4LErrorField = ltree.LErrorField
+type T4LFailingCall = ltree.LFailingCall
+type T4LFunctionValue = ltree.LFunctionValue
+type T4LGoto = ltree.LGoto
+type T4LIndexUnchecked = ltree.LIndexUnchecked
+type T4LLabel = ltree.LLabel
+type T4LLoop = ltree.LLoop
+type T4LNever = ltree.LNever
+type T4LOptionalHas = ltree.LOptionalHas
+type T4LOptionalValue = ltree.LOptionalValue
+type T4LReturnError = ltree.LReturnError
+type T4LVoid = ltree.LVoid
 type TupleField = semantics.TupleField
 
 /// Lowerer.cs:899 `Expr`: the lowered form of `e`, with its statements appended to the current output list.
@@ -63,7 +63,7 @@ List<BExpr> t4Copy(in List<BExpr> xs) uses alloc {
 
 /// `new LNever(e.Syntax, e.Type)`.
 BExpr t4Never(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
-    return ltree.addLNever(ref l.tree, from: LNever { span: t2Span(in c, through: in l, for: e), type: t2Type(in c, through: in l, for: e) })
+    return ltree.addLNever(ref l.tree, from: T4LNever { span: t2Span(in c, through: in l, for: e), type: t2Type(in c, through: in l, for: e) })
 }
 
 /// Lowerer.cs:908 `LowerExpr` (renamed: `lowerExpr` is `Expr`).
@@ -103,7 +103,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             let receiver = lowerExpr(ref c, through: ref l, for: c.bErrorFields[i].receiver)
             // coverage-exempt: Q774
             if isNeverExpr(receiver) { return t4Never(ref c, through: ref l, for: e) }
-            return ltree.addLErrorField(ref l.tree, from: LErrorField { span: span, error: receiver, variant: c.bErrorFields[i].variant, index: c.bErrorFields[i].index })
+            return ltree.addLErrorField(ref l.tree, from: T4LErrorField { span: span, error: receiver, variant: c.bErrorFields[i].variant, index: c.bErrorFields[i].index })
         case .call:
             return lowerCall(ref c, through: ref l, for: e)
         case .builtinCall:
@@ -132,7 +132,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             var operand = lvalue ? lowerLvalue(ref c, through: ref l, for: c.bConversions[i].operand) : lowerExpr(ref c, through: ref l, for: c.bConversions[i].operand)
             if isNeverExpr(operand) { return t4Never(ref c, through: ref l, for: e) }
             if kind == .fromNever { return operand }
-            if kind == .narrow { return ltree.addLOptionalValue(ref l.tree, from: LOptionalValue { span: span, optional: operand, type: c.bConversions[i].type }) }
+            if kind == .narrow { return ltree.addLOptionalValue(ref l.tree, from: T4LOptionalValue { span: span, optional: operand, type: c.bConversions[i].type }) }
             // coverage-blocked: Q774 T5 lowerCallParts
             if kind == .listToSpan && !isTrivial(in c, through: in l, for: operand) { operand = spill(ref c, through: ref l, for: operand) }
             return t4Keep(ref c, from: e, to: semantics.addConversion(ref c, from: BConversion { span: span, operand: operand, type: c.bConversions[i].type, kind: kind }))
@@ -236,7 +236,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             return lowerTry(ref c, through: ref l, for: e)
         case .moveExpr:
             let operand = lowerExpr(ref c, through: ref l, for: c.bMoves[i].operand)
-            return semantics.addMove(ref c, from: BMove { span: span, operand: operand })
+            return semantics.addMove(ref c, from: T4BMove { span: span, operand: operand })
         case .catchExpr:
             return lowerCatch(ref c, through: ref l, for: e)
         case .jump:
@@ -245,7 +245,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
         case .blockExpr:
             lowerStatement(ref c, through: ref l, for: c.bBlockExprs[i].block)
             if semantics.isNever(c.bBlockExprs[i].type) { return t4Never(ref c, through: ref l, for: e) }
-            return ltree.addLVoid(ref l.tree, from: LVoid { span: span })
+            return ltree.addLVoid(ref l.tree, from: T4LVoid { span: span })
         case .stackalloc:
             let array = semantics.internArray(ref c, by: c.bStackallocs[i].element, at: c.bStackallocs[i].count)
             let storage = newTemp(ref c, through: ref l, for: array)
@@ -253,11 +253,11 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: localExpr(ref c, at: span, for: storage), value: none, op: null }))
             return semantics.addConversion(ref c, from: BConversion { span: span, operand: localExpr(ref c, at: span, for: storage), type: c.bStackallocs[i].type, kind: .arrayToSpan })
         case .functionRef:
-            return ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: span, function: c.bFunctionRefs[i].function, env: -1, functionType: c.bFunctionRefs[i].functionType })
+            return ltree.addLFunctionValue(ref l.tree, from: T4LFunctionValue { span: span, function: c.bFunctionRefs[i].function, env: -1, functionType: c.bFunctionRefs[i].functionType })
         case .lambda:
             // Q1: round 4 redoes this (Lowerer.cs:1064-1075).
             if c.bLambdas[i].captures.length == 0 {
-                return ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: span, function: c.bLambdas[i].lambda, env: -1, functionType: c.bLambdas[i].functionType })
+                return ltree.addLFunctionValue(ref l.tree, from: T4LFunctionValue { span: span, function: c.bLambdas[i].lambda, env: -1, functionType: c.bLambdas[i].functionType })
             }
             // The captures are copied, as the declared types of their locals, into a tuple in this frame: the environment.
             let captures = t4Copy(in c.bLambdas[i].captures)
@@ -271,7 +271,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             // coverage-exempt: Q774
             unless operands(ref c, through: ref l, for: in ops, as: in List<bool>(), to: ref values) { return t4Never(ref c, through: ref l, for: e) }
             emitAssign(ref c, through: ref l, to: localExpr(ref c, at: span, for: env), as: semantics.addTuple(ref c, from: BTuple { span: span, tupleType: tuple, elements: move values }))
-            return ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: span, function: c.bLambdas[i].lambda, env: env, functionType: c.bLambdas[i].functionType })
+            return ltree.addLFunctionValue(ref l.tree, from: T4LFunctionValue { span: span, function: c.bLambdas[i].lambda, env: env, functionType: c.bLambdas[i].functionType })
         case .interpolated:
             // Outside an output call the text goes into a temporary growable `StrBuf` (from `context.allocator`).
             // coverage-blocked: Q774 T5 lowerWriteParts through 282
@@ -363,13 +363,13 @@ BExpr lowerConditional(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     captureBegin(ref l)
     for s in preTrue { emit(ref l, for: s) }
     emitAssign(ref c, through: ref l, to: target, as: whenTrue)
-    var t = captureEnd(ref l)
+    let t = captureEnd(ref l)
     captureBegin(ref l)
     for s in preFalse { emit(ref l, for: s) }
     emitAssign(ref c, through: ref l, to: target, as: whenFalse)
-    var f = captureEnd(ref l)
+    let f = captureEnd(ref l)
     emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: condition, then: block(ref c, at: span, for: move t), elseBranch: block(ref c, at: span, for: move f) }))
-    if semantics.isNever(type) { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
+    if semantics.isNever(type) { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: type }) }
     return target
 }
 
@@ -383,12 +383,12 @@ public BExpr lowerCoalesce(ref Ctx c, through ref LCtx l, for BExpr e) uses allo
     unless isRepeatable(in c, through: in l, for: left) { left = spill(ref c, through: ref l, for: left) }
     let keepsOptional = semantics.kindOf(type) == .optional
     let inner = c.optionalTypes[i64(semantics.exprType(in c, for: c.bCoalesces[i].left) & 0xFFFFFFFF)]
-    let present = keepsOptional ? left : ltree.addLOptionalValue(ref l.tree, from: LOptionalValue { span: span, optional: left, type: inner })
+    let present = keepsOptional ? left : ltree.addLOptionalValue(ref l.tree, from: T4LOptionalValue { span: span, optional: left, type: inner })
     var pre = List<BStmt>()
     let right = captureExpr(ref c, through: ref l, for: c.bCoalesces[i].right, lvalue: false, to: ref pre)
     // coverage-exempt: Q774
     if pre.length == 0 && !isNeverExpr(right) && !semantics.isNever(t2Type(in c, through: in l, for: right)) {
-        let has = ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: left })
+        let has = ltree.addLOptionalHas(ref l.tree, from: T4LOptionalHas { span: span, optional: left })
         return semantics.addConditional(ref c, from: BConditional { span: span, condition: has, whenTrue: present, whenFalse: right, type: type })
     }
     let result = newTemp(ref c, through: ref l, for: type)
@@ -399,7 +399,7 @@ public BExpr lowerCoalesce(ref Ctx c, through ref LCtx l, for BExpr e) uses allo
     var missing = captureEnd(ref l)
     var found = List<BStmt>()
     found.append(semantics.addAssign(ref c, from: BAssign { span: span, target: target, value: present, op: null }))
-    let has = ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: left })
+    let has = ltree.addLOptionalHas(ref l.tree, from: T4LOptionalHas { span: span, optional: left })
     emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: has, then: block(ref c, at: span, for: move found), elseBranch: block(ref c, at: span, for: move missing) }))
     return target
 }
@@ -419,7 +419,7 @@ BExpr lowerCollection(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             for element in elements0 {
                 let spread = semantics.boundKind(element) == .spread
                 let v = lowerExpr(ref c, through: ref l, for: spread ? c.bSpreads[i64(element & 0xFFFFFFFF)].operand : element)
-                if isNeverExpr(v) { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
+                if isNeverExpr(v) { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: type }) }
                 if spread {
                     lowerAddEach(ref c, through: ref l, for: element, from: spill(ref c, through: ref l, for: v), to: list, at: span)
                     continue
@@ -442,7 +442,7 @@ BExpr lowerCollection(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
                 ops.append(elements0[k])
                 ops.append(elements0[k + 1])
                 var entry = List<BExpr>()
-                unless operands(ref c, through: ref l, for: in ops, as: in List<bool>(), to: ref entry) { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
+                unless operands(ref c, through: ref l, for: in ops, as: in List<bool>(), to: ref entry) { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: type }) }
                 var args = List<BExpr>()
                 args.append(entry[0])
                 let slot = semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .mapIndexSet, receiver: localExpr(ref c, at: span, for: map), arguments: move args, type: valueType })
@@ -454,7 +454,7 @@ BExpr lowerCollection(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             if elements0.length == 0 { return semantics.addDefault(ref c, from: BDefault { span: span, type: type }) }
             var elements = List<BExpr>()
             let ok = t4AnySpread(in c, for: in elements0) ? lowerExpanded(ref c, through: ref l, for: in elements0, to: ref elements) : operands(ref c, through: ref l, for: in elements0, as: in List<bool>(), to: ref elements)
-            unless ok { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
+            unless ok { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: type }) }
             let array = semantics.internArray(ref c, by: c.spanTypes[i64(type & 0xFFFFFFFF)].element, at: elements.length)
             let storage = newTemp(ref c, through: ref l, for: array)
             emitAssign(ref c, through: ref l, to: localExpr(ref c, at: span, for: storage), as: semantics.addCollection(ref c, from: BCollection { span: span, type: array, elements: move elements }))
@@ -462,7 +462,7 @@ BExpr lowerCollection(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
         default:
             var elements = List<BExpr>()
             let ok = t4AnySpread(in c, for: in elements0) ? lowerExpanded(ref c, through: ref l, for: in elements0, to: ref elements) : operands(ref c, through: ref l, for: in elements0, as: in List<bool>(), to: ref elements)
-            unless ok { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
+            unless ok { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: type }) }
             return t4Keep(ref c, from: e, to: semantics.addCollection(ref c, from: BCollection { span: span, type: type, elements: move elements }))
     }
 }
@@ -488,7 +488,7 @@ bool lowerExpanded(ref Ctx c, through ref LCtx l, for in List<BExpr> elements, t
             let length = c.arrayTypes[i64(semantics.exprType(in c, for: c.bSpreads[s].operand) & 0xFFFFFFFF)].length
             for k in 0..length {
                 let index = i64Literal(ref c, at: c.bSpreads[s].span, by: k)
-                values.append(ltree.addLIndexUnchecked(ref l.tree, from: LIndexUnchecked { span: c.bSpreads[s].span, target: source, index: index, type: c.bSpreads[s].type }) because "k is below the fixed length of the array being spread")
+                values.append(ltree.addLIndexUnchecked(ref l.tree, from: T4LIndexUnchecked { span: c.bSpreads[s].span, target: source, index: index, type: c.bSpreads[s].type }) because "k is below the fixed length of the array being spread")
             }
             continue
         }
@@ -516,17 +516,17 @@ void lowerAddEach(ref Ctx c, through ref LCtx l, for BExpr spread, from BExpr so
     let length = semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: lengthMember, receiver: source, arguments: List<BExpr>(), type: semantics.prim(.i64) })
     let more = semantics.addBinary(ref c, from: BBinary { span: span, op: .lt, left: localExpr(ref c, at: span, for: index), right: length, type: semantics.prim(.bool) })
     var exit = List<BStmt>()
-    exit.append(ltree.addLGoto(ref l.tree, from: LGoto { span: span, label: done }))
+    exit.append(ltree.addLGoto(ref l.tree, from: T4LGoto { span: span, label: done }))
     emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: notExpr(ref c, through: in l, for: more), then: block(ref c, at: span, for: move exit), elseBranch: -1 }))
     var args = List<BExpr>()
-    args.append(ltree.addLIndexUnchecked(ref l.tree, from: LIndexUnchecked { span: span, target: source, index: localExpr(ref c, at: span, for: index), type: c.bSpreads[s].type }) because "the loop leaves before index reaches the source length")
+    args.append(ltree.addLIndexUnchecked(ref l.tree, from: T4LIndexUnchecked { span: span, target: source, index: localExpr(ref c, at: span, for: index), type: c.bSpreads[s].type }) because "the loop leaves before index reaches the source length")
     let add = semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: outer, member: .listAdd, receiver: localExpr(ref c, at: outer, for: list), arguments: move args, type: semantics.prim(.void) })
     emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: outer, expr: add }))
     let next = semantics.addBinary(ref c, from: BBinary { span: span, op: .addWrap, left: localExpr(ref c, at: span, for: index), right: i64Literal(ref c, at: span, by: 1), type: semantics.prim(.i64) })
     emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: localExpr(ref c, at: span, for: index), value: next, op: null }))
     var body = captureEnd(ref l)
-    emit(ref l, for: ltree.addLLoop(ref l.tree, from: LLoop { span: span, body: block(ref c, at: span, for: move body) }))
-    emit(ref l, for: ltree.addLLabel(ref l.tree, from: LLabel { span: span, name: done }))
+    emit(ref l, for: ltree.addLLoop(ref l.tree, from: T4LLoop { span: span, body: block(ref c, at: span, for: move body) }))
+    emit(ref l, for: ltree.addLLabel(ref l.tree, from: T4LLabel { span: span, name: done }))
 }
 
 /// Lowerer.cs:1330 `Slice`.
@@ -542,7 +542,7 @@ BExpr lowerSlice(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     var lvalues = List<bool>()
     lvalues.append(arrayTarget && isLvalueShape(ref c, through: ref l, for: target0))
     var parts = List<BExpr>()
-    unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: c.bSlices[i].type }) }
+    unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bSlices[i].type }) }
     var target = arrayTarget && !isLvalue(in c, through: in l, for: parts[0]) ? spill(ref c, through: ref l, for: parts[0]) : parts[0]
     if !isTrivial(in c, through: in l, for: target) && !arrayTarget { target = spill(ref c, through: ref l, for: target) }
     var k: i64 = 1
@@ -578,21 +578,21 @@ BExpr lowerCall(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
             // coverage-blocked: Q774 T5 lowerWrite through 582
             if semantics.boundKind(c.bCalls[i].arguments[0]) == .interpolated {
                 let _ = lowerWrite(ref c, through: ref l, for: e, by: .panic, to: -1, as: c.bCalls[i].arguments[0])
-                return ltree.addLNever(ref l.tree, from: LNever { span: span, type: c.bCalls[i].type })
+                return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bCalls[i].type })
             }
         default: break
     }
     if c.functions[fn].hasFails { panic($"call of failing `{c.functions[fn].name}` outside try/catch") }
     let lowered = lowerCallParts(ref c, through: ref l, for: e)
     // coverage-blocked: Q774 T5 lowerCallParts
-    if lowered == -1 { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: c.bCalls[i].type }) }
+    if lowered == -1 { return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bCalls[i].type }) }
     if semantics.isNever(c.bCalls[i].type) {
         emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: lowered }))
-        return ltree.addLNever(ref l.tree, from: LNever { span: span, type: c.bCalls[i].type })
+        return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bCalls[i].type })
     }
     if semantics.isVoid(c.bCalls[i].type) {
         emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: lowered }))
-        return ltree.addLVoid(ref l.tree, from: LVoid { span: span })
+        return ltree.addLVoid(ref l.tree, from: T4LVoid { span: span })
     }
     return lowered
 }
@@ -614,7 +614,7 @@ public (LocalId error, BExpr result)? lowerFailingCall(ref Ctx c, through ref LC
         let check = newTemp(ref c, through: ref l, for: semantics.errorUnionOf(ref c, for: in sets, as: in List<VariantId>()))
         let args = t4Copy(in c.bCalls[i].arguments)
         let call = t4Keep(ref c, from: operand, to: semantics.addCall(ref c, from: BCall { span: span, function: fn, receiver: value, arguments: move args, type: c.bCalls[i].type }))
-        emit(ref l, for: ltree.addLFailingCall(ref l.tree, from: LFailingCall { span: span, error: check, call: call, result: -1 }))
+        emit(ref l, for: ltree.addLFailingCall(ref l.tree, from: T4LFailingCall { span: span, error: check, call: call, result: -1 }))
         return (error: check, result: value)
     }
     let lowered = lowerCallParts(ref c, through: ref l, for: operand)
@@ -624,14 +624,14 @@ public (LocalId error, BExpr result)? lowerFailingCall(ref Ctx c, through ref LC
     let error = newTemp(ref c, through: ref l, for: semantics.errorUnionOf(ref c, for: in sets, as: in List<VariantId>()))
     let type = c.bCalls[i].type
     let result = semantics.isVoid(type) || semantics.isNever(type) ? -1 : newTemp(ref c, through: ref l, for: type)
-    emit(ref l, for: ltree.addLFailingCall(ref l.tree, from: LFailingCall { span: span, error: error, call: lowered, result: result }))
-    if result == -1 { return (error: error, result: ltree.addLVoid(ref l.tree, from: LVoid { span: span })) }
+    emit(ref l, for: ltree.addLFailingCall(ref l.tree, from: T4LFailingCall { span: span, error: error, call: lowered, result: result }))
+    if result == -1 { return (error: error, result: ltree.addLVoid(ref l.tree, from: T4LVoid { span: span })) }
     return (error: error, result: localExpr(ref c, at: span, for: result))
 }
 
 /// Lowerer.cs:1752 `Failed` (Q845): the condition that holds when the error in `error` is set.
 public BExpr lowerFailed(ref Ctx c, through ref LCtx l, at TextSpan span, for LocalId error) uses alloc {
-    let code = ltree.addLErrorCode(ref l.tree, from: LErrorCode { span: span, error: localExpr(ref c, at: span, for: error) })
+    let code = ltree.addLErrorCode(ref l.tree, from: T4LErrorCode { span: span, error: localExpr(ref c, at: span, for: error) })
     let zero = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.u32), value: Constant { kind: .integer, integer: Big { lo: 0, hi: 0 } } })
     return semantics.addBinary(ref c, from: BBinary { span: span, op: .ne, left: code, right: zero, type: semantics.prim(.bool) })
 }
@@ -641,7 +641,7 @@ List<BStmt> lowerPropagate(ref Ctx c, through ref LCtx l, at TextSpan span, for 
     captureBegin(ref l)
     emitCleanups(ref c, through: ref l, at: 0, for: error)
     // Lowerer.cs:1760 `CountError` is D3's (coverage counters), not ported.
-    emit(ref l, for: ltree.addLReturnError(ref l.tree, from: LReturnError { span: span, code: localExpr(ref c, at: span, for: error) }))
+    emit(ref l, for: ltree.addLReturnError(ref l.tree, from: T4LReturnError { span: span, code: localExpr(ref c, at: span, for: error) }))
     return captureEnd(ref l)
 }
 
@@ -649,8 +649,8 @@ List<BStmt> lowerPropagate(ref Ctx c, through ref LCtx l, at TextSpan span, for 
 BExpr lowerTry(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     let i = i64(e & 0xFFFFFFFF)
     let span = c.bTries[i].span
-    let r = lowerFailingCall(ref c, through: ref l, for: c.bTries[i].operand) ?? return ltree.addLNever(ref l.tree, from: LNever { span: span, type: c.bTries[i].type })
-    var propagate = lowerPropagate(ref c, through: ref l, at: span, for: r.error)
+    let r = lowerFailingCall(ref c, through: ref l, for: c.bTries[i].operand) ?? return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bTries[i].type })
+    let propagate = lowerPropagate(ref c, through: ref l, at: span, for: r.error)
     emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: lowerFailed(ref c, through: ref l, at: span, for: r.error), then: block(ref c, at: span, for: move propagate), elseBranch: -1 }))
     return r.result
 }
@@ -659,7 +659,7 @@ BExpr lowerTry(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
 BExpr lowerCatch(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     let i = i64(e & 0xFFFFFFFF)
     let span = c.bCatches[i].span
-    let r = lowerFailingCall(ref c, through: ref l, for: c.bCatches[i].operand) ?? return ltree.addLNever(ref l.tree, from: LNever { span: span, type: c.bCatches[i].type })
+    let r = lowerFailingCall(ref c, through: ref l, for: c.bCatches[i].operand) ?? return ltree.addLNever(ref l.tree, from: T4LNever { span: span, type: c.bCatches[i].type })
     // coverage-exempt: Q774
     let target = !ltree.isLowered(r.result) && semantics.boundKind(r.result) == .local ? r.result : -1
     captureBegin(ref l)
@@ -676,7 +676,7 @@ BExpr lowerCatch(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     if variant != -1 {
         let caught = semantics.addErrorVariant(ref c, from: BErrorVariant { span: span, variant: variant })
         let other = semantics.addBinary(ref c, from: BBinary { span: span, op: .ne, left: localExpr(ref c, at: span, for: r.error), right: caught, type: semantics.prim(.bool) })
-        var propagate = lowerPropagate(ref c, through: ref l, at: span, for: r.error)
+        let propagate = lowerPropagate(ref c, through: ref l, at: span, for: r.error)
         var checkedBody = List<BStmt>()
         checkedBody.append(semantics.addIf(ref c, from: BIf { span: span, condition: other, then: block(ref c, at: span, for: move propagate), elseBranch: -1 }))
         for s in handler { checkedBody.append(s) }
