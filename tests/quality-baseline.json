@@ -6,6 +6,11 @@
       "coverage": 1.0,
       "branches": 1.0
     },
+    "selfhost/emitter/cprint/helpers.byn": {
+      "mutation": null,
+      "coverage": 0.9871,
+      "branches": 0.9706
+    },
     "selfhost/emitter/lower.byn": {
       "mutation": null,
       "coverage": 0.9691,
