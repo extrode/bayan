@@ -566,7 +566,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return bindTry(ref b, through: ref c, for: in tr.value, to: expected)
         case .moveExpr(let mv):
             let operand = bindExpr(ref b, through: ref c, for: in mv.value.operand, to: expected)
-            return bindMove(ref b, through: ref c, at: mv.value.span, for: operand)
+            return t21BindMove(ref b, through: ref c, at: mv.value.span, for: operand, from: syntaxLeaf(ref c, as: .moveExpr, at: mv.value.span))
         case .catchExpr(let ct):
             return bindCatch(ref b, through: ref c, for: in ct.value, to: expected)
         case .caughtErrorExpr(let ce):
@@ -612,10 +612,10 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             switch l.value.block {
                 case .blockStmt(let bs):
                     let noBody: parser.Expr? = null
-                    return bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in noBody, by: in bs.value, to: fExpected)
+                    return recordSyntaxNode(ref c, for: bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in noBody, by: in bs.value, to: fExpected), at: syntaxLeaf(ref c, as: .lambdaExpr, at: l.value.span))
                 default:
                     let noBlock: parser.BlockStmt? = null
-                    return bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in l.value.body, by: in noBlock, to: fExpected)
+                    return recordSyntaxNode(ref c, for: bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in l.value.body, by: in noBlock, to: fExpected), at: syntaxLeaf(ref c, as: .lambdaExpr, at: l.value.span))
             }
         case .errorExpr(let eNode):
             return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: eNode.value.span }), from: in e)
@@ -789,7 +789,7 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
     if local != -1 {
         if c.locals[local].kind == .constKeyword && (c.locals[local].constant is { } cVal) {
             let t = c.locals[local].type
-            return constantLiteral(ref c, at: n.span, as: t, by: in cVal, from: syntax)
+            return t21ConstantLiteral(ref c, at: n.span, as: t, by: in cVal, from: syntax)
         }
         var read: BExpr = -1
         if isNonNull(ref b, for: local) {
@@ -846,13 +846,13 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
                     return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: n.span }), at: syntax)
                 }
                 let thisExpr = recordSyntaxNode(ref c, for: addThis(ref c, from: BThis { span: n.span, type: b.thisType }), at: syntax)
-                return bindValueMember(ref b, through: ref c, at: n.span, for: thisExpr, by: n.name, from: syntax)
+                return t21BindValueMember(ref b, through: ref c, at: n.span, for: thisExpr, by: n.name, from: syntax)
             }
         }
     }
 
     if (c.modules[m].constants.tryGet(at: name) is { } kId) {
-        return constantRef(ref b, through: ref c, at: n.span, for: kId, from: syntax)
+        return t21ConstantRef(ref b, through: ref c, at: n.span, for: kId, from: syntax)
     }
     if (c.modules[m].functions.tryGet(at: name) is { } fns) {
         return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: fns[0] }), at: syntax)

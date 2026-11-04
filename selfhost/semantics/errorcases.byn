@@ -32,7 +32,7 @@ BExpr bindErrorNew(ref Binder b, through ref Ctx c, for in parser.CallExpr call,
     }
     if boundKind(callee) == .errorVariant { return bindPayload(ref b, through: ref c, for: in call, by: callee) }
     bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-    return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
 }
 
 BExpr bindPayload(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by BExpr variant) {
@@ -41,11 +41,11 @@ BExpr bindPayload(ref Binder b, through ref Ctx c, for in parser.CallExpr call, 
     if c.errorVariants[v].fields.length == 0 {
         report(ref b, through: ref c, for: .variantHasNoPayload, at: call.span, by: (vName, "", "", "", ""), help: $"write `.{vName}` without parentheses")
         bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
     }
     let fields = copyIds(in c.errorVariants[v].fields)
     let payload = bindArguments(ref b, through: ref c, for: in call, by: in fields, as: -1, enforceNames: false, displayName: vName)
-    return addErrorVariant(ref c, from: BErrorVariant { span: call.span, variant: v, payload: move payload })
+    return recordSyntaxNode(ref c, for: addErrorVariant(ref c, from: BErrorVariant { span: call.span, variant: v, payload: move payload }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// C# `Built` (BinderErrors.cs:59-63). Pre-ported for T17 (callers use its result directly); T22 must not rewrite it.

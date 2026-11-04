@@ -8,7 +8,7 @@ BExpr bindCollection(ref Binder b, through ref Ctx c, for in parser.CollectionEx
     for e in coll.elements {
         if e is .mapEntryExpr(_) { return bindMapLiteral(ref b, through: ref c, for: in coll, to: target) }
     }
-    if target != -1 && kindOf(target) == .map && coll.elements.length == 0 { return addCollection(ref c, from: BCollection { span: coll.span, type: target }) }
+    if target != -1 && kindOf(target) == .map && coll.elements.length == 0 { return recordSyntaxNode(ref c, for: addCollection(ref c, from: BCollection { span: coll.span, type: target }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span)) }
     let element = t35ElementOf(ref c, for: target)
     if element == -1 && target == -1 && coll.elements.length > 0 {
         return t35BindUntypedCollection(ref b, through: ref c, for: in coll)
@@ -22,7 +22,7 @@ BExpr bindCollection(ref Binder b, through ref Ctx c, for in parser.CollectionEx
             report(ref b, through: ref c, for: .typeMismatch, at: coll.span, by: ("a collection literal", typeDisplay(ref c, by: target), "", "", ""))
         }
         for e in coll.elements { let _ = bindExpr(ref b, through: ref c, for: in e) }
-        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
     }
     var elements = List<BExpr>()
     for e in coll.elements {
@@ -60,16 +60,16 @@ BExpr t35BindUntypedCollection(ref Binder b, through ref Ctx c, for in parser.Co
     let span0 = parser.exprSpan(in coll.elements[0])
     if isError(element) {
         for i in 1..coll.elements.length { let _ = bindExpr(ref b, through: ref c, for: in coll.elements[i]) }
-        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
     }
     if t35CannotInfer(element) {
         report(ref b, through: ref c, for: .cannotInferType, at: span0, by: (t15Text(in c, from: b.file, at: span0), "", "", "", ""), help: "declare the type: `List<i64> xs = [1, 2]`")
         for i in 1..coll.elements.length { let _ = bindExpr(ref b, through: ref c, for: in coll.elements[i]) }
-        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
     }
     if functionTypeNotHere(ref c, for: element, from: b.file, at: span0, as: "an array element") {
         for i in 1..coll.elements.length { let _ = bindExpr(ref b, through: ref c, for: in coll.elements[i]) }
-        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
     }
     if boundKind(first) != .spread { first = convert(ref b, through: ref c, for: first, to: element, at: span0) }
     var elements = List<BExpr>()
@@ -88,7 +88,7 @@ BExpr t35BindUntypedCollection(ref Binder b, through ref Ctx c, for in parser.Co
 /// bound from `coll.elements[i]`, so C#'s `BoundErrorExpr { Syntax: SpreadExpr }` is an error bound from a spread element (Q675).
 BExpr t35FinishCollection(ref Binder b, through ref Ctx c, for in parser.CollectionExpr coll, to Type target, from in List<BExpr> elements) {
     for i in 0..elements.length {
-        if boundKind(elements[i]) == .errorExpr && coll.elements[i] is .spreadExpr(_) { return addErrorExpr(ref c, from: BErrorExpr { span: coll.span }) }
+        if boundKind(elements[i]) == .errorExpr && coll.elements[i] is .spreadExpr(_) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span)) }
     }
     if kindOf(target) != .list {
         for e in elements {
@@ -103,7 +103,7 @@ BExpr t35FinishCollection(ref Binder b, through ref Ctx c, for in parser.Collect
             report(ref b, through: ref c, for: .notConstant, at: openSpan, by: ($"the length of `{text}` in a `{shape}` literal", "", "", "", ""),
                 label: $"a `{typeDisplay(ref c, by: operandType)}` has a run-time length",
                 help: $"spread a fixed array `T[N]` here, or build a list: `List<{typeDisplay(ref c, by: openType)}> all = {t15Text(in c, from: b.file, at: coll.span)}`")
-            return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
         }
     }
     if kindOf(target) == .array {
@@ -115,7 +115,7 @@ BExpr t35FinishCollection(ref Binder b, through ref Ctx c, for in parser.Collect
     }
     var copy = List<BExpr>()
     for e in elements { copy.append(e) }
-    return addCollection(ref c, from: BCollection { span: coll.span, type: target, elements: move copy })
+    return recordSyntaxNode(ref c, for: addCollection(ref c, from: BCollection { span: coll.span, type: target, elements: move copy }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
 }
 
 /// BinderExpressions.cs:1717 KnownLength: each spread fixed array counts its length; null if a spread's length is known only at run time.
@@ -136,7 +136,7 @@ i64? t35KnownLength(ref Ctx c, for in List<BExpr> elements) {
 BExpr bindSpread(ref Binder b, through ref Ctx c, for in parser.SpreadExpr s, to Type element) {
     let operand = bindExpr(ref b, through: ref c, for: in s.operand)
     let operandType = exprType(in c, for: operand)
-    if isError(operandType) { return addErrorExpr(ref c, from: BErrorExpr { span: s.span }) }
+    if isError(operandType) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .spreadExpr, at: s.span)) }
     let item = t35ElementOf(ref c, for: operandType)
     let text = t15Text(in c, from: b.file, at: parser.exprSpan(in s.operand))
     if item == -1 {
@@ -144,7 +144,7 @@ BExpr bindSpread(ref Binder b, through ref Ctx c, for in parser.SpreadExpr s, to
         if element != -1 && implicit(ref c, from: operandType, to: element) is not null { help = $"drop the `..` to add `{text}` as one element" }
         report(ref b, through: ref c, for: .spreadNotSequence, at: s.span, by: (text, typeDisplay(ref c, by: operandType), "", "", ""),
             label: "not a `List`, `Span` or fixed array", help: help)
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .spreadExpr, at: s.span))
     }
     if element != -1 && item != element {
         let itemName = typeDisplay(ref c, by: item)
@@ -152,14 +152,14 @@ BExpr bindSpread(ref Binder b, through ref Ctx c, for in parser.SpreadExpr s, to
         report(ref b, through: ref c, for: .typeMismatch, at: s.span, by: (itemName, elementName, "", "", ""),
             label: $"`{text}` holds `{itemName}`",
             help: $"spread a sequence of `{elementName}`, or change the literal's element type to `{itemName}`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .spreadExpr, at: s.span))
     }
     if isUnique(ref c, for: item) {
         report(ref b, through: ref c, for: .unsupported, at: s.span, by: ($"spreading elements that own memory (`{typeDisplay(ref c, by: item)}`)", "", "", "", ""),
             help: "add the elements one at a time with `move`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .spreadExpr, at: s.span))
     }
-    return addSpread(ref c, from: BSpread { span: s.span, operand: operand, type: item })
+    return recordSyntaxNode(ref c, for: addSpread(ref c, from: BSpread { span: s.span, operand: operand, type: item }), at: syntaxLeaf(ref c, as: .spreadExpr, at: s.span))
 }
 
 /// BinderExpressions.cs:1768 BindMapLiteral: `["k": v, …]`, a `Map` typed by the target or, without one, by the first entry.
@@ -170,7 +170,7 @@ BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionEx
         report(ref b, through: ref c, for: .mapLiteralMixed, at: parser.exprSpan(in e), by: ("", "", "", "", ""), label: "no `key:` here",
             help: "write every element as `key: value`, or remove the keys to make a list")
         for x in coll.elements { t35BindMapPart(ref b, through: ref c, for: in x) }
-        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
     }
     var parts = List<BExpr>()
     var map: Type = -1
@@ -188,7 +188,7 @@ BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionEx
                 let valueType = exprType(in c, for: value)
                 if isError(keyType) || isError(valueType) {
                     for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
-                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
                 }
                 if !isValidKey(ref c, by: keyType) {
                     if (invalidKeyPart(ref c, by: keyType) is { } part) {
@@ -200,17 +200,17 @@ BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionEx
                             help: "use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct of those as the key")
                     }
                     for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
-                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
                 }
                 if t35CannotInfer(valueType) {
                     report(ref b, through: ref c, for: .cannotInferType, at: valueSpan, by: (t15Text(in c, from: b.file, at: valueSpan), "", "", "", ""),
                         help: $"declare the type: `Map<{typeDisplay(ref c, by: keyType)}, i64?> m = [ … ]`")
                     for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
-                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
                 }
                 if functionTypeNotHere(ref c, for: valueType, from: b.file, at: valueSpan, as: "a map value") {
                     for i in 1..coll.elements.length { t35BindMapPart(ref b, through: ref c, for: in coll.elements[i]) }
-                    return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
                 }
                 map = internMap(ref c, by: keyType, to: valueType)
                 parts.append(convert(ref b, through: ref c, for: key, to: keyType, at: keySpan))
@@ -223,7 +223,7 @@ BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionEx
             report(ref b, through: ref c, for: .typeMismatch, at: coll.span, by: ("a map literal", typeDisplay(ref c, by: target), "", "", ""))
         }
         for x in coll.elements { t35BindMapPart(ref b, through: ref c, for: in x) }
-        return addErrorExpr(ref c, from: BErrorExpr { span: coll.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
     }
     let keyType = c.mapTypes[typeIndex(map)].key
     let valueType = c.mapTypes[typeIndex(map)].value
@@ -236,9 +236,9 @@ BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionEx
         }
     }
     for p in parts {
-        if isError(exprType(in c, for: p)) { return addErrorExpr(ref c, from: BErrorExpr { span: coll.span }) }
+        if isError(exprType(in c, for: p)) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: coll.span }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span)) }
     }
-    return addCollection(ref c, from: BCollection { span: coll.span, type: map, elements: move parts })
+    return recordSyntaxNode(ref c, for: addCollection(ref c, from: BCollection { span: coll.span, type: map, elements: move parts }), at: syntaxLeaf(ref c, as: .collectionExpr, at: coll.span))
 }
 
 /// BinderExpressions.cs:1838 BindMapPart: binds the parts of a map literal element for recovery.
@@ -270,7 +270,7 @@ BExpr bindTuple(ref Binder b, through ref Ctx c, for in parser.TupleExpr t, to T
             }
             values.append(bindConverted(ref b, through: ref c, for: in t.elements[i].value, to: fieldType))
         }
-        return addTuple(ref c, from: BTuple { span: t.span, tupleType: target, elements: move values })
+        return recordSyntaxNode(ref c, for: addTuple(ref c, from: BTuple { span: t.span, tupleType: target, elements: move values }), at: syntaxLeaf(ref c, as: .tupleExpr, at: t.span))
     }
     var elements = List<BExpr>()
     for e in t.elements { elements.append(bindExpr(ref b, through: ref c, for: in e.value)) }
@@ -278,13 +278,13 @@ BExpr bindTuple(ref Binder b, through ref Ctx c, for in parser.TupleExpr t, to T
     for e in elements {
         if isError(exprType(in c, for: e)) { anyError = true }
     }
-    if anyError { return addErrorExpr(ref c, from: BErrorExpr { span: t.span }) }
+    if anyError { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntaxLeaf(ref c, as: .tupleExpr, at: t.span)) }
     var fields = List<TupleField>()
     for i in 0..elements.length {
         let type = exprType(in c, for: elements[i])
         if t35CannotInfer(type) {
             report(ref b, through: ref c, for: .cannotInferType, at: t.elements[i].span, by: (t15Text(in c, from: b.file, at: t.elements[i].span), "", "", "", ""))
-            return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntaxLeaf(ref c, as: .tupleExpr, at: t.span))
         }
         var name: string? = null
         if (t.elements[i].name is { } n) { name = t15Text(in c, from: b.file, at: n) }
@@ -294,9 +294,9 @@ BExpr bindTuple(ref Binder b, through ref Ctx c, for in parser.TupleExpr t, to T
     for i in 0..fields.length {
         if functionTypeNotHere(ref c, for: fields[i].type, from: b.file, at: parser.exprSpan(in t.elements[i].value), as: "a tuple element") { notHere += 1 }
     }
-    if notHere > 0 { return addErrorExpr(ref c, from: BErrorExpr { span: t.span }) }
+    if notHere > 0 { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntaxLeaf(ref c, as: .tupleExpr, at: t.span)) }
     let tupleType = internTuple(ref c, for: in fields)
-    return addTuple(ref c, from: BTuple { span: t.span, tupleType: tupleType, elements: move elements })
+    return recordSyntaxNode(ref c, for: addTuple(ref c, from: BTuple { span: t.span, tupleType: tupleType, elements: move elements }), at: syntaxLeaf(ref c, as: .tupleExpr, at: t.span))
 }
 
 /// BinderExpressions.cs:1888 BindLambda: a lambda, lifted to a `.lambda` function of the module and bound inline with its own
@@ -392,7 +392,7 @@ BExpr bindLambda(ref Binder b, through ref Ctx c, at TextSpan span, for in List<
     } else if (body is { } e) {
         var statements = List<BStmt>()
         statements.append(bindExpressionBody(ref b, through: ref c, for: in e))
-        lambdaBody = addBlock(ref c, from: BBlock { span: parser.exprSpan(in e), statements: move statements })
+        lambdaBody = recordSyntax(ref c, for: addBlock(ref c, from: BBlock { span: parser.exprSpan(in e), statements: move statements }), from: in e)
     }
     c.functions[lambda].body = lambdaBody
     popScope(ref b)
@@ -458,7 +458,7 @@ bool capture(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by Local
             continue
         }
         c.functions[lambda].captures.append(local)
-        let read = addLocalNode(ref c, at: n.span, for: local)
+        let read = recordSyntaxNode(ref c, for: addLocalNode(ref c, at: n.span, for: local), at: syntaxLeaf(ref c, as: .nameExpr, at: n.span))
         c.bLocals[boundIndex(read)].type = type
         var caps = List<BExpr>()
         switch b.lambdas[i] {
@@ -476,20 +476,20 @@ bool capture(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by Local
 BExpr bindStackalloc(ref Binder b, through ref Ctx c, for in parser.StackallocExpr s) {
     let element = resolveType(ref b, through: ref c, for: in s.element)
     let count = bindConverted(ref b, through: ref c, for: in s.count, to: prim(.i64))
-    if isError(element) || isError(exprType(in c, for: count)) { return addErrorExpr(ref c, from: BErrorExpr { span: s.span }) }
+    if isError(element) || isError(exprType(in c, for: count)) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .stackallocExpr, at: s.span)) }
     let countSpan = parser.exprSpan(in s.count)
     let k = exprConstant(in c, for: count)
     if k is null || k.kind != .integer {
         report(ref b, through: ref c, for: .notConstant, at: countSpan, by: ("a `stackalloc` length", "", "", "", ""),
             help: "use a constant length: `stackalloc u8[64]`; v0.1 supports no other")
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .stackallocExpr, at: s.span))
     }
     let n = k.integer
     if bigCmp(n, as: bigZero()) <= 0 || bigCmp(n, as: bigFromI64(1048576)) > 0 {
         report(ref b, through: ref c, for: .literalOutOfRange, at: countSpan, by: (bigText(n), "a `stackalloc` length (1 to 1048576)", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .stackallocExpr, at: s.span))
     }
-    return addStackalloc(ref c, from: BStackalloc { span: s.span, element: element, count: bigToI64(n), type: internSpan(ref c, by: element, readOnly: false) })
+    return recordSyntaxNode(ref c, for: addStackalloc(ref c, from: BStackalloc { span: s.span, element: element, count: bigToI64(n), type: internSpan(ref c, by: element, readOnly: false) }), at: syntaxLeaf(ref c, as: .stackallocExpr, at: s.span))
 }
 
 /// The member text of `e` when it is a `.member` (C# `TargetMemberExpr { Member.Text: var m }`), else null.
@@ -532,7 +532,7 @@ BExpr bindInterpolated(ref Binder b, through ref Ctx c, for in parser.Interpolat
                 parts.append(BInterpolationPart { value: value, spec: spec })
         }
     }
-    return addInterpolated(ref c, from: BInterpolated { span: i.span, parts: move parts })
+    return recordSyntaxNode(ref c, for: addInterpolated(ref c, from: BInterpolated { span: i.span, parts: move parts }), at: syntaxLeaf(ref c, as: .interpolatedExpr, at: i.span))
 }
 
 /// BinderExpressions.cs:2030 BindFormatSpec: `as:` a radix on integers or `.debug`, `digits:` on floats, `width:`, `fill:` and
