@@ -1,10 +1,25 @@
 {
   "version": 1,
   "files": {
+    "selfhost/emitter/cprint/common.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/lower.byn": {
+      "mutation": null,
+      "coverage": 0.9691,
+      "branches": 0.9516
+    },
+    "selfhost/semantics/binder2.byn": {
+      "mutation": null,
+      "coverage": 0.6128,
+      "branches": 0.5452
+    },
     "selfhost/semantics/bound.byn": {
       "mutation": null,
       "coverage": 0.7762,
-      "branches": 0.3864
+      "branches": 0.4091
     },
     "selfhost/semantics/builtins.byn": {
       "mutation": null,
