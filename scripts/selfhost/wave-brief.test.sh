@@ -52,6 +52,9 @@ grep '^bash scripts/selfhost/guard.sh' tmp/011-t13/prompt.md | grep -q -- "|Full
 grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests' " || { echo "FAIL: a task with law pages and tests is not gated by every test class"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md; exit 1; }
 python3 -I scripts/selfhost/review-brief.py . T14 --spec 011 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests"`' tmp/011-t14/review.md || { echo "FAIL: the T14 review does not run every test class"; exit 1; }
+# a 011 law-enact task line without covers: (T17) still yields its law's proof as the guard filter.
+python3 -I scripts/selfhost/wave-brief.py . T17 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t17/prompt.md | grep -q -- "--allow 'docs/laws/024-emitter-equivalence.md,.* --filter 'Law=L024' " || { echo "FAIL: a task line without covers: has no guard line"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t17/prompt.md; exit 1; }
 # a .txt file in a task's files (T12's tests/windows-known-failures.txt) is in its allow list.
 python3 -I scripts/selfhost/wave-brief.py . T12 --spec 011 > /dev/null
 grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md | grep -q ",tests/windows-known-failures.txt," || { echo "FAIL: a .txt task file is not in the guard's allow list"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md; exit 1; }
