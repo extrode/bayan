@@ -569,6 +569,10 @@ public sealed class SelfhostEmitterT5Tests
             }
 
             i64 get() => a
+
+            void add(ref this, i64 x, by i64 y) {
+                a += x + y
+            }
         }
 
         P mk() => P { a: 1 }
@@ -605,6 +609,7 @@ public sealed class SelfhostEmitterT5Tests
             var kk = 1
             inc(ref kk)
             let c6 = ps.removeLast().get()
+            ps[k].add(id(k), by: id(k))
         }
 
         void builtins(ref List<i64> xs, to ref Map<string, P> m, by ref StrBuf sb, as ref Map<string, i64> mi, for string name) uses alloc {
@@ -709,7 +714,7 @@ public sealed class SelfhostEmitterT5Tests
 
     private static readonly string[] CaseSpecs =
     [
-        "calls:0:callParts", "calls:1:callParts", "calls:2:callParts", "calls:3:callParts", "calls:4:callParts", "calls:5:callParts", "calls:6:callParts", "calls:8:callParts", "calls:9:callParts",
+        "calls:0:callParts", "calls:1:callParts", "calls:2:callParts", "calls:3:callParts", "calls:4:callParts", "calls:5:callParts", "calls:6:callParts", "calls:8:callParts", "calls:9:callParts", "calls:10:callParts",
         "builtins:1:builtin", "builtins:2:builtin", "builtins:3:builtin", "builtins:4:builtin", "builtins:5:builtin", "builtins:6:builtin",
         "builtins:7:builtin", "builtins:8:builtin", "builtins:9:builtin", "builtins:10:builtin", "builtins:11:builtin", "builtins:12:builtin",
         "builtins:14:builtin", "builtins:15:builtin", "builtins:13:switch", "builtins:16:builtin", "builtins:17:builtin", "builtins:18:builtin", "builtins:19:builtin",
