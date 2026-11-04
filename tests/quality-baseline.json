@@ -1,6 +1,11 @@
 {
   "version": 1,
   "files": {
+    "selfhost/emitter/cprint/builtin.byn": {
+      "mutation": null,
+      "coverage": 0.9864,
+      "branches": 0.9922
+    },
     "selfhost/emitter/cprint/common.byn": {
       "mutation": null,
       "coverage": 1.0,
@@ -23,18 +28,38 @@
     },
     "selfhost/emitter/lower.byn": {
       "mutation": null,
-      "coverage": 0.9691,
-      "branches": 0.9516
+      "coverage": 1.0,
+      "branches": 0.989
+    },
+    "selfhost/emitter/lowerexpr.byn": {
+      "mutation": null,
+      "coverage": 0.9167,
+      "branches": 0.9017
+    },
+    "selfhost/emitter/lowerpat.byn": {
+      "mutation": null,
+      "coverage": 0.9921,
+      "branches": 0.9688
     },
     "selfhost/emitter/lowerstmt.byn": {
       "mutation": null,
-      "coverage": 0.875,
-      "branches": 0.6768
+      "coverage": 0.9614,
+      "branches": 0.8476
     },
     "selfhost/emitter/main.byn": {
       "mutation": null,
       "coverage": 1.0,
       "branches": 1.0
+    },
+    "selfhost/parser/recover.byn": {
+      "mutation": null,
+      "coverage": 0.8652,
+      "branches": 0.7566
+    },
+    "selfhost/parser/stmts.byn": {
+      "mutation": null,
+      "coverage": 0.9206,
+      "branches": 0.767
     },
     "selfhost/semantics/binder2.byn": {
       "mutation": null,

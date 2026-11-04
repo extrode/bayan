@@ -149,7 +149,7 @@ TextSpan expectName(ref Parser p, string what = "a name") {
         let text = p.textOf(token)
         // SPEC §2.4: a C# primitive name is a type, never a declared name; a member after `.` only refers to one.
         // Not through `report`: the name parsed in full, so no recovery is needed.
-        if isCSharpPrimitive(text) && p.kindAt(p.pos - 2) != .dot {
+        if isCSharpPrimitive(text) && (p.pos < 2 || p.kindAt(p.pos - 2) != .dot) {
             p.lexed.diagnostics.append(Diagnostic {
                 code: codeText(.reservedKeyword),
                 span: spanOf(token),
