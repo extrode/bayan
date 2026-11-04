@@ -71,7 +71,7 @@ public static class SelfhostDriverHarness
             let symbols = semantics.t26Symbols(ascii)
             var reported = List<semantics.T26Reported>()
             var ok = false
-            let c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+            let c = semantics.t26Compile(o, by: symbols, to: ref reported, through: ref ok)
             Io.stdout.write($"{refuseLibrary(c, by: args[2])}\n")
             return 0
         }
