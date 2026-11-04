@@ -1,6 +1,6 @@
 # Bayān Style — Proposal
 
-Status: decided (all items in §5 settled; C21 revised 2026-11-04). Layout rules land in `bayan format` and docs/bayan-style.md in round 4; no grammar revision is needed. One open question in §3.4.
+Status: decided (all items in §5 settled; C21 revised 2026-11-04). Layout rules land in `bayan format` and docs/bayan-style.md in round 4; no grammar revision is needed.
 
 ---
 
@@ -55,12 +55,11 @@ public Money quote(Cart cart, for Customer customer) expects cart.lines.length >
 ```
 
 ```cs
-// After (multi-clause header layout: §3.4 open question)
+// After
 public Money quote(Cart cart, for Customer customer)
-    expects cart.lines.length > 0
-    uses db
-    fails QuoteError
-{
+        expects cart.lines.length > 0
+        uses db
+        fails QuoteError {
     let rates = taxRates.forRegion(customer.region) ?? fail .noTaxRegion
     var subtotal = Money.zero(cart.currency)
 
@@ -170,7 +169,7 @@ Booking book(
 }
 ```
 
-**Open question (C21 follow-up):** a header whose clauses do not fit on one line. Each clause then gets its own line, and an indented `fails QuoteError {` looks like an indented `let rates = …` below it. The same holds for a wrapped condition's last line. Candidates: indent header continuations two levels (8) so the body's one level stands apart (PEP 8's hanging indent), or accept the likeness because `conditions.named` and short clause lists make it rare.
+- **Header continuations indent two levels (8)** (user decision 2026-11-04, C21 follow-up). When the clauses do not fit on the header line, each clause gets its own line at two levels and the last one ends with ` {`. A wrapped condition's continuation lines take the same two levels. The body stays at one level, so `fails QuoteError {` never lines up with the first statement below it (PEP 8's hanging indent). This is a formatter rule, not a knob. See the §3.1 example.
 
 ```cs
 // Before
@@ -182,9 +181,9 @@ if order is .paid and order.total >= freeShippingThreshold and customer.region.s
 ```cs
 // After (formatter)
 if order is .paid
-    and order.total >= freeShippingThreshold
-    and customer.region.shipsFree
-    and not order.hasOversizedItems {
+        and order.total >= freeShippingThreshold
+        and customer.region.shipsFree
+        and not order.hasOversizedItems {
     order.shipping = .free
 }
 ```
@@ -240,7 +239,7 @@ let shipment = carrier.book(
 Rules:
 - If the list fits, it stays on one line. Otherwise there is one item per line, a trailing comma, and the closing bracket on its own line. This is the one list rule: arguments, literals and parameter lists alike (§3.4 for `) {`).
 - **Trailing comma as intent** (Black's "magic trailing comma"): if the author writes a trailing comma, the list stays one-per-line even when it would fit. This is how an author keeps a short particle call vertical.
-- Continuation indent is always one level (4). Nothing aligns to an opening parenthesis, since that alignment shifts every line on a rename.
+- Continuation indent is one level (4), except header clauses and wrapped conditions, which take two (§3.4). Nothing aligns to an opening parenthesis, since that alignment shifts every line on a rename.
 
 ### 3.7 Top-level layout
 

@@ -86,7 +86,7 @@ Each of these was accepted "for now" or carries a known risk. The self-hosted co
 | Typestate scope | Used for plain data, adding ceremony | Count of `states` blocks that are not lifecycles | After Sūq runs |
 | `f64` text form: `1.0` prints as `1` (and `1e21`, where Python writes `1e+21`) | A float written to JSON or a report reads as an integer; readers that care about the type see it change | Spec 015 S8: quality reports compare floats as numbers after the port | Round 4 |
 
-Interop is already decided and is not reopened here: C is the only live interop (`std.c`), and C# code arrives through the one-time `bayan migrate cs` translator.
+Interop is already decided and is not reopened here: C is the only live interop (`std.c`), and C# reaches Bayān two ways: the zero-allocation subset compiles as Bayān (spec §25), and the rest goes through `bayan migrate cs`, a one-time translator, post-v1 (bayan-library-tiers.md §10).
 
 ## 4. Performance and efficiency
 
