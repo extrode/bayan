@@ -78,8 +78,7 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses allo
         case .continueStmt:
             let target = l.targets[c.bContinues[i].target]
             emitCleanups(ref c, through: ref l, at: target.depth, for: -1)
-            let label = target.continueLabel ?? panic("continue without a continue label")
-            emit(ref l, for: ltree.addLGoto(ref l.tree, from: T3LGoto { span: span, label: label }))
+            emit(ref l, for: ltree.addLGoto(ref l.tree, from: T3LGoto { span: span, label: target.continueLabel ?? "" }))
         case .ifStmt:
             lowerIf(ref c, through: ref l, for: s)
         case .whileStmt:
@@ -114,9 +113,9 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses allo
             lowerProvide(ref c, through: ref l, for: s)
         case .becomeStmt:
             lowerBecome(ref c, through: ref l, for: s)
-        // coverage-exempt: Q769 through 119
+        // coverage-exempt: Q769 through 118
         default:
-            panic("cannot lower this statement")
+            panic($"cannot lower {semantics.boundKind(s)}")
     }
 }
 
@@ -169,7 +168,7 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
             let stable = spill(ref c, through: ref l, for: index)
             target = semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[k].span, target: c.bIndexes[k].target, index: stable, fromEnd: c.bIndexes[k].fromEnd, type: c.bIndexes[k].type })
         }
-    // coverage-blocked: Q772 T5 lowerBuiltinCall through 182
+    // coverage-blocked: Q772 T5 lowerBuiltinCall through 181
     } else if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall
         && (c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet || c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapSlot)
         && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].arguments.length > 0 {
@@ -185,7 +184,7 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     // The old value is read before `v` runs, which may change or move the target.
     // `map[k] op= v` reads through the panicking index: only `slot` inserts a missing key.
     var current: BExpr = -1
-    // coverage-blocked: Q772 T5 lowerBuiltinCall through 194
+    // coverage-blocked: Q772 T5 lowerBuiltinCall through 193
     if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet {
         let k = i64(target & 0xFFFFFFFF)
         var arguments = List<BExpr>()
@@ -198,7 +197,7 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         current = spill(ref c, through: ref l, for: target)
     }
     let targetType = t2Type(in c, through: in l, for: target)
-    // coverage-blocked: Q772 T4 lowerCoalesce through 208
+    // coverage-blocked: Q772 T4 lowerCoalesce through 207
     if op == .coalesce {
         // `t ??= v` is `t = t ?? v`: `v` runs only when `t` is null.
         let right = semantics.addConversion(ref c, from: T3BConversion { span: span, operand: aValue, type: targetType, kind: .toOptional })
@@ -223,7 +222,7 @@ void lowerReturn(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     var value: BExpr = -1
     if result != -1 {
         value = lowerExpr(ref c, through: ref l, for: result)
-        // coverage-blocked: Q772 T4 lowerExpr through 230
+        // coverage-blocked: Q772 T4 lowerExpr through 229
         if isNeverExpr(value) { return }
         if semantics.isVoid(t2Type(in c, through: in l, for: value)) || isVoidExpr(value) {
             emitEffect(ref c, through: ref l, for: value)
@@ -275,7 +274,7 @@ void lowerIf(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         let message = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.string), value: Constant { kind: .text, text: "`if never` condition was true" } })
         var arguments = List<BExpr>()
         arguments.append(message)
-        let call = semantics.addCall(ref c, from: T3BCall { span: span, function: t3PanicFunction(in c), receiver: -1, arguments: move arguments, type: semantics.prim(.neverKind) })
+        let call = semantics.addCall(ref c, from: T3BCall { span: span, function: c.builtinPanic, receiver: -1, arguments: move arguments, type: semantics.prim(.neverKind) })
         let panicStmt = semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: call })
         l.scopes[l.scopes.length - 1].cleanups.append(.deferCleanup(panicStmt))
         lowerStatement(ref c, through: ref l, for: thenStmt)
@@ -292,15 +291,6 @@ void lowerIf(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     let thenBlock = block(ref c, at: semantics.nodeSpan(in c, for: thenStmt), for: move thenBody)
     let elseBlock: BStmt = elseStmt == -1 ? -1 : block(ref c, at: semantics.nodeSpan(in c, for: elseStmt), for: move otherwise)
     emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: condition, then: thenBlock, elseBranch: elseBlock }))
-}
-
-/// `_builtins.Panic`: the built-in `panic` function.
-FuncId t3PanicFunction(in Ctx c) {
-    for f in 0..c.functions.length {
-        if c.functions[f].builtin == .panic { return f }
-    }
-    // coverage-exempt: Q770
-    return -1
 }
 
 /// Lowerer.cs:556 `EnterLoop`: fresh break and continue labels for `target`.
@@ -685,7 +675,7 @@ void lowerSwitch(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     for k in 0..c.bSwitches[si].sections.length {
         let pattern = c.bSwitches[si].sections[k].pattern
         let sectionSpan = c.bSwitches[si].sections[k].span
-        // coverage-blocked: Q772 T4 lowerClaim through 719
+        // coverage-blocked: Q772 T4 lowerClaim through 709
         if pattern == -1 {
             fallback = k
             continue
@@ -758,7 +748,7 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             ops.append(indexTarget)
             ops.append(c.bIndexes[i].index)
             var lvalues = List<bool>()
-            // coverage-blocked: Q772 T4 lowerExpr through 767
+            // coverage-blocked: Q772 T4 lowerExpr through 757
             lvalues.append(arrayTarget && isLvalueShape(ref c, through: ref l, for: indexTarget))
             var parts = List<BExpr>()
             unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) {
@@ -767,7 +757,7 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             let target = arrayTarget && !isLvalue(in c, through: in l, for: parts[0]) ? spill(ref c, through: ref l, for: parts[0]) : parts[0]
             return semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[i].span, target: target, index: parts[1], fromEnd: c.bIndexes[i].fromEnd, type: c.bIndexes[i].type })
         case .builtinCall:
-            // coverage-blocked: Q772 T5 lowerBuiltinCall through 772
+            // coverage-blocked: Q772 T5 lowerBuiltinCall through 762
             if c.bBuiltinCalls[i].member == .mapIndexSet || c.bBuiltinCalls[i].member == .mapSlot {
                 return lowerBuiltinCall(ref c, through: ref l, for: e)
             }
