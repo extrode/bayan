@@ -347,7 +347,6 @@ public string unary(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.
 
 /// CEmitter.cs:2310 `BareCase`: an error case with fields written without its payload, under any conversions.
 bool bareCase(in Ctx c, for BExpr e) {
-    // coverage-blocked: Q811 T4 lowerExpr
     if ltree.isLowered(e) { return false }
     let i = i64(e & 0xFFFFFFFF)
     switch semantics.boundKind(e) {
