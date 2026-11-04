@@ -281,7 +281,7 @@ public sealed class SelfhostDriverT3Tests
     [Fact]
     public void AnUnwritableScratchDirectoryIsAToolchainProblem()
     {
-        // no-oracle: Q951 the C# writes into a cache directory it creates; no C# path writes into a missing directory
+        // no-oracle: Q955 the C# writes into a cache directory it creates; no C# path writes into a missing directory
         var bin = Bin("bin-unwritable", Recording, "cc");
         var missing = Path.Combine(Fresh("unwritable"), "no-such-dir");
         var (exit, _, err) = Start(Probe(), bin, ["compile", missing, "int main(void){return 0;}", "program", "safe", ""]);

@@ -171,7 +171,7 @@ struct ZigOrCc : ICCompiler {
         for i in 0..names.length {
             Io.writeFile(Path.combine(dir, names[i]), texts[i].bytes) catch return NativeBuild { errors: $"cannot write the build output ({dir})" }
         }
-        // coverage-exempt: Q951 `ccFindCompiler` has just started this program, so the second start fails only if it vanished in between
+        // coverage-exempt: Q955 `ccFindCompiler` has just started this program, so the second start fails only if it vanished in between
         let r = Io.run(compiler[0], args.span) catch return NativeBuild { errors: $"cannot run the C compiler `{compiler[0]}`" }
         if r.exitCode != 0 || !t1FileExists(output) {
             return NativeBuild { errors: $"C compiler failed (exit {r.exitCode}):\n{r.stdout}{r.stderr}", rejected: true }
