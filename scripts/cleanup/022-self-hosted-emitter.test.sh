@@ -17,7 +17,7 @@ feat="feat/011-self-hosted-emitter"
 printf 'bin/\nobj/\n' > .gitignore
 mkdir -p tmp/011 && echo x > tmp/011/tracked.txt
 g add -A && g commit -q -m base && g branch main
-for b in "$feat" chore/worker-011-a docs/review-small-rows fix/011-guard-unreported-file chore/worker-011-ign chore/011-merge-dev docs/011-task-line-files docs/011-t13-landed chore/011-cleanup-branches dev-keep; do g branch "$b"; done
+for b in "$feat" chore/worker-011-a docs/review-small-rows fix/011-guard-unreported-file chore/worker-011-ign chore/011-merge-dev docs/011-task-line-files docs/011-t13-landed chore/011-cleanup-branches docs/011-t14-r7-scope docs/011-t14-inventory-known-failures fix/011-mutate-batch-emitter chore/011-cleanup-t14 dev-keep; do g branch "$b"; done
 g switch -q fix/011-guard-unreported-file && g commit -q --allow-empty -m u && g switch -q dev
 g worktree add -q .worktrees/ign chore/worker-011-ign
 g worktree add -q .worktrees/dev-merge chore/011-merge-dev
@@ -43,7 +43,7 @@ git branch -q -f "$feat" dev
 before="$(state)"
 out="$(bash "$script")" || fail "dry run exited non-zero"
 echo "$out" | grep -q "^would: git branch -d chore/worker-011-a$" || fail "merged branch not listed"
-for b in docs/011-task-line-files docs/011-t13-landed chore/011-cleanup-branches; do echo "$out" | grep -q "^would: git branch -d $b$" || fail "011 side branch $b not listed"; done
+for b in docs/011-task-line-files docs/011-t13-landed chore/011-cleanup-branches docs/011-t14-r7-scope docs/011-t14-inventory-known-failures fix/011-mutate-batch-emitter chore/011-cleanup-t14; do echo "$out" | grep -q "^would: git branch -d $b$" || fail "011 side branch $b not listed"; done
 echo "$out" | grep -q "^would: git branch -d dev-keep$" && fail "a non-011 branch listed"
 echo "$out" | grep -q "^keep:  .worktrees/ign (holds ignored build output" || fail "ignored-output worktree not left"
 [ "$before" = "$(state)" ] || fail "dry run changed something"
