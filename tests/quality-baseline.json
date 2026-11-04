@@ -21,10 +21,20 @@
       "coverage": 0.9957,
       "branches": 0.9902
     },
+    "selfhost/emitter/cprint/own.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
     "selfhost/emitter/cprint/program.byn": {
       "mutation": null,
       "coverage": 0.9655,
       "branches": 0.9804
+    },
+    "selfhost/emitter/cprint/types.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 0.9881
     },
     "selfhost/emitter/lower.byn": {
       "mutation": null,
@@ -50,6 +60,16 @@
       "mutation": null,
       "coverage": 1.0,
       "branches": 1.0
+    },
+    "selfhost/parser/recover.byn": {
+      "mutation": null,
+      "coverage": 0.8652,
+      "branches": 0.7566
+    },
+    "selfhost/parser/stmts.byn": {
+      "mutation": null,
+      "coverage": 0.9206,
+      "branches": 0.767
     },
     "selfhost/semantics/binder2.byn": {
       "mutation": null,
