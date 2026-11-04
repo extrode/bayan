@@ -1,6 +1,16 @@
 {
   "version": 1,
   "files": {
+    "selfhost/driver/dctx.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": null
+    },
+    "selfhost/driver/main.byn": {
+      "mutation": null,
+      "coverage": 0.9896,
+      "branches": 1.0
+    },
     "selfhost/emitter/cprint/builtin.byn": {
       "mutation": null,
       "coverage": 0.9864,
