@@ -345,7 +345,6 @@ void lowerBecome(ref Ctx c, through ref LCtx l, for BStmt b) uses alloc {
     var payload = List<BExpr>()
     for p in c.bBecomes[i].payload { payload.append(p) }
     var lowered = List<BExpr>()
-    // coverage-blocked: Q768 T4 lowerExpr
     unless operands(ref c, through: ref l, for: in payload, as: in List<bool>(), to: ref lowered) { return }
     var values = List<BExpr>()
     for v in lowered { values.append(semantics.exprConstant(in c, for: v) is null ? spill(ref c, through: ref l, for: v) : v) }
@@ -390,14 +389,12 @@ bool operands(ref Ctx c, through ref LCtx l, for in List<BExpr> ops, as in List<
     }
     var barrier: i64 = -1
     for i in 0..n {
-        // coverage-blocked: Q768 T4 lowerExpr
         if pres[i].length > 0 { barrier = i }
     }
     var effects = List<i64>()
     for i in 0..n {
         if hasEffects(in c, through: in l, for: values[i]) { effects.append(i) }
     }
-    // coverage-blocked: Q768 T4 lowerExpr
     if effects.length >= 2 && effects[effects.length - 1] > barrier { barrier = effects[effects.length - 1] }
     // An operand moving a local a later operand reads happens first, as its own statement, so the read sees the local moved.
     var movedFirst = List<bool>()
@@ -409,23 +406,20 @@ bool operands(ref Ctx c, through ref LCtx l, for in List<BExpr> ops, as in List<
                 break
             }
             for s in pres[j] {
-                // coverage-blocked: Q768 T4 lowerExpr through 467
                 if anyNode(in c, through: in l, for: s, by: .readsLocalMovedBy(values[i])) {
                     moved = true
                     break
                 }
             }
-            // coverage-blocked: Q768 T4 lowerExpr
             if moved { break }
         }
         movedFirst.append(moved)
     }
     for i in 0..n {
-        // coverage-blocked: Q768 T4 lowerExpr through 478
         for s in pres[i] { emit(ref l, for: s) }
         if isNeverExpr(values[i]) { return false }
         let lvalue = i < lvalues.length && lvalues[i]
-        // coverage-blocked: Q768 T4 lowerExpr
+        // coverage-blocked: Q774 T5 lowerCallParts
         if (i < barrier && !isTrivial(in c, through: in l, for: values[i]) || movedFirst[i]) && !lvalue && !isVoidExpr(values[i]) {
             values[i] = spill(ref c, through: ref l, for: values[i])
         }
