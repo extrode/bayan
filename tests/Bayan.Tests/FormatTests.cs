@@ -442,6 +442,12 @@ public sealed class FormatTests
         File.SetUnixFileMode(locked, UnixFileMode.None);
         try
         {
+            try
+            {
+                File.ReadAllBytes(locked);
+                return; // root reads it anyway
+            }
+            catch (UnauthorizedAccessException) { }
             var (exit, _, stderr) = Run("format", dir);
             Assert.Equal(CliApp.ExitFailure, exit);
             Assert.Contains("a.byn", stderr);

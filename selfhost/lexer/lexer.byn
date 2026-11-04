@@ -688,16 +688,18 @@ public struct LexResult {
 
     void scanDigits(ref this, DigitKind digits, from i64 literalStart) {
         let first = pos
-        var lastWasUnderscore = false
+        var digitsEnd = first
         while pos < source.bytes.length && (isDigitOf(digits, for: source.bytes[pos]) || source.bytes[pos] == '_') {
-            lastWasUnderscore = source.bytes[pos] == '_'
+            if source.bytes[pos] != '_' { digitsEnd = pos + 1 }
             pos += 1
         }
-        if pos == first && digits != .decimal {
+        // Only underscores after a prefix is still no digits; deleting them would not help. Trailing underscores are
+        // reported and deleted as one run, so the fix leaves a valid literal.
+        if digitsEnd == first && digits != .decimal {
             let prefix = digits == .hex ? "0x" : "0b"
             report(.invalidNumber, at: TextSpan.fromBounds(literalStart, until: pos), arg0: $"expected digits after `{prefix}`")
-        } else if lastWasUnderscore {
-            reportFix(.invalidNumber, at: TextSpan { start: pos - 1, length: 1 }, by: "", arg0: "`_` must sit between digits")
+        } else if digitsEnd < pos {
+            reportFix(.invalidNumber, at: TextSpan.fromBounds(digitsEnd, until: pos), by: "", arg0: "`_` must sit between digits")
         }
     }
 

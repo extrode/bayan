@@ -398,6 +398,18 @@ public sealed class ParserTests
         Assert.Equal(DeferKind.Always, defer.Kind);
     }
 
+    /// <summary>Inputs that once threw: a C# primitive name as the file's first token, a braceless body cut off by the end of the
+    /// file, and an unclosed condition group whose end lands on the token buffer's last slot.</summary>
+    [Theory]
+    [InlineData("int()fails")]
+    [InlineData("int(\"\"{])fails")]
+    [InlineData("if(/*")]
+    [InlineData("if(\u0017")]
+    [InlineData("while(\u0017")]
+    [InlineData("unless ((((((((((((((((((()")]
+    public void TruncatedInputReportsWithoutThrowing(string text) =>
+        Assert.Contains(Parse(text).Diagnostics, d => d.IsError);
+
     [Fact]
     public void EveryTokenSequenceTerminates()
     {
