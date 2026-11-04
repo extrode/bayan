@@ -90,7 +90,7 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Enum(ref c, from: alignSource, by: m)
     let _ = t9Enum(ref c, from: comparisonSource, by: m)
     let _ = t9Make(ref c, by: m, for: "print", as: .print, to: prim(.void), from: t9Two("text", as: prim(.string), for: "to", to: enumTypeOf(stream)), at: "print")
-    let _ = t9Make(ref c, by: m, for: "panic", as: .panic, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "panic")
+    c.builtinPanic = t9Make(ref c, by: m, for: "panic", as: .panic, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "panic")
     let _ = t9Make(ref c, by: m, for: "todo", as: .todo, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "todo")
 
     let logLevel = t9Enum(ref c, from: logLevelSource, by: m)
