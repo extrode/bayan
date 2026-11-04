@@ -14,8 +14,9 @@
 # unticked in <tasks.md> and is not the task under guard (<T<n>>): every marker in <dir>'s .byn files naming the guarded task or a
 # ticked one is a FAIL item, so the stub's owner covers the lines and removes the marker before it lands, and integration sees none.
 # Without the three optional arguments a coverage-blocked marker is a FAIL item.
-# A file outside <dir> that exists at <merge-base> is another spec's port (an 011 task editing selfhost/semantics): only the
-# lines the work tree adds or changes in it are gated, since the rest of its functions is the owning spec's coverage (Q871). The other functions of the file are one info line (covered/total), never a FAIL: the task's --filter tests are
+# A file under another row's bydir in scripts/selfhost/specs.tsv (read beside this script) that exists at <merge-base> is another
+# spec's port (an 011 task editing selfhost/semantics): only the
+# lines the work tree adds or changes in it are gated, since the rest of its functions is the owning spec's coverage (Q871). A file outside every bydir (selfhost/parser) or inside <dir> keeps the touched-function rule. The other functions of the file are one info line (covered/total), never a FAIL: the task's --filter tests are
 # not meant to cover other tasks' functions. A source file absent from the work tree has no markers. An unreadable report, function or source file, or a failing git, exits 1 naming it.
 import json, os, re, subprocess, sys
 
@@ -107,6 +108,13 @@ def load(name):
         sys.exit(f'coverage-gate.py: {name} is unreadable: {e}')
 
 
+def foreign_dirs(root):
+    """The bydirs of the specs.tsv rows other than root's (specs.tsv sits beside this script)."""
+    rows = [l.split('\t') for l in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'specs.tsv'), encoding='utf-8').read().split('\n') if l]
+    col = rows[0].index('bydir')
+    return [os.path.normpath(r[col]) for r in rows[1:] if os.path.normpath(r[col]) != os.path.normpath(root)]
+
+
 def main():
     base, report, functions = sys.argv[1], load(sys.argv[2]), load(sys.argv[3])
     tasks, task, root = (sys.argv[4:7] + [None] * 3)[:3]
@@ -115,6 +123,7 @@ def main():
         if open_ is not None:
             for b in stale(root, open_, task): print('- ' + b)
         files, spans = report['files'], functions['files']
+        others = foreign_dirs(root) if root is not None else []
         for f in files:
             p = os.path.relpath(f['path'])
             lines = changed(base, p)
@@ -122,7 +131,7 @@ def main():
             skip, blocked, bad = exempt(p, open_=open_, task=task)
             for b in bad: print('- ' + b)
             touched = [fn for fn in fns if lines is None or any(fn['span'][0] <= n <= fn['span'][1] for n in lines)]
-            foreign = root is not None and lines is not None and not (p + '/').startswith(os.path.normpath(root) + '/')
+            foreign = root is not None and lines is not None and any((p + '/').startswith(d + '/') for d in others)
             if foreign: print('coverage: %s: outside %s, so only its changed lines are gated (Q871)' % (p, root))
 
             def gated(n):
