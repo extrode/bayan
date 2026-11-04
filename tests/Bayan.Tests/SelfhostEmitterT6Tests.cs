@@ -114,6 +114,14 @@ public sealed class SelfhostEmitterT6Tests
             values.append(t6Int(0, by: 1))
             values.append(t6Int(0x8000000000000000, by: 0))
             values.append(t6Int(0, by: 0x100000000))
+            values.append(t6Int(12345, by: 1))
+            values.append(t6Int(0xFFFFFFFFFFFFCFC7, by: 0xFFFFFFFFFFFFFFFE))
+            values.append(t6Int(0xFFFFFFFFFFFFFFFF, by: 0x7FFFFFFFFFFFFFFF))
+            values.append(t6Int(1, by: 0x8000000000000000))
+            values.append(t6Int(0x800, by: 1))
+            values.append(t6Int(0x1800, by: 1))
+            values.append(t6Int(0x801, by: 1))
+            values.append(t6Int(0xFFFFFFFFFFFFE800, by: 0xFFFFFFFFFFFFFFFE))
             values.append(Constant { kind: .flag, flag: true })
             values.append(Constant { kind: .flag, flag: false })
             values.append(Constant { kind: .text, text: "a\"b\\c?\n" })
@@ -185,6 +193,9 @@ public sealed class SelfhostEmitterT6Tests
             cc.staticOrder.append("st_b")
             let h = cprint.helper(ref cc, for: "h1", from: "void h1(void)", as: "void h1(void) {\n}\n#line generated\nint x;\n")
             cc.symbolTexts.append("zed")
+            let wide = cprint.symbolLiteral(ref cc, for: "～")
+            let smile = cprint.symbolLiteral(ref cc, for: "😀")
+            let accent = cprint.symbolLiteral(ref cc, for: "é")
             if !cc.ownershipChecks { let blank = cprint.symbolLiteral(ref cc, for: "") }
             cc.statics["st_c"] = $"{rune(1)}x {rune(1)}7x {rune(1)}12\n"
             cc.staticOrder.append("st_c")
@@ -271,8 +282,19 @@ public sealed class SelfhostEmitterT6Tests
         return e;
     }
 
+    /// <summary>The lines of <paramref name="text"/>, empty ones included, so blank-line placement is compared.</summary>
+    private static List<string> Lines(string text) => text.Split('\n').ToList();
+
     /// <summary>The lines <see cref="SelfhostSemanticsHarness.Sections"/> keeps of <paramref name="text"/>.</summary>
-    private static List<string> Lines(string text) => text.Split('\n').Where(l => l.Length > 0).ToList();
+    private static List<string> SectionLines(string text) => Lines(text).Where(l => l.Length > 0).ToList();
+
+    /// <summary>The generated main's whole stdout, split as <see cref="Lines"/> splits the oracle (nothing dropped).</summary>
+    private static Dictionary<string, List<string>> RawMode(string mode, string path, string flag = "")
+    {
+        var (exit, stdout, stderr) = Run(mode, path, flag);
+        Assert.True(exit == 0 && stderr.Length == 0, $"generated main exited {exit}:\n{stderr}");
+        return new() { [""] = Lines(stdout.Replace("\r\n", "\n")) };
+    }
 
     // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -355,7 +377,8 @@ public sealed class SelfhostEmitterT6Tests
             var c = Compile(path);
             var p = Lowerer.Lower(c);
             var e = WithFlag(p, flag);
-            SelfhostSemanticsHarness.AssertSection(RunMode(mode, path, flag), mode, Lines(oracle(c, p, e)));
+            if (mode == "main") SelfhostSemanticsHarness.AssertSection(RawMode(mode, path, flag), "", Lines("== main\n" + oracle(c, p, e)));
+            else SelfhostSemanticsHarness.AssertSection(RunMode(mode, path, flag), mode, SectionLines(oracle(c, p, e)));
         });
 
     // ── Static data and literals (CEmitter.cs 1047-1147) ─────────────────────────
@@ -393,6 +416,8 @@ public sealed class SelfhostEmitterT6Tests
         var values = new List<object>
         {
             (Int128)5, (Int128)(-5), (Int128)long.MinValue, (Int128)ulong.MaxValue, (Int128)1 << 64, (Int128)long.MaxValue + 1, (Int128)1 << 96,
+            ((Int128)1 << 64) + 12345, -(((Int128)1 << 64) + 12345), Int128.MaxValue, -Int128.MaxValue,
+            ((Int128)1 << 64) + 0x800, ((Int128)1 << 64) + 0x1800, ((Int128)1 << 64) + 0x801, -(((Int128)1 << 64) + 0x1800),
             true, false, "a\"b\\c?\n", new System.Text.Rune(233),
         };
         foreach (var d in new[] { 0.0, 0.001, 0.5, 5.0, 1e300, 1e-7, 123456789012345678.0, 0.1, -2.5, 100.0, 1.5e16, double.NaN, double.PositiveInfinity, double.NegativeInfinity })
@@ -468,7 +493,7 @@ public sealed class SelfhostEmitterT6Tests
         var p = Lowerer.Lower(c);
         var e = NewEmitter(p);
         SetField(e, "_packageRoot", sub);
-        var expected = Lines(NamesOracle(c, p, e));
+        var expected = SectionLines(NamesOracle(c, p, e));
         Assert.Contains(expected, l => l.EndsWith(" a.byn", StringComparison.Ordinal));
         SelfhostSemanticsHarness.AssertSection(RunMode("names", path, "root:" + sub), "names", expected);
     });
@@ -520,6 +545,10 @@ public sealed class SelfhostEmitterT6Tests
         order.Add("st_b");
         e.Helper("h1", "void h1(void)", () => "void h1(void) {\n}\n#line generated\nint x;\n");
         ((List<string>)Field(e, "_symbolTexts")).Add("zed");
+        // U+FF5E (UTF-8 EF BD 9E) sorts after U+1F600 (F0 9F 98 80) by code unit and before it by bytes.
+        e.SymbolLiteral("\uFF5E");
+        e.SymbolLiteral("\U0001F600");
+        e.SymbolLiteral("é");
         if (!e.OwnershipChecks) e.SymbolLiteral("");
         statics["st_c"] = "\u0001x \u00017x \u000112\n";
         order.Add("st_c");
@@ -554,12 +583,14 @@ public sealed class SelfhostEmitterT6Tests
     [InlineData("full", "")]
     [InlineData("full", "debug")]
     [InlineData("full", "hashes")]
+    [InlineData("full", "symbols")]
     [InlineData("library", "")]
     [InlineData("library", "noerrors")]
+    [InlineData("library", "symbols")]
     public void Run_SectionsAndSubstitutionMatchCSharp(string which, string flag) => WithFixture(which == "full" ? Full : Library, path =>
     {
         var c = Compile(path);
-        SelfhostSemanticsHarness.AssertSection(RunMode("run", path, flag), "", Lines(RunWithoutTypes(c, flag, prepare: true)));
+        SelfhostSemanticsHarness.AssertSection(RawMode("run", path, flag), "", Lines(RunWithoutTypes(c, flag, prepare: true)));
     });
 
     [Theory]
@@ -568,6 +599,6 @@ public sealed class SelfhostEmitterT6Tests
     public void Emit_OfAnEmptyProgramMatchesCSharp(string which, string flag) => WithFixture(which == "full" ? Full : Library, path =>
     {
         var c = Compile(path);
-        SelfhostSemanticsHarness.AssertSection(RunMode("emit", path, flag), "", Lines(RunWithoutTypes(c, flag, prepare: false)));
+        SelfhostSemanticsHarness.AssertSection(RawMode("emit", path, flag), "", Lines(RunWithoutTypes(c, flag, prepare: false)));
     });
 }

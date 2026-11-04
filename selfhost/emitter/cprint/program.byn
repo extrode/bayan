@@ -284,7 +284,6 @@ i64 t6IndexOf(in List<semantics.FuncId> fns, for semantics.FuncId f) {
     for i in 0..fns.length {
         if fns[i] == f { return i }
     }
-    // coverage-exempt: Q787
     return -1
 }
 
