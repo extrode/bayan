@@ -101,6 +101,11 @@ List<string> ccFlags(string mode, for string? triple) {
     return flags
 }
 
+/// Whether the host is Windows (C#'s `Targets.Host` starting with `windows-`, Toolchain.cs:189): no OS builtin, so the separator `Path.combine` joins with says.
+bool ccHostIsWindows() uses alloc {
+    return Path.combine("a", "b") == "a\\b"
+}
+
 /// Toolchain.cs:284-290: the arguments after the compiler's own (`compiler[1..]`), for scratch files in `dir`. `target` is empty for the host.
 List<string> ccArguments(in List<string> compiler, for string dir, to string output, by string mode, through string target) {
     var args = List<string>()
@@ -118,7 +123,8 @@ List<string> ccArguments(in List<string> compiler, for string dir, to string out
     args.append("-o")
     args.append(output)
     // `CommandLineToArgvW` (program arguments) is in shell32.
-    args.append(target.startsWith("windows") ? "-lshell32" : "-lm")
+    // coverage-exempt: Q955 the host-is-Windows operand is true only on a Windows machine; `HostIsWindowsAsTargetsHost` compares `ccHostIsWindows` there
+    args.append(target.startsWith("windows") || (target == "" && ccHostIsWindows()) ? "-lshell32" : "-lm")
     return args
 }
 

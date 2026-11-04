@@ -22,6 +22,10 @@ public sealed class SelfhostDriverT3Tests
                 Io.stdout.write($"{targetTriple(args[1]) ?? "null"} {targetExecutableName("tally", for: args[1])}\n")
                 return 0
             }
+            if args[0] == "host" {
+                Io.stdout.write($"{ccHostIsWindows()}\n")
+                return 0
+            }
             if args[0] == "refusal" {
                 var compiler = List<string>()
                 for i in 2..args.length { compiler.append(args[i]) }
@@ -332,5 +336,13 @@ public sealed class SelfhostDriverT3Tests
         var (exit, stdout, _) = Start(Probe(), Fresh("bin-refusal"), ["refusal", target == Targets.Host ? "wasm32" : target, .. compiler.Split(' ')]);
         Assert.Equal(0, exit);
         SelfhostEmitterHarness.AssertSame($"refusal for {target} with {compiler}", expected.Errors + "\n", stdout);
+    }
+
+    [Fact]
+    public void HostIsWindowsAsTargetsHost()
+    {
+        var (exit, stdout, _) = Start(Probe(), Fresh("bin-host"), ["host"]);
+        Assert.Equal(0, exit);
+        Assert.Equal((Targets.Host ?? "").StartsWith("windows-", StringComparison.Ordinal) ? "true\n" : "false\n", stdout);
     }
 }
