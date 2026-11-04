@@ -416,6 +416,156 @@ public sealed class SelfhostEmitterT3Tests
         void main() { }
         """;
 
+    private const string More = """
+        union error E {
+            bad
+        }
+
+        interface IC {
+            void bump(ref this)
+            i64 n
+        }
+
+        struct C : IC {
+            i64 n
+            void bump(ref this) {
+                n += 1
+            }
+        }
+
+        @positional
+        struct Pt {
+            i64 x
+            i64 y
+        }
+
+        struct Box {
+            (i64 a, i64 b) pair
+            i64 total
+            states {
+                open
+                done(i64 final)
+            }
+            void finish(ref this is .open, i64 v) becomes .done {
+                become .done(v)
+            }
+        }
+
+        struct Cn {
+            i64 v
+            i64 w = 7
+
+            Cn(i64 n) {
+                v = n
+            }
+        }
+
+        E mk() { return .bad }
+
+        void declared(i64 n) {
+            var x: i64
+            x = n
+            using let xs = List<i64>()
+        }
+
+        void bare(i64 n) {
+            if n == 1 { return }
+        }
+
+        i64 viaDefer(i64 a, by i64 b) {
+            var r = 0
+            defer r = 1
+            return a + b
+        }
+
+        void more(i64 n, through ref (i64 a, i64 b) t, for string s, to ref Pt pt) {
+            var r = 0
+            r *= n + 1
+            t.a += n
+            for b in s.bytes { r = 1 }
+            for l in s.lines { r = 2 }
+            pt.x = n
+        }
+
+        void items(List<i64> xs, to List<C> cs, through Span<C> w) {
+            for x: i64? in xs { }
+            for x: dyn ref IC in w { x.bump() }
+        }
+
+        struct Cs : IIndexable {
+            type Item = C
+            i64 count => 1
+            C get(i64 index) => C { n: index }
+        }
+
+        void items2(Cs cs, by ReadOnlySpan<C> r) {
+            for x: dyn ref IC in cs { }
+            for x: dyn ref readonly IC in r { }
+        }
+
+        i64 id(i64 n) => n
+
+        void switched(i64 n) {
+            var r = 0
+            switch id(n) {
+                default:
+                    r = 1
+            }
+        }
+
+        void hooks() {
+            defer panicking (p) print("p")
+        }
+
+        void hooks2(Panic p) { }
+
+        void main() {
+            Panic.handler = hooks2
+        }
+        """;
+
+    private const string Rvalues = """
+        struct Digits : IIndexable {
+            type Item = i64
+            i64 count => 3
+            i64 get(i64 index) => index * 10
+        }
+
+        struct Countdown : IEnumerator {
+            type Item = i64
+            i64 left
+            bool moveNext(ref this) {
+                left -= 1
+                return left >= 0
+            }
+            i64 current => left
+        }
+
+        struct Holder {
+            ((i64 a, i64 b) p, i64 c) t
+        }
+
+        Digits mkDigits() { return Digits {} }
+        Countdown mkCount() { return Countdown { left: 3 } }
+        List<i64> mkList() {
+            var l = List<i64>()
+            return l
+        }
+        i64[2] mkArr() => [1, 2]
+        void nothing() { }
+
+        void rvalues(i64 n, through ref Holder h) {
+            var t = 0
+            for x in mkDigits() { t = x }
+            for x in mkCount() { t = x }
+            for x in mkList() { t = x }
+            for x in mkArr() { t = x }
+            h.t.p.a += n
+        }
+
+        void main() { }
+        """;
+
     [Theory]
     [InlineData(nameof(Users), Users)]
     [InlineData(nameof(Loops), Loops)]
@@ -423,6 +573,8 @@ public sealed class SelfhostEmitterT3Tests
     [InlineData(nameof(Branches), Branches)]
     [InlineData(nameof(Cleanups), Cleanups)]
     [InlineData(nameof(Places), Places)]
+    [InlineData(nameof(More), More)]
+    [InlineData(nameof(Rvalues), Rvalues)]
     public void Statements_MatchCSharp(string name, string source)
     {
         Assert.NotEmpty(name);
