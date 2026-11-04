@@ -1,6 +1,11 @@
 {
   "version": 1,
   "files": {
+    "selfhost/driver/commands.byn": {
+      "mutation": null,
+      "coverage": 0.9643,
+      "branches": 0.9643
+    },
     "selfhost/driver/dctx.byn": {
       "mutation": null,
       "coverage": 1.0,
@@ -96,6 +101,11 @@
       "coverage": 1.0,
       "branches": 1.0
     },
+    "selfhost/lexer/main.byn": {
+      "mutation": null,
+      "coverage": 0.0678,
+      "branches": 0.0167
+    },
     "selfhost/parser/decls.byn": {
       "mutation": null,
       "coverage": 0.9659,
@@ -105,6 +115,11 @@
       "mutation": null,
       "coverage": 0.9655,
       "branches": 0.7863
+    },
+    "selfhost/parser/main.byn": {
+      "mutation": null,
+      "coverage": 0.1333,
+      "branches": 0.1429
     },
     "selfhost/parser/parser.byn": {
       "mutation": null,
@@ -216,6 +231,11 @@
       "coverage": 0.8576,
       "branches": 0.7886
     },
+    "selfhost/semantics/json.byn": {
+      "mutation": null,
+      "coverage": 0.875,
+      "branches": 0.6667
+    },
     "selfhost/semantics/ownership.byn": {
       "mutation": null,
       "coverage": 0.9429,
@@ -240,6 +260,11 @@
       "mutation": null,
       "coverage": 0.6651,
       "branches": 0.6406
+    },
+    "selfhost/semantics/typed.byn": {
+      "mutation": null,
+      "coverage": 0.8188,
+      "branches": 0.7317
     },
     "selfhost/semantics/types.byn": {
       "mutation": null,
