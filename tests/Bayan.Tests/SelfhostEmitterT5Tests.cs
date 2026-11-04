@@ -12,7 +12,7 @@ using Bayan.Syntax.Text;
 namespace Bayan.Tests;
 
 /// <summary>
-/// 011 T5: <c>selfhost/emitter/lowerassert.byn</c> (Lowerer.cs 1376-1728 but <c>Assert</c>, which waits on T21) and
+/// 011 T5: <c>selfhost/emitter/lowerassert.byn</c> (Lowerer.cs 1376-1728) and
 /// <c>powerassert.byn</c> (PowerAssert.cs 1-78) against the C# as an in-process oracle. The emitter's top-level files but
 /// <c>main.byn</c> are built with a generated <c>main.byn</c> that prints a shape of what the ported functions return and
 /// emit, by mode; the C# prints the same shape of what <c>FunctionLowerer</c> returns and emits.
@@ -178,6 +178,7 @@ public sealed class SelfhostEmitterT5Tests
                     case .assignExpr: return $"set({t5Shape(ref c, through: in l, for: l.tree.assignExprs[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: in l, for: l.tree.assignExprs[ltree.lIndexOf(e)].value)})"
                     case .sequence: return $"seq({t5List(ref c, through: in l, for: in l.tree.sequences[ltree.lIndexOf(e)].effects)}{t5Shape(ref c, through: in l, for: l.tree.sequences[ltree.lIndexOf(e)].value)})"
                     case .indexUnchecked: return $"unchecked({t5Shape(ref c, through: in l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: in l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].index)})"
+                    case .errorCode: return $"errcode({t5Shape(ref c, through: in l, for: l.tree.errorCodes[ltree.lIndexOf(e)].error)})"
                     default: return "lowered?"
                 }
             }
@@ -207,6 +208,8 @@ public sealed class SelfhostEmitterT5Tests
                     var arguments = List<BExpr>()
                     for a in c.bBuiltinCalls[i].arguments { arguments.append(a) }
                     return $"builtin({c.bBuiltinCalls[i].member};{t5Shape(ref c, through: in l, for: c.bBuiltinCalls[i].receiver)};{t5List(ref c, through: in l, for: in arguments)})"
+                case .unary: return $"unary({c.bUnaries[i].op == .notKeyword ? "not" : $"{c.bUnaries[i].op}"};{t5Shape(ref c, through: in l, for: c.bUnaries[i].operand)})"
+                case .errorVariant: return $"errvar({c.errorVariants[c.bErrorVariants[i].variant].name})"
                 case .binary: return $"binary({c.bBinaries[i].op};{t5Shape(ref c, through: in l, for: c.bBinaries[i].left)};{t5Shape(ref c, through: in l, for: c.bBinaries[i].right)})"
                 case .conversion: return $"conv({c.bConversions[i].kind};{t5Shape(ref c, through: in l, for: c.bConversions[i].operand)})"
                 case .conditional: return $"cond({t5Shape(ref c, through: in l, for: c.bConditionals[i].condition)};{t5Shape(ref c, through: in l, for: c.bConditionals[i].whenTrue)};{t5Shape(ref c, through: in l, for: c.bConditionals[i].whenFalse)})"
@@ -219,11 +222,26 @@ public sealed class SelfhostEmitterT5Tests
             }
         }
 
+        /// `text` with each line break written as `\n`.
+        string t5Escape(string text) uses alloc {
+            var sb = StrBuf()
+            var from: i64 = 0
+            for at in 0..text.length {
+                if text.bytes[at] == 10 {
+                    sb.append(text[from..at])
+                    sb.append("\\n")
+                    from = at + 1
+                }
+            }
+            sb.append(text[from..text.length])
+            return $"{sb.finish()}"
+        }
+
         string t5Parts(ref Ctx c, through in LCtx l, for in List<BInterpolationPart> parts) uses alloc {
             var sb = StrBuf()
             for p in parts {
                 if p.value == -1 {
-                    sb.append($"t'{p.text ?? ""}',")
+                    sb.append($"t'{t5Escape(p.text ?? "")}',")
                 } else {
                     sb.append($"{t5Shape(ref c, through: in l, for: p.value)},")
                 }
@@ -237,7 +255,16 @@ public sealed class SelfhostEmitterT5Tests
                 switch ltree.lKindOf(s) {
                     case .write:
                         let target = l.tree.writes[i].target == -1 ? "-" : t5Shape(ref c, through: in l, for: l.tree.writes[i].target)
-                        return $"write({l.tree.writes[i].sink};{target};{t5Parts(ref c, through: in l, for: in l.tree.writes[i].parts)})"
+                        var guards = StrBuf()
+                        if (l.tree.writes[i].guards is { } gs) {
+                            guards.append(";g:")
+                            for g in gs { guards.append(g == -1 ? "-," : $"{t5Shape(ref c, through: in l, for: g)},") }
+                        }
+                        return $"write({l.tree.writes[i].sink};{target};{t5Parts(ref c, through: in l, for: in l.tree.writes[i].parts)}{guards.finish()})"
+                    case .failingCall:
+                        let f = l.tree.failingCalls[i]
+                        let result = f.result == -1 ? "-" : t5Local(in c, for: f.result)
+                        return $"failcall({t5Local(in c, for: f.error)};{t5Shape(ref c, through: in l, for: f.call)};{result})"
                     case .panic: return $"panic({l.tree.panics[i].message})"
                     case .label: return $"label({l.tree.labels[i].name})"
                     case .gotoStmt: return $"goto({l.tree.gotoStmts[i].label})"
@@ -282,13 +309,15 @@ public sealed class SelfhostEmitterT5Tests
             for b in t5Field(spec, at: 1).bytes { index = index * 10 + i64(b) - 48 }
             let kind = t5Field(spec, at: 2)
             t5Reset(ref l, for: fn)
-            let e = t5Pick(in c, at: fn, for: index)
+            let e = kind == "assert" || kind == "stmt" ? -1 : t5Pick(in c, at: fn, for: index)
             var result: BExpr = -1
             if kind == "callParts" { result = lowerCallParts(ref c, through: ref l, for: e) }
             if kind == "builtin" { result = lowerBuiltinCall(ref c, through: ref l, for: e) }
             if kind == "stable" { result = lowerStable(ref c, through: ref l, for: e) }
             if kind == "tryFrom" { result = lowerTryFrom(ref c, through: ref l, for: e) }
             if kind == "switch" { result = lowerSwitchExpr(ref c, through: ref l, for: e) }
+            if kind == "assert" { lowerAssert(ref c, through: ref l, for: c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements[index]) }
+            if kind == "stmt" { lowerStatement(ref c, through: ref l, for: c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements[index]) }
             if kind == "assign" { lowerAssign(ref c, through: ref l, for: c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements[index]) }
             if kind == "write" { result = lowerWrite(ref c, through: ref l, for: e, by: .print, to: -1, as: c.bCalls[e & 0xFFFFFFFF].arguments[0]) }
             if kind == "levelTrivial" {
@@ -514,6 +543,9 @@ public sealed class SelfhostEmitterT5Tests
                 case BoundTupleElement t: return $"tuple({t.Index};{Expr(t.Receiver)})";
                 case BoundCall c: return $"call({c.Function.Name}{(c.Constant is null ? "" : "#k")};{(c.Receiver is null ? "-" : Expr(c.Receiver))};{List(c.Arguments)})";
                 case BoundBuiltinCall b: return $"builtin({Lc(b.Member)};{Expr(b.Receiver)};{List(b.Arguments)})";
+                case LErrorCode x: return $"errcode({Expr(x.Error)})";
+                case BoundUnary u: return $"unary({Lc(u.Op)};{Expr(u.Operand)})";
+                case BoundErrorVariant v: return $"errvar({v.Variant.Name})";
                 case BoundBinary b: return $"binary({Lc(b.Op)};{Expr(b.Left)};{Expr(b.Right)})";
                 case BoundConversion c: return $"conv({Lc(c.Kind)};{Expr(c.Operand)})";
                 case BoundConditional c: return $"cond({Expr(c.Condition)};{Expr(c.WhenTrue)};{Expr(c.WhenFalse)})";
@@ -524,11 +556,15 @@ public sealed class SelfhostEmitterT5Tests
         }
 
         private string Parts(IEnumerable<BoundInterpolationPart> parts) =>
-            string.Concat(parts.Select(p => p.Value is null ? $"t'{p.Text ?? ""}'," : Expr(p.Value) + ","));
+            string.Concat(parts.Select(p => p.Value is null ? $"t'{(p.Text ?? "").Replace("\n", "\\n")}'," : Expr(p.Value) + ","));
+
+        private string Guards(IReadOnlyList<BoundExpr?>? guards) =>
+            guards is null ? "" : ";g:" + string.Concat(guards.Select(g => g is null ? "-," : Expr(g) + ","));
 
         public string Stmt(BoundStmt s) => s switch
         {
-            LWrite w => $"write({Lc(w.Sink)};{(w.Target is null ? "-" : Expr(w.Target))};{Parts(w.Parts)})",
+            LWrite w => $"write({Lc(w.Sink)};{(w.Target is null ? "-" : Expr(w.Target))};{Parts(w.Parts)}{Guards(w.Guards)})",
+            LFailingCall f => $"failcall({Local(f.Error)};{Expr(f.Call)};{(f.Result is null ? "-" : Local(f.Result))})",
             LPanic p => $"panic({p.Message})",
             LLabel l => $"label({l.Name})",
             LGoto g => $"goto({g.Label})",
@@ -709,6 +745,54 @@ public sealed class SelfhostEmitterT5Tests
             let s3 = k switch { 1 => panic("a"), _ => panic("b") }
         }
 
+        union error AE {
+            bad
+            worse
+        }
+
+        union error BE {
+            other
+        }
+
+        struct Q {
+            i64 a = 0
+
+            i64 get() => a
+
+            i64 load() fails AE => a
+        }
+
+        i64 failing(i64 k) fails AE {
+            if k > 0 { fail AE.bad }
+            return k
+        }
+
+        void voidFailing(i64 k) fails AE, BE {
+            if k > 0 { fail BE.other }
+        }
+
+        void asserts(i64 k, from Q q, to List<i64> xs, by i64? o, as bool f, for string s, at i32 n) uses alloc {
+            assert k == 1
+            assert f && k > 2
+            assert f || id(k) == 3
+            assert (f ? k : 2) == 3
+            assert (o ?? 4) == k
+            assert q.get() == xs[k]
+            assert o is null
+            assert -1 == (k)
+            assert true
+            assert s == "日本"
+                && k >
+                  +0
+            assert failing(k) fails AE
+            assert failing(k) fails AE.bad
+            assert voidFailing(k) fails AE
+            assert q.load() fails AE
+            assert k == n
+            assert k == (1)
+            assert panic("x")
+        }
+
         void main() { }
         """;
 
@@ -724,6 +808,8 @@ public sealed class SelfhostEmitterT5Tests
         "tries:0:tryFrom", "tries:1:tryFrom", "tries:2:tryFrom", "tries:3:tryFrom", "tries:4:tryFrom", "tries:5:tryFrom", "tries:6:tryFrom",
         "tries:7:tryFrom", "tries:8:tryFrom", "tries:9:tryFrom", "tries:10:tryFrom", "tries:11:tryFrom", "tries:12:switch", "tries:13:tryFrom",
         "narrows:1:callParts", "narrows:2:switch", "narrows:3:switch", "nevers:0:switch", "spans:0:builtin",
+        "asserts:0:assert", "asserts:1:assert", "asserts:2:assert", "asserts:3:assert", "asserts:4:assert", "asserts:5:assert", "asserts:6:assert", "asserts:7:assert",
+        "asserts:8:assert", "asserts:9:assert", "asserts:10:assert", "asserts:11:assert", "asserts:12:assert", "asserts:13:assert", "asserts:14:assert", "asserts:15:assert", "asserts:16:assert", "asserts:0:stmt",
     ];
 
     private static List<string> CasesOracle(Compilation c)
@@ -737,7 +823,7 @@ public sealed class SelfhostEmitterT5Tests
             var f = spec.Split(':');
             var fn = functions.First(x => x.Name == f[0]);
             var fl = NewLowerer(c, fn);
-            var e = Pick(fn, int.Parse(f[1]));
+            var e = f[2] is "assert" or "stmt" ? null! : Pick(fn, int.Parse(f[1]));
             BoundExpr? result = null;
             switch (f[2])
             {
@@ -747,6 +833,8 @@ public sealed class SelfhostEmitterT5Tests
                 case "tryFrom": result = (BoundExpr)Call(fl, "TryFrom", e)!; break;
                 case "switch": result = (BoundExpr)Call(fl, "SwitchExpr", e)!; break;
                 case "assign": Call(fl, "Assign", fn.Body!.Statements[int.Parse(f[1])]); break;
+                case "assert": Call(fl, "Assert", fn.Body!.Statements[int.Parse(f[1])]); break;
+                case "stmt": Call(fl, "Statement", fn.Body!.Statements[int.Parse(f[1])]); break;
                 case "write":
                     result = (BoundExpr)Call(fl, "Write", e, WriteSink.Print, null, ((BoundCall)e).Arguments[0])!;
                     break;

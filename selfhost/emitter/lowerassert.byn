@@ -1,8 +1,8 @@
 // T5: Lowerer.cs 1376-1728 (`Printable`, `Assert`, `Write`, `SwitchExpr`, `TryFrom`).
 //
-// `Assert`, `AssertFails`, `Shown` and `IsLiteral` read `e.Syntax`; the bound tree keeps a span only, and T21 adds
-// `exprSyntax` (Q849), so `lowerAssert`, `assertFails`, `shown` and `isLiteral` stay stubs. A `x with { ... }` copy of a
-// bound node is a new node that carries the old one's `Constant` and syntax facts (`t5Copied`).
+// `Assert`, `AssertFails`, `Shown` and `IsLiteral` read `e.Syntax` through T21's `exprSyntax` (Q849); the source text
+// is `Ctx.files[...].text` of the lowered function's file. A `x with { ... }` copy of a bound node is a new node that
+// carries the old one's `Constant` and syntax facts (`t5Copied`).
 
 import semantics
 import parser
@@ -70,26 +70,246 @@ BExpr t5Check(ref Ctx c, through in LCtx l, at TextSpan span, for BExpr fits, by
     return andExpr(ref c, through: in l, for: fits, by: check)
 }
 
+/// `_fn.File!.Source.GetText(TextSpan.FromBounds(start, end))`.
+string t5Source(in Ctx c, through in LCtx l, from i64 start, to i64 end) uses alloc => $"{Utf8.tryDecode(c.files[c.functions[l.fn].file].text.span[start..end]) ?? ""}"
+
+/// Lowerer.cs:1394 `Assert`'s local `After`: where the text after `left` resumes, its blanks skipped, before `end`.
+i64 t5After(in Ctx c, through in LCtx l, for TextSpan left, to i64 end) {
+    let bytes = c.files[c.functions[l.fn].file].text.span
+    var at = left.start + left.length
+    while at < end && (bytes[at] == 32 || bytes[at] == 9 || bytes[at] == 10 || bytes[at] == 13) { at += 1 }
+    return at
+}
+
+/// Lowerer.cs:1399 `Assert`'s local `Anchor`: where the value of the recorded syntax node `node` is hung.
+i64 t5Anchor(in Ctx c, through in LCtx l, for in semantics.ExprSyntax node, to i64 end) {
+    switch node.kind {
+        case .parenExpr: return t5Anchor(in c, through: in l, for: semantics.exprSyntaxNode(in c, at: node.inner), to: end)
+        case .memberExpr: return node.member.start
+        case .callExpr: return t5Anchor(in c, through: in l, for: semantics.exprSyntaxNode(in c, at: node.callee), to: end)
+        case .binaryExpr: return t5After(in c, through: in l, for: semantics.exprSyntaxNode(in c, at: node.left).span, to: end)
+        case .isExpr: return t5After(in c, through: in l, for: semantics.exprSyntaxNode(in c, at: node.value).span, to: end)
+        case .indexExpr: return t5After(in c, through: in l, for: semantics.exprSyntaxNode(in c, at: node.target).span, to: end)
+        case .conditionalExpr: return t5After(in c, through: in l, for: semantics.exprSyntaxNode(in c, at: node.condition).span, to: end)
+        default: return node.span.start
+    }
+}
+
 /// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
-// stub: T5 waits on T21 exprSyntax (blocked: Q849)
-public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
+public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let a = i64(s & 0xFFFFFFFF)
+    if c.bAsserts[a].failsWith != -1 {
+        assertFails(ref c, through: ref l, for: s, by: c.bAsserts[a].failsWith)
+        return
+    }
+    let span = c.bAsserts[a].span
+    let start = span.start
+    // The parser ends the statement at its condition (`ExpectEnd` takes no `;`), so this is `syntax.Condition.Span.End`.
+    let end = span.start + span.length
+    var exprs = List<BExpr>()
+    var mayNotRuns = List<bool>()
+    shown(in c, through: in l, for: c.bAsserts[a].condition, by: false, to: ref exprs, as: ref mayNotRuns)
+    // The first (outermost) node at a column wins: an implicit conversion shares its operand's syntax.
+    var keys = List<i64>()
+    var columns = List<BExpr>()
+    var lazy = List<bool>()
+    for k in 0..exprs.length {
+        var anchor = t2Span(in c, through: in l, for: exprs[k]).start
+        if (semantics.exprSyntax(in c, for: exprs[k]) is { } syntax) { anchor = t5Anchor(in c, through: in l, for: syntax, to: end) }
+        let column = powerAssertColumn(t5Source(in c, through: in l, from: start, to: anchor))
+        var seen = false
+        for x in keys {
+            if x == column { seen = true }
+        }
+        if seen { continue }
+        keys.append(column)
+        columns.append(exprs[k])
+        lazy.append(mayNotRuns[k])
+        // Kept in column order (C#'s `SortedDictionary`).
+        var at = keys.length - 1
+        while at > 0 && keys[at - 1] > column {
+            keys[at] = keys[at - 1]
+            columns[at] = columns[at - 1]
+            lazy[at] = lazy[at - 1]
+            at -= 1
+        }
+        keys[at] = column
+        columns[at] = exprs[k]
+        lazy[at] = mayNotRuns[k]
+    }
+    l.showing = true
+    l.shown = Map<BExpr, BExpr>()
+    l.ran = Map<BExpr, LocalId>()
+    for k in 0..columns.length {
+        let e = columns[k]
+        l.shown[e] = -1
+        unless lazy[k] { continue }
+        let flag = newTemp(ref c, through: ref l, for: semantics.prim(.bool))
+        let at = t2Span(in c, through: in l, for: e)
+        emitAssign(ref c, through: ref l, to: localExpr(ref c, at: at, for: flag), as: boolLiteral(ref c, at: at, by: false))
+        l.ran[e] = flag
+    }
+    let condition = lowerExpr(ref c, through: ref l, for: c.bAsserts[a].condition)
+    let values = l.shown.take()
+    let ran = l.ran.take()
+    l.showing = false
+    if isNeverExpr(condition) { return }
+    let statement = powerAssertFlatten(t5Source(in c, through: in l, from: start, to: end))
+    var kept = List<i64>()
+    var keptValues = List<BExpr>()
+    var flags = List<LocalId>()
+    var always = List<bool>()
+    for k in 0..columns.length {
+        let v = values[columns[k]]
+        if v == -1 || isNeverExpr(v) { continue }
+        kept.append(keys[k])
+        keptValues.append(v)
+        let flag = ran.tryGet(at: columns[k]) ?? -1
+        flags.append(flag)
+        always.append(flag == -1)
+    }
+    var panic: BStmt = -1
+    if kept.length == 0 { panic = ltree.addLPanic(ref l.tree, from: T5LPanic { span: span, message: statement }) } else {
+        var parts = List<BInterpolationPart>()
+        parts.append(BInterpolationPart { text: statement })
+        var guards = List<BExpr>()
+        guards.append(-1)
+        var guarded = false
+        for piece in powerAssertDiagram(in kept, by: in always) {
+            let guard = t5Guard(ref c, through: in l, for: in piece, at: span, by: in flags)
+            if guard == -1 && piece.value < 0 && guards[guards.length - 1] == -1 && parts[parts.length - 1].value == -1 {
+                let text = parts[parts.length - 1].text ?? ""
+                parts[parts.length - 1] = BInterpolationPart { text: $"{text}{piece.text}" }
+            } else {
+                if piece.value < 0 { parts.append(BInterpolationPart { text: piece.text }) } else { parts.append(BInterpolationPart { value: keptValues[piece.value] }) }
+                guards.append(guard)
+                if guard != -1 { guarded = true }
+            }
+        }
+        var write = T5LWrite { span: span, sink: .panic, parts: move parts }
+        if guarded { write.guards = move guards }
+        panic = ltree.addLWrite(ref l.tree, from: move write)
+    }
+    var body = List<BStmt>()
+    body.append(panic)
+    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: notExpr(ref c, through: in l, for: condition), then: block(ref c, at: span, for: move body), elseBranch: -1 }))
+}
+
+/// Lowerer.cs:1437 `Assert`'s local `Guard`: the condition `piece` is written under (-1 for always), from the flags of the kept columns.
+BExpr t5Guard(ref Ctx c, through in LCtx l, for in PowerAssertPiece piece, at TextSpan span, by in List<LocalId> flags) uses alloc {
+    var g: BExpr = -1
+    for k in piece.allShown {
+        let t = localExpr(ref c, at: span, for: flags[k])
+        g = g == -1 ? t : andExpr(ref c, through: in l, for: g, by: t)
+    }
+    for k in piece.noneShown {
+        let t = notExpr(ref c, through: in l, for: localExpr(ref c, at: span, for: flags[k]))
+        g = g == -1 ? t : andExpr(ref c, through: in l, for: g, by: t)
+    }
+    if piece.anyFrom != -1 {
+        var t = localExpr(ref c, at: span, for: flags[piece.anyFrom])
+        for k in piece.anyFrom + 1..flags.length { t = orExpr(ref c, through: in l, for: t, by: localExpr(ref c, at: span, for: flags[k])) }
+        g = g == -1 ? t : andExpr(ref c, through: in l, for: g, by: t)
+    }
+    return g
+}
+
+/// Lowerer.cs:1470 `AssertFails`'s local `Is`: whether the error in `error` is `v`.
+BExpr t5IsVariant(ref Ctx c, at TextSpan span, for LocalId error, by VariantId v) uses alloc {
+    let variant = semantics.addErrorVariant(ref c, from: BErrorVariant { span: span, variant: v, type: semantics.errorSetTypeOf(c.errorVariants[v].set) })
+    return semantics.addBinary(ref c, from: BBinary { span: span, op: .eq, left: localExpr(ref c, at: span, for: error), right: variant, type: semantics.prim(.bool) })
 }
 
 /// Lowerer.cs:1465 `AssertFails`: lowers `assert f() fails E[.x]` (`s`, whose error set is `set`), appending to the current output list.
-// stub: T5 waits on T21 exprSyntax (blocked: Q849)
-void assertFails(ref Ctx c, through ref LCtx l, for BStmt s, by semantics.ErrorSetId set) {
+void assertFails(ref Ctx c, through ref LCtx l, for BStmt s, by semantics.ErrorSetId set) uses alloc {
+    let a = i64(s & 0xFFFFFFFF)
+    let span = c.bAsserts[a].span
+    let call = c.bAsserts[a].condition
+    let r = lowerFailingCall(ref c, through: ref l, for: call) ?? return
+    var expected: BExpr = -1
+    if c.bAsserts[a].failsCase != -1 { expected = t5IsVariant(ref c, at: span, for: r.error, by: c.bAsserts[a].failsCase) } else {
+        for v in t4Copy(in c.errorSets[set].variants) {
+            let t = t5IsVariant(ref c, at: span, for: r.error, by: v)
+            expected = expected == -1 ? t : orExpr(ref c, through: in l, for: expected, by: t)
+        }
+    }
+    let statement = powerAssertFlatten(t5Source(in c, through: in l, from: span.start, to: span.start + span.length))
+    var anchor = t2Span(in c, through: in l, for: call).start
+    if (semantics.exprSyntax(in c, for: call) is { } syntax) {
+        anchor = syntax.span.start
+        if syntax.callee != -1 && semantics.exprSyntaxNode(in c, at: syntax.callee).kind == .memberExpr { anchor = semantics.exprSyntaxNode(in c, at: syntax.callee).member.start }
+    }
+    let gap = " ".repeated(powerAssertColumn(t5Source(in c, through: in l, from: span.start, to: anchor)))
+    var parts = List<BInterpolationPart>()
+    parts.append(BInterpolationPart { text: $"{statement}\n{powerAssertIndent}{gap}{powerAssertBar}\n{powerAssertIndent}{gap}" })
+    parts.append(BInterpolationPart { text: "returned" })
+    var guards = List<BExpr>()
+    guards.append(-1)
+    guards.append(notExpr(ref c, through: in l, for: lowerFailed(ref c, through: ref l, at: span, for: r.error)))
+    let fn = c.bCalls[call & 0xFFFFFFFF].function
+    for e in t4Copy(in c.functions[fn].errorSets) {
+        for v in t4Copy(in c.errorSets[e].variants) {
+            let owner = semantics.errorSetDisplayName(ref c, by: c.errorVariants[v].set)
+            parts.append(BInterpolationPart { text: $"failed with {owner}.{c.errorVariants[v].name}" })
+            guards.append(t5IsVariant(ref c, at: span, for: r.error, by: v))
+        }
+    }
+    if printable(c.bCalls[call & 0xFFFFFFFF].type) {
+        parts.append(BInterpolationPart { text: " " })
+        parts.append(BInterpolationPart { value: r.result })
+        guards.append(notExpr(ref c, through: in l, for: lowerFailed(ref c, through: ref l, at: span, for: r.error)))
+        guards.append(notExpr(ref c, through: in l, for: lowerFailed(ref c, through: ref l, at: span, for: r.error)))
+    }
+    var body = List<BStmt>()
+    body.append(ltree.addLWrite(ref l.tree, from: T5LWrite { span: span, sink: .panic, parts: move parts, guards: move guards }))
+    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: notExpr(ref c, through: in l, for: expected), then: block(ref c, at: span, for: move body), elseBranch: -1 }))
 }
 
 /// Lowerer.cs:1501 `Shown`: appends the sub-expressions of `e` shown on failure, outermost first, to `exprs`, and whether each may not run to `mayNotRuns`.
-// stub: T5 waits on T21 exprSyntax (blocked: Q849)
-void shown(in Ctx c, for BExpr e, by bool mayNotRun, to ref List<BExpr> exprs, as ref List<bool> mayNotRuns) {
+void shown(in Ctx c, through in LCtx l, for BExpr e, by bool mayNotRun, to ref List<BExpr> exprs, as ref List<bool> mayNotRuns) uses alloc {
+    var literal = false
+    if (semantics.exprSyntax(in c, for: e) is { } syntax) { literal = isLiteral(in c, for: syntax) }
+    if printable(ltree.typeOf(in c, through: in l.tree, for: e)) && !literal {
+        exprs.append(e)
+        mayNotRuns.append(mayNotRun)
+    }
+    let i = i64(e & 0xFFFFFFFF)
+    switch semantics.boundKind(e) {
+        case .binary:
+            let op = c.bBinaries[i].op
+            if op == .logicalAnd || op == .logicalOr {
+                shown(in c, through: in l, for: c.bBinaries[i].left, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+                shown(in c, through: in l, for: c.bBinaries[i].right, by: true, to: ref exprs, as: ref mayNotRuns)
+                return
+            }
+        case .conditional:
+            shown(in c, through: in l, for: c.bConditionals[i].condition, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+            shown(in c, through: in l, for: c.bConditionals[i].whenTrue, by: true, to: ref exprs, as: ref mayNotRuns)
+            shown(in c, through: in l, for: c.bConditionals[i].whenFalse, by: true, to: ref exprs, as: ref mayNotRuns)
+            return
+        case .coalesce:
+            shown(in c, through: in l, for: c.bCoalesces[i].left, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+            shown(in c, through: in l, for: c.bCoalesces[i].right, by: true, to: ref exprs, as: ref mayNotRuns)
+            return
+        case .isExpr:
+            shown(in c, through: in l, for: c.bIses[i].value, by: mayNotRun, to: ref exprs, as: ref mayNotRuns)
+            return
+        case .unary or .field or .tupleElement or .call or .builtinCall or .conversion or .index: break
+        default: return
+    }
+    for child in semantics.children(in c, for: e) {
+        if semantics.isExprKind(semantics.boundKind(child)) { shown(in c, through: in l, for: child, by: mayNotRun, to: ref exprs, as: ref mayNotRuns) }
+    }
 }
 
 /// Lowerer.cs:1519 `IsLiteral`: whether `syntax` is a literal, possibly parenthesized or signed.
-// stub: T5 waits on T21 exprSyntax (blocked: Q849)
-bool isLiteral(in parser.Expr syntax) {
-    // coverage-blocked: Q778 T21 exprSyntax
-    return false
+bool isLiteral(in Ctx c, for in semantics.ExprSyntax syntax) {
+    switch syntax.kind {
+        case .literalExpr: return true
+        case .parenExpr: return isLiteral(in c, for: semantics.exprSyntaxNode(in c, at: syntax.inner))
+        case .unaryExpr: return (syntax.op == .negate || syntax.op == .plus) && isLiteral(in c, for: semantics.exprSyntaxNode(in c, at: syntax.operand))
+        default: return false
+    }
 }
 
 /// Lowerer.cs:1528 `CallParts` (Q845): the call `e` with its receiver and arguments lowered, or -1 when one never returns.

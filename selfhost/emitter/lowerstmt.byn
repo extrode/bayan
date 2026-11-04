@@ -52,7 +52,7 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses allo
             let value = lowerExpr(ref c, through: ref l, for: c.bExprStmts[i].expr)
             emitEffect(ref c, through: ref l, for: value)
         case .assertStmt:
-            // coverage-blocked: Q772 T21 exprSyntax
+            // T5's `lowerAssert` reads the condition's syntax through T21's `exprSyntax` (Q778).
             lowerAssert(ref c, through: ref l, for: s)
         case .setOnPanic:
             emit(ref l, for: s)
