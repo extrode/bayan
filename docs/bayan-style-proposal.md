@@ -372,7 +372,7 @@ This reuses the existing `because` purpose clause, and `bayan audit` lists every
 - **One engine.** The formatter is in the compiler and works on the lossless syntax tree, so comments and trivia are preserved. It is a Wadler-style group/break printer, as in Prettier: a group that doesn't fit breaks into one item per line.
 - **CLI.** `bayan format` writes. `bayan format --check` writes nothing, lists each file that would change and exits 1 (spec :2243, unchanged); `--check --diff` prints the diff instead, for CI logs (review row C23). `bayan format --range a:b` formats a selection.
 - **LSP.** `formatting`, `rangeFormatting` and `onTypeFormatting` call the same engine, so Visual Studio and VS Code format on save identically. Lints arrive as ordinary diagnostics with code actions.
-- **Guarantees.** The formatter is idempotent (the existing 5.2b test), output re-parses to the same AST, and generated code goes through the same formatter, so it stays readable.
+- **Guarantees.** The formatter is idempotent (`FormattingIsIdempotent` in `tests/Bayan.Tests/FormatTests.cs`), output re-parses to the same AST, and generated code goes through the same formatter, so it stays readable.
 
 ---
 

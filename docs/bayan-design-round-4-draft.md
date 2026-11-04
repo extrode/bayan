@@ -14,7 +14,7 @@ Order of work:
 
 Where this draft cites the spec, it relies on the round-3 plan, its consolidated summary and recorded decisions.
 
-Clause order changes in round 4 to `where → expects → uses → becomes → fails`; examples here use the new order. It lands as the first commit after 012: flip the canonical order in BYN1065, run `bayan format` over the repository (including the self-hosted compiler), regenerate goldens. No manual edits.
+Clause order changes in round 4 to `where → expects → uses → becomes → fails`; examples here use the new order. It lands as the first commit after 012: flip the canonical order in BYN1065, run `bayan format` over the repository (including the self-hosted compiler), regenerate goldens. No manual edits. Until then the order is proposed, not canonical. Round-4 edits: the BYN1065 message text (`ClauseOrder` in `DiagnosticCodes.cs`), `bayan-style.md:16` (signature clauses row), spec :147, :151 and :1592, and the order for function types (`() -> T fails DbError`, spec :556 and :595).
 
 ## 2. Retrospective: promises kept and broken
 

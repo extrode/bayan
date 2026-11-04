@@ -378,7 +378,7 @@ New diagnostics (numbers assigned at the round-4 renumbering, area 6xxx unless n
 
 | Diagnostic | Notes |
 | --- | --- |
-| Spawn outside scope | Replaces most of BYN3217 |
+| Spawn outside scope | Replaces most of BYN3217 (the code moves from 3xxx to 6xxx) |
 | Not sendable (with field path) | |
 | Lock held across a suspend point | Spec §13.4's guard rule, kept |
 | `@sendable` contract broken | |
