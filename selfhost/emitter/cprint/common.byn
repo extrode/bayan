@@ -181,15 +181,41 @@ public void line(ref StrBuf sb, by in CFunc f, for string text) {
     sb.append("\n")
 }
 
-/// CEmitter.cs:1239 `LineOf`: the 1-based line `span` starts on in `f`'s file, 0 when it has none.
+/// The offsets at which each line of `c.files[file]` starts (the `SourceText` line starts `GetLinePosition` searches, selfhost/lexer/source.byn:37).
+List<i64> lineStartsOf(in Ctx c, for semantics.FileId file) uses alloc {
+    var starts = List<i64>()
+    starts.append(0)
+    for k in 0..c.files[file].text.length {
+        if c.files[file].text[k] == 10 { starts.append(k + 1) }
+    }
+    return starts
+}
+
+/// CEmitter.cs:1239 `LineOf`: the 1-based line `span` starts on in `f`'s file, 0 when it has none. A frame that holds the file's line
+/// starts (`emitFunction` lends them) searches them for the last start <= `span.start` (selfhost/lexer/source.byn:44-55); a frame built
+/// by hand holds none and counts the newlines before `span.start`.
 public i64 lineOf(in Ctx c, by in CFunc f, at semantics.TextSpan span) {
     let file = c.functions[f.fn].file
+    // coverage-exempt: Q827
     if file == -1 { return 0 }
-    var line: i64 = 1
-    for k in 0..span.start {
-        if c.files[file].text[k] == 10 { line += 1 }
+    if f.lineStarts.isEmpty {
+        var line: i64 = 1
+        for k in 0..span.start {
+            if c.files[file].text[k] == 10 { line += 1 }
+        }
+        return line
     }
-    return line
+    var lo: i64 = 0
+    var hi = f.lineStarts.length
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2
+        if f.lineStarts[mid] <= span.start {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    return lo
 }
 
 /// CEmitter.cs:1241 `Loc`: `file, line` for a runtime call.

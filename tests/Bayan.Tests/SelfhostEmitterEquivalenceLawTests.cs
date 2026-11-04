@@ -3,6 +3,7 @@ using System.Text;
 using Bayan.Backend.C;
 using Bayan.Cli;
 using Bayan.Semantics;
+using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Text;
 using Xunit.Abstractions;
 
@@ -214,5 +215,100 @@ public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
         var s = Sections("== a.byn\nint a;\n== b.byn\nint b;\n", ["a.byn", "b.byn"]);
         Assert.Equal("int a;\n", s["a.byn"]);
         Assert.Equal("int b;\n", s["b.byn"]);
+    }
+
+    /// <summary>
+    /// R7 (Q827): the line-start table gives the lines the C# <c>GetLinePosition</c> does. A fixture with statements on the first line, in
+    /// the middle, split over several lines and ending on the file's last byte (no trailing newline), emitted in the three modes.
+    /// </summary>
+    [Fact]
+    public void LineNumbersInLineDirectivesAndRuntimeCallsMatchTheCSharp()
+    {
+        var dir = Path.Combine(Root, "lines");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        const string source = "i64 half(i64 n) => n / 2\n\nvoid main() {\n    var a: i64 = 7\n    var b: i64 = (a\n        + 1)\n    let c = i32(\n        b)\n\n    print($\"{c / 2} {half(a * b)}\")\n}\n\nnever stop() {\n    panic(\"stop\")\n}\n\nnever stop2(i64 n) {\n    let z = stop()\n}";
+        var path = Path.Combine(dir, "main.byn");
+        File.WriteAllText(path, source);
+        foreach (var mode in Modes)
+        {
+            var expected = Expected(dir, new Input("main.byn", source), mode)!;
+            Toolchain.TryParseMode(mode, out _);
+            var (exit, actual, error) = SelfhostEmitterHarness.Run("--mode", mode, "--package", dir, path);
+            Assert.True(exit == 0, $"{mode}: exit {exit}\n{error}");
+            Assert.Contains("#line 1 ", expected);
+            Assert.Contains("#line 10 ", expected);
+            Assert.Contains("byn_unreachable(", expected);
+            SelfhostEmitterHarness.AssertSame($"lines ({mode})", expected, actual);
+        }
+    }
+
+    // A frame built by hand holds no line starts, so `lineOf` counts newlines (T2, T10 and T11 build such frames). args: the file to check.
+    private const string HandFrameMain = """
+        import semantics
+        import emitter.cprint
+        import emitter.ltree
+
+        type CFunc = cprint.CFunc
+
+        i32 main(ReadOnlySpan<string> args) {
+            var rest = List<string>()
+            for i in 0..args.length { rest.append(args[i]) }
+            let symbols = semantics.t26Symbols(ascii: false)
+            let o = semantics.t26ParseBuildOptions(in rest, allowSpans: false) ?? return 2
+            var reported = List<semantics.T26Reported>()
+            var ok = false
+            var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+            var l = LCtx {}
+            let p = lower(ref c, to: ref l)
+            var sb = StrBuf()
+            for i in 0..p.functions.length {
+                let f = CFunc { fn: p.functions[i].symbol, file: "x" }
+                sb.append($"{c.functions[f.fn].name} {cprint.lineOf(in c, by: in f, at: semantics.nodeSpan(in c, for: p.functions[i].body))}\n")
+            }
+            Io.stdout.write($"{sb.finish()}")
+            return 0
+        }
+        """;
+
+    /// <summary>
+    /// <c>lineOf</c> on a frame without the line starts (the newline count) gives the line of <c>LineOf</c> for each function body.
+    /// </summary>
+    [Fact]
+    public void LineOfOnAFrameBuiltByHandMatchesTheCSharp()
+    {
+        var dir = Path.Combine(Root, "hand");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        const string source = "i64 half(i64 n) => n / 2\n\nvoid main() {\n    var a: i64 = 7\n    print($\"{half(a)}\")\n}";
+        var path = Path.Combine(dir, "main.byn");
+        File.WriteAllText(path, source);
+        var emitter = SelfhostEmitterHarness.EmitterDir;
+        var sources = Directory.GetFiles(emitter, "*.byn")
+            .Where(f => Path.GetFileName(f) != "main.byn")
+            .Order(StringComparer.Ordinal)
+            .Select(SourceText.FromFile)
+            .ToList();
+        sources.Add(SourceText.FromString(Path.Combine(emitter, "main.byn"), HandFrameMain));
+        Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
+        var built = Compilation.Create(sources, packageRoot: SelfhostSemanticsHarness.SelfhostDir);
+        Assert.False(built.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(built.Diagnostics.Items, includePath: true));
+        var build = SelfhostSemanticsHarness.BuildFast(built, new HashSet<string>(StringComparer.Ordinal) { sources[^1].Path });
+        Assert.True(build.Succeeded, build.Errors);
+        var (exit, actual, error) = SelfhostParserTests.Run(build.ExecutablePath!, [path]);
+        Assert.True(exit == 0, $"exit {exit}\n{error}");
+        var compilation = Compilation.Create([SourceText.FromFile(path)], dir);
+        var expected = compilation.Modules.SelectMany(m => m.AllFunctions)
+            .Where(fn => fn.Body is not null && fn.File is not null)
+            .ToDictionary(fn => fn.Name, fn => fn.File!.Source.GetLinePosition(fn.Body!.Syntax.Span.Start).Line);
+        var seen = 0;
+        foreach (var row in actual.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = row.Split(' ');
+            if (!expected.TryGetValue(parts[0], out var line)) continue;
+            Assert.Equal($"{parts[0]} {line}", row);
+            seen++;
+        }
+        Assert.True(seen >= 2, actual);
     }
 }
