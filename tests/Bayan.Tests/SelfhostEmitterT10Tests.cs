@@ -124,7 +124,7 @@ public sealed class SelfhostEmitterT10Tests
             let g = t10G(in c)
             let i64Type = c.locals[c.functions[g].parameters[0]].type
             var items = List<BExpr>()
-            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc"] { items.append(t10Init(in c, for: n)) }
+            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc", "bn", "ng", "nt", "cvn", "ix", "sl", "sw"] { items.append(t10Init(in c, for: n)) }
             for s in c.bBlocks[c.functions[g].body & 0xFFFFFFFF].statements {
                 if !ltree.isLowered(s) && semantics.boundKind(s) == .exprStmt { items.append(t10Bare(in c, at: c.bExprStmts[s & 0xFFFFFFFF].expr)) }
             }
@@ -307,6 +307,14 @@ public sealed class SelfhostEmitterT10Tests
             q0.bump()
             put(out q0.x)
             var rc = R(k)
+            var lg = 2.5
+            var bn = lf - lg
+            var ng = -lf
+            var nt = !flag
+            var cvn = f64(a)
+            var ix = lst[a]
+            var sl = str[a..v]
+            var sw = str.startsWith(ls)
             try Io.writeFile(str, bytes)
             print(str)
             log(str)
@@ -408,7 +416,7 @@ public sealed class SelfhostEmitterT10Tests
         BoundExpr Read(string n) => new BoundLocal(At(n), decls[n].Local);
         var i64 = PrimitiveType.I64;
         var items = new List<BoundExpr>();
-        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc" }) items.Add(Init(n));
+        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc", "bn", "ng", "nt", "cvn", "ix", "sl", "sw" }) items.Add(Init(n));
         items.AddRange(g.Body!.Statements.OfType<BoundExprStmt>().Select(s => Bare(s.Expr)));
         items.Add(new BoundMove(At("te"), Init("te")));
         items.Add(new BoundThis(At("a"), i64));

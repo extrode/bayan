@@ -161,16 +161,12 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
         case .call:
             return call(ref cc, for: ref f, from: ref c, through: t, at: e, to: null)
         case .builtinCall:
-            // coverage-blocked: Q806 T11 emitBuiltin
             return emitBuiltin(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .unary:
-            // coverage-blocked: Q806 T11 unary
             return unary(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .binary:
-            // coverage-blocked: Q806 T11 binary
             return binary(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .conversion:
-            // coverage-blocked: Q806 T11 conversion
             return conversion(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .conditional:
             let condition = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bConditionals[i].condition)
@@ -242,10 +238,8 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
                     panic("cannot emit BoundCollection")
             }
         case .index:
-            // coverage-blocked: Q806 T11 index
             return index(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .slice:
-            // coverage-blocked: Q806 T11 slice
             return slice(ref cc, for: ref f, from: ref c, through: t, at: e)
         case .errorVariant:
             let ctype = errorCType(ref cc, from: ref c)
@@ -450,7 +444,7 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     // Through `dyn ref` the conformer's method is the vtable slot; the receiver is a local, so naming it twice is safe.
     let receiver = c.bCalls[n].receiver
     var dyn: string? = null
-    // coverage-blocked: Q806 T7 slotName through 455
+    // coverage-blocked: Q806 T7 slotName through 449
     if receiver != -1 && semantics.kindOf(ltree.typeOf(in c, through: in t, for: receiver)) == .dynRef {
         dyn = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     }
@@ -460,7 +454,7 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     if c.functions[fn].kind == .invoke {
         value = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     }
-    // coverage-blocked: Q806 T7 slotName through 465
+    // coverage-blocked: Q806 T7 slotName through 459
     if (dyn is { } d) {
         args.append($"{d}.data")
     // Q1: round 4 redoes this (CEmitter.cs:1924-1927).
@@ -479,7 +473,7 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
         if c.locals[param].modifier == .outKeyword && semantics.boundKind(argument) == .local {
             outLocal = c.bLocals[argument & 0xFFFFFFFF].local
         }
-        // coverage-blocked: Q806 T9 hasSlot through 484
+        // coverage-blocked: Q806 T9 hasSlot through 478
         if outLocal != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: outLocal) {
             args.append($"({slot(ref cc, for: ref f, from: ref c, at: outLocal)}.line = 0, &{f.names[outLocal]})")
         } else if semantics.paramIsByRef(ref c, by: param) {
@@ -491,7 +485,7 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     if (result is { } r) { args.append(r) }
     // Q1: round 4 redoes this (CEmitter.cs:1943).
     var callee = ""
-    // coverage-blocked: Q806 T7 slotName through 496
+    // coverage-blocked: Q806 T7 slotName through 490
     if (dyn is { } d2) {
         callee = $"{d2}.vt->{slotName(ref c, for: fn)}"
     } else if (value is { } v2) {
