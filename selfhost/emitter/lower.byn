@@ -215,61 +215,10 @@ bool isNeverExpr(BExpr e) => ltree.isLowered(e) && ltree.lKindOf(e) == .neverVal
 bool isVoidExpr(BExpr e) => ltree.isLowered(e) && ltree.lKindOf(e) == .voidValue
 
 /// `e.Type` for a bound or lowered expression (LoweredNodes.cs:83-127).
-Type t2Type(in Ctx c, through in LCtx l, for BExpr e) {
-    unless ltree.isLowered(e) { return semantics.exprType(in c, for: e) }
-    let i = ltree.lIndexOf(e)
-    switch ltree.lKindOf(e) {
-        case .optionalHas: return semantics.prim(.bool)
-        case .optionalValue: return l.tree.optionalValues[i].type
-        case .unionTag: return semantics.prim(.i32)
-        case .unionField: return c.locals[c.unionVariants[l.tree.unionFields[i].variant].fields[l.tree.unionFields[i].index]].type
-        case .errorCode: return semantics.prim(.u32)
-        case .errorField: return c.locals[c.errorVariants[l.tree.errorFields[i].variant].fields[l.tree.errorFields[i].index]].type
-        case .assignExpr: return t2Type(in c, through: in l, for: l.tree.assignExprs[i].target)
-        case .sequence: return t2Type(in c, through: in l, for: l.tree.sequences[i].value)
-        case .indexUnchecked: return l.tree.indexUncheckeds[i].type
-        case .nextChar: return semantics.prim(.char)
-        case .neverValue: return l.tree.neverValues[i].type
-        case .functionValue: return l.tree.functionValues[i].functionType
-        case .voidValue: return semantics.prim(.void)
-        // coverage-exempt: Q766
-        default: return semantics.errorType()
-    }
-}
+Type t2Type(in Ctx c, through in LCtx l, for BExpr e) => ltree.typeOf(in c, through: in l.tree, for: e)
 
 /// `n.Syntax.Span` for a bound or lowered node.
-TextSpan t2Span(in Ctx c, through in LCtx l, for semantics.BNode n) {
-    unless ltree.isLowered(n) { return semantics.nodeSpan(in c, for: n) }
-    let i = ltree.lIndexOf(n)
-    switch ltree.lKindOf(n) {
-        case .label: return l.tree.labels[i].span
-        case .gotoStmt: return l.tree.gotoStmts[i].span
-        case .loop: return l.tree.loops[i].span
-        case .returnStmt: return l.tree.returnStmts[i].span
-        case .returnError: return l.tree.returnErrors[i].span
-        case .failingCall: return l.tree.failingCalls[i].span
-        case .write: return l.tree.writes[i].span
-        case .panic: return l.tree.panics[i].span
-        case .setContext: return l.tree.setContexts[i].span
-        case .freeArena: return l.tree.freeArenas[i].span
-        case .pushPanicHandler: return l.tree.pushPanicHandlers[i].span
-        case .popPanicHandler: return l.tree.popPanicHandlers[i].span
-        case .claim: return l.tree.claims[i].span
-        case .optionalHas: return l.tree.optionalHass[i].span
-        case .optionalValue: return l.tree.optionalValues[i].span
-        case .unionTag: return l.tree.unionTags[i].span
-        case .unionField: return l.tree.unionFields[i].span
-        case .errorCode: return l.tree.errorCodes[i].span
-        case .errorField: return l.tree.errorFields[i].span
-        case .assignExpr: return l.tree.assignExprs[i].span
-        case .sequence: return l.tree.sequences[i].span
-        case .indexUnchecked: return l.tree.indexUncheckeds[i].span
-        case .nextChar: return l.tree.nextChars[i].span
-        case .neverValue: return l.tree.neverValues[i].span
-        case .functionValue: return l.tree.functionValues[i].span
-        case .voidValue: return l.tree.voidValues[i].span
-    }
-}
+TextSpan t2Span(in Ctx c, through in LCtx l, for semantics.BNode n) => ltree.spanOf(in c, through: in l.tree, for: n)
 
 /// `BoundTree.Children(node)`: a lowered node has none there (its fields are walked by `anyNode`).
 List<semantics.BNode> t2Children(in Ctx c, for semantics.BNode n) uses alloc {
