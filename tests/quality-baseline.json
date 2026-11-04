@@ -51,22 +51,32 @@
       "coverage": 1.0,
       "branches": 0.989
     },
+    "selfhost/emitter/lowerassert.byn": {
+      "mutation": null,
+      "coverage": 0.9976,
+      "branches": 0.9685
+    },
     "selfhost/emitter/lowerexpr.byn": {
       "mutation": null,
-      "coverage": 0.9167,
-      "branches": 0.9017
+      "coverage": 0.9518,
+      "branches": 0.953
     },
     "selfhost/emitter/lowerpat.byn": {
       "mutation": null,
       "coverage": 0.9921,
-      "branches": 0.9688
+      "branches": 0.9706
     },
     "selfhost/emitter/lowerstmt.byn": {
       "mutation": null,
-      "coverage": 0.9614,
-      "branches": 0.8476
+      "coverage": 0.9871,
+      "branches": 0.939
     },
     "selfhost/emitter/main.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/powerassert.byn": {
       "mutation": null,
       "coverage": 1.0,
       "branches": 1.0
