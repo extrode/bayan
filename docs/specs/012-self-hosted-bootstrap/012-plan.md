@@ -8,7 +8,7 @@ Written against `feat/011-self-hosted-emitter` on 2026-11-04 (011 T13 landed at 
 
 The driver is a new directory, `selfhost/driver/`, compiled with the package root `selfhost/` like `bayan-emit` (`SelfhostEmitterHarness.cs:32` `Compilation.Create(sources, packageRoot: SemanticsDir)`). It ports `CliApp.Run`'s dispatch and the parts of `CliApp.cs` and `Toolchain.cs` that 009–011 left in C#, and calls what is already ported: the lexer and parser dump code (`selfhost/lexer/main.byn` `dumpFile`, `selfhost/parser/main.byn` `parseOne`), the checker's CLI layer (`selfhost/semantics/cli.byn`) and the emitter (`selfhost/emitter/main.byn`). Paths come from `std` `Path` (011 P2 and spec 014). No builtin, runtime function or emitted-C change lands before 012 passes (A1, `docs/revisions/0016-addendum-a1-midflight.md`).
 
-Tests compare the driver with `CliApp.Run` in-process, as 009–011 do. The bootstrap test builds stage 1 through the harness, stages 2 and 3 through the driver's own `build --package selfhost` (spec Q2 default), and compares C. The golden suite then runs through stage 2.
+Tests compare the driver with `CliApp.Run` in-process, as 009–011 do. The bootstrap test builds all three stages with one invocation, `build --package selfhost selfhost/driver`: the C# `bayan` (which gains `--package` in T5) for stage 1, the previous stage for stages 2 and 3 (spec Q2, user decision), and compares C. The golden suite then runs through stage 2.
 
 ### Decisions recorded (where the spec left room, the conservative option)
 
@@ -163,10 +163,11 @@ Changes from the 2026-10-22 draft (written against `244edc1`, before 009–011 w
 - **R5 toolchain** gained K3's interface (new R5) and lost `BAYAN_CC` (spec Q1); exit 4 kept.
 - **R6 `run` capture** kept, with the stdio difference made explicit (spec Q5).
 - **R9 `driver-runtime.byn`** → `selfhost/driver/runtime.byn` (R8), check without a built binary (D5).
-- **R10–R12 stages, goldens, bootstrap C** became R9–R11; R9 adds K6; R11's command moved to spec Q6 because K5 asks for a one-file `cc bootstrap/bayan.c`.
+- **R10–R12 stages, goldens, bootstrap C** became R9–R11; R9 adds K6; R11's command moved to spec Q6 because K5 asks for a one-file `cc bootstrap/bayan.c`; the user decided runtime copies with a byte-identical CI check and the command `cc -fwrapv -ffp-contract=off bootstrap/bayan.c bootstrap/bayan-rt.c -lm`, and K5's wording changes to it.
 - **R12 added: K4 libc list and the K2 secondary scan** of `run/` C (`work/todo.md:458`), both left to 012 by A1 (`docs/revisions/0016-addendum-a1-midflight.md`) and 011.
 - **R13/R14 tests and the pending list `selfhost-driver-pending.txt` replaced** by R13: `land.sh` row 012, the guard, reviews, spec 013 coverage and mutation, the Windows known-failures list, `BAYAN_LAW_TIER` (spec Q8).
 - **R15 syntax** became R14 and was corrected: round 3 puts types first in fields, parameters and returns; the draft's "name-first fields, `->` returns" contradicts Appendix A. `bayan fmt` → `bayan format` (the C# has no `fmt`, `CliApp.cs:100-104`).
 - **Law L020 bootstrap fixpoint** → L027 (L020 is "normal build C unchanged"; 014 is assumed to take L026); **L028 driver equivalence added** so R2/R10 have a law.
 - **Questions Q178–Q190** renumbered to spec-local Q1–Q9; handoff numbers come from the dispatcher (D6).
 - **Plan tasks**: the draft's T1 C# prerequisites (new builtins in `Builtins.cs`, `Lowerer`, `CEmitter`, runtime) dropped with R7; the T2 layout-move table and its renamed test classes dropped with R8; driver files regrouped (`driver-messages`, `driver-style`, `driver-paths`, `driver-options`, `driver-compile` are covered by `cli.byn` or `Path`, so they are not re-specified); P1 (`specs.tsv` row) and T8 (inventory) added; C# line ranges re-read on this branch (the draft's `CliApp.cs` "820 lines" and `Compilation.cs:63-73`, `:111-115` were stale).
+- **Q2 decided (user 2026-11-04):** the C# CLI gains `--package <root>` in T5, the same change as the driver's, so the stage harness never branches on the compiler; T1's harness builds stage 1 the same way once T5 lands.
