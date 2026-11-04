@@ -14,8 +14,8 @@ enacted: 2026-11-04
 
 For every program `bayan check` accepts and every `BuildMode` (`debug`, `safe`, `fast` today), the C that
 `bayan-emit` prints is byte for byte the C that the C# backend prints for the same input and mode
-(`bayan build --emit-c`; for `*.test.byn`, the C the test run builds). The corpus is every `tests/cases/run/` input in the mode its `// mode:` line names, which includes `run/hello.byn`,
-the program `CliTests` passes to `--emit-c`, and the 010 generator's well-typed programs on the
+(`bayan build --emit-c`; for `*.test.byn`, the C the test run builds). The corpus is every `tests/cases/run/` input in the mode its `// mode:` line names, which includes `run/hello.byn`, byte-identical to
+`examples/hello/main.byn`, the program `CliTests` passes to `--emit-c`, and the 010 generator's well-typed programs on the
 fixed seeds, each in every `BuildMode`.
 
 ## Counterexample looks like
