@@ -46,6 +46,12 @@ python3 -I scripts/selfhost/review-brief.py . T6 --spec 011 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostEmitterT6Tests|FullyQualifiedName~SelfhostEmitterT8Tests"`' tmp/011-t6/review.md || { echo "FAIL: a second owned test class is not in the review filter"; exit 1; }
 python3 -I scripts/selfhost/wave-brief.py . T21 --spec 011 > /dev/null
 grep '^bash scripts/selfhost/guard.sh' tmp/011-t21/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostEmitterT21Tests|FullyQualifiedName~SelfhostSemantics' " || { echo "FAIL: the T21 guard does not count the SelfhostSemantics tests"; exit 1; }
+# T13 (integration) also runs every SelfhostEmitter* class (Q886); T14 owns law pages and tests, and every one of its test classes gates it
+python3 -I scripts/selfhost/wave-brief.py . T13 T14 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t13/prompt.md | grep -q -- "|FullyQualifiedName~SelfhostEmitter' " || { echo "FAIL: the T13 guard does not count every SelfhostEmitter class"; exit 1; }
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests' " || { echo "FAIL: a task with law pages and tests is not gated by every test class"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T14 --spec 011 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests"`' tmp/011-t14/review.md || { echo "FAIL: the T14 review does not run every test class"; exit 1; }
 # a .txt file in a task's files (T12's tests/windows-known-failures.txt) is in its allow list.
 python3 -I scripts/selfhost/wave-brief.py . T12 --spec 011 > /dev/null
 grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md | grep -q ",tests/windows-known-failures.txt," || { echo "FAIL: a .txt task file is not in the guard's allow list"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md; exit 1; }
