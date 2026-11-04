@@ -270,6 +270,62 @@ public sealed class SelfhostPathT4Tests
                 print(f(parts.span))
             }
             """),
+        ("fresh-directory-name", """
+            string f() {
+                var s = ""
+                using let arena = Arena()
+                provide allocator: arena {
+                    s = Path.fileName("/a/b")
+                }
+                return Path.directoryName(s) ?? ""
+            }
+
+            void main() {
+                print(f())
+            }
+            """),
+        ("fresh-combine", """
+            string f() {
+                var s = ""
+                using let arena = Arena()
+                provide allocator: arena {
+                    s = Path.fileName("/a/b")
+                }
+                return Path.combine(s, s)
+            }
+
+            void main() {
+                print(f())
+            }
+            """),
+        ("fresh-combine-span", """
+            string f() {
+                var s = ""
+                using let arena = Arena()
+                provide allocator: arena {
+                    s = Path.fileName("/a/b")
+                }
+                return Path.combine([s, s])
+            }
+
+            void main() {
+                print(f())
+            }
+            """),
+        ("fresh-full-path", """
+            string f() {
+                var s = ""
+                using let arena = Arena()
+                provide allocator: arena {
+                    s = Path.fileName("/a/b")
+                }
+                return Path.fullPath(s)
+            }
+
+            void main() {
+                print(f())
+            }
+            """),
         ("wrong-argument-type", """
             void main() uses alloc {
                 let a = Path.fullPath(1)
