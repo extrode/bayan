@@ -65,7 +65,7 @@ Rejected:
 - `compile.byn:221`, the segment loop, becomes the `combine(span)` form, as `Compilation.cs:187` does.
 
 **D9 `typed.byn`.**
-- `typed.byn:137` becomes `Path.isRooted(path) ? Path.relative(c.displayRoot, to: path) : path`, which is `TypedDump.cs:90`.
+- `typed.byn:137` becomes `Path.isRooted(path) ? Path.relative(c.displayRoot, to: path) : path`, which is `src/Bayan.Semantics/Binding/TypedDump.cs:90`.
 - `typed.byn:139-147`, including `:144` `sb.append("/")`, is the port of C#'s `.Replace('\\', '/')` and is not `/`-only code. It stays.
 
 **D10 `ProgramName` trailing separator.** `CliApp.cs:535-540` uses `TrimEnd(Path.DirectorySeparatorChar)`, which has no module function. `json.byn:24-32` therefore keeps `t26TrimEndSlash` (`json.byn:58-63`) but trims the OS separator instead of a fixed `/`.
@@ -74,9 +74,9 @@ Rejected:
 
 **D11 `program.byn` is not edited.** `cprint/program.byn:317-318` already calls `Path.isRooted`/`Path.relative`. It panics on Windows only because `t11DirectoryName` hands it an empty `packageRoot` (Q886), and D7 fixes that.
 - T9 checks the fix on wp1 with no edit.
-- So the 011 mutation baseline entry for `program.byn` (the only entry in `tests/quality-baseline.json`) is untouched.
+- So the `tests/quality-baseline.json` entry for `program.byn` (one of its 46 `selfhost/` entries) is untouched.
 
-**D12 List edits ride with the fix.** `scripts/known-failures.py` fails on a listed test that now passes. Each R7 task therefore removes, in its own landing, exactly the names that pass for it on wp1.
+**D12 List edits ride with the fix.** `scripts/ci/known-failures.py` fails on a listed test that now passes. Each R7 task therefore removes, in its own landing, exactly the names that pass for it on wp1.
 - T7 and T8 both edit `tests/windows-known-failures.txt`, so T8 runs after T7.
 - T9 removes the rest. A name that still fails is a Question that blocks T9.
 - The file keeps its comment header, because `known-failures.py` ignores `#` lines.
@@ -95,7 +95,7 @@ Rejected:
 ## Tech / dependencies
 
 - C#:
-  - `src/Bayan.Semantics/`: `Builtins.cs:117-119,253-268`, `Symbols.cs:375-377`, `BinderCalls.cs:73-75`, `BinderExpressions.cs:708-711`, `EffectAnalysis.cs:267`, `RegionAnalysis.cs:565-567,613-614`, `PanicHandlerCheck.cs:68`.
+  - `src/Bayan.Semantics/`: `Builtins.cs:117-119,253-268`, `Symbols/Symbols.cs:375-377`, `Binding/BinderCalls.cs:73-75`, `Binding/BinderExpressions.cs:708-711`, `Binding/EffectAnalysis.cs:267`, `Binding/RegionAnalysis.cs:565-567,613-614`, `Binding/PanicHandlerCheck.cs:68`.
   - `src/Bayan.Backend.C/CEmitter.cs:1867-1872`, inside `Call` (`:1726-1944`), not `Builtin` (`:1946`).
 - C runtime: `src/runtime/bayan-rt.h:318-323` and `src/runtime/bayan-rt.c`:
   - `byn_path_sep` `:1624`/`:1627`
@@ -112,14 +112,14 @@ Rejected:
   - `types.byn:94,175` and `express.byn:892` already handle the `Path` kind and need no change
 - Selfhost emitter: `selfhost/emitter/cprint/expr.byn:382-389` (the Path cases). `selfhost/emitter/cprint/builtin.byn` has no Path code. The criteria name it, so T5 checks it and records the finding.
 - Tests:
-  - `tests/Bayan.Tests/StdPathTests.cs`: `Corpus`, `EachFunctionMatchesDotNet` `:100`, `InvalidUtf8MatchesDotNet` with `tests/native/path-relative-cases.c`, `ShortNamesExpandAsDotNet`, `CaseTablesMatchDotNet`
+  - `tests/Bayan.Tests/StdPathTests.cs`: `Corpus`, `EachFunctionMatchesDotNet` `:100-101`, `InvalidUtf8MatchesDotNet` with `tests/native/path-relative-cases.c`, `ShortNamesExpandAsDotNet`, `CaseTablesMatchDotNet`
   - `SelfhostSemanticsT9Tests.cs:54-56`
   - `RunTests.cs:14,46`
   - `tests/cases/emit/run-c.sha256` (`run/path-*` lines at `:187-189`)
 - Landing scripts:
   - `scripts/selfhost/land.sh`: the review file must say `Verdict: PASS`, and the script refuses a branch that changes `scripts/selfhost/` or `tests/quality-baseline.json`.
   - `guard.sh`, with the coverage gate on touched selfhost functions.
-  - `scripts/known-failures.py` (CI `ci.yml:64`).
+  - `scripts/ci/known-failures.py` (CI `ci.yml:64`).
 - Windows: wp1, the only machine where Windows output and the Windows list are produced.
 
 ## Changes by area
@@ -139,7 +139,7 @@ Serial order: P1, T1, T2, T3, T4, T5, T6, then T7, T8 and T9 in order. T10 can s
 | T5 | selfhost emitter printing | `CEmitter.cs` Path cases after T3 | `selfhost/emitter/cprint/expr.byn` | T4 | ~40 |
 | T6 | run/ and diag/ goldens, `// os: windows` | `RunTests.cs:14,46` | `tests/cases/{run,diag}/path-*` | T5 | ~120 |
 | T7 | `compile.byn` helpers on `Path` | `Compilation.cs:93,95,110,111,113,116,187,209`; `Naming.cs:189` | `compile.byn:1269-1342`, `:70`, `:221`, `:253` | T4, T6 | ~-60 |
-| T8 | `typed.byn`, `json.byn` | `TypedDump.cs:89-90`; `CliApp.cs:535-540` | `typed.byn:137`, `json.byn:24-63` | T7 | ~-20 |
+| T8 | `typed.byn`, `json.byn` | `src/Bayan.Semantics/Binding/TypedDump.cs:89-90`; `CliApp.cs:535-540` | `typed.byn:137`, `json.byn:24-63` | T7 | ~-20 |
 | T9 | Empty the Windows list | — | `tests/windows-known-failures.txt` | T8 | ~-115 |
 | T10 | Enact L026 | — | `docs/laws/026-path-agrees-with-dotnet.md` | T6 | ~40 |
 | T11 | Prove L026 | — | `tests/Bayan.Tests/StdPathLawTests.cs` | T9, T10 | ~150 |
@@ -185,7 +185,7 @@ Each returned string is a fresh copy from `context.allocator`, and none borrows 
   - `CEmitter.cs` and `Builtins.cs` grow, so `011-api.md` (for example `CEmitter.cs:388`, `:1946`) and `011-plan.md` cites shift.
   - Edits to `expr.byn` shift the rows in `011-c-inventory.md`. `CInventoryTests` checks file:line hits, so it fails loudly.
   - T1–T3 and T5 re-point every cite they move, and T12 sweeps the rest.
-- **011 mutation baseline.** The only emitter file 014 edits is `cprint/expr.byn` (T5). It has no entry in `tests/quality-baseline.json` yet; 011 T16's batch run sets one.
+- **011 mutation baseline.** The only emitter file 014 edits is `cprint/expr.byn` (T5). Its `tests/quality-baseline.json` entry (one of 46 `selfhost/` entries) has coverage 1.0, branches 1.0 and mutation null, so T5 keeps coverage and branches at 1.0.
   - If T16 has run, T5 reruns `scripts/selfhost/mutate-batch.sh` on `expr.byn` and does not land below it.
   - If T16 has not run, it measures the new lines too.
   - `program.byn` is not edited (D11).
