@@ -86,7 +86,7 @@ bool t5BigLess(Big a, by Big b) {
 
 /// `(double)v` for a `Big` within the 64-bit integer range.
 f64 t5BigToF64(Big v) {
-    if (v.hi & 0x8000000000000000) != 0 { return f64(i64(v.lo)) }
+    if (v.hi & 0x8000000000000000) != 0 { return -f64(0xFFFFFFFFFFFFFFFF - v.lo + 1) }
     return f64(v.lo)
 }
 
@@ -142,7 +142,6 @@ public BExpr lowerCallParts(ref Ctx c, through ref LCtx l, for BExpr e) uses all
         }
         // `map[k].f()` with `ref this` changes the stored value; reading through the panicking index first keeps a missing key out.
         if t5IsBuiltin(in c, for: receiver, by: .mapIndexSet) {
-            // coverage-blocked: Q778 T3 lowerLvalue
             let place = lowerStable(ref c, through: ref l, for: receiver)
             let read = t5Builtin(ref c, from: place, as: .mapIndex, to: c.bBuiltinCalls[place & 0xFFFFFFFF].receiver, by: t5Arguments(in c, for: place))
             emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: read }))
@@ -293,15 +292,15 @@ public BExpr lowerWrite(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.
 /// Lowerer.cs:1624 `WriteParts` (Q845): as `lowerWrite`, with `level` (a log level or print stream, -1 for none) lowered after the parts and written as the target.
 public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by ltree.WriteSink sink, to BExpr target, as BExpr text, at BExpr level = -1) uses alloc {
     let ti = i64(text & 0xFFFFFFFF)
-    let span = t2Span(in c, through: in l, for: call)
+    let span = ltree.spanOf(in c, through: in l.tree, for: call)
     var values = List<BExpr>()
     for k in 0..c.bInterpolateds[ti].parts.length {
         let v = c.bInterpolateds[ti].parts[k].value
         if v == -1 { continue }
         // A `Symbol` writes its text (spec 008 R4).
-        let t = t2Type(in c, through: in l, for: v)
+        let t = ltree.typeOf(in c, through: in l.tree, for: v)
         if semantics.kindOf(t) == .builtin && semantics.builtinKindOf(i64(t & 0xFFFFFFFF)) == .symbol {
-            values.append(semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: t2Span(in c, through: in l, for: v), member: .symbolText, receiver: v, type: semantics.prim(.string) }))
+            values.append(semantics.addBuiltinCall(ref c, from: BBuiltinCall { span: ltree.spanOf(in c, through: in l.tree, for: v), member: .symbolText, receiver: v, type: semantics.prim(.string) }))
         } else {
             values.append(v)
         }
@@ -309,7 +308,7 @@ public BExpr lowerWriteParts(ref Ctx c, through ref LCtx l, for BExpr call, by l
     if level != -1 { values.append(level) }
     var lowered = List<BExpr>()
     unless operands(ref c, through: ref l, for: in values, as: in List<bool>(), to: ref lowered) {
-        return ltree.addLNever(ref l.tree, from: LNever { span: span, type: t2Type(in c, through: in l, for: call) })
+        return ltree.addLNever(ref l.tree, from: LNever { span: span, type: ltree.typeOf(in c, through: in l.tree, for: call) })
     }
     var written = target
     if level != -1 {
@@ -394,7 +393,7 @@ public BExpr lowerTryFrom(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc
     var value = lowerExpr(ref c, through: ref l, for: c.bTryFroms[ti].operand)
     if isNeverExpr(value) { return value }
     unless isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
-    let from = t2Type(in c, through: in l, for: value)
+    let from = ltree.typeOf(in c, through: in l.tree, for: value)
     var fits: BExpr = -1
     if semantics.isInteger(target) && semantics.isFloat(from) {
         let r = semantics.range(semantics.primKindOf(i64(target & 0xFFFFFFFF)))
