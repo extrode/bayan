@@ -48,8 +48,12 @@ public sealed class SelfhostPathT8Tests
         File.WriteAllText(Path.Combine(Base, "proj", "tool.v2.byn"), "");
     }
 
+    /// <summary>Creates the scratch tree once, before any test asks the C# about it.</summary>
+    private static readonly Lazy<bool> Ready = new(() => { Prepare(); return true; });
+
     private static string PathOf(string root, string path)
     {
+        _ = Ready.Value;
         var c = Compilation.Create([], root, null, root);
         var m = typeof(TypedDump).GetMethod("PathOf", BindingFlags.NonPublic | BindingFlags.Static)!;
         return (string)m.Invoke(null, [c, path])!;
@@ -57,6 +61,7 @@ public sealed class SelfhostPathT8Tests
 
     private static string ProgramName(string path)
     {
+        _ = Ready.Value;
         var compiled = Activator.CreateInstance(typeof(Bayan.Cli.CliApp).GetNestedType("Compiled", BindingFlags.NonPublic | BindingFlags.Public)!, null, null, null)!;
         var m = typeof(Bayan.Cli.CliApp).GetMethod("ProgramName", BindingFlags.NonPublic | BindingFlags.Static)!;
         return (string)m.Invoke(null, [compiled, path])!;
@@ -78,7 +83,7 @@ public sealed class SelfhostPathT8Tests
 
     private static readonly Lazy<List<string>> Run = new(() =>
     {
-        Prepare();
+        _ = Ready.Value;
         var args = new List<string> { Base };
         foreach (var p in Inputs()) args.AddRange(["pathof", p, "name", p]);
         foreach (var p in Extra()) args.AddRange(["pathof", p]);
