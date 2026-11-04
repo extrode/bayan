@@ -1,13 +1,13 @@
 ---
 id: L024
 title: Emitter equivalence
-status: proposed
+status: enacted
 kind: property
 scope: selfhost/emitter/, src/Bayan.Lowering/, src/Bayan.Backend.C/CEmitter.cs
 proof: tests/Bayan.Tests/SelfhostEmitterEquivalenceLawTests.cs
 check: dotnet test -v q --filter "Law=L024"
 timeout: 300
-enacted:
+enacted: 2026-11-04
 ---
 
 ## Statement
@@ -46,3 +46,5 @@ Seeds: the generator's 8 fixed seeds then a xorshift64 chain from the first, N =
 through `TestRunC`. The R6 break-test is `ADeliberateChangeToTheCSharpTextFailsAtLeastOneSeed` (a dropped
 `(int64_t)` cast and two swapped struct field lines in the C# text); `BAYAN_L024_BREAK=cast|fields` applies the same
 change inside the law test, which then fails.
+
+Enacted by the agent under the standing self-host authorization (2026-10-21; decisions 2026-11-03: the agent enacts L024/L025 after proof; spec 011 T17), with T14's proof passing: `dotnet test -v q --filter "Law=L024"` 1 passed (`SelfhostEmitterEquivalenceLawTests.BayanEmitEqualsTheCSharpBackendOnSeedsAndRunInputs`) on 2026-11-04, 47 s test time (55 s wall, quick tier, `bayan-emit` rebuilt first).
