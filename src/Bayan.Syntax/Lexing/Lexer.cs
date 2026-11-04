@@ -576,17 +576,19 @@ internal ref struct LexerState
     private void ScanDigits(int literalStart, Func<byte, bool> isDigit, string? prefix)
     {
         var first = _pos;
-        var lastWasUnderscore = false;
+        var digitsEnd = first;
         while (_pos < _text.Length && (isDigit(_text[_pos]) || _text[_pos] == '_'))
         {
-            lastWasUnderscore = _text[_pos] == '_';
+            if (_text[_pos] != '_') digitsEnd = _pos + 1;
             _pos++;
         }
-        if (_pos == first && prefix is not null)
+        // Only underscores after a prefix is still no digits; deleting them would not help. Trailing underscores are
+        // reported and deleted as one run, so the fix leaves a valid literal.
+        if (digitsEnd == first && prefix is not null)
             Report(DiagnosticCodes.InvalidNumber, new TextSpan(literalStart, _pos - literalStart), [$"expected digits after `{prefix}`"]);
-        else if (lastWasUnderscore)
-            Report(DiagnosticCodes.InvalidNumber, new TextSpan(_pos - 1, 1), ["`_` must sit between digits"],
-                fix: new Fix(new TextSpan(_pos - 1, 1), ""));
+        else if (digitsEnd < _pos)
+            Report(DiagnosticCodes.InvalidNumber, TextSpan.FromBounds(digitsEnd, _pos), ["`_` must sit between digits"],
+                fix: new Fix(TextSpan.FromBounds(digitsEnd, _pos), ""));
     }
 
     /// <summary>Lexes a string whose opening quote is at <paramref name="quote"/>.</summary>
