@@ -360,7 +360,7 @@ Big bigSaturate(Big n, to i64 bits, bool signed) {
 i64 bigToI64(Big n) => n.hi == 0 ? i64(n.lo) : bigI64OfBits(n.lo)
 
 /// `(double)Int128`: the nearest double, ties to even.
-f64 bigToF64(Big n) {
+public f64 bigToF64(Big n) {
     let neg = bigIsNeg(n)
     let m = neg ? bigNeg(n) : n
     let k = bigUBitLength(m)
