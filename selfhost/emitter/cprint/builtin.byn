@@ -1,11 +1,11 @@
-// T11: CEmitter.cs 1940-2449 (`Builtin`, `Unary`, `Binary`, `Conversion`, `Index`, `Slice`).
+// T11: CEmitter.cs 1946-2449 (`Builtin`, `Unary`, `Binary`, `Conversion`, `Index`, `Slice`).
 // Header only (T1): final signatures.
 
 import semantics
 import emitter.ltree
 
-/// CEmitter.cs:1940 `FunctionEmitter.Builtin`: the C text of builtin call `call`.
-public string emitBuiltin(ref CCtx cc, for ref CFunc f, from ref Ctx c, at BExpr call) {
+/// CEmitter.cs:1946 `FunctionEmitter.Builtin` (Q846): the C text of builtin call `call`.
+public string emitBuiltin(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr call) {
     return ""
 }
 
