@@ -76,7 +76,7 @@ Bayan.Tests.SelfhostSemanticsTests.TypesAgree(name: "typed/rune.byn")
 Bayan.Tests.SelfhostSemanticsTests.TypesBindingKinds
 Bayan.Tests.SelfhostSemanticsTests.TypesIsCliJson
 Bayan.Tests.SelfhostSemanticsTests.TypesModuleOrder
-# 011 T12 (Q816): bayan-emit parity cases on the same `/`-only paths (work/todo.md, 014); measured on wp1, 2026-11-04, 85008d5e: 101 failed of 8402, these 25 plus the 76 above.
+# 011 T12 (Q816): bayan-emit parity cases on the same `/`-only paths (work/todo.md, 014); measured on wp1, 2026-11-04, e01073aa: 101 failed of 8404, these 24 plus the 76 above plus a ProgressTests race (work/todo.md).
 Bayan.Tests.SelfhostEmitterHarnessTests.CorpusErrorInputsAgree(name: "parse/declarations.byn")
 Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/capability-exceeded/main.byn")
 Bayan.Tests.SelfhostEmitterHarnessTests.DiagnosticOptionsAgree(name: "diag/error-set-same-name/main.byn")
@@ -100,5 +100,4 @@ Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/statement-o
 Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-list/main.byn")
 Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-undeclared/main.by"···)
 Bayan.Tests.SelfhostEmitterHarnessTests.ErrorInputsAgree(name: "diag/validation-error-same-name-unhandled/main.byn")
-Bayan.Tests.SelfhostEmitterHarnessTests.PackageAndTestsFailLikeBuildOnAnErrorInput
 Bayan.Tests.SelfhostEmitterHarnessTests.ProjectDirectoriesAgree
