@@ -14,8 +14,8 @@ enacted: 2026-11-04
 
 For every program `bayan check` accepts and every `BuildMode` (`debug`, `safe`, `fast` today), the C that
 `bayan-emit` prints is byte for byte the C that the C# backend prints for the same input and mode
-(`bayan build --emit-c`; for `*.test.byn`, the C the test run builds). The corpus is every `tests/cases/run/` input in the mode its `// mode:` line names, which includes `run/hello.byn`, byte-identical to
-`examples/hello/main.byn`, the program `CliTests` passes to `--emit-c`, and the 010 generator's well-typed programs on the
+(`bayan build --emit-c`; for `*.test.byn`, the C the test run builds). The corpus is every `tests/cases/run/` input in the mode its `// mode:` line names, among them `run/hello.byn`
+(byte-identical to `examples/hello/main.byn`, which `CliTests` passes to `--emit-c`), and the 010 generator's well-typed programs on the
 fixed seeds, each in every `BuildMode`.
 
 ## Counterexample looks like
@@ -47,4 +47,4 @@ through `TestRunC`. The R6 break-test is `ADeliberateChangeToTheCSharpTextFailsA
 `(int64_t)` cast and two swapped struct field lines in the C# text); `BAYAN_L024_BREAK=cast|fields` applies the same
 change inside the law test, which then fails.
 
-Enacted by the agent under the standing self-host authorization (2026-10-21; decisions 2026-11-03: the agent enacts L024/L025 after proof; spec 011 T17), with T14's proof passing: `dotnet test -v q --filter "Law=L024"` 1 passed (`SelfhostEmitterEquivalenceLawTests.BayanEmitEqualsTheCSharpBackendOnSeedsAndRunInputs`) on 2026-11-04, 47 s test time (55 s wall; both include rebuilding `bayan-emit`, quick tier). The `CacheTests` template app (`CacheTests.cs:44-49, 192`) is not in this law's corpus: `SelfhostEmitterParityTests.CacheAppEmitsTheSameC` and `CacheAppWithAStoringCalleeFailsLikeBuild` run `bayan-emit` on it and on every example project, but carry no `Law=L024` trait, so the Statement names only what the check runs (handoff Q890).
+Enacted by the agent under the standing self-host authorization (2026-10-21; decisions 2026-11-03: the agent enacts L024/L025 after proof; spec 011 T17), with T14's proof passing: `dotnet test -v q --filter "Law=L024"` 1 passed (`SelfhostEmitterEquivalenceLawTests.BayanEmitEqualsTheCSharpBackendOnSeedsAndRunInputs`) on 2026-11-04, 47 s test time (55 s wall; both include rebuilding `bayan-emit`, quick tier). The app `CacheTests.cs:192` passes to `--emit-c` (the `bayan new` template) is not in this law's corpus, which is only the generator seeds and the `tests/cases/run/` inputs (handoff Q890).
