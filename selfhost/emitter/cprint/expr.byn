@@ -102,14 +102,12 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             // Q1: round 4 redoes this (CEmitter.cs:1716-1720).
             case .functionValue:
                 let fnType = t.functionValues[i].functionType
-                // coverage-blocked: Q806 T7 functionThunk
                 if c.functions[t.functionValues[i].function].kind == .lambda {
                     let ctype = cType(ref cc, from: ref c, for: fnType)
                     let name = functionName(ref cc, from: ref c, for: t.functionValues[i].function)
                     let env = t.functionValues[i].env
                     return $"(({ctype}){{{name}, {env == -1 ? "NULL" : $"&{f.names[env]}"}}})"
                 }
-                // coverage-blocked: Q806 T7 functionThunk through 115
                 let ctype = cType(ref cc, from: ref c, for: fnType)
                 let thunk = functionThunk(ref cc, from: ref c, for: t.functionValues[i].function, as: fnType)
                 return $"(({ctype}){{{thunk}, NULL}})"
@@ -127,7 +125,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             return $"(({cType(ref cc, from: ref c, for: c.bDefaults[i].type)}){{0}})"
         case .local:
             let l = c.bLocals[i].local
-            // coverage-blocked: Q806 T9 hasSlot through 135
+            // coverage-blocked: Q806 T9 hasSlot through 133
             if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
                 if f.hasDryRun { f.reads[l] = true }
                 let slotName = slot(ref cc, for: ref f, from: ref c, at: l)
@@ -142,7 +140,7 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             let operand = c.bMoves[i].operand
             if semantics.boundKind(operand) == .local {
                 let l = c.bLocals[operand & 0xFFFFFFFF].local
-                // coverage-blocked: Q806 T9 hasSlot through 151
+                // coverage-blocked: Q806 T9 hasSlot through 149
                 if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
                     if f.hasDryRun { f.moves[l] = true }
                     let moveFn = ownMove(ref cc, from: ref c, for: c.bLocals[operand & 0xFFFFFFFF].type)
@@ -444,7 +442,6 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     // Through `dyn ref` the conformer's method is the vtable slot; the receiver is a local, so naming it twice is safe.
     let receiver = c.bCalls[n].receiver
     var dyn: string? = null
-    // coverage-blocked: Q806 T7 slotName through 449
     if receiver != -1 && semantics.kindOf(ltree.typeOf(in c, through: in t, for: receiver)) == .dynRef {
         dyn = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     }
@@ -454,7 +451,6 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     if c.functions[fn].kind == .invoke {
         value = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: receiver)
     }
-    // coverage-blocked: Q806 T7 slotName through 459
     if (dyn is { } d) {
         args.append($"{d}.data")
     // Q1: round 4 redoes this (CEmitter.cs:1924-1927).
@@ -473,7 +469,7 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
         if c.locals[param].modifier == .outKeyword && semantics.boundKind(argument) == .local {
             outLocal = c.bLocals[argument & 0xFFFFFFFF].local
         }
-        // coverage-blocked: Q806 T9 hasSlot through 478
+        // coverage-blocked: Q806 T9 hasSlot through 474
         if outLocal != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: outLocal) {
             args.append($"({slot(ref cc, for: ref f, from: ref c, at: outLocal)}.line = 0, &{f.names[outLocal]})")
         } else if semantics.paramIsByRef(ref c, by: param) {
@@ -485,7 +481,6 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
     if (result is { } r) { args.append(r) }
     // Q1: round 4 redoes this (CEmitter.cs:1943).
     var callee = ""
-    // coverage-blocked: Q806 T7 slotName through 490
     if (dyn is { } d2) {
         callee = $"{d2}.vt->{slotName(ref c, for: fn)}"
     } else if (value is { } v2) {

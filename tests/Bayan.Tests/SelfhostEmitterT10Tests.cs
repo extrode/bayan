@@ -124,7 +124,7 @@ public sealed class SelfhostEmitterT10Tests
             let g = t10G(in c)
             let i64Type = c.locals[c.functions[g].parameters[0]].type
             var items = List<BExpr>()
-            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc", "bn", "ng", "nt", "cvn", "ix", "sl", "sw"] { items.append(t10Init(in c, for: n)) }
+            for n in ["a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc", "bn", "ng", "nt", "cvn", "ix", "sl", "sw", "dz"] { items.append(t10Init(in c, for: n)) }
             for s in c.bBlocks[c.functions[g].body & 0xFFFFFFFF].statements {
                 if !ltree.isLowered(s) && semantics.boundKind(s) == .exprStmt { items.append(t10Bare(in c, at: c.bExprStmts[s & 0xFFFFFFFF].expr)) }
             }
@@ -152,6 +152,7 @@ public sealed class SelfhostEmitterT10Tests
             let lam = c.bCalls[t10Init(in c, for: "ap") & 0xFFFFFFFF].arguments[0] & 0xFFFFFFFF
             items.append(ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: t10At(in c, for: "ap"), function: c.bLambdas[lam].lambda, functionType: c.bLambdas[lam].functionType }))
             items.append(ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: t10At(in c, for: "ap"), function: c.bLambdas[lam].lambda, env: t10Var(in c, for: "a"), functionType: c.bLambdas[lam].functionType }))
+            items.append(ltree.addLFunctionValue(ref l.tree, from: LFunctionValue { span: t10At(in c, for: "hc"), function: c.bCalls[t10Init(in c, for: "hc") & 0xFFFFFFFF].function, functionType: c.locals[c.functions[g].parameters[4]].type }))
             items.append(semantics.addLiteral(ref c, from: BLiteral { span: t10At(in c, for: "lb"), type: semantics.prim(.bool), value: Constant { kind: .flag, flag: true } }))
             let kl = t10Read(ref c, for: "lb")
             semantics.setConstant(ref c, for: kl, to: Constant { kind: .flag, flag: false })
@@ -219,6 +220,16 @@ public sealed class SelfhostEmitterT10Tests
         }
 
         const tbl: i64[3] = [1, 2, 3]
+
+        interface ISized {
+            i64 size()
+        }
+
+        struct Sq : ISized {
+            i64 side
+
+            i64 size() => side
+        }
 
         struct St {
             i64 id
@@ -315,6 +326,9 @@ public sealed class SelfhostEmitterT10Tests
             var ix = lst[a]
             var sl = str[a..v]
             var sw = str.startsWith(ls)
+            var sq = Sq { side: k }
+            let dr: dyn ref ISized = sq
+            var dz = dr.size()
             try Io.writeFile(str, bytes)
             print(str)
             log(str)
@@ -416,7 +430,7 @@ public sealed class SelfhostEmitterT10Tests
         BoundExpr Read(string n) => new BoundLocal(At(n), decls[n].Local);
         var i64 = PrimitiveType.I64;
         var items = new List<BoundExpr>();
-        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc", "bn", "ng", "nt", "cvn", "ix", "sl", "sw" }) items.Add(Init(n));
+        foreach (var n in new[] { "a", "v", "mv", "pr", "tp", "te", "cd", "c0", "u0", "er", "fc", "ar", "p0", "lst", "nn", "sb", "on", "un", "mn", "hx", "fo", "arr", "q0", "mp", "o2", "e2", "sbn", "sbo", "rf", "rt", "ld", "rn", "rb", "ud", "ut", "ur", "hd", "ip", "pi", "pre", "pf", "iu", "so", "se", "si", "tr", "sd", "ea", "sb0", "up", "li", "lb", "lf", "ls", "kd", "cs", "sy", "qx", "sp", "ua", "cv", "sa", "sn", "cp", "hc", "qg", "rc", "bn", "ng", "nt", "cvn", "ix", "sl", "sw", "dz" }) items.Add(Init(n));
         items.AddRange(g.Body!.Statements.OfType<BoundExprStmt>().Select(s => Bare(s.Expr)));
         items.Add(new BoundMove(At("te"), Init("te")));
         items.Add(new BoundThis(At("a"), i64));
@@ -435,6 +449,7 @@ public sealed class SelfhostEmitterT10Tests
         var lam = (BoundLambda)((BoundCall)Init("ap")).Arguments[0];
         items.Add(new LFunctionValue(At("ap"), lam.Lambda, null, lam.FunctionType));
         items.Add(new LFunctionValue(At("ap"), lam.Lambda, decls["a"].Local, lam.FunctionType));
+        items.Add(new LFunctionValue(At("hc"), ((BoundCall)Init("hc")).Function, null, (FunctionType)g.Parameters[4].Type));
         items.Add(new BoundLiteral(At("lb"), PrimitiveType.Bool, new ConstantValue(true)));
         items.Add(new BoundLocal(At("lb"), decls["lb"].Local) { Constant = new ConstantValue(false) });
         items.Add(new BoundLocal(At("a"), g.Parameters[0]) { Constant = new ConstantValue(true) });
