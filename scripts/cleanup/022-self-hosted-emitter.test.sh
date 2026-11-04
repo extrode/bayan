@@ -26,7 +26,7 @@ g worktree add -q .worktrees/ahead chore/worker-011-ahead && g -C .worktrees/ahe
 g worktree add -q .worktrees/dirty chore/worker-docs-small-rows && echo d > .worktrees/dirty/new.txt
 gnow branch docs/defer-grace-headers-manifest  # real date: moved just now
 mkdir .worktrees/ign/bin &&echo o > .worktrees/ign/bin/out.o
-mkdir -p tmp/011-x tmp/guard-run "$r/ext/q845gate" && echo s > tmp/011-x/f
+mkdir -p tmp/011-x tmp/guard-run "$r/ext/q845gate" && echo s > tmp/011-x/f && echo k > tmp/011-plan.md
 fail() { echo "FAIL: $1"; echo "$out"; cd "$root"; exit 1; }
 has() { git rev-parse -q --verify "refs/heads/$1" >/dev/null; }
 state() { git for-each-ref refs/heads; git worktree list; find tmp .worktrees "$r/ext" -type f -o -type d | sort; }
@@ -60,6 +60,7 @@ for b in dev main "$feat" dev-keep; do has "$b" || fail "$b deleted"; done
 [ -d .worktrees/dirty ] && echo "$out" | grep -q "^keep:  .worktrees/dirty (uncommitted changes)$" || fail "dirty worktree not left"
 has docs/defer-grace-headers-manifest && echo "$out" | grep -q "^keep:  docs/defer-grace-headers-manifest (moved in the last 1h)$" || fail "recently moved branch not kept"
 has chore/011-merge-dev && fail "branch of removed worktree not deleted"
+[ -f tmp/011-plan.md ] || fail "regular file tmp/011-plan.md removed"
 [ ! -e tmp/011-x ] && [ ! -e tmp/guard-run ] && [ ! -e "$r/ext/q845gate" ] || fail "scratch not removed"
 
 git rm -rq tmp/011 && g commit -q -m untrack

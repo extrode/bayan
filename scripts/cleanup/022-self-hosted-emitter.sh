@@ -102,7 +102,7 @@ scratch() { # $1 path, $2 = repo-relative (tracked check) or empty
   else printf 'would: rm -rf %s\n' "${rel:-$p}"; fi
 }
 for rel in tmp/011 tmp/011-* tmp/docs-in/stale-cache tmp/docs-in/stale-cache2 tmp/guard-run; do
-  [ -d "$rel" ] || [ "${rel#*\*}" = "$rel" ] || continue  # an unmatched glob stays literal
+  case "$rel" in tmp/011-*) [ -d "$rel" ] || continue ;; esac  # only directories; an unmatched glob stays literal
   scratch "$repo/$rel" "$rel"
 done
 for p in d9break.3V2P gate-p2fix2-test.log q845gate q845-gate-test.log; do scratch "$ext/$p" ""; done
