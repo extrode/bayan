@@ -19,7 +19,7 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
 {
-    private static readonly string[] Modes = ["debug", "safe", "fast"];
+    private static readonly string[] Modes = Enum.GetValues<BuildMode>().Select(m => m.ToString().ToLowerInvariant()).ToArray();
 
     /// <summary>The seeds of the quick tier (Q823): the generator's eight fixed seeds, then a xorshift64 chain from the first. <c>BAYAN_LAW_TIER=full</c> runs <see cref="FullSeeds"/>.</summary>
     internal const int QuickSeeds = 256;
@@ -163,6 +163,7 @@ public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
     [Trait("Law", "L024")]
     public void BayanEmitEqualsTheCSharpBackendOnSeedsAndRunInputs()
     {
+        Assert.Equal(Enum.GetValues<BuildMode>().Length, Modes.Length);
         var clock = Stopwatch.StartNew();
         var seeds = TierSeeds();
         var programs = SeedInputs(seeds);
@@ -227,7 +228,7 @@ public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
         var dir = Path.Combine(Root, "lines");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         Directory.CreateDirectory(dir);
-        const string source = "i64 half(i64 n) => n / 2\n\nvoid main() {\n    var a: i64 = 7\n    var b: i64 = (a\n        + 1)\n    let c = i32(\n        b)\n\n    print($\"{c / 2} {half(a * b)}\")\n}\n\nnever stop() {\n    panic(\"stop\")\n}\n\nnever stop2(i64 n) {\n    let z = stop()\n}";
+        const string source = "i64 half(i64 n) => n / 2\n\nvoid main() {\n    var a: i64 = 7\n    var b: i64 = (a\n        + 1)\n    let c = i32(\n        b)\n\n    print($\"{c / 2} {half(a * b)}\")\n}\n\nnever stop() {\n    panic(\"stop\")\n}\n\nnever stop2(i64 n) {\n    let z = stop()\n}\n\ni64 last() => 7";
         var path = Path.Combine(dir, "main.byn");
         File.WriteAllText(path, source);
         foreach (var mode in Modes)
@@ -236,8 +237,13 @@ public sealed class SelfhostEmitterEquivalenceLawTests(ITestOutputHelper output)
             Toolchain.TryParseMode(mode, out _);
             var (exit, actual, error) = SelfhostEmitterHarness.Run("--mode", mode, "--package", dir, path);
             Assert.True(exit == 0, $"{mode}: exit {exit}\n{error}");
-            Assert.Contains("#line 1 ", expected);
-            Assert.Contains("#line 10 ", expected);
+            // The C# text names the first line, a middle one, the last line and, on it, a node (the `7`) that starts at the file's last byte.
+            var lines = System.Text.RegularExpressions.Regex.Matches(expected, @"#line (\d+) ").Select(m => int.Parse(m.Groups[1].Value)).ToHashSet();
+            var total = source.Split('\n').Length;
+            Assert.Equal(21, total);
+            Assert.Contains(1, lines);
+            Assert.Contains(total / 2, lines);
+            Assert.Contains(total, lines);
             Assert.Contains("byn_unreachable(", expected);
             SelfhostEmitterHarness.AssertSame($"lines ({mode})", expected, actual);
         }

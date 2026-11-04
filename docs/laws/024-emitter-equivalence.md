@@ -12,11 +12,11 @@ enacted:
 
 ## Statement
 
-For every program `bayan check` accepts and every build mode (`debug`, `safe`, `fast`), the C that
+For every program `bayan check` accepts and every `BuildMode` (`debug`, `safe`, `fast` today), the C that
 `bayan-emit` prints is byte for byte the C that the C# backend prints for the same input and mode
 (`bayan build --emit-c`; for `*.test.byn`, the C the test run builds). The corpus is every `tests/cases/run/` input in the mode its `// mode:` line names, the inputs
 `CliTests` and `CacheTests` pass to `--emit-c`, and the 010 generator's well-typed programs on the
-fixed seeds, each in all three modes.
+fixed seeds, each in every `BuildMode`.
 
 ## Counterexample looks like
 
@@ -39,7 +39,7 @@ seeds, N measured at T14 to fit about 3 minutes and written here); `BAYAN_LAW_TI
 difference fails naming the input, the mode and the first differing line. Mutant and coverage output
 (`--mutate`, `--coverage`) is outside the law: only the C# backend produces it (spec 011, non-goals).
 
-Proof (T14): `SelfhostEmitterEquivalenceLawTests.BayanEmitEqualsTheCSharpBackendOnSeedsAndRunInputs` (`Law=L024`) runs
+Proof (T14): `SelfhostEmitterEquivalenceLawTests.BayanEmitEqualsTheCSharpBackendOnSeedsAndRunInputs` (`Law=L024`) takes its modes from `Enum.GetValues<BuildMode>()` and runs
 `bayan-emit --mode m --many <dir>` once per corpus and mode and compares each `== name` section with the C# text.
 Seeds: the generator's 8 fixed seeds then a xorshift64 chain from the first, N = 256 (quick; `GenerateValid` writes 15 feature programs and 3 per seed, so 2,632 comparisons in about 15 s) or 1,024 (`BAYAN_LAW_TIER=full`, 9,544 comparisons in
 65 s on 2026-11-04). The flat `run/` inputs are in the mode of their `// mode:` line, the `*.test.byn` ones in `safe`

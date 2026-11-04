@@ -16,8 +16,8 @@ R4. Every hit of the token regex in `tests/Bayan.Tests/CInventoryTests.cs` is on
 | src/runtime/bayan-rt.h:502 | `__builtin_mul_overflow` | Saturating `*` needs the overflow flag. C11 replacement: as 474. |
 | src/Bayan.Backend.C/CEmitter.cs:47 | `asm` | In the reserved-identifier list; reserved word, not a use; no replacement needed. |
 | src/Bayan.Backend.C/CEmitter.cs:47 | `typeof` | In the reserved-identifier list; reserved word, not a use; no replacement needed. |
-| selfhost/emitter/cprint/cctx.byn:61 | `asm` | Port of `CEmitter.cs:47`'s reserved-identifier list; reserved word, not a use; no replacement needed. |
-| selfhost/emitter/cprint/cctx.byn:61 | `typeof` | Port of `CEmitter.cs:47`'s reserved-identifier list; reserved word, not a use; no replacement needed. |
+| selfhost/emitter/cprint/cctx.byn:66 | `asm` | Port of `CEmitter.cs:47`'s reserved-identifier list; reserved word, not a use; no replacement needed. |
+| selfhost/emitter/cprint/cctx.byn:66 | `typeof` | Port of `CEmitter.cs:47`'s reserved-identifier list; reserved word, not a use; no replacement needed. |
 | src/Bayan.Backend.C/CEmitter.cs:82 | `__attribute__((unused))` | Emitted on `byn_w_error` so an unused static does not warn. C11 replacement: `(void)byn_w_error;` or drop it. |
 | selfhost/emitter/cprint/program.byn:28 | `__attribute__((unused))` | Port of `CEmitter.cs:82` on `byn_w_error`; same C11 replacement. |
 
