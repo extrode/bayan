@@ -3,17 +3,21 @@
 #   1. worker/probe/merge worktrees under .worktrees/ whose HEAD is in dev and which have no uncommitted changes
 #   2. their branches and the other 011 side branches, with `git branch -d` only, when the tip is in dev
 #   3. scratch under tmp/ (tracked paths refused) and four paths outside the repo
+#   4. dead tracked files: scripts/selfhost/mutation-exempt.py, scripts/selfhost/mutation-exempt.test.sh and
+#      tests/parity/mutation-exempt/, with `git rm -r -q` (staged, never committed). Needs --execute and
+#      --remove-dead-mutation-exempt, and is refused while a tracked file under scripts/, .github/ or tests/ still names mutation-exempt.
 # Leaves dev, main and feat/011-self-hosted-emitter: the feature branch is the user's to delete.
 # Dry run by default. --execute / -e acts. A worktree holding ignored build output (bin/obj/.cache) also needs
 # --remove-ignored-build-output, which is the only place `git worktree remove --force` is used.
 # CLEANUP_TMP_ROOT replaces /tmp (the test points it at its fixture); CLEANUP_RECENT_HOURS is the 019 recency window.
 set -euo pipefail
 
-execute=0; ignored=0
+execute=0; ignored=0; dead=0
 for a in "$@"; do
   case "$a" in
     --execute|-e) execute=1 ;;
     --remove-ignored-build-output) ignored=1 ;;
+    --remove-dead-mutation-exempt) dead=1 ;;
     *) printf 'unknown flag: %s\n' "$a"; exit 2 ;;
   esac
 done
@@ -44,7 +48,7 @@ wt_one() {
   local p="$1" b="$2" rel hit=0
   case "$p" in "$repo/.worktrees/"*) ;; *) return 0 ;; esac
   rel="${p#"$repo"/}"
-  case "$b" in chore/worker-011-*|chore/worker-docs-small-rows|chore/t13-probe|chore/011-merge-dev|chore/mutation-cron-off|fix/mutation-shared-recording|chore/worker-mutation-shared|docs/011-q890|fix/011-wave-brief-no-covers|fix/review-2026-11-04-2) hit=1 ;; esac
+  case "$b" in chore/worker-011-*|chore/worker-docs-small-rows|chore/t13-probe|chore/011-merge-dev|chore/011-cleanup-1104|chore/011-cleanup-exempt|chore/mutation-cron-off|fix/mutation-shared-recording|chore/worker-mutation-shared|docs/011-q890|fix/011-wave-brief-no-covers|fix/review-2026-11-04-2) hit=1 ;; esac
   case "$rel" in .worktrees/dev-merge|.worktrees/docs-design-inputs) hit=1 ;; esac
   [ $hit -eq 1 ] || return 0
   seen=1
@@ -76,7 +80,7 @@ inwt="$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')"
 while read -r b; do
   case "$b" in
     dev|main|"$feat"|'') continue ;;
-    chore/worker-011-*|chore/worker-docs-small-rows|docs/review-small-rows|docs/defer-grace-headers-manifest|fix/011-feat-red-rows|fix/011-guard-unreported-file|docs/011-task-line-files|docs/011-t13-landed|chore/011-cleanup-branches|docs/011-t14-r7-scope|docs/011-t14-inventory-known-failures|fix/011-mutate-batch-emitter|chore/011-cleanup-t14|chore/011-merge-dev|chore/t13-probe|feat/011-p2|tmp/c20|chore/mutation-cron-off|fix/mutation-shared-recording|chore/worker-mutation-shared|docs/011-q890|fix/011-wave-brief-no-covers|fix/011-parity-line-pins|fix/review-2026-11-04-1|fix/review-2026-11-04-2|docs/012-realign) ;;
+    chore/worker-011-*|chore/worker-docs-small-rows|docs/review-small-rows|docs/defer-grace-headers-manifest|fix/011-feat-red-rows|fix/011-guard-unreported-file|docs/011-task-line-files|docs/011-t13-landed|chore/011-cleanup-branches|docs/011-t14-r7-scope|docs/011-t14-inventory-known-failures|fix/011-mutate-batch-emitter|chore/011-cleanup-t14|chore/011-cleanup-1104|chore/011-cleanup-exempt|chore/011-merge-dev|chore/t13-probe|feat/011-p2|tmp/c20|chore/mutation-cron-off|fix/mutation-shared-recording|chore/worker-mutation-shared|docs/011-q890|fix/011-wave-brief-no-covers|fix/011-parity-line-pins|fix/review-2026-11-04-1|fix/review-2026-11-04-2|docs/012-realign) ;;
     *) continue ;;
   esac
   if printf '%s\n' "$inwt" | grep -qxF -- "$b"; then printf 'keep:  %s (checked out in a worktree)\n' "$b"; continue; fi
@@ -107,9 +111,35 @@ for rel in tmp/011 tmp/011-* tmp/docs-in/stale-cache tmp/docs-in/stale-cache2 tm
 done
 for p in d9break.3V2P gate-p2fix2-test.log q845gate q845-gate-test.log; do scratch "$ext/$p" ""; done
 
+printf '== 4. dead tracked files\n'
+deadpaths=(scripts/selfhost/mutation-exempt.py scripts/selfhost/mutation-exempt.test.sh tests/parity/mutation-exempt/)
+tracked_dead=()
+for p in "${deadpaths[@]}"; do
+  if [ -n "$(git ls-files -- "$p")" ]; then tracked_dead+=("$p"); else printf 'skip:  %s already gone\n' "$p"; fi
+done
+blocked=0
+if [ $execute -eq 1 ] && [ $dead -eq 1 ] && [ ${#tracked_dead[@]} -gt 0 ]; then
+  # this script and its test name the files by necessity, so they do not count
+  refs="$(git grep -n -F -e mutation-exempt -- scripts .github tests "${deadpaths[@]/#/:(exclude)}" \
+    ':(exclude)scripts/cleanup/022-self-hosted-emitter.sh' ':(exclude)scripts/cleanup/022-self-hosted-emitter.test.sh' || true)"
+  if [ -n "$refs" ]; then
+    blocked=1; failed=1
+    while IFS=: read -r rf rl _; do printf 'refuse: mutation-exempt is still referenced by %s:%s. Left alone.\n' "$rf" "$rl"; done <<< "$refs"
+  fi
+fi
+if [ $blocked -eq 0 ]; then
+  for p in ${tracked_dead[@]+"${tracked_dead[@]}"}; do
+    if [ $execute -eq 0 ]; then printf 'would: git rm -r -q -- %s\n' "$p"
+    elif [ $dead -eq 0 ]; then printf 'keep:  %s (needs --remove-dead-mutation-exempt)\n' "$p"
+    elif git rm -r -q -- "$p"; then printf 'removed (staged, commit it yourself): %s\n' "$p"
+    else printf '  refused: %s (see above). Left alone.\n' "$p"; failed=1; fi
+  done
+fi
+
 printf '\n== remaining\n'
 git worktree list
 git for-each-ref --format='branch: %(refname:short)' refs/heads
+for p in "${deadpaths[@]}"; do [ -z "$(git ls-files -- "$p")" ] || printf 'tracked: %s\n' "$p"; done
 for p in tmp/011 tmp/011-* tmp/docs-in/stale-cache tmp/docs-in/stale-cache2 tmp/guard-run; do [ ! -e "$p" ] || printf 'scratch: %s\n' "$p"; done
 if [ $execute -eq 1 ] && [ $failed -eq 1 ]; then exit 1; fi
 exit 0
