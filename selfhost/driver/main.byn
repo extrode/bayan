@@ -5,11 +5,6 @@
 
 import semantics
 
-/// The state of a run before any option is read.
-DCtx newDCtx() {
-    return DCtx {}
-}
-
 const exitOk: i32 = 0
 const exitFailure: i32 = 1
 const exitUsage: i32 = 2
