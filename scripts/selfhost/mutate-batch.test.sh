@@ -107,7 +107,7 @@ echo "$fill" | grep -q '^mutation: 3 killed, 1 survived, 0 timeout, 1 marked' ||
 [ "$fa" = 0.75 ] && [ "$fp" = 0.75 ] || fail "an empty baseline was not filled (a=$fa p=$fp)" "$fill"
 [ $report = 1 ] || fail "the report was not written to tmp/mutate-batch/semantics/quality-1-prog.json" "$fill"
 [ "$ra" = 1.0 ] || fail "a higher score did not replace the baseline (a=$ra)" "$rise"
-[ "$rrec" = "selfhost/semantics/a.byn ($B)&Snapshot!=skip" ] || fail "--files a.byn did not record a with its group's union filter" "$rrec"
+[ "$rrec" = "selfhost/semantics/a.byn ($A)&Snapshot!=skip" ] || fail "--files a.byn did not record a with the union filter of the selected files only" "$rrec"
 echo "$drop" | grep -q '^baseline: mutation score of selfhost/semantics/a.byn fell from 1.0 to 0.5 ' || fail "a drop did not name the file with old and new score" "$drop"
 [ $dropx != 0 ] && [ $dropsame = 1 ] || fail "a drop exited $dropx or changed the baseline" "$drop"
 [ -z "$dropleft" ] && [ "$droprej" = 2 ] || fail "a refused check left accepted reports ($dropleft) or rejected $droprej, not 2" "$drop"

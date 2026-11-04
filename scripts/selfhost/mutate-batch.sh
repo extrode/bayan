@@ -70,13 +70,13 @@ if only:
             sys.exit(f'mutate-batch: --files {w}: not a selfhost .byn file')
 for d, fl in fams.items():
     mine = fl[k - 1::n] if shard else fl  # file i goes to shard (i mod n)+1
+    mine = [x for x in mine if not only or x[0] in want]  # --files narrows the group before its union filter is built
     if not mine:
         continue
     flt = '|'.join(sorted({c for _, x in mine for c in x.split('|')}))
     name = d.split('/')[-1] + (f'-shard{k}of{n}' if shard else '')
     for f, _ in mine:
-        if not only or f in want:
-            print(f'{name}\t{f}\t{flt}')
+        print(f'{name}\t{f}\t{flt}')
 PY
 ) || { echo "$PLAN"; exit 2; }
 
