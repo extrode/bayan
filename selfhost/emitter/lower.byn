@@ -354,8 +354,10 @@ void lowerBecome(ref Ctx c, through ref LCtx l, for BStmt b) uses alloc {
         emitAssign(ref c, through: ref l, to: field, as: values[k])
     }
     let tag = c.unionVariants[state].tag
-    let tagValue = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.i32), value: Constant { kind: .integer, integer: Big { lo: u64(tag), hi: 0 } } })
-    semantics.setConstant(ref c, for: tagValue, to: Constant { kind: .integer, integer: Big { lo: u64(tag), hi: 0 } })
+    let lo: u64 = tag >= 0 ? u64(tag) : ~u64(-(tag + 1))
+    let hi: u64 = tag >= 0 ? 0 : 0xFFFFFFFFFFFFFFFF
+    let tagValue = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.i32), value: Constant { kind: .integer, integer: Big { lo: lo, hi: hi } } })
+    semantics.setConstant(ref c, for: tagValue, to: Constant { kind: .integer, integer: Big { lo: lo, hi: hi } })
     emitAssign(ref c, through: ref l, to: ltree.addLUnionTag(ref l.tree, from: LUnionTag { span: span, unionValue: self }), as: tagValue)
 }
 

@@ -189,7 +189,7 @@ BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BE
                 by: (typeDisplay(ref c, by: unwrap(ref c, for: stepType)), typeDisplay(ref c, by: declared), "", "", ""))
         }
     }
-    let pattern = bindPresent(ref b, through: ref c, at: f.variable, as: stepType)
+    let pattern = bindPresent(ref b, through: ref c, at: f.variable, as: stepType, discard: f.names.length > 0)
     let body = bindForBody(ref b, through: ref c, for: in f, by: c.bPropertyPatterns[boundIndex(pattern)].designation, to: target)
     popScope(ref b)
     let loop = addWhile(ref c, from: BWhile {
