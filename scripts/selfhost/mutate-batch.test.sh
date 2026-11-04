@@ -13,14 +13,15 @@
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/mutate-batch-test"; aux="$root/tmp/mutate-batch-test-aux"
-rm -rf "$r" "$aux" && mkdir -p "$r/selfhost/semantics" "$r/selfhost/parser" "$r/tests" "$aux/rep" "$aux/bin" && cd "$r"
-for f in semantics/a semantics/b semantics/c parser/p; do printf 'fn f() -> int {\n    return 1\n}\n' > selfhost/$f.byn; done
+rm -rf "$r" "$aux" && mkdir -p "$r/selfhost/semantics" "$r/selfhost/parser" "$r/selfhost/emitter/cprint" "$r/tests" "$aux/rep" "$aux/bin" && cd "$r"
+for f in semantics/a semantics/b semantics/c parser/p emitter/e emitter/cprint/cp; do printf 'fn f() -> int {\n    return 1\n}\n' > selfhost/$f.byn; done
 cat > tasks.md <<'T'
 # Tasks
 - [x] T1 One — files: `a.byn`, `selfhost/semantics/c.byn`, `SelfhostSemanticsATests.cs`, `SelfhostParserXTests.cs` (not `Other.cs`) — covers: R1 — after: none
   - files: `selfhost/parser/p.byn` and `ZTests.cs` here is a detail line, not a task line
 - [x] T2 Two — files: `selfhost/semantics/{b,c}.byn`, `SelfhostSemanticsCTests.cs`, `SelfhostSemanticsBTests.cs`, `SelfhostSemanticsATests.cs`, `SelfhostSemanticsT*Tests.cs` — covers: R1
 - [x] T3 Three — files: `selfhost/parser/p.byn`, `SelfhostSemanticsATests.cs` — covers: R1
+- [x] T4 Four — files: `selfhost/emitter/cprint/cp.byn`, `SelfhostEmitterT9Tests.cs`, `SelfhostSemanticsT3Tests.cs` — covers: R1
 T
 printf '{ "version": 1, "files": {} }\n' > tests/quality-baseline.json
 cp tests/quality-baseline.json "$aux/empty.json"
@@ -52,7 +53,7 @@ rep() { local bn; bn=$(basename "$1")
 f, k, s, m = sys.argv[1], *map(int, sys.argv[2:])
 ms = [{"site": {"file": f}, "status": st} for st, n in (("killed", k), ("survived", s), ("marked", m)) for _ in range(n)]
 print(json.dumps({"version": 1, "kind": "mutation", "files": [{"path": os.environ.get("REPPATH", os.getcwd() + "/" + f), "mutants": ms}]}))' "$1" "$2" "$3" "$4" > $aux/rep/$bn.json; }
-rep_all() { rep selfhost/semantics/a.byn "$@"; rep selfhost/semantics/b.byn "$@"; rep selfhost/parser/p.byn "$@"; }
+rep_all() { rep selfhost/semantics/a.byn "$@"; rep selfhost/semantics/b.byn "$@"; rep selfhost/parser/p.byn "$@"; rep selfhost/emitter/e.byn "$@"; rep selfhost/emitter/cprint/cp.byn "$@"; }
 b() { PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md "$@" 2>&1 || true; }
 score() { python3 -I -c 'import json, sys; print(json.load(open("tests/quality-baseline.json"))["files"].get(sys.argv[1], {}).get("mutation"))' "$1"; }
 list=$(b --list)
@@ -72,7 +73,7 @@ cp tests/quality-baseline.json $aux/before.json
 rep selfhost/semantics/a.byn 1 1 0; rep selfhost/semantics/b.byn 4 0 0; set +e; PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md > $aux/drop.txt 2>&1; dropx=$?; set -e; drop=$(cat $aux/drop.txt)
 cmp -s tests/quality-baseline.json $aux/before.json && dropsame=1 || dropsame=0
 dropleft=$(find tmp/mutate-batch -name 'quality-[0-9]*.json' -not -path '*/rejected/*'); droprej=$(find tmp/mutate-batch -path '*/rejected/rejected-quality-[0-9]*.json' | wc -l | tr -d ' ')
-# shards over the 3 groups (p, a, b+c): 1/2 takes groups 1 and 3, 2/2 group 2
+# shards over the 5 groups (cp, e, p, a, b+c): 1/2 takes groups 1, 3 and 5, 2/2 groups 2 and 4
 rep_all 2 0 0; rm $aux/record.txt; s1=$(b --shard 1/2 | grep '^== group' | cut -d' ' -f3 | tr '\n' ' '); s2=$(b --shard 2/2 | grep '^== group' | cut -d' ' -f3 | tr '\n' ' ')
 badshard=$(b --shard 3/2)
 # a failed mutant 0 names its group; the other groups still raise the baseline
@@ -89,14 +90,16 @@ mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(b --files selfhost/
 wf=$(cat .github/workflows/mutation.yml)
 rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
-want="selfhost/parser/p.byn -> FullyQualifiedName~SelfhostParser
+want="selfhost/emitter/cprint/cp.byn -> FullyQualifiedName~SelfhostEmitterT9Tests
+selfhost/emitter/e.byn -> FullyQualifiedName~SelfhostEmitter
+selfhost/parser/p.byn -> FullyQualifiedName~SelfhostParser
 selfhost/semantics/a.byn -> $A
 selfhost/semantics/b.byn -> $B
 selfhost/semantics/c.byn -> $B"
 [ "$list" = "$want" ] || fail "--list mapping differs (want a: SelfhostSemanticsATests; b, c: A|B|C sorted, glob class skipped; p: directory default)" "$list"
 echo "$badlist" | grep -q 'selfhost/other/z.byn' && echo "$badlist" | grep -q 'no test family' || fail "an unknown directory was not a FAIL naming it" "$badlist"
 [ $listran = 0 ] || fail "--list ran dotnet" ""
-[ "$(echo "$rec" | wc -l | tr -d ' ')" = 3 ] || fail "files sharing a filter did not share one recording (want 3 recordings)" "$rec"
+[ "$(echo "$rec" | wc -l | tr -d ' ')" = 5 ] || fail "files sharing a filter did not share one recording (want 5 recordings)" "$rec"
 echo "$rec" | grep -qxF "selfhost/semantics/b.byn,selfhost/semantics/c.byn ($B)&Snapshot!=skip" || fail "b and c were not recorded together with their filter" "$rec"
 echo "$fill" | grep -q '^mutation: 3 killed, 1 survived, 0 timeout, 1 marked' || fail "bayan mutate's summary was not printed" "$fill"
 [ "$fa" = 0.75 ] && [ "$fb" = 0.75 ] && [ "$fp" = 0.75 ] || fail "an empty baseline was not filled (a=$fa b=$fb p=$fp)" "$fill"
@@ -105,8 +108,8 @@ echo "$fill" | grep -q '^mutation: 3 killed, 1 survived, 0 timeout, 1 marked' ||
 [ "$rrec" = "selfhost/semantics/a.byn ($A)&Snapshot!=skip" ] || fail "--files a.byn did not record a's group" "$rrec"
 echo "$drop" | grep -q '^baseline: mutation score of selfhost/semantics/a.byn fell from 1.0 to 0.5 ' || fail "a drop did not name the file with old and new score" "$drop"
 [ $dropx != 0 ] && [ $dropsame = 1 ] || fail "a drop exited $dropx or changed the baseline" "$drop"
-[ -z "$dropleft" ] && [ "$droprej" = 3 ] || fail "a refused check left accepted reports ($dropleft) or rejected $droprej, not 3" "$drop"
-[ "$s1" = "parser-p semantics-b " ] && [ "$s2" = "semantics-a " ] || fail "--shard split the groups as '$s1' / '$s2'" ""
+[ -z "$dropleft" ] && [ "$droprej" = 5 ] || fail "a refused check left accepted reports ($dropleft) or rejected $droprej, not 5" "$drop"
+[ "$s1" = "cprint-cp parser-p semantics-b " ] && [ "$s2" = "emitter-e semantics-a " ] || fail "--shard split the groups as '$s1' / '$s2'" ""
 echo "$badshard" | grep -q 'want k/n' || fail "a bad --shard was accepted" "$badshard"
 [ "$m0x" != 0 ] && [ "$m0a" = 1.0 ] && [ "$m0b" = None ] || fail "a failed mutant 0 exited $m0x (a=$m0a b=$m0b)" "$m0"
 echo "$m0" | grep -q '^group semantics-b: mutation: the recording does not replay on the unmutated build' || fail "a failed mutant 0 did not name its group" "$m0"
