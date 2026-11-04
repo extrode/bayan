@@ -12,3 +12,13 @@ public BExpr lowerExpr(ref Ctx c, through ref LCtx l, for BExpr e) {
 public BExpr lowerCoalesce(ref Ctx c, through ref LCtx l, for BExpr e) {
     return e
 }
+
+/// Lowerer.cs:1732 `FailingCall` (Q845): the error temporary and the result of the lowered failing call `operand`, or null when an operand never returns.
+public (LocalId error, BExpr result)? lowerFailingCall(ref Ctx c, through ref LCtx l, for BExpr operand) {
+    return null
+}
+
+/// Lowerer.cs:1752 `Failed` (Q845): the condition that holds when the error in `error` is set.
+public BExpr lowerFailed(ref Ctx c, through ref LCtx l, at TextSpan span, for LocalId error) {
+    return -1
+}

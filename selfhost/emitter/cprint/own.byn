@@ -7,3 +7,28 @@ import semantics
 public bool ownsStorage(ref Ctx c, for Type t) {
     return false
 }
+
+/// CEmitter.cs:732 `OwnClaim` (Q845): the name of the helper by which `*p` of type `t` claims its storage, registering it.
+public string ownClaim(ref CCtx cc, from ref Ctx c, for Type t) {
+    return ""
+}
+
+/// CEmitter.cs:742 `OwnSet` (Q845): the name of the helper that stores into `*p` of type `t` through the ownership checker, registering it.
+public string ownSet(ref CCtx cc, from ref Ctx c, for Type t) {
+    return ""
+}
+
+/// CEmitter.cs:752 `OwnMove` (Q845): the name of the helper that moves a local of type `t`, recording where, registering it.
+public string ownMove(ref CCtx cc, from ref Ctx c, for Type t) {
+    return ""
+}
+
+/// CEmitter.cs:763 `OwnReturn` (Q845): the name of the helper that releases a returned value of type `t`, registering it.
+public string ownReturn(ref CCtx cc, from ref Ctx c, for Type t) {
+    return ""
+}
+
+/// CEmitter.cs:771 `IntSuffix` (Q845): the runtime suffix (`i8` .. `u64`) of integer type `t`.
+public string intSuffix(Type t) {
+    return ""
+}

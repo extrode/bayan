@@ -340,7 +340,7 @@ bool operatorApplies(ref Ctx c, for parser.BinaryOp op, as Type t) {
     }
 }
 
-bool isEquatable(ref Ctx c, for Type t) {
+public bool isEquatable(ref Ctx c, for Type t) uses alloc {
     var seen = List<i64>()
     return t19IsEquatable(ref c, for: t, by: ref seen)
 }

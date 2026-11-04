@@ -8,7 +8,7 @@ import parser
 // ── Conversions.cs ─────────────────────────────────────────────────────────────
 
 /// The implicit conversion from `a` to `t`, or null; with `argument`, `List<T>` and `T[N]` become `Span<T>`.
-ConversionKind? implicit(ref Ctx c, from Type a, to Type t, bool argument = false) {
+public ConversionKind? implicit(ref Ctx c, from Type a, to Type t, bool argument = false) {
     if a == t { return .identity }
     if isError(a) || isError(t) { return .identity }
     if isNever(a) { return .fromNever }
@@ -149,7 +149,7 @@ Type common(ref Ctx c, for Type a, as Type b) {
 /// A unique type owns storage, so a value of it has one owner: it is moved or copied explicitly, never
 /// implicitly (spec §3.11). `List`, `Map`, `StrBuf`, `Owned`, a `unique struct`, a type parameter in a
 /// generic body, and anything holding one of these by value.
-bool isUnique(ref Ctx c, for Type t) => uniquePart(ref c, for: t) != -1
+public bool isUnique(ref Ctx c, for Type t) uses alloc => uniquePart(ref c, for: t) != -1
 
 /// The innermost unique type `t` holds by value (`t` itself for a `List`), or -1.
 Type uniquePart(ref Ctx c, for Type t) {

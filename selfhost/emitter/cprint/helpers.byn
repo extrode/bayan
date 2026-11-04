@@ -7,3 +7,23 @@ import semantics
 public string equalHelper(ref CCtx cc, from ref Ctx c, for Type t) {
     return ""
 }
+
+/// CEmitter.cs:894 `MapMethod` (Q845): the C call for map builtin `member` on `map` of map type `t` with C arguments `args`, at C location `loc`.
+public string mapMethod(ref CCtx cc, from ref Ctx c, for semantics.BuiltinMember member, as Type t, at string map, by List<string> args, to string loc) {
+    return ""
+}
+
+/// CEmitter.cs:946 `Format` (Q845): the C statement that writes value `v` of type `t` to writer `w`.
+public string format(ref CCtx cc, from ref Ctx c, for Type t, at string v, to string w) {
+    return ""
+}
+
+/// CEmitter.cs:1032 `FormatInto` (Q845): struct `s`'s `formatInto` method a hole without specs calls, or -1.
+public semantics.FuncId formatInto(ref Ctx c, for semantics.StructId s) {
+    return -1
+}
+
+/// CEmitter.cs:1039 `FormatIntoWithSpec` (Q845): struct `s`'s two-parameter `formatInto(ref StrBuf, as FormatSpec)`, or -1.
+public semantics.FuncId formatIntoWithSpec(ref Ctx c, for semantics.StructId s) {
+    return -1
+}

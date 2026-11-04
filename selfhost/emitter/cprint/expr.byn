@@ -8,3 +8,8 @@ import emitter.ltree
 public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in ltree.LTree t, at ltree.LNode e) {
     return ""
 }
+
+/// CEmitter.cs:1726 `FunctionEmitter.Call` (Q845): the C text of call `e`, with `result` (C text, null for none) as its out argument.
+public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.LTree t, at BExpr e, to string? result) {
+    return ""
+}
