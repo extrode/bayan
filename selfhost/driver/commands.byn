@@ -1,9 +1,10 @@
-// The commands `lex` and `parse` of the self-hosted driver (spec 012 T2). Ports `CliApp.cs` :108 `Lex` and :125 `Parse`.
-// `types` (:141) and `check` (:448) wait for `semantics` helpers that are not public (Q944). Each takes the arguments
-// `run` kept (the command first).
+// The commands `lex`, `parse`, `types` and `check` of the self-hosted driver (spec 012 T2). Ports `CliApp.cs` :108 `Lex`,
+// :125 `Parse`, :141 `Types` and :448 `Check`; :259-309 (`Compile`, `Report`) are `semantics/cli.byn` `t26Compile` and
+// `t26Report`. Each takes the arguments `run` kept (the command first).
 
 import lexer
 import parser
+import semantics
 
 /// The arguments after the command (`args[1..]` of CliApp.cs:49).
 List<string> t2Rest(in List<string> kept) {
@@ -65,4 +66,34 @@ i32 parseCommand(in List<string> kept) {
     if printAst { return parser.parseOne(rest[0], by: lexer.Keywords.build()) }
     // stub: T2 parse without --ast (blocked: Q940)
     return refuse("parse")
+}
+
+/// CliApp.cs:141 `Types`.
+i32 typesCommand(in List<string> kept, by in DCtx d) {
+    let args = t2Rest(kept)
+    let o = semantics.t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
+    let symbols = semantics.t26Symbols(d.styleErr.ascii)
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return exitFailure }
+    Io.stdout.write(semantics.typedDump(ref c))
+    return exitOk
+}
+
+/// CliApp.cs:448 `Check`.
+i32 checkCommand(in List<string> kept, by in DCtx d) {
+    let clock = Io.monotonicNanos()
+    let args = t2Rest(kept)
+    let o = semantics.t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
+    let symbols = semantics.t26Symbols(d.styleErr.ascii)
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return semantics.t26Failed(in o, from: in reported, by: in symbols) }
+    unless o.json {
+        let dot = semantics.t26Symbols(d.styleOut.ascii).dot
+        print(semantics.checkSummary(dot, for: semantics.programName(ref c, for: o.path), by: semantics.t26Seconds(Io.monotonicNanos() - clock)))
+    }
+    return exitOk
 }

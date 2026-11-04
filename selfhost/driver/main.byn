@@ -195,9 +195,10 @@ i32 run(ReadOnlySpan<string> args, through ref DCtx d) {
             return lexCommand(in kept)
         case "parse":
             return parseCommand(in kept)
-        // stub: T2 types, check (blocked: Q944)
-        case "types" or "check":
-            return refuse(command)
+        case "types":
+            return typesCommand(in kept, by: in d)
+        case "check":
+            return checkCommand(in kept, by: in d)
         // stub: T5 build, run (the R3 refusal until the task lands)
         case "build" or "run":
             return refuse(command)

@@ -212,7 +212,7 @@ i32 check(in List<string> args, by in T26Symbols symbols) {
 }
 
 /// CliApp.cs:506 `Seconds`: `{0}s` with two decimals (`0.00` rounds half away from zero).
-string t26Seconds(i64 nanos) {
+public string t26Seconds(i64 nanos) uses alloc {
     let hundredths = (nanos + 5000000) / 10000000
     let rest = hundredths % 100
     return rest < 10 ? $"{hundredths / 100}.0{rest}s" : $"{hundredths / 100}.{rest}s"
