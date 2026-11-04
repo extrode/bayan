@@ -63,7 +63,6 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses allo
         case .failStmt:
             let errorExpr = c.bFails[i].error
             let code = lowerExpr(ref c, through: ref l, for: errorExpr)
-            // coverage-blocked: Q772 T4 lowerExpr
             if isNeverExpr(code) { break }
             let error = newTemp(ref c, through: ref l, for: t2Type(in c, through: in l, for: errorExpr))
             let target = localExpr(ref c, at: span, for: error)
@@ -113,7 +112,7 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses allo
             lowerProvide(ref c, through: ref l, for: s)
         case .becomeStmt:
             lowerBecome(ref c, through: ref l, for: s)
-        // coverage-exempt: Q769 through 118
+        // coverage-exempt: Q769 through 117
         default:
             panic($"cannot lower {semantics.boundKind(s)}")
     }
@@ -124,7 +123,6 @@ void lowerProvide(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     let i = i64(s & 0xFFFFFFFF)
     let span = c.bContexts[i].span
     let arena = lowerExpr(ref c, through: ref l, for: c.bContexts[i].allocator)
-    // coverage-blocked: Q772 T4 lowerExpr
     if isNeverExpr(arena) { return }
     let slot = l.contextSlots
     l.contextSlots += 1
@@ -151,7 +149,6 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         var lvalues = List<bool>()
         lvalues.append(true)
         var parts = List<BExpr>()
-        // coverage-blocked: Q772 T4 lowerExpr
         unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) { return }
         // C leaves `*at(xs, i) = f(&xs)` unsequenced: the value is computed first, so a call
         // that grows the list cannot leave the store pointing at freed storage.
@@ -168,7 +165,7 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
             let stable = spill(ref c, through: ref l, for: index)
             target = semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[k].span, target: c.bIndexes[k].target, index: stable, fromEnd: c.bIndexes[k].fromEnd, type: c.bIndexes[k].type })
         }
-    // coverage-blocked: Q772 T5 lowerBuiltinCall through 181
+    // coverage-blocked: Q772 T5 lowerBuiltinCall through 178
     } else if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall
         && (c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet || c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapSlot)
         && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].arguments.length > 0 {
@@ -184,7 +181,7 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     // The old value is read before `v` runs, which may change or move the target.
     // `map[k] op= v` reads through the panicking index: only `slot` inserts a missing key.
     var current: BExpr = -1
-    // coverage-blocked: Q772 T5 lowerBuiltinCall through 193
+    // coverage-blocked: Q772 T5 lowerBuiltinCall through 190
     if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet {
         let k = i64(target & 0xFFFFFFFF)
         var arguments = List<BExpr>()
@@ -197,17 +194,16 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         current = spill(ref c, through: ref l, for: target)
     }
     let targetType = t2Type(in c, through: in l, for: target)
-    // coverage-blocked: Q772 T4 lowerCoalesce through 207
     if op == .coalesce {
         // `t ??= v` is `t = t ?? v`: `v` runs only when `t` is null.
         let right = semantics.addConversion(ref c, from: T3BConversion { span: span, operand: aValue, type: targetType, kind: .toOptional })
         let coalesce = semantics.addCoalesce(ref c, from: T3BCoalesce { span: span, left: current, right: right, type: targetType })
         let coalesced = lowerCoalesce(ref c, through: ref l, for: coalesce)
+        // coverage-exempt: Q777
         if !isNeverExpr(coalesced) { emitAssign(ref c, through: ref l, to: target, as: coalesced) }
         return
     }
     var value = lowerExpr(ref c, through: ref l, for: aValue)
-    // coverage-blocked: Q772 T4 lowerExpr
     if isNeverExpr(value) { return }
     if !isTrivial(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
     let combined = semantics.addBinary(ref c, from: BBinary { span: span, op: op, left: current, right: value, type: targetType })
@@ -222,8 +218,8 @@ void lowerReturn(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     var value: BExpr = -1
     if result != -1 {
         value = lowerExpr(ref c, through: ref l, for: result)
-        // coverage-blocked: Q772 T4 lowerExpr through 229
         if isNeverExpr(value) { return }
+        // coverage-exempt: Q777 through 225
         if semantics.isVoid(t2Type(in c, through: in l, for: value)) || isVoidExpr(value) {
             emitEffect(ref c, through: ref l, for: value)
             value = -1
@@ -238,7 +234,6 @@ void lowerReturn(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
 
 /// `value is BoundLiteral or BoundDefault or BoundErrorVariant { Payload.Length: 0 } or BoundEnumMember`.
 bool t3IsPlainValue(in Ctx c, for BExpr value) {
-    // coverage-blocked: Q772 T4 lowerExpr
     if ltree.isLowered(value) { return false }
     switch semantics.boundKind(value) {
         case .literal or .defaultValue or .enumMember: return true
@@ -263,7 +258,6 @@ void lowerIf(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     let elseStmt = c.bIfs[i].elseBranch
     let isNeverIf = c.bIfs[i].isNever
     let condition = lowerExpr(ref c, through: ref l, for: c.bIfs[i].condition)
-    // coverage-blocked: Q772 T4 lowerExpr
     if isNeverExpr(condition) { return }
     captureBegin(ref l)
     if !isNeverIf {
@@ -330,7 +324,6 @@ void t3Loop(ref Ctx c, through ref LCtx l, at TextSpan span, for move List<BStmt
 void exitUnless(ref Ctx c, through ref LCtx l, for BExpr condition, to string label) uses alloc {
     let span = semantics.nodeSpan(in c, for: condition)
     let lowered = lowerExpr(ref c, through: ref l, for: condition)
-    // coverage-blocked: Q772 T4 lowerExpr
     if isNeverExpr(lowered) { return }
     t3GotoIfNot(ref c, through: ref l, at: span, for: lowered, to: label)
 }
@@ -386,7 +379,6 @@ void lowerFor(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         ops.append(start)
         ops.append(end)
         var bounds = List<BExpr>()
-        // coverage-blocked: Q772 T4 lowerExpr
         unless operands(ref c, through: ref l, for: in ops, as: in List<bool>(), to: ref bounds) { return }
         let startType = t2Type(in c, through: in l, for: start)
         let i = newTemp(ref c, through: ref l, for: startType)
@@ -430,7 +422,6 @@ void lowerFor(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     }
 
     let iterable = lowerExpr(ref c, through: ref l, for: iterableExpr)
-    // coverage-blocked: Q772 T4 lowerExpr
     if isNeverExpr(iterable) { return }
     let iterableType = t2Type(in c, through: in l, for: iterable)
     if semantics.isString(iterableType) {
@@ -576,13 +567,11 @@ void lowerUserFor(ref Ctx c, through ref LCtx l, for BStmt s, at BExpr variable,
     if user.spill != -1 {
         note(ref c, through: ref l, for: user.spill)
         let value = lowerExpr(ref c, through: ref l, for: iterableExpr)
-        // coverage-blocked: Q772 T4 lowerExpr
         if isNeverExpr(value) { return }
         subject = localExpr(ref c, at: span, for: user.spill)
         emitAssign(ref c, through: ref l, to: subject, as: value)
     } else {
         subject = isLvalueShape(ref c, through: ref l, for: iterableExpr) ? lowerLvalue(ref c, through: ref l, for: iterableExpr) : lowerExpr(ref c, through: ref l, for: iterableExpr)
-        // coverage-blocked: Q772 T4 lowerExpr
         if isNeverExpr(subject) { return }
         subject = lowerStable(ref c, through: ref l, for: subject)
         if !isLvalue(in c, through: in l, for: subject) { subject = spill(ref c, through: ref l, for: subject) }
@@ -666,7 +655,6 @@ void lowerSwitch(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     let si = i64(s & 0xFFFFFFFF)
     let span = c.bSwitches[si].span
     var value = lowerExpr(ref c, through: ref l, for: c.bSwitches[si].value)
-    // coverage-blocked: Q772 T4 lowerExpr
     if isNeverExpr(value) { return }
     if !isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
     let end = newLabel(ref l, for: "switch_end")
@@ -675,12 +663,10 @@ void lowerSwitch(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     for k in 0..c.bSwitches[si].sections.length {
         let pattern = c.bSwitches[si].sections[k].pattern
         let sectionSpan = c.bSwitches[si].sections[k].span
-        // coverage-blocked: Q772 T4 lowerClaim
         if pattern == -1 {
             fallback = k
             continue
         }
-        // coverage-blocked: Q772 T4 lowerClaim through 710
         captureBegin(ref l)
         lowerClaim(ref c, through: ref l, for: pattern)
         l.scopes.append(LScope {})
@@ -710,7 +696,6 @@ void lowerSwitch(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: sectionSpan, condition: match, then: preBlock }))
         }
     }
-    // coverage-blocked: Q772 T4 lowerClaim
     if fallback != -1 {
         l.scopes.append(LScope {})
         let statements = copyStmts(in c.bSwitches[si].sections[fallback].body)
@@ -723,7 +708,7 @@ void lowerSwitch(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
 
 /// Lowerer.cs:862 `Lvalue`: lowers an expression that must stay addressable (assignment target, `ref` argument, mutating receiver).
 public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
-    // coverage-blocked: Q772 T4 lowerExpr
+    // coverage-exempt: Q777
     if ltree.isLowered(e) { return spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: e)) }
     let i = i64(e & 0xFFFFFFFF)
     switch semantics.boundKind(e) {
@@ -734,12 +719,10 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             return e
         case .field:
             let receiver = c.bFields[i].receiver
-            // coverage-blocked: Q772 T4 lowerExpr
             let lowered = isLvalueShape(ref c, through: ref l, for: receiver) ? lowerLvalue(ref c, through: ref l, for: receiver) : spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: receiver))
             return semantics.addField(ref c, from: T3BField { span: c.bFields[i].span, receiver: lowered, field: c.bFields[i].field, type: c.bFields[i].type })
         case .tupleElement:
             let receiver = c.bTupleElements[i].receiver
-            // coverage-blocked: Q772 T4 lowerExpr
             let lowered = isLvalueShape(ref c, through: ref l, for: receiver) ? lowerLvalue(ref c, through: ref l, for: receiver) : spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: receiver))
             return semantics.addTupleElement(ref c, from: T3BTupleElement { span: c.bTupleElements[i].span, receiver: lowered, index: c.bTupleElements[i].index, type: c.bTupleElements[i].type })
         case .index:
@@ -749,7 +732,6 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             ops.append(indexTarget)
             ops.append(c.bIndexes[i].index)
             var lvalues = List<bool>()
-            // coverage-blocked: Q772 T4 lowerExpr through 758
             lvalues.append(arrayTarget && isLvalueShape(ref c, through: ref l, for: indexTarget))
             var parts = List<BExpr>()
             unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) {
@@ -758,21 +740,19 @@ public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc 
             let target = arrayTarget && !isLvalue(in c, through: in l, for: parts[0]) ? spill(ref c, through: ref l, for: parts[0]) : parts[0]
             return semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[i].span, target: target, index: parts[1], fromEnd: c.bIndexes[i].fromEnd, type: c.bIndexes[i].type })
         case .builtinCall:
-            // coverage-blocked: Q772 T5 lowerBuiltinCall through 763
+            // coverage-blocked: Q772 T5 lowerBuiltinCall through 745
             if c.bBuiltinCalls[i].member == .mapIndexSet || c.bBuiltinCalls[i].member == .mapSlot {
                 return lowerBuiltinCall(ref c, through: ref l, for: e)
             }
-            // coverage-blocked: Q772 T4 lowerExpr
             return spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: e))
         default:
-            // coverage-blocked: Q772 T4 lowerExpr
             return spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: e))
     }
 }
 
 /// Lowerer.cs:890 `IsLvalueShape`.
 public bool isLvalueShape(ref Ctx c, through ref LCtx l, for BExpr e) {
-    // coverage-blocked: Q772 T4 lowerExpr
+    // coverage-exempt: Q777
     if ltree.isLowered(e) { return false }
     let i = i64(e & 0xFFFFFFFF)
     switch semantics.boundKind(e) {
