@@ -202,7 +202,7 @@ BExpr orExpr(ref Ctx c, through in LCtx l, for BExpr a, by BExpr b) uses alloc {
 
 /// Lowerer.cs:152 `Local`.
 BExpr localExpr(ref Ctx c, at TextSpan span, for LocalId local) uses alloc {
-    // `semantics.addLocal` (bound.byn:992) resolves to binder.byn:243's private `addLocal` here (BYN2005), so this is
+    // `semantics.addLocal` (bound.byn:1211) resolves to binder.byn:260's private `addLocal` here (BYN2005), so this is
     // its body (Q763).
     c.bLocals.append(BLocal { span: span, local: local, type: c.locals[local].type })
     return semantics.makeBound(.local, at: c.bLocals.length - 1)
