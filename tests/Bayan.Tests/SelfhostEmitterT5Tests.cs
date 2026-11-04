@@ -181,12 +181,13 @@ public sealed class SelfhostEmitterT5Tests
             switch semantics.boundKind(e) {
                 case .literal:
                     let k = c.bLiterals[i].value
+                    let hasK = c.constants.tryGet(at: e) is { } ? "#k" : ""
                     switch k.kind {
-                        case .integer: return $"i{k.integer.lo}.{k.integer.hi}"
-                        case .real: return $"r{t5Real(k.real)}"
-                        case .flag: return $"b{k.flag}"
-                        case .text: return $"s{k.text}"
-                        default: return "k"
+                        case .integer: return $"i{k.integer.lo}.{k.integer.hi}{hasK}"
+                        case .real: return $"r{t5Real(k.real)}{hasK}"
+                        case .flag: return $"b{k.flag}{hasK}"
+                        case .text: return $"s{k.text}{hasK}"
+                        default: return $"k{hasK}"
                     }
                 case .defaultValue: return "default"
                 case .local: return $"local({t5Local(in c, for: c.bLocals[i].local)})"
@@ -485,7 +486,7 @@ public sealed class SelfhostEmitterT5Tests
                 case LNever: return "never";
                 case LOptionalValue v: return $"optval({Expr(v.Optional)})";
                 case BoundLiteral l:
-                    return l.Value.Value switch
+                    return (l.Value.Value switch
                     {
                         Int128 v => $"i{(ulong)(v & ulong.MaxValue)}.{unchecked((ulong)(v >> 64))}",
                         long v => $"i{(ulong)v}.{(v < 0 ? ulong.MaxValue : 0)}",
@@ -493,7 +494,7 @@ public sealed class SelfhostEmitterT5Tests
                         bool v => $"b{(v ? "true" : "false")}",
                         string v => $"s{v}",
                         _ => "k",
-                    };
+                    }) + (l.Constant is null ? "" : "#k");
                 case BoundDefault: return "default";
                 case BoundLocal l: return $"local({Local(l.Local)})";
                 case BoundField f: return $"field({f.Field.Name};{Expr(f.Receiver)})";

@@ -1,7 +1,7 @@
 // T5: Lowerer.cs 1376-1728 (`Printable`, `Assert`, `Write`, `SwitchExpr`, `TryFrom`).
 //
 // `Assert`, `AssertFails`, `Shown` and `IsLiteral` read `e.Syntax`; the bound tree keeps a span only, and T21 adds
-// `exprSyntax` (Q849), so `lowerAssert` stays a stub and the other three are not ported yet. A `x with { ... }` copy of a
+// `exprSyntax` (Q849), so `lowerAssert`, `assertFails`, `shown` and `isLiteral` stay stubs. A `x with { ... }` copy of a
 // bound node is a new node that carries the old one's `Constant` and syntax facts (`t5Copied`).
 
 import semantics
@@ -68,9 +68,7 @@ bool t5Mutating(semantics.BuiltinMember m) {
 
 /// A literal of `type` with constant `k`.
 BExpr t5Literal(ref Ctx c, at TextSpan span, by Type type, as Constant k) uses alloc {
-    let e = semantics.addLiteral(ref c, from: BLiteral { span: span, type: type, value: k })
-    semantics.setConstant(ref c, for: e, to: k)
-    return e
+    return semantics.addLiteral(ref c, from: BLiteral { span: span, type: type, value: k })
 }
 
 /// `fits` and `value op bound` (C#'s local `Check`); `fits` -1 is C#'s null.
@@ -83,6 +81,23 @@ BExpr t5Check(ref Ctx c, through in LCtx l, at TextSpan span, for BExpr fits, by
 /// Lowerer.cs:1384 `Assert`: lowers the `assert` statement `s`, appending to the current output list.
 // stub: T5 waits on T21 exprSyntax (blocked: Q849)
 public void lowerAssert(ref Ctx c, through ref LCtx l, for BStmt s) {
+}
+
+/// Lowerer.cs:1465 `AssertFails`: lowers `assert f() fails E[.x]` (`s`, whose error set is `set`), appending to the current output list.
+// stub: T5 waits on T21 exprSyntax (blocked: Q849)
+void assertFails(ref Ctx c, through ref LCtx l, for BStmt s, by semantics.ErrorSetId set) {
+}
+
+/// Lowerer.cs:1501 `Shown`: appends the sub-expressions of `e` shown on failure, outermost first, to `exprs`, and whether each may not run to `mayNotRuns`.
+// stub: T5 waits on T21 exprSyntax (blocked: Q849)
+void shown(in Ctx c, for BExpr e, by bool mayNotRun, to ref List<BExpr> exprs, as ref List<bool> mayNotRuns) {
+}
+
+/// Lowerer.cs:1519 `IsLiteral`: whether `syntax` is a literal, possibly parenthesized or signed.
+// stub: T5 waits on T21 exprSyntax (blocked: Q849)
+bool isLiteral(in parser.Expr syntax) {
+    // coverage-blocked: Q778 T21 exprSyntax
+    return false
 }
 
 /// Lowerer.cs:1528 `CallParts` (Q845): the call `e` with its receiver and arguments lowered, or -1 when one never returns.
@@ -193,7 +208,7 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
         return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type })
     }
     var lowered = parts[0]
-    // coverage-blocked: Q779 T4 lowerExpr through 198
+    // coverage-blocked: Q779 T4 lowerExpr through 213
     if mutating && !isLvalue(in c, through: in l, for: lowered) {
         lowered = spill(ref c, through: ref l, for: lowered)
     } else if !mutating && !isTrivial(in c, through: in l, for: lowered) && (member == .listAsSpan || member == .strBufAsString) {
@@ -345,7 +360,7 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
         }
         emit(ref l, for: ltree.addLGoto(ref l.tree, from: LGoto { span: arm.span, label: end }))
         let body = captureEnd(ref l)
-        // coverage-blocked: Q779 T4 lowerMatch through 360
+        // coverage-blocked: Q779 T4 lowerMatch through 375
         if arm.guard == -1 {
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move body) }))
             continue
