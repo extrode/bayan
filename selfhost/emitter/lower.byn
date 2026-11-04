@@ -18,6 +18,7 @@ type BBinary = semantics.BBinary
 type BBlock = semantics.BBlock
 type BDefault = semantics.BDefault
 type BExprStmt = semantics.BExprStmt
+type BIf = semantics.BIf
 type BLiteral = semantics.BLiteral
 type BLocal = semantics.BLocal
 type BStructLiteral = semantics.BStructLiteral
@@ -149,8 +150,7 @@ public List<BStmt> captureEnd(ref LCtx l) {
 /// Lowerer.cs:131 `CaptureExpr` (D5): the lowered value, with the statements it needs first in `pre`.
 BExpr captureExpr(ref Ctx c, through ref LCtx l, for BExpr e, bool lvalue, to ref List<BStmt> pre) uses alloc {
     captureBegin(ref l)
-    // stub: T2 the `lvalue` side calls T3's `Lvalue` (Lowerer.cs:862), which has no entry in 011-api.md (blocked: Q764)
-    let value = lowerExpr(ref c, through: ref l, for: e)
+    let value = lvalue ? lowerLvalue(ref c, through: ref l, for: e) : lowerExpr(ref c, through: ref l, for: e)
     pre = captureEnd(ref l)
     return value
 }
@@ -543,8 +543,20 @@ bool moves(in Ctx c, through in LCtx l, for semantics.BNode node, by LocalId loc
 
 /// Lowerer.cs:296 `CaptureGuard`: a guarded defer body (`defer stmt if c`) with its condition read now, at registration (J20).
 BStmt captureGuard(ref Ctx c, through ref LCtx l, for BStmt body) uses alloc {
-    // stub: T2 a `BIf` does not record that its syntax is a `GuardedStmt` (blocked: Q765)
-    return body
+    if ltree.isLowered(body) || semantics.boundKind(body) != .ifStmt { return body }
+    let i = i64(body & 0xFFFFFFFF)
+    // coverage-exempt: Q765
+    if !c.bIfs[i].guarded || c.bIfs[i].elseBranch != -1 { return body }
+    let read = c.bIfs[i].condition
+    let condition = spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: read))
+    return semantics.addIf(ref c, from: BIf {
+        span: c.bIfs[i].span,
+        condition: condition,
+        then: c.bIfs[i].then,
+        elseBranch: c.bIfs[i].elseBranch,
+        isNever: c.bIfs[i].isNever,
+        guarded: c.bIfs[i].guarded,
+    })
 }
 
 /// Lowerer.cs:300 `EmitCleanups`: the cleanups of scopes `depth` and deeper, innermost first; errdefers only when

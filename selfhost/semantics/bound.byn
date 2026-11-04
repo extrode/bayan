@@ -734,6 +734,7 @@ public struct BIf {
     public BStmt then
     public BStmt elseBranch = -1
     public bool isNever = false
+    public bool guarded = false
 }
 
 public struct BWhile {

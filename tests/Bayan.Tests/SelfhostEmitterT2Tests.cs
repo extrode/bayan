@@ -112,6 +112,11 @@ public sealed class SelfhostEmitterT2Tests
             sb.append($"{cprint.helper(ref cc, for: "a", from: "pa", as: "ba")}\n")
             sb.append($"{cprint.helper(ref cc, for: "a", from: "px", as: "bx")}\n")
             sb.append($"{cprint.helper(ref cc, for: "b", from: "pb", as: "bb")}\n")
+            if cprint.helperReserve(ref cc, for: "o", from: "po") {
+                sb.append($"{cprint.helper(ref cc, for: "i", from: "pi", as: "bi")}\n")
+                sb.append($"{cprint.helper(ref cc, for: "o", from: "px", as: "bx")}\n")
+                sb.append($"{cprint.helperFill(ref cc, for: "o", from: "po", as: "bo")}\n")
+            }
             for n in cc.helperOrder { sb.append($"{n} {cc.helpers[n].proto} | {cc.helpers[n].body}\n") }
             return $"{sb.finish()}"
         }
@@ -467,6 +472,25 @@ public sealed class SelfhostEmitterT2Tests
 
             sb.append($"guard {captureGuard(ref c, through: ref l, for: empty) == empty}\n")
 
+            // CaptureGuard on guarded defer bodies, a plain `if` with and without `else`, and a call.
+            let gd = t2Func(ref c, for: "gd")
+            t2Reset(ref l, for: gd)
+            let gdBody = c.functions[gd].body & 0xFFFFFFFF
+            for gi in 0..c.bBlocks[gdBody].statements.length {
+                let d = c.bBlocks[gdBody].statements[gi]
+                if ltree.isLowered(d) || semantics.boundKind(d) != .deferStmt { continue }
+                let body = c.bDefers[d & 0xFFFFFFFF].body
+                let o0 = l.outs[l.outs.length - 1].length
+                let r = captureGuard(ref c, through: ref l, for: body)
+                sb.append($"guard {r == body} {!ltree.isLowered(r) && semantics.boundKind(r) == .ifStmt}")
+                if !ltree.isLowered(r) && semantics.boundKind(r) == .ifStmt && semantics.boundKind(body) == .ifStmt {
+                    let ri = r & 0xFFFFFFFF
+                    let bi = body & 0xFFFFFFFF
+                    sb.append($" then={c.bIfs[ri].then == c.bIfs[bi].then} else={c.bIfs[ri].elseBranch == -1} temp={t2IsTemp(in c, for: c.bIfs[ri].condition)}")
+                }
+                sb.append($" out={l.outs[l.outs.length - 1].length - o0}\n")
+            }
+
             // EmitCleanups over every cleanup kind, without and with a failing error.
             for round in 0..2 {
                 let withError = round == 1
@@ -649,8 +673,14 @@ public sealed class SelfhostEmitterT2Tests
         Assert.Contains(main, SelfhostSemanticsHarness.Sections(stdout)["lower"]);
     });
 
-    [Fact]
-    public void Lower_WithErrorsFailsLikeCSharp() => WithFixture("void main() { let x: i64 = \"s\" }\n", path =>
+    /// The last three bind statements `bindStatement` reaches only with errors: `Panic.onPanic` (BYN2230), a `Panic` member
+    /// that is not a handler, and a `Panic` local.
+    [Theory]
+    [InlineData("void main() { let x: i64 = \"s\" }\n")]
+    [InlineData("void onCrash(Panic p) { }\n\nvoid main() {\n    Panic.onPanic = onCrash\n}\n")]
+    [InlineData("void main() {\n    Panic.other = 1\n}\n")]
+    [InlineData("struct Q {\n    i64 handler\n}\n\nvoid main() {\n    var Panic = Q { handler: 1 }\n    Panic.handler = 2\n}\n")]
+    public void Lower_WithErrorsFailsLikeCSharp(string source) => WithFixture(source, path =>
     {
         var e = Assert.Throws<InvalidOperationException>(() => Lowerer.Lower(Compile(path)));
         var (exit, _, err) = Run("lower", path);
@@ -671,6 +701,13 @@ public sealed class SelfhostEmitterT2Tests
             emitter.Helper("a", "px", () => "bx"),
             emitter.Helper("b", "pb", () => "bb"),
         };
+        // A body that registers helpers: the outer name is reserved first (CEmitter.cs:593-597).
+        expected.Add(emitter.Helper("o", "po", () =>
+        {
+            expected.Add(emitter.Helper("i", "pi", () => "bi"));
+            expected.Add(emitter.Helper("o", "px", () => "bx"));
+            return "bo";
+        }));
         var helpers = (Dictionary<string, (string Proto, string Body)>)Field(emitter, "_helpers")!;
         foreach (var n in (List<string>)Field(emitter, "_helperOrder")!) expected.Add($"{n} {helpers[n].Proto} | {helpers[n].Body}");
         SelfhostSemanticsHarness.AssertSection(RunMode("helper", path), "helper", expected);
@@ -875,6 +912,15 @@ public sealed class SelfhostEmitterT2Tests
             m.slot(key: "b") += 2
         }
 
+        void gd(bool f) {
+            defer print("x") if f
+            defer print("w") unless f
+            defer if f { print("y") }
+            defer if f { print("y") } else { print("v") }
+            defer print("z")
+            unless f { print("u") }
+        }
+
         void main() { }
         """;
 
@@ -1025,6 +1071,19 @@ public sealed class SelfhostEmitterT2Tests
             lines.Add($"type {emitter.Key(t)} {emitter.CType(t)}");
 
         lines.Add($"guard {Flag(ReferenceEquals(Do(fl, "CaptureGuard", empty), empty))}");
+
+        var gd = functions.First(f => f.Name == "gd");
+        var guards = New(gd);
+        foreach (var d in gd.Body!.Statements.OfType<BoundDefer>())
+        {
+            var o0 = Out(guards).Count;
+            var r = (BoundStmt)Do(guards, "CaptureGuard", d.Body)!;
+            var gl = new StringBuilder($"guard {Flag(ReferenceEquals(r, d.Body))} {Flag(r is BoundIf)}");
+            if (r is BoundIf ri && d.Body is BoundIf bi)
+                gl.Append($" then={Flag(ReferenceEquals(ri.Then, bi.Then))} else={Flag(ri.Else is null)} temp={Flag(ri.Condition is BoundLocal { Local.Kind: LocalKind.Temp })}");
+            gl.Append($" out={Out(guards).Count - o0}");
+            lines.Add(gl.ToString());
+        }
 
         object Cleanup(string kind, params object?[] args) =>
             Activator.CreateInstance(FunctionLowerer.GetNestedType(kind, BindingFlags.NonPublic)!, args)!;

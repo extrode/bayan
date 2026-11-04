@@ -165,13 +165,10 @@ List<Type> t2Copy(in List<Type> xs) uses alloc {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/// CEmitter.cs:591 `Helper` (D5): registers helper `name` once, reserving its place before filling it. `body` is
-/// already built, so a helper it registered comes first in `helperOrder` (Q763).
+/// CEmitter.cs:591 `Helper` (D5): registers helper `name` once through `helperReserve` and `helperFill`. `body` is
+/// already built, so a caller whose body registers other helpers calls the pair itself (Q763).
 public string helper(ref CCtx cc, for string name, from string proto, as string body) uses alloc {
-    if cc.helpers.contains(name) { return name }
-    cc.helpers[name] = CHelper { proto: proto, body: "" }
-    cc.helperOrder.append(name)
-    cc.helpers[name] = CHelper { proto: proto, body: $"{proto} {body}" }
+    if helperReserve(ref cc, for: name, from: proto) { let _ = helperFill(ref cc, for: name, from: proto, as: body) }
     return name
 }
 
@@ -211,10 +208,14 @@ public void mapLine(ref StrBuf sb, from in Ctx c, through ref CFunc f, at semant
 
 /// CEmitter.cs:593-595 `Helper` (D5, Q840): reserves helper `name` before its body is built; false when it is registered.
 public bool helperReserve(ref CCtx cc, for string name, from string proto) uses alloc {
-    return false
+    if cc.helpers.contains(name) { return false }
+    cc.helpers[name] = CHelper { proto: proto, body: "" }
+    cc.helperOrder.append(name)
+    return true
 }
 
 /// CEmitter.cs:596-597 `Helper` (D5, Q840): fills reserved helper `name` with `body` and returns its name.
 public string helperFill(ref CCtx cc, for string name, from string proto, as string body) uses alloc {
+    cc.helpers[name] = CHelper { proto: proto, body: $"{proto} {body}" }
     return name
 }
