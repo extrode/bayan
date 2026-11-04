@@ -1,6 +1,6 @@
 # Bayān Style — Proposal
 
-Status: decided (all items in §5 settled). Layout rules land in `bayan format` and STYLE.md; one rule (§3.4) needs a small grammar revision.
+Status: decided (all items in §5 settled). Layout rules land in `bayan format` and docs/bayan-style.md; one rule (§3.4) needs a small grammar revision.
 
 ---
 
@@ -81,7 +81,7 @@ public Money quote(Cart cart, for Customer customer)
 
 Rules:
 - The formatter **keeps** a single blank line the author wrote, collapses runs of blank lines to one, and removes blank lines directly after `{` and before `}`.
-- It never inserts blank lines inside a body; where to break paragraphs is the author's call. STYLE.md recommends: after setup, after a run of guards, around loops, before the final `return`.
+- It never inserts blank lines inside a body; where to break paragraphs is the author's call. docs/bayan-style.md recommends: after setup, after a run of guards, around loops, before the final `return`.
 
 ### 3.2 Declarations and members
 
@@ -125,7 +125,7 @@ Rules:
 - **Alignment in runs.** A run is consecutive lines of the same shape with no blank line or comment line between them. Within a run, align the name column (fields, properties) and the `=>` column (properties). A blank line ends the run, which keeps diff noise local. This is gofmt's model, and it matters more in Bayān than in Go: type-first declarations put a variable-width type before every name.
 - One blank line between member groups: fields, `states`, properties, static members, methods. One blank line between methods.
 - Blocks with statements always span lines; only `=>` bodies stay on one line.
-- Attributes go on their own line above types and functions, and inline before fields and parameters (`@untrusted string note`).
+- Attributes go on their own line above types and functions, and inline before fields and parameters (`@json(name: "note") string note`).
 
 ### 3.3 Switch arms
 
@@ -135,7 +135,7 @@ let label = switch order {
     .placed => "Awaiting payment"
     .paid p => $"Paid via {p.payment.method}"
     .shipped s => $"Shipped, tracking {s.tracking}"
-    .cancelled => "Cancelled"
+    .canceled => "Canceled"
 }
 ```
 
@@ -145,7 +145,7 @@ let label = switch order {
     .placed    => "Awaiting payment"
     .paid p    => $"Paid via {p.payment.method}"
     .shipped s => $"Shipped, tracking {s.tracking}"
-    .cancelled => "Cancelled"
+    .canceled => "Canceled"
 }
 ```
 
@@ -154,7 +154,7 @@ Same run rule: single-line arms align `=>`. A multi-line arm ends the run.
 ### 3.4 Wrapped headers
 
 When a function signature or a control-flow head (`if`, `while`, `for`) doesn't fit the width, or a signature has two or more clauses:
-- each clause goes on its own line, indented one level, in canonical order (`where` → `expects` → `uses` → `becomes` → `fails`);
+- each clause goes on its own line, indented one level, in the proposed round-4 order (`where` → `expects` → `uses` → `becomes` → `fails`);
 - the opening `{` goes **on its own line** at the header's indent.
 
 The own-line brace is what separates the last clause from the first statement. Without it, an indented `fails QuoteError` and an indented `let rates = …` look alike. rustfmt uses the same rule for multi-line `where` clauses.
@@ -178,7 +178,7 @@ if order is .paid
 ```
 
 ```cs
-// After (lint suggestion BYN4005: name the condition)
+// After (lint suggestion TBD (x9xx of BYN4xxx, A2): name the condition)
 let shipsFree = order is .paid
     and order.total >= freeShippingThreshold
     and customer.region.shipsFree
@@ -278,8 +278,8 @@ One blank line between top-level declarations. Consecutive one-line declarations
 
 ### 3.9 Naming (unchanged, now written down)
 
-- `PascalCase`: types, unions, effects aliases, attributes' derivation names (`@derive(Json)`).
-- `camelCase`: functions, fields, locals, cases (`.paid`), attributes (`@json`), constants.
+- `PascalCase`: types, unions, attributes' derivation names (`@derive(Json)`).
+- `camelCase`: functions, fields, locals, cases (`.paid`), effect aliases (`effect db = net, fs`), attributes (`@json`), constants.
 - Acronyms are words: `Utf8`, `Json`, `Sql`, `CustomerId`, `httpClient`.
 - No prefixes or suffixes for kind (`IFoo` aside from the existing interface convention, `_field`, `m_`).
 
@@ -293,42 +293,42 @@ One blank line between top-level declarations. Consecutive one-line declarations
 | --- | --- | --- | --- |
 | **Grammar** | compiler, BYN1xxx and BYN5xxx errors | no | `} else {`, operand on same line, `;`, particles, naming grammar |
 | **Layout** | `bayan format` rewrites; no diagnostics | a few knobs | indent, width, blank lines, wrapping, alignment, spacing |
-| **Idioms** | style lints, new BYN4xxx range | severity per lint | postfix guards, `it` lambdas, nesting depth |
+| **Idioms** | style lints, `x900–x999` of the matching area (A2) | severity per lint | postfix guards, `it` lambdas, nesting depth |
 
 Layout never produces a warning. You don't fix it, you run the formatter. That is the gofmt lesson. Idioms are judgement calls, so they are lints with the same severity model as `dotnet_diagnostic.X.severity`.
 
-The BYN4xxx range looks unused in the current scheme (1xxx syntax, 3xxx types, 5xxx grammar, 6xxx effects, 7xxx typestate, 8xxx security, 9xxx traps). Confirm this during the round-4 renumbering.
+Style and idiom lints take codes in the `x900–x999` range of their area (addendum A2, docs/revisions/0017-addendum-a2-diagnostic-codes.md): 0xxx project, files, `package.byn`, CLI and tools; 1xxx syntax, 2xxx types, 3xxx memory, 4xxx control flow and failure, 5xxx grammar and naming, 6xxx effects and concurrency, 7xxx typestate and contracts, 8xxx trust and security, 9xxx build, C backend, toolchain and runtime traps. Numbers are assigned at the round-4 renumbering.
 
 Initial lints (all `.suggestion` by default):
 
 | Code | Name | Flags |
 | --- | --- | --- |
-| BYN4001 | `guards.postfix` | an `if` block whose only statement is `return`, `fail`, `break` or `continue` → `fail .x if c` |
-| BYN4002 | `lambdas.it` | `x => x.f` with one parameter → `it.f` |
-| BYN4003 | `nesting.depth` | blocks nested more than 4 deep → suggest early exit |
-| BYN4004 | `functions.length` | body over N lines (off by default) |
-| BYN4005 | `conditions.named` | a control head that wraps → suggest a named `let` |
+| TBD (x9xx of BYN4xxx control flow, A2) | `guards.postfix` | an `if` block whose only statement is `return`, `fail`, `break` or `continue` → `fail .x if c` |
+| TBD (x9xx of BYN1xxx syntax, A2) | `lambdas.it` | `x => x.f` with one parameter → `it.f` |
+| TBD (x9xx of BYN4xxx control flow, A2) | `nesting.depth` | blocks nested more than 4 deep → suggest early exit |
+| TBD (x9xx of BYN4xxx control flow, A2) | `functions.length` | body over N lines (off by default) |
+| TBD (x9xx of BYN4xxx control flow, A2) | `conditions.named` | a control head that wraps → suggest a named `let` |
 
 ### 4.2 Configuration: `package.byn` is the source of truth
 
 ```cs
 Package {
-    name: "suq"
-    edition: 2026
+    name: "local/suq",
+    edition: 2026,
 
     style: Style {
-        indent: 4
-        width: 120
-        align: .runs                 // .none
-        trailingCommas: .multiline   // .never
-        booleans: .symbols           // .words
-        primitives: .sized           // .csharp
+        indent: 4,
+        width: 120,
+        align: .runs,               // .none
+        trailingCommas: .multiline,  // .never
+        booleans: .symbols,          // .words
+        primitives: .sized,          // .csharp
 
         lints: [
             "guards.postfix": .warning,
             "functions.length": .none,
-        ]
-    }
+        ],
+    },
 }
 ```
 
@@ -374,7 +374,7 @@ This reuses the existing `because` purpose clause, and `bayan audit` lists every
 | 3 | Wrapped headers | **own-line `{`** for any wrapped signature or control head (§3.4); needs a waqf revision |
 | 4 | Alignment | **`.runs`** by default; projects may set `.none` |
 | 5 | Config | **`package.byn`** is the source of truth |
-| 6 | Style lints | **BYN4xxx**, confirmed during renumbering |
+| 6 | Style lints | **x900–x999 of the matching area** (A2), assigned at renumbering |
 | 7 | Opt-out | **`@unformatted because "…"`** only |
 
-Timing: layout rules and lints touch only `bayan format` and STYLE.md, so they can land without disrupting in-flight work. Only item 3 needs a numbered revision.
+Timing: layout rules and lints touch only `bayan format` and docs/bayan-style.md, so they can land without disrupting in-flight work. Only item 3 needs a numbered revision.

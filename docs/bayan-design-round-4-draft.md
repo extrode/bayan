@@ -12,7 +12,7 @@ Order of work:
 2. Feature decisions (sections 6 to 9), revised by what the retrospective finds.
 3. A numbered plan in the round-3 format, handed to the agent after 012.
 
-Where this draft cites the spec, it relies on the round-3 plan, its consolidated summary and recorded decisions. SPEC.md and GRAMMAR.md are not in the project, so section references should be checked against them before finalizing.
+Where this draft cites the spec, it relies on the round-3 plan, its consolidated summary and recorded decisions.
 
 Clause order changes in round 4 to `where → expects → uses → becomes → fails`; examples here use the new order. It lands as the first commit after 012: flip the canonical order in BYN1065, run `bayan format` over the repository (including the self-hosted compiler), regenerate goldens. No manual edits.
 
@@ -44,7 +44,7 @@ let n: int = count                       let n: i32 = count
 if !done && n > 0 { … }                  if not done and n > 0 { … }
 ```
 
-This is the dialect problem we cite against macros, in a smaller form. Proposal: keep the setting, but make `bayan format --display` show either style, and make docs and std use one.
+This is the dialect problem we cite against macros, in a smaller form. Proposal: keep the setting, but make the language server show either style (a display option or inlay hint, not a `bayan format` flag), and make docs and std use one.
 
 ### Word order
 
@@ -220,12 +220,15 @@ Round 4 holds every syntax change in one batch, landed after 012 with one migrat
 
 | Feature | Pros | Cons |
 | --- | --- | --- |
+| Replace `async`/`await` and `Io.group` with `scope`/`spawn` (spec §13, Appendix A) | One structured form; no function coloring; reopens Appendix A by user decision 2026-11-04 | Spec §13 and Appendix A rewritten by revision |
+| Remove `provide timeout: d { … }` (spec §13 :1556) | The block deadline is `scope(timeout:)` / `until:`; also clashes with BYN6007 | Spec §13 edit |
+| Structured concurrency with shared-nothing workers | Borrow safety across fibers by construction | Spec in round 4, runtime v0.2 (bayan-concurrency.md) |
 | Subjectless `switch` | Replaces long `else if` chains; same C as the chain | One new parse form |
 | `when` guards on pattern arms | Mixes patterns and conditions | Guarded arms do not count for exhaustiveness |
-| `final` states (BYN7010) | Catches a forgotten commit or close at compile time | Path analysis over `fail`, `try`, `defer` |
+| `final` states (BYN7013) | Catches a forgotten commit or close at compile time | Path analysis over `fail`, `try`, `defer` |
 | Closure escape rule + `fails` polymorphism | Zero-allocation closures by default; lambdas can call failing functions | Real checker work; needs compile-fail tests |
 | `dbg(x)` | Daily debugging aid | Must be an error in release builds |
-| `!(x is .s)` input form (BYN1069) | One spelling of negated `is` | One more code |
+| `!(x is .s)` input form (BYN1070) | One spelling of negated `is` | One more code |
 | Payload size-ratio lint | Keeps `Result` small | Heuristic threshold |
 | Diagnostic renumbering | Codes grouped by category, as intended | One-time alias table |
 | Consuming `finish()` (`move this`) | Hands the heap block to the caller, so a function can return a built string without a copy (revision 0018 made `finish()` a loan) | A second `finish` form, or a `move` overload rule; the buffer is unusable after it |
@@ -246,7 +249,7 @@ void save(Connection.open conn) uses net fails DbError {
     defer failing tx.rollback()
     try tx.execute(sql"INSERT …")
     try tx.commit()
-}   // without the commit: BYN7010, `tx` is still .active
+}   // without the commit: BYN7013, `tx` is still .active
 
 // closures: borrowed by default, `fails` passes through
 void retain<T>(ref List<T> xs, where (T -> bool fails E) keep) fails E { … }
@@ -285,7 +288,6 @@ let record: TableRecord = try TableRecord.decode(bytes)   // bytes: Untrusted<Re
 | --- | --- | --- |
 | Compile-time evaluation of functions with empty `uses` | Lookup tables at build time; purity check is free | An interpreter inside the compiler |
 | `@soa` layout | Large gains in hot loops | `ref xs[i]` becomes awkward |
-| Structured concurrency with shared-nothing workers | Borrow safety across fibers by construction | Must be designed with fibers |
 
 ## 8. Classes and GC
 
@@ -350,12 +352,12 @@ The last row gives scripts most of what people want from a GC. If the context al
 | `class`, optional GC | Section 8 |
 | Goose's heap-less model | Conflicts with `alloc`, arenas and collections |
 | Macros, resumable effects, types-as-values comptime | Dialects, stack switching, slow compiles |
-| Inheritance, exceptions, implicit conversions, runtime reflection, async/await, explicit lifetimes, dependent types | Each contradicts a recorded decision |
+| Inheritance, exceptions, implicit conversions, runtime reflection, `async`/`await` (replaced by `scope`/`spawn`, bayan-concurrency.md), explicit lifetimes, dependent types | Each contradicts a recorded decision |
 
 ### Open questions
 
 - [ ] How does 007 lower a function-typed parameter today: `{fn, env*}`, monomorphized, or boxed?
-- [ ] Spelling of a failing function type: `(T -> bool fails E)`, matching `(Line -> Money uses net)`?
+- [ ] Order of `fails` and `uses` in function types, e.g. `(T -> bool fails E uses net)`? (`() -> T fails DbError` is already specified, spec :551.)
 - [ ] Renumber diagnostics before 1.0, with one edition of aliases?
 - [ ] Synonym styles: keep per-project, or one canonical style with a display option?
 - [ ] Lockfile and package registry: when?

@@ -4,6 +4,12 @@ Nov 1, 2026 · Confirmed design, to be specced in round 4 and implemented in v0.
 
 Examples use the proposed round-4 clause order (`where → expects → uses → becomes → fails`). Cancel words use US spelling (`canceled`, `canceling`).
 
+## Relation to the spec
+
+This reopens Appendix A's `async`/`await` (user decision 2026-11-04): `scope`/`spawn` replaces `async`/`await` and `Io.group()`. Round 4 removes `async`/`await`/`Io.group` from spec §13 and Appendix A by revision.
+
+The block deadline is `scope(timeout:)` / `until:` (user decision 2026-11-04). Round 4 removes `provide timeout: d { … }` (spec §13 :1556), which also clashes with BYN6007.
+
 ## 1. Decisions
 
 | # | Decision | Built-in remedies |
@@ -26,7 +32,7 @@ void main() uses net, suspend, alloc fails NetError {
     try server.serve(by: handle)        // each request runs on the worker that accepted it
 }
 
-@threadLocal var sessions: Map<SessionId, Session> = [:]   // one map per worker, no lock
+@threadLocal var sessions: Map<SessionId, Session> = []   // one map per worker, no lock
 
 Response handle(Request req) uses net, suspend, alloc fails HttpError {
     let session = sessions.tryGet(req.sessionId) ?? return Response.unauthorized
@@ -138,8 +144,10 @@ Only channels, `workers: .compute` scopes and `Arc` cross threads. Two marker in
 | `IShareable` | Can be read from several threads at once | Unsynchronized mutable state; `Mutex<T>` and `Atomic<T>` qualify |
 
 ```cs
-let thumbnail = try scope(workers: .compute) {
-    return try spawn(resize(move image, to: 256px)).join()
+var thumbnail: Image? = nil
+scope(workers: .compute) {
+    let job = spawn resize(move image, to: 256px)
+    thumbnail = try job.join()
 }
 
 scope(workers: .compute) {
@@ -160,11 +168,11 @@ struct unique Hasher {
 Holding an OS lock while a fiber parks deadlocks the worker, so it is an error. The block form makes the check exact: the closure passed to `with` has an effect bound that excludes `suspend`.
 
 ```cs
-var buckets: Mutex<Map<ApiKey, Bucket>> = Mutex([:])     // module level
+var buckets: Mutex<Map<ApiKey, Bucket>> = Mutex([])     // module level
 
 bool allow(ApiKey key) uses net, suspend fails NetError {
     let plan = try billing.plan(for: key)                 // I/O first
-    return buckets.with { ref map => map[key].take(for: plan) }   // short, cannot suspend
+    return buckets.with((ref map) => map[key].take(for: plan))   // short, cannot suspend
 }
 ```
 
@@ -308,7 +316,7 @@ New diagnostics (numbers assigned at the round-4 renumbering, area 6xxx unless n
 
 ## 11. Failure isolation
 
-Added after the October 2026 PHP2Shell flaws, where an out-of-memory `longjmp` left request data half-built and a later request on the same worker read stale state. See the packages doc, section 6.
+Added after the October 2026 PHP2Shell flaws, where an out-of-memory `longjmp` left request data half-built and a later request on the same worker read stale state.
 
 | Rule | Why |
 | --- | --- |

@@ -114,7 +114,7 @@ var buf: u8[512] = …
 let n = count(lines)               // List<T> → T[]
 zero(buf)                          // T[N] → var T[]
 let h = checksum(name)             // string → u8[]
-let v: u8[] = buf                  // var T[] → T[] is implicit; T[] → var T[] never
+let v: u8[] = buf.span             // owned T[N] → view needs .span outside a call argument; T[] → var T[] never
 ```
 
 #### Nesting
@@ -169,16 +169,16 @@ struct Token {
   - `xs.span` gives `T[]`; `xs.mutableSpan()` gives `var T[]`.
   - `xs.copy(to: alloc)` gives an owned copy.
   - `string.bytes` gives `u8[]`; `StrBuf.view` gives a string view.
-  - `stackalloc u8[n] uninit` gives `var u8[]`.
-- **Input forms:** `ReadOnlySpan<T>` → `T[]` and `Span<T>` → `var T[]`, with fixes. `bayan format --display` may show the long forms.
+  - `stackalloc u8[n] uninit` gives `Uninit<u8>`; writing APIs return the initialized prefix as `var u8[]`.
+- **Input forms:** `ReadOnlySpan<T>` → `T[]` and `Span<T>` → `var T[]`, with fixes. The language server may show the long forms (display option or inlay hint).
 - **BYN2310's new message:** "`{0}` is never written through; write `{1}[]`".
-- **`bayan migrate cs`** maps `ReadOnlySpan<T>`, `Span<T>` and `params T[]` to `T[]`, `var T[]` and `rest T[]`.
+- **`bayan migrate cs`** (post-v1, tiers doc) maps `ReadOnlySpan<T>`, `Span<T>` and `params T[]` to `T[]`, `var T[]` and `rest T[]`.
 - **Suspend points:** views may cross them (fibers keep their stacks; storing a view is still BYN3214). *Pending Q745.*
 
 ### S2. Implicit type and error-set parameters
 
 ```cs
-// before (SPEC :1125; round-4 §7)
+// before (spec §11 :1437; round-4 §7)
 T max<T>(ReadOnlySpan<T> xs) where T : IOrder<T>
 void retain<T>(ref List<T> xs, where (T -> bool fails E) keep) fails E
 
@@ -277,7 +277,7 @@ return .zero
 - Resolves camelCase statics and factories of a single expected type. There's no search across overloads (round-4 §3, §5 Swift).
 - PascalCase segments stay derived shapes (`T.Patch`).
 - Constructors stay `T(x)`.
-- `.a(.b())` is a BYN4xxx lint.
+- `.a(.b())` is a lint: TBD (x9xx of BYN2xxx, A2).
 - BYN7008 is extended to union cases versus statics.
 
 ### S7. Local type aliases and the hidden-allocation lint
@@ -288,7 +288,7 @@ void mix(to var f32[] dst, f32[] a, b) {
     …
 }
 
-type Orders = List<Order>     // BYN4xxx: the alias hides an allocating type
+type Orders = List<Order>     // lint, TBD (x9xx of BYN3xxx, A2): the alias hides an allocating type
 ```
 
 ### S8. Case-indexed arrays: `T[U]`
@@ -316,14 +316,14 @@ totals[.myr] += line.cents
 
 ## 5. Style
 
-This section follows the Nov 4 standard:
+This section follows bayan-style-proposal.md:
 
 - Indentation is consistency-only.
 - Width is 120.
 - `{` goes on its own line after a wrapped signature or control head.
 - Alignment is `.runs` by default, with `.none` allowed.
 - `package.byn` is the source of truth.
-- Style lints are BYN4xxx.
+- Style lints are `TBD (x9xx of their area, A2)`: `guards.postfix`, `nesting.depth`, `functions.length` and `conditions.named` in 4xxx control flow, `lambdas.it` in 1xxx syntax.
 - `@unformatted because "…"` is the only opt-out.
 
 **Wrapped lists:** each item goes on its own line, indented once, and `)` closes on the last item's line. A wrapped signature or control head then puts `{` on its own line.
@@ -348,7 +348,7 @@ public Grams shippingWeight(
 
 **Spelling:** `u8[]`, `u8[64]`, `var u8[]`, `u8[]?`, `Vec3 a, b`, `.zero`; no inner spaces.
 
-**Lints (BYN4xxx):**
+**Lints (TBD, x9xx of their area, A2: nested leading dot in 2xxx types, hidden allocation and redundant `.span` in 3xxx memory, repeated adjacent types in 1xxx syntax):**
 
 | Lint | Trigger | Fix |
 |---|---|---|
@@ -412,7 +412,7 @@ public Grams shippingWeight(
   - Derived `==` on structs with view fields.
   - The `T[]?` niche.
 - **Migration:** the round-4 batch migration, plus the C#-embedded tests that spell `ReadOnlySpan` or `Span` (J9).
-- **`bayan migrate cs`:** the mappings in S1.
+- **`bayan migrate cs`** (post-v1; not a round-4 test): the mappings in S1.
 
 ---
 
