@@ -8,13 +8,6 @@ import semantics
 import parser
 import emitter.ltree
 
-type BBuiltinCall = semantics.BBuiltinCall
-type BCall = semantics.BCall
-type BConditional = semantics.BConditional
-type BConversion = semantics.BConversion
-type BField = semantics.BField
-type BIndex = semantics.BIndex
-type BTupleElement = semantics.BTupleElement
 type LGoto = ltree.LGoto
 type LLabel = ltree.LLabel
 type LNever = ltree.LNever
@@ -29,7 +22,6 @@ public bool printable(Type t) {
 }
 
 /// `e is BoundBuiltinCall { Member: member }`.
-// coverage-blocked: Q779 T4 lowerExpr
 bool t5IsBuiltin(in Ctx c, for BExpr e, by semantics.BuiltinMember member) => !ltree.isLowered(e) && semantics.boundKind(e) == .builtinCall && c.bBuiltinCalls[e & 0xFFFFFFFF].member == member
 
 /// The `Constant` and syntax facts (Q537) of `old`, which `old with { ... }` keeps, set on its copy.
@@ -127,8 +119,9 @@ public BExpr lowerCallParts(ref Ctx c, through ref LCtx l, for BExpr e) uses all
     if hasReceiver {
         receiver = parts[0]
         // A function value is named twice in C (its code and its environment), so anything but a local is evaluated once first.
-        // coverage-blocked: Q779 T4 lowerExpr
-        if !isLvalue(in c, through: in l, for: receiver) || invoke && (ltree.isLowered(receiver) || semantics.boundKind(receiver) != .local) {
+        if !isLvalue(in c, through: in l, for: receiver)
+            // coverage-exempt: Q780
+            || invoke && (ltree.isLowered(receiver) || semantics.boundKind(receiver) != .local) {
             receiver = spill(ref c, through: ref l, for: receiver)
         }
         // `map[k].f()` with `ref this` changes the stored value; reading through the panicking index first keeps a missing key out.
@@ -208,7 +201,6 @@ public BExpr lowerBuiltinCall(ref Ctx c, through ref LCtx l, for BExpr e) uses a
         return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type })
     }
     var lowered = parts[0]
-    // coverage-blocked: Q779 T4 lowerExpr through 213
     if mutating && !isLvalue(in c, through: in l, for: lowered) {
         lowered = spill(ref c, through: ref l, for: lowered)
     } else if !mutating && !isTrivial(in c, through: in l, for: lowered) && (member == .listAsSpan || member == .strBufAsString) {
@@ -272,7 +264,6 @@ public BExpr lowerStable(ref Ctx c, through ref LCtx l, for BExpr place) uses al
             default: break
         }
     }
-    // coverage-blocked: Q779 T4 lowerExpr
     return isTrivial(in c, through: in l, for: place) || isLvalue(in c, through: in l, for: place) ? place : spill(ref c, through: ref l, for: place)
 }
 
@@ -337,7 +328,6 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
     var value = lowerExpr(ref c, through: ref l, for: c.bSwitchExprs[si].value)
     if isNeverExpr(value) { return value }
     unless isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
-    // coverage-blocked: Q779 T4 lowerExpr
     let result: LocalId = semantics.isNever(type) ? -1 : newTemp(ref c, through: ref l, for: type)
     let end = newLabel(ref l, for: "switch_end")
     for k in 0..c.bSwitchExprs[si].arms.length {
@@ -346,16 +336,13 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
         captureBegin(ref l)
         lowerClaim(ref c, through: ref l, for: arm.pattern)
         let v = lowerExpr(ref c, through: ref l, for: arm.value)
-        // coverage-blocked: Q779 T4 lowerExpr
         if result != -1 {
             emitAssign(ref c, through: ref l, to: localExpr(ref c, at: arm.span, for: result), as: v)
         } else {
-            // coverage-blocked: Q779 T4 lowerExpr
             emitEffect(ref c, through: ref l, for: v)
         }
         emit(ref l, for: ltree.addLGoto(ref l.tree, from: LGoto { span: arm.span, label: end }))
         let body = captureEnd(ref l)
-        // coverage-blocked: Q779 T4 lowerMatch through 370
         if arm.guard == -1 {
             emit(ref l, for: semantics.addIf(ref c, from: BIf { span: arm.span, condition: match, then: block(ref c, at: arm.span, for: move body) }))
             continue
@@ -371,7 +358,6 @@ public BExpr lowerSwitchExpr(ref Ctx c, through ref LCtx l, for BExpr e) uses al
     }
     emit(ref l, for: ltree.addLPanic(ref l.tree, from: LPanic { span: span, message: "no switch arm matched" }))
     emit(ref l, for: ltree.addLLabel(ref l.tree, from: LLabel { span: span, name: end }))
-    // coverage-blocked: Q779 T4 lowerExpr
     if result == -1 { return ltree.addLNever(ref l.tree, from: LNever { span: span, type: type }) }
     return localExpr(ref c, at: span, for: result)
 }

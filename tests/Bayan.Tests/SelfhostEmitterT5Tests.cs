@@ -174,6 +174,10 @@ public sealed class SelfhostEmitterT5Tests
                     case .voidValue: return "void"
                     case .neverValue: return "never"
                     case .optionalValue: return $"optval({t5Shape(ref c, through: in l, for: l.tree.optionalValues[ltree.lIndexOf(e)].optional)})"
+                    case .optionalHas: return $"has({t5Shape(ref c, through: in l, for: l.tree.optionalHass[ltree.lIndexOf(e)].optional)})"
+                    case .assignExpr: return $"set({t5Shape(ref c, through: in l, for: l.tree.assignExprs[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: in l, for: l.tree.assignExprs[ltree.lIndexOf(e)].value)})"
+                    case .sequence: return $"seq({t5List(ref c, through: in l, for: in l.tree.sequences[ltree.lIndexOf(e)].effects)}{t5Shape(ref c, through: in l, for: l.tree.sequences[ltree.lIndexOf(e)].value)})"
+                    case .indexUnchecked: return $"unchecked({t5Shape(ref c, through: in l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].target)};{t5Shape(ref c, through: in l, for: l.tree.indexUncheckeds[ltree.lIndexOf(e)].index)})"
                     default: return "lowered?"
                 }
             }
@@ -245,7 +249,7 @@ public sealed class SelfhostEmitterT5Tests
                 case .exprStmt: return $"expr({t5Shape(ref c, through: in l, for: c.bExprStmts[i].expr)})"
                 case .assign: return $"assign({t5Shape(ref c, through: in l, for: c.bAssigns[i].target)};{t5Shape(ref c, through: in l, for: c.bAssigns[i].value)})"
                 case .localDecl: return $"decl({t5Local(in c, for: c.bLocalDecls[i].local)})"
-                case .ifStmt: return $"if(*;{t5Stmt(ref c, through: in l, for: c.bIfs[i].then)})"
+                case .ifStmt: return $"if({t5Shape(ref c, through: in l, for: c.bIfs[i].condition)};{t5Stmt(ref c, through: in l, for: c.bIfs[i].then)})"
                 case .block:
                     var sb = StrBuf()
                     sb.append("block[")
@@ -308,7 +312,8 @@ public sealed class SelfhostEmitterT5Tests
             var sb = StrBuf()
 
             t5Reset(ref l, for: calls)
-            let nv = ltree.addLNever(ref l.tree, from: LNever { span: span, type: semantics.prim(.neverKind) })
+            // An empty never block, as the C# side: `lowerExpr` returns an `LNever` and emits nothing.
+            let nv = semantics.addBlockExpr(ref c, from: BBlockExpr { span: span, block: semantics.addBlock(ref c, from: BBlock { span: span }), type: semantics.prim(.neverKind) })
             var args1 = List<BExpr>()
             args1.append(nv)
             let neverCall = semantics.addCall(ref c, from: BCall { span: span, function: id, arguments: move args1, type: i64Type })
@@ -360,7 +365,11 @@ public sealed class SelfhostEmitterT5Tests
             sb.append(t5Report(ref c, through: ref l, for: "noArgSlot", at: lowerBuiltinCall(ref c, through: ref l, for: noArgSlot)))
 
             t5Reset(ref l, for: calls)
-            sb.append(t5Report(ref c, through: ref l, for: "neverStable", at: lowerStable(ref c, through: ref l, for: nv)))
+            sb.append(t5Report(ref c, through: ref l, for: "neverStable", at: lowerStable(ref c, through: ref l, for: ltree.addLNever(ref l.tree, from: LNever { span: span, type: semantics.prim(.neverKind) }))))
+
+            t5Reset(ref l, for: calls)
+            let unchecked = ltree.addLIndexUnchecked(ref l.tree, from: T3LIndexUnchecked { span: span, target: donor, index: donor, type: i64Type }) because "a hand-built place that Stable only inspects"
+            sb.append(t5Report(ref c, through: ref l, for: "uncheckedStable", at: lowerStable(ref c, through: ref l, for: unchecked)))
 
             let lit = t5Literal(ref c, at: span, by: i64Type, as: Constant { kind: .flag, flag: true })
             var args4 = List<BExpr>()
@@ -485,6 +494,10 @@ public sealed class SelfhostEmitterT5Tests
                 case LVoid: return "void";
                 case LNever: return "never";
                 case LOptionalValue v: return $"optval({Expr(v.Optional)})";
+                case LOptionalHas h: return $"has({Expr(h.Optional)})";
+                case LAssignExpr a: return $"set({Expr(a.Target)};{Expr(a.Value)})";
+                case LSequence q: return $"seq({List(q.Effects)}{Expr(q.Value)})";
+                case LIndexUnchecked u: return $"unchecked({Expr(u.Target)};{Expr(u.Index)})";
                 case BoundLiteral l:
                     return (l.Value.Value switch
                     {
@@ -522,7 +535,7 @@ public sealed class SelfhostEmitterT5Tests
             BoundExprStmt x => $"expr({Expr(x.Expr)})",
             BoundAssign a => $"assign({Expr(a.Target)};{Expr(a.Value)})",
             BoundLocalDecl d => $"decl({Local(d.Local)})",
-            BoundIf i => $"if(*;{Stmt(i.Then)})",
+            BoundIf i => $"if({Expr(i.Condition)};{Stmt(i.Then)})",
             BoundBlock b => "block[" + string.Concat(b.Statements.Select(x => Stmt(x) + " ")) + "]",
             _ => "stmt?",
         };
@@ -674,6 +687,23 @@ public sealed class SelfhostEmitterT5Tests
             let t13 = f64.tryFrom(k)
         }
 
+        void narrows(P? op, to i64 k) {
+            if op is null { return }
+            let n1 = op.get()
+            let s1 = k switch { let x when x > 3 => x, _ => 0 }
+            let s2 = k switch { let x when (x switch { 1 => true, _ => false }) => x, _ => 0 }
+        }
+
+        i64[3] mka() => [1, 2, 3]
+
+        void spans() {
+            let a = mka().span
+        }
+
+        void nevers(i64 k) {
+            let s3 = k switch { 1 => panic("a"), _ => panic("b") }
+        }
+
         void main() { }
         """;
 
@@ -688,6 +718,7 @@ public sealed class SelfhostEmitterT5Tests
         "places:1:stable", "places:2:stable", "places:3:stable", "places:4:stable", "places:5:stable", "places:6:stable",
         "tries:0:tryFrom", "tries:1:tryFrom", "tries:2:tryFrom", "tries:3:tryFrom", "tries:4:tryFrom", "tries:5:tryFrom", "tries:6:tryFrom",
         "tries:7:tryFrom", "tries:8:tryFrom", "tries:9:tryFrom", "tries:10:tryFrom", "tries:11:tryFrom", "tries:12:switch", "tries:13:tryFrom",
+        "narrows:1:callParts", "narrows:2:switch", "narrows:3:switch", "nevers:0:switch", "spans:0:builtin",
     ];
 
     private static List<string> CasesOracle(Compilation c)
@@ -734,7 +765,7 @@ public sealed class SelfhostEmitterT5Tests
         var donor = (BoundCall)Pick(calls, 0);
         var syntax = donor.Syntax;
         var i64 = donor.Type;
-        // C#'s LowerExpr of an empty never block is an LNever and emits nothing; the ported stub lowerExpr takes the LNever as is.
+        // C#'s LowerExpr of an empty never block is an LNever and emits nothing; the Bayan side builds the same block.
         var never = new BoundBlockExpr(syntax, new BoundBlock(syntax, []), PrimitiveType.Never);
         var lines = new List<string>();
         void Run(string head, Func<object, BoundExpr?> act)
@@ -756,6 +787,7 @@ public sealed class SelfhostEmitterT5Tests
         Run("neverArg", fl => (BoundExpr)Call(fl, "BuiltinCall", new BoundBuiltinCall(syntax, BuiltinMember.StrBufAppend, never, [never], PrimitiveType.Void))!);
         Run("noArgSlot", fl => (BoundExpr)Call(fl, "BuiltinCall", new BoundBuiltinCall(syntax, BuiltinMember.MapSlot, never, [], i64))!);
         Run("neverStable", fl => (BoundExpr)Call(fl, "Stable", new LNever(syntax, PrimitiveType.Never))!);
+        Run("uncheckedStable", fl => (BoundExpr)Call(fl, "Stable", new LIndexUnchecked(syntax, donor, donor, i64))!);
         var lit = new BoundLiteral(syntax, i64, new ConstantValue(true));
         Run("staticReceiver", fl => (BoundExpr?)Call(fl, "CallParts", new BoundCall(syntax, donor.Function, lit, [lit, lit], i64)));
         Run("constantCall", fl => (BoundExpr?)Call(fl, "CallParts", new BoundCall(syntax, donor.Function, null, [], i64) { Constant = new ConstantValue(true) }));
