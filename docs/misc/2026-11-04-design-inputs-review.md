@@ -13,12 +13,13 @@ User decisions:
 - D-C (C7): style and idiom lints take `x900–x999` of their area per A2 (revision 0017).
 - D-C follow-up (2026-11-04): area by A2 rule 2, spelling-only mistakes in 19xx (`lambdas.it`, `guards.postfix`, adjacent types as an opt-in lint), otherwise the area misunderstood (redundant `.span` and hidden allocation 39xx, nested leading dot 29xx, `nesting.depth`/`conditions.named` 49xx, `functions.length` 09xx); a fix-it does not decide the area. Adjacent types stay off the formatter; S5's open questions (defaults, attributes, refinements, modes) are in the shorthands doc.
 - C4, C16-C19 (2026-11-04): decided and written into bayan-concurrency.md §4-§7 and the new §12 (round-4 rewrite list for spec §13). C4: implicit cancellation, `Canceled` leaves the I/O error sets, `shield(timeout:)` is the one uncancelable region (defer bodies run as one), `Fiber.checkCanceled()` for CPU loops plus a candidate 49xx lint. C16: `context.Io` stays; `Io.Evented(workers: .perCore|n)`, `bayan run` uses 1; `Io.Blocking` panics on a sibling deadlock; `.compute` is its own pool (default one per core, inline under Blocking/Simulated); `Io.Threaded` dropped. C17: `@sendable because` (non-empty) replaces the `unsafe` marker. C18: `scope(workers: .compute)` only, `Io.offload` removed. C19: guards kept, `unlock(move this)` the one early release, `Mutex.with` dropped.
+- I1, I2 (2026-11-04): I1 renamed to `Fiber.yieldNow()` (a suspend point, so it also unwinds on a pending cancel). I2 is moot: C19 removed `Mutex.with`. C4 addendum: a shield timeout cancels its own region (pending cancel continues, else `TimeoutError`); nested shields are capped; slow `defer`s can delay a cancel by their timeouts added together; `scope(timeout:)` expiry is `TimeoutError`.
 - C5 follow-up (2026-11-04): the example uses a deferred `var thumbnail: Image` (definite assignment, no optional). Deferred `let` (BYN2101 today) is not a round-4 item. BYN2311 already skips deferred `var`s (NeverReassignedVarLint.cs:20).
 
 Per row:
 
-- applied: C1, C2, C3, C4, C5, C6, C7, C10, C11, C12, C14, C15, C16, C17, C18, C19, C22, C25, C26, I3, I4, I5, I6, I7, I9, I12, S1, S2, S4, S5, S6, S9, A1
-- open: C8, C9, C13, C20, C21, C23, C24, I1, I2, I8, I10, I11, I13-I16, S3, S7, S8, A2, A3, A4
+- applied: C1, C2, C3, C4, C5, C6, C7, C10, C11, C12, C14, C15, C16, C17, C18, C19, C22, C25, C26, I1, I2, I3, I4, I5, I6, I7, I9, I12, S1, S2, S4, S5, S6, S9, A1
+- open: C8, C9, C13, C20, C21, C23, C24, I8, I10, I11, I13-I16, S3, S7, S8, A2, A3, A4
 - notes: I6 is applied in the filed docs only; bayan-spec.md:633 (`cancelled`) stays until the round-4 revision. I1/I2 keep their names (no rename). C13: the views manifest example is unchanged.
 
 ## 1. Contradictions

@@ -14,7 +14,7 @@ The block deadline is `scope(timeout:)` / `until:` (user decision 2026-11-04). R
 
 | # | Decision | Built-in remedies |
 | --- | --- | --- |
-| R1 | One worker thread per core; fibers never move between threads | Accept-time balancing, debug watchdog, `Fiber.yield()`, one worker for `bayan run` |
+| R1 | One worker thread per core; fibers never move between threads | Accept-time balancing, debug watchdog, `Fiber.yieldNow()`, one worker for `bayan run` |
 | R2 | `spawn` only inside `scope` | `limit:`, `policy: .collectAll`, supervisor scope in `main`, channels for background jobs; no detached tasks |
 | R3 | Cancellation is an implicit unwind at suspend points; `Canceled` is not an error value | `shield(timeout:) { }`, `defer canceling`, `defer` bodies run as a shield; `Fiber.checkCanceled()` for CPU loops; cancellation runs `defer failing` |
 | R4 | Auto-derived `ISendable` / `IShareable` | Errors show the field path, `@sendable` locks a public type, `@sendable because "…"` (non-empty) for checked C handles; replaces the `unsafe` marker |
@@ -43,7 +43,7 @@ Response handle(Request req) uses net, suspend, alloc fails HttpError {
 | Risk | Remedy |
 | --- | --- |
 | Heavy connections pile onto one worker | New connections go to the least-loaded worker; CPU work goes to `scope(workers: .compute)` (section 7) |
-| A loop without suspend points starves other fibers | Debug watchdog reports fibers running past a threshold; `Fiber.yield()` |
+| A loop without suspend points starves other fibers | Debug watchdog reports fibers running past a threshold; `Fiber.yieldNow()` |
 | Per-worker caches duplicate memory | Shard ownership by key and ask the owner by channel, or share with `Arc<Mutex<T>>` |
 | Overkill for scripts | `bayan run` uses one worker |
 
@@ -129,7 +129,20 @@ Receipt checkout(Cart cart, from Pool pool) uses net, suspend fails PayError, Db
 
 Without the `shield`, a cancel between `charge` and `commit` would leave the card charged and the order rolled back. The idempotency key covers a process crash, which no language rule can.
 
-**`shield` is the one uncancelable region.** Inside it, a pending cancel waits until the block ends; suspend points do not unwind. Every shield has a timeout: `timeout:` (default 5s) bounds the block, and when it runs out the shield ends and the pending cancel is delivered at the next suspend point. Every `defer` body runs as an implicit `shield` with the default timeout, so cleanup that suspends (a rollback, a websocket close frame) does not unwind straight away. There is no shielded `defer` variant and no `scope` option for it.
+**`shield` is the one uncancelable region.** Inside it, a pending cancel waits until the block ends; suspend points do not unwind. Every shield has a timeout: `timeout:` (default 5s) bounds the block. Every `defer` body runs as an implicit `shield` with the default timeout, so cleanup that suspends (a rollback, a websocket close frame) does not unwind straight away. There is no shielded `defer` variant and no `scope` option for it.
+
+**When a shield times out, its own region is canceled.** The next suspend point inside the shield unwinds, running the shield's inner `defer`s; it never panics. What follows depends on why the shield was waiting:
+
+| At timeout | Result |
+| --- | --- |
+| A cancel is pending (the usual case: a shield delays it) | The unwind continues outward as that cancel; nothing new is reported |
+| No cancel is pending | The shield fails with `TimeoutError`, as a `scope(timeout:)` does, so its `fails` list includes it |
+
+A nested shield's timeout is capped at the enclosing shield's remaining time, so a shield inside a `defer` cannot outlast the `defer`.
+
+**A cancel can be delayed by cleanup.** Because every `defer` body is a shield, an unwind that runs several suspending `defer` bodies waits for each in turn: up to their timeouts added together (5s each by default), one per frame with such a `defer`. That is accepted. The debug watchdog reports a cancel that takes longer than a threshold to finish, naming the slow `defer`.
+
+**`scope(timeout:)` expiry fails the scope with `TimeoutError`.** The deadline belongs to the scope, so its caller can handle it; children see it as a cancel. A cancel from outside the scope is not a `TimeoutError`: it unwinds through the scope.
 
 ```cs
 void close(ref Socket socket) uses net, suspend fails NetError {
@@ -140,7 +153,7 @@ void close(ref Socket socket) uses net, suspend fails NetError {
 }
 ```
 
-**CPU-bound code checks by hand.** A fiber in a `.compute` loop with no suspend point never sees a cancel. `Fiber.checkCanceled()` is the one checkpoint: it unwinds if a cancel is pending and does nothing otherwise. A `scope(timeout:)` deadline is a cancel, so it covers deadlines too and replaces spec §13.2's `context.checkDeadline()`.
+**CPU-bound code checks by hand.** A fiber in a `.compute` loop with no suspend point never sees a cancel. `Fiber.checkCanceled()` is the one checkpoint: it unwinds if a cancel is pending and does nothing otherwise. `Fiber.yieldNow()` is a suspend point, so it also unwinds on a pending cancel: a loop that calls it needs no `checkCanceled()`. `checkCanceled()` is the cheap form that never reschedules. A `scope(timeout:)` deadline is a cancel, so it covers deadlines too and replaces spec §13.2's `context.checkDeadline()`.
 
 ```cs
 void renderAll(ReadOnlySpan<Tile> tiles) {
@@ -160,7 +173,8 @@ A 49xx lint (opt-in candidate, number at the round-4 renumbering) may flag a lon
 | Risk | Remedy |
 | --- | --- |
 | A critical pair is split by a cancel | `shield(timeout:) { }` defers cancellation until the block ends |
-| A shield waits forever | Every shield has a timeout (default 5s) |
+| A shield waits forever | Every shield has a timeout (default 5s); at timeout its region is canceled |
+| Slow cleanup delays a cancel | Bounded by the `defer` timeouts along the unwind; the watchdog names the slow `defer` |
 | Cleanup needs the network after cancel | `defer` bodies run as a `shield` with the default timeout |
 | A CPU loop ignores a cancel | `Fiber.checkCanceled()`; candidate 49xx lint |
 | Cancel arrives inside a C callback | Unwinding never crosses C frames; it waits until control returns to Bayān |
@@ -382,7 +396,8 @@ User decisions 2026-11-04 (review rows C4, C16–C19). The round-4 revision make
 | §13.1, new | `Io.Blocking` runs `spawn` children in order, inline. A child that would wait on something only a later sibling can provide (a channel receive, a join) is a runtime panic naming both, never a silent hang. | C16 |
 | §13.1, new | `workers: .compute` under `Io.Evented` is a separate pool from the I/O workers: default size one thread per core, set in `package.byn` like the blocking pool. Under `Io.Blocking` and `Io.Simulated` it runs inline. | C16 |
 | §13.2 (:1547-1564) | Replace `async`/`await`/`Future` with `scope`/`spawn`/`join()` (C1). Remove "`Canceled` is in every I/O error set" (:1551); cancellation is an unwind, not an error value. Replace `provide timeout:` with `scope(timeout:)`/`until:`, and `context.checkDeadline()` with `Fiber.checkCanceled()`. | C1, C4 |
-| §13.2, new | `shield(timeout: d) { }` is the one uncancelable region (default 5s); every `defer` body runs as one. | C4 |
+| §13.2, new | `shield(timeout: d) { }` is the one uncancelable region (default 5s); every `defer` body runs as one. At timeout the region is canceled: a pending cancel continues, otherwise `TimeoutError`. Nested shields are capped by the outer one. `scope(timeout:)` expiry fails the scope with `TimeoutError`. | C4 |
+| §13.2, new | `Fiber.yieldNow()` (not `yield`, a reserved keyword) is a suspend point and unwinds on a pending cancel. | C4, I1 |
 | §13.3 (:1565-1567) | Remove `Io.group()`; `scope` replaces it. | C1 |
 | §13.4 (:1568-1575) | Keep the guard rule. Add `unlock(move this)` as the one early release. No `Mutex.with`. | C19 |
 | §13.5 (:1580) | Replace the `unsafe` marker with `@sendable because "…"` (non-empty reason). | C17 |
