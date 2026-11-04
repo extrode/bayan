@@ -43,8 +43,8 @@ public struct CCtx {
     public bool symbols = false
     /// `_testIndex`: a test function's position in the program's tests.
     public Map<semantics.FuncId, i64> testIndex = Map<semantics.FuncId, i64>()
-    // ── T6 state
-    /// `_vtables` (by name) and `_vtableOrder`: `Run` writes them after the prototypes; `Vtable` (T7) fills them.
+    // ── T7 state
+    /// `_vtables` by name (the `static const struct` text) and `_vtableOrder`.
     public Map<string, string> vtables = Map<string, string>()
     public List<string> vtableOrder = List<string>()
 }
