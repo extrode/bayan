@@ -16,15 +16,15 @@ The block deadline is `scope(timeout:)` / `until:` (user decision 2026-11-04). R
 | --- | --- | --- |
 | R1 | One worker thread per core; fibers never move between threads | Accept-time balancing, debug watchdog, `Fiber.yield()`, one worker for `bayan run` |
 | R2 | `spawn` only inside `scope` | `limit:`, `policy: .collectAll`, supervisor scope in `main`, channels for background jobs; no detached tasks |
-| R3 | Cancellation is an implicit unwind at suspend points | `shield { }`, `defer canceling`, shielded `defer` bodies with a grace timeout; cancellation runs `defer failing` |
-| R4 | Auto-derived `ISendable` / `IShareable` | Errors show the field path, `@sendable` locks a public type, `@sendable because "…"` for checked C handles |
-| R5 | No OS lock held across a suspend point | `Mutex.with` whose closure may not suspend; `AsyncMutex` for I/O serialization |
-| R6 | `@blocking` C calls go to a blocking pool; CPU work is offloaded | Watchdog names the stalling extern, `bayan audit` lists unannotated externs, bounded pool |
+| R3 | Cancellation is an implicit unwind at suspend points; `Canceled` is not an error value | `shield(timeout:) { }`, `defer canceling`, `defer` bodies run as a shield; `Fiber.checkCanceled()` for CPU loops; cancellation runs `defer failing` |
+| R4 | Auto-derived `ISendable` / `IShareable` | Errors show the field path, `@sendable` locks a public type, `@sendable because "…"` (non-empty) for checked C handles; replaces the `unsafe` marker |
+| R5 | No OS lock held across a suspend point | Guards (`let map = buckets.lock()`) checked across suspend points, released at block end or by `map.unlock()`; `AsyncMutex` for I/O serialization |
+| R6 | `@blocking` C calls go to a blocking pool; CPU work runs in `scope(workers: .compute)` | Watchdog names the stalling extern, `bayan audit` lists unannotated externs, bounded pool |
 | R7 | Resources (database, HTTP, files) are owned per worker and per child | Section 8 |
 
 ## 2. Where fibers run
 
-Each core runs one worker thread with its own event loop. A fiber stays on the worker that started it, so fibers on one worker never race: `Rc`, arenas and `@threadLocal` data are safe without locks.
+Each core runs one worker thread with its own event loop. This is `Io.Evented(workers: .perCore)`; `Io.Evented(workers: n)` sets the count. `Io` stays the one entry point (`context.Io`, spec §13.1), with three implementations: `Io.Evented`, `Io.Blocking` and `Io.Simulated`. `Io.Threaded` is removed. A fiber stays on the worker that started it, so fibers on one worker never race: `Rc`, arenas and `@threadLocal` data are safe without locks.
 
 ```cs
 void main() uses net, suspend, alloc fails NetError {
@@ -42,7 +42,7 @@ Response handle(Request req) uses net, suspend, alloc fails HttpError {
 
 | Risk | Remedy |
 | --- | --- |
-| Heavy connections pile onto one worker | New connections go to the least-loaded worker; CPU work is offloaded (section 7) |
+| Heavy connections pile onto one worker | New connections go to the least-loaded worker; CPU work goes to `scope(workers: .compute)` (section 7) |
 | A loop without suspend points starves other fibers | Debug watchdog reports fibers running past a threshold; `Fiber.yield()` |
 | Per-worker caches duplicate memory | Shard ownership by key and ask the owner by channel, or share with `Arc<Mutex<T>>` |
 | Overkill for scripts | `bayan run` uses one worker |
@@ -82,7 +82,7 @@ Options:
 | `limit: n` | At most `n` children run at once |
 | `timeout: d` / `until: t` | Cancel the scope after a duration or at a deadline; covered by `suspend`, no `clock` needed |
 | `policy: .collectAll` | No sibling is canceled on failure; each `join()` returns its own result |
-| `workers: .compute` | Children run on the compute pool; arguments must be `ISendable` |
+| `workers: .compute` | Children run on the compute pool; arguments must be `ISendable`. The only CPU offload spelling (`Io.offload` is removed) |
 
 Long-lived work lives in a supervisor scope; one-off background work goes through a channel, never a detached task:
 
@@ -110,6 +110,8 @@ try jobs.send(.welcomeEmail(user.id))
 
 A canceled fiber stops at its next suspend point and unwinds, running `defer`, `defer failing` and `defer canceling`. Only `scope` observes it. Code between two suspend points is never interrupted. In C, this is one flag check after each suspending call, reusing the `fail` return path.
 
+Cancellation is not an error value: `Canceled` is not in any I/O error set, and a function never lists it in `fails`. This keeps `catch value` and `catch return` (spec §7) from swallowing a cancel: an unwind passes through every `catch`.
+
 ```cs
 Receipt checkout(Cart cart, from Pool pool) uses net, suspend fails PayError, DbError {
     var conn = try pool.acquire()
@@ -117,7 +119,7 @@ Receipt checkout(Cart cart, from Pool pool) uses net, suspend fails PayError, Db
     defer failing tx.rollback()
     defer canceling log("checkout canceled", as: .warning)
     try reserveStock(cart, by: tx)
-    shield {
+    shield(timeout: 10s) {
         let charge = try payments.charge(cart.total, idempotencyKey: cart.idempotencyKey)
         try tx.commit()
         return Receipt(charge)
@@ -127,11 +129,40 @@ Receipt checkout(Cart cart, from Pool pool) uses net, suspend fails PayError, Db
 
 Without the `shield`, a cancel between `charge` and `commit` would leave the card charged and the order rolled back. The idempotency key covers a process crash, which no language rule can.
 
+**`shield` is the one uncancelable region.** Inside it, a pending cancel waits until the block ends; suspend points do not unwind. Every shield has a timeout: `timeout:` (default 5s) bounds the block, and when it runs out the shield ends and the pending cancel is delivered at the next suspend point. Every `defer` body runs as an implicit `shield` with the default timeout, so cleanup that suspends (a rollback, a websocket close frame) does not unwind straight away. There is no shielded `defer` variant and no `scope` option for it.
+
+```cs
+void close(ref Socket socket) uses net, suspend fails NetError {
+    defer socket.release()
+    shield(timeout: 2s) {
+        try socket.send(closeFrame)       // runs even while the handler is being canceled
+    }
+}
+```
+
+**CPU-bound code checks by hand.** A fiber in a `.compute` loop with no suspend point never sees a cancel. `Fiber.checkCanceled()` is the one checkpoint: it unwinds if a cancel is pending and does nothing otherwise. A `scope(timeout:)` deadline is a cancel, so it covers deadlines too and replaces spec §13.2's `context.checkDeadline()`.
+
+```cs
+void renderAll(ReadOnlySpan<Tile> tiles) {
+    for tile in tiles {
+        Fiber.checkCanceled()       // unwinds here once the 30s deadline passes
+        render(tile)
+    }
+}
+
+scope(workers: .compute, timeout: 30s) {
+    spawn renderAll(tiles)
+}
+```
+
+A 49xx lint (opt-in candidate, number at the round-4 renumbering) may flag a long loop in a `.compute` scope with neither a suspend point nor a checkpoint.
+
 | Risk | Remedy |
 | --- | --- |
-| A critical pair is split by a cancel | `shield { }` defers cancellation until the block ends |
-| A shield waits forever | Each call inside keeps its own timeout; `bayan audit` lists shields containing calls without one |
-| Cleanup needs the network after cancel | `defer` bodies run shielded with a grace timeout (default 5s) |
+| A critical pair is split by a cancel | `shield(timeout:) { }` defers cancellation until the block ends |
+| A shield waits forever | Every shield has a timeout (default 5s) |
+| Cleanup needs the network after cancel | `defer` bodies run as a `shield` with the default timeout |
+| A CPU loop ignores a cancel | `Fiber.checkCanceled()`; candidate 49xx lint |
 | Cancel arrives inside a C callback | Unwinding never crosses C frames; it waits until control returns to Bayān |
 
 ## 5. Sending between threads
@@ -162,19 +193,32 @@ struct unique Hasher {
 }
 ```
 
+`@sendable because "…"` replaces spec §13.5's `unsafe` marker for types holding raw pointers or C handles. The reason must be non-empty, as for every `because` clause; `bayan audit` lists it with the other bypasses.
+
 `@sendable` on a public type turns an accidental loss of sendability into an error in the library, not in its users. `bayan audit` reports sendability changes between versions.
 
 ## 6. Locks
 
-Holding an OS lock while a fiber parks deadlocks the worker, so it is an error. The block form makes the check exact: the closure passed to `with` has an effect bound that excludes `suspend`.
+Holding an OS lock while a fiber parks deadlocks the worker, so it is an error: a `Mutex` guard alive across a suspend point (spec §13.4). `lock()` returns a guard; the lock is released when the guard's block ends. There is no `Mutex.with` closure form, so there is no second lock spelling, no clash with the `with` keyword, and `return`/`try` keep their meaning inside the locked region.
 
 ```cs
 var buckets: Mutex<Map<ApiKey, Bucket>> = Mutex([])     // module level
 
 bool allow(ApiKey key) uses net, suspend fails NetError {
     let plan = try billing.plan(for: key)                 // I/O first
-    return buckets.with((ref map) => map[key].take(for: plan))   // short, cannot suspend
+    let map = buckets.lock()
+    return map[key].take(for: plan)                       // released at block end
 }
+```
+
+Releasing early has one spelling, the consuming method `unlock(move this)`. Using the guard afterwards is an ordinary use-after-move error, with no new rule.
+
+```cs
+let map = buckets.lock()
+let token = map[key].take(for: plan)
+map.unlock()
+try notify(key, token)                                    // suspends; the lock is already released
+map.size                                                  // error: `map` was moved by `unlock()`
 ```
 
 `AsyncMutex<T>` parks the fiber instead of the thread and may be held across suspend points. On one worker, the remaining hazard is a stale write (read, suspend, write back); mutate before suspending. A lint for it comes later.
@@ -290,13 +334,13 @@ let items = try readers.local().query<Item>(sql"SELECT …").all()    // this wo
 | Resource | Rule |
 | --- | --- |
 | HTTP client keep-alive pools | Per worker, with a total budget per upstream host, as for databases |
-| External rate limits | Global across workers: an `Atomic` token bucket or the `Mutex.with` pattern in section 6 |
+| External rate limits | Global across workers: an `Atomic` token bucket or the `Mutex` guard pattern in section 6 |
 | Files and sockets | Registered with one worker's event loop; not sendable. Pass the data, not the handle. |
 | Memory | Each spawned child gets a child arena, freed when it ends unless its result escapes |
 
 ## 9. Syntax and diagnostics
 
-New syntax: `scope`, `spawn`, `shield`, `defer canceling`, `@sendable`.
+New syntax: `scope`, `spawn`, `shield(timeout:)`, `defer canceling`, `@sendable`. New library: `Fiber.checkCanceled()`, `MutexGuard.unlock(move this)`.
 
 New diagnostics (numbers assigned at the round-4 renumbering, area 6xxx unless noted):
 
@@ -304,16 +348,17 @@ New diagnostics (numbers assigned at the round-4 renumbering, area 6xxx unless n
 | --- | --- |
 | Spawn outside scope | Replaces most of BYN3217 |
 | Not sendable (with field path) | |
-| Lock held across a suspend point | |
-| Suspend inside `with` | |
+| Lock held across a suspend point | Spec §13.4's guard rule, kept |
 | `@sendable` contract broken | |
+| Empty `because` on `@sendable` | Same rule as other `because` clauses |
+| Long `.compute` loop without a checkpoint | Candidate lint, 49xx, opt-in |
 | Connection borrowed by two children | Ordinary borrow error (3xxx) with a concurrency-specific help line |
 
 ## 10. Timing and open items
 
 - Spec in round 4; runtime in v0.2. The self-hosted compiler needs none of this.
 - Later: `select` over channels (could reuse the subjectless `switch` shape), the stale-write lint, WASM support once stack switching ships (until then, `uses suspend` is an error on `wasm32`).
-- Decide during Sūq: test implicit cancellation against explicit `fails .canceled` on `checkout`, a websocket handler and a file upload.
+- Implicit cancellation is decided (R3, user 2026-11-04). Sūq still exercises it on `checkout`, a websocket handler and a file upload; a failure there reopens R3 by revision.
 
 ## 11. Failure isolation
 
@@ -325,3 +370,23 @@ Added after the October 2026 PHP2Shell flaws, where an out-of-memory `longjmp` l
 | Out of memory is a panic that ends the process | No attempt to clean up and keep serving |
 | After a panic, the process exits and the supervisor restarts it; workers are never reused | State from a failed request cannot reach the next one |
 | Request data lives in the request arena; `@threadLocal` (per-worker) data cannot hold references into it | Enforced by region checking |
+
+## 12. Round-4 rewrite of spec §13
+
+User decisions 2026-11-04 (review rows C4, C16–C19). The round-4 revision makes these spec edits:
+
+| Spec site | Change | Row |
+| --- | --- | --- |
+| §13.1 table (:1537-1543) | Drop `Io.Threaded`. `Io.Evented(workers: .perCore \| n)` is the server default; `bayan run` and scripts use `Io.Evented(workers: 1)`. `Io.Blocking` and `Io.Simulated` stay. | C16 |
+| §13.1 (:1545) | Keep "Libraries never choose an implementation". `#:io evented` / `#:io blocking` are the script overrides | C16 |
+| §13.1, new | `Io.Blocking` runs `spawn` children in order, inline. A child that would wait on something only a later sibling can provide (a channel receive, a join) is a runtime panic naming both, never a silent hang. | C16 |
+| §13.1, new | `workers: .compute` under `Io.Evented` is a separate pool from the I/O workers: default size one thread per core, set in `package.byn` like the blocking pool. Under `Io.Blocking` and `Io.Simulated` it runs inline. | C16 |
+| §13.2 (:1547-1564) | Replace `async`/`await`/`Future` with `scope`/`spawn`/`join()` (C1). Remove "`Canceled` is in every I/O error set" (:1551); cancellation is an unwind, not an error value. Replace `provide timeout:` with `scope(timeout:)`/`until:`, and `context.checkDeadline()` with `Fiber.checkCanceled()`. | C1, C4 |
+| §13.2, new | `shield(timeout: d) { }` is the one uncancelable region (default 5s); every `defer` body runs as one. | C4 |
+| §13.3 (:1565-1567) | Remove `Io.group()`; `scope` replaces it. | C1 |
+| §13.4 (:1568-1575) | Keep the guard rule. Add `unlock(move this)` as the one early release. No `Mutex.with`. | C19 |
+| §13.5 (:1580) | Replace the `unsafe` marker with `@sendable because "…"` (non-empty reason). | C17 |
+| §13.5 (:1582) | Remove `Io.offload(op)`; `scope(workers: .compute)` replaces it. | C18 |
+| §21 (:2279), §23 (:2379, :2383) | `bayan new --script` writes `#:io evented`, not `#:io threaded`; the script default `Io` is `Evented(workers: 1)`. | C16 |
+| Appendix A | `scope`/`spawn` replaces `async`/`await` (C1, decision 2026-11-04). | C1 |
+
