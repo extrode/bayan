@@ -32,10 +32,12 @@ public sealed class SelfhostEmitterT4Tests
             var ok = false
             var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
             var l = LCtx {}
-            if args[0] == "expr" || args[0] == "spread" || args[0] == "failing" || args[0] == "void" {
+            let m = args[0]
+            if m == "expr" || m == "spread" || m == "failing" || m == "void" || m == "show" || m == "showran" {
                 Io.stdout.write(t4PrintExprs(ref c, through: ref l, for: args[1], at: args[2], by: args[0]))
             }
             if args[0] == "claim" { Io.stdout.write(t4PrintClaims(ref c, through: ref l, for: args[1])) }
+            if args[0] == "become" { Io.stdout.write(t4PrintBecomes(ref c, through: ref l, for: args[1])) }
             return 0
         }
 
@@ -57,15 +59,14 @@ public sealed class SelfhostEmitterT4Tests
             l.seen = Map<LocalId, bool>()
             l.scopes = List<LScope>()
             l.labelCount = 0
+            l.showing = false
+            l.shown = Map<BExpr, BExpr>()
+            l.ran = Map<BExpr, LocalId>()
         }
 
-        string t4PrintExprs(ref Ctx c, through ref LCtx l, for string name, at string only, by string mode) uses alloc {
-            var sb = StrBuf()
-            sb.append("== expr\n")
-            let fn = t4Func(ref c, for: name)
-            var names = List<string>()
-            var exprs = List<BExpr>()
-            for s in c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements {
+        /// The `let` initializers and expression statements of `block`, and of each `if`'s then block, in order.
+        void t4Collect(in Ctx c, for BStmt block, to ref List<string> names, as ref List<BExpr> exprs) uses alloc {
+            for s in c.bBlocks[block & 0xFFFFFFFF].statements {
                 if ltree.isLowered(s) { continue }
                 let k = s & 0xFFFFFFFF
                 if semantics.boundKind(s) == .localDecl && c.bLocalDecls[k].initializer != -1 {
@@ -76,7 +77,20 @@ public sealed class SelfhostEmitterT4Tests
                     names.append("stmt")
                     exprs.append(c.bExprStmts[k].expr)
                 }
+                if semantics.boundKind(s) == .ifStmt {
+                    let t = c.bIfs[k].then
+                    if !ltree.isLowered(t) && semantics.boundKind(t) == .block { t4Collect(in c, for: t, to: ref names, as: ref exprs) }
+                }
             }
+        }
+
+        string t4PrintExprs(ref Ctx c, through ref LCtx l, for string name, at string only, by string mode) uses alloc {
+            var sb = StrBuf()
+            sb.append("== expr\n")
+            let fn = t4Func(ref c, for: name)
+            var names = List<string>()
+            var exprs = List<BExpr>()
+            t4Collect(in c, for: c.functions[fn].body, to: ref names, as: ref exprs)
             for d in 0..names.length {
                 if only != "*" && names[d] != only { continue }
                 t4Reset(ref l, for: fn)
@@ -84,6 +98,11 @@ public sealed class SelfhostEmitterT4Tests
                 if mode == "spread" { target = c.bCollections[target & 0xFFFFFFFF].elements[0] }
                 if mode == "failing" { target = c.bTries[target & 0xFFFFFFFF].operand }
                 if mode == "void" { target = ltree.addLVoid(ref l.tree, from: LVoid { span: semantics.nodeSpan(in c, for: target) }) }
+                if mode == "show" || mode == "showran" {
+                    l.showing = true
+                    l.shown[target] = -1
+                    if mode == "showran" { l.ran[target] = newTemp(ref c, through: ref l, for: semantics.prim(.bool)) }
+                }
                 let r = lowerExpr(ref c, through: ref l, for: target)
                 sb.append($"{names[d]}:")
                 var outs = List<BStmt>()
@@ -110,6 +129,27 @@ public sealed class SelfhostEmitterT4Tests
                 t4Reset(ref l, for: fn)
                 lowerClaim(ref c, through: ref l, for: p)
                 sb.append("claim:")
+                var outs = List<BStmt>()
+                for s in l.outs[0] { outs.append(s) }
+                for s in outs { sb.append($" {t4Dump(in c, through: in l, for: s)}") }
+                sb.append($" locals={l.locals.length}\n")
+            }
+            return $"{sb.finish()}"
+        }
+
+        /// `Become` on every `become` statement of `name`'s body, in order.
+        string t4PrintBecomes(ref Ctx c, through ref LCtx l, for string name) uses alloc {
+            var sb = StrBuf()
+            sb.append("== become\n")
+            let fn = t4Func(ref c, for: name)
+            var becomes = List<BStmt>()
+            for s in c.bBlocks[c.functions[fn].body & 0xFFFFFFFF].statements {
+                if !ltree.isLowered(s) && semantics.boundKind(s) == .becomeStmt { becomes.append(s) }
+            }
+            for b in becomes {
+                t4Reset(ref l, for: fn)
+                lowerBecome(ref c, through: ref l, for: b)
+                sb.append("become:")
                 var outs = List<BStmt>()
                 for s in l.outs[0] { outs.append(s) }
                 for s in outs { sb.append($" {t4Dump(in c, through: in l, for: s)}") }
@@ -241,6 +281,9 @@ public sealed class SelfhostEmitterT4Tests
     private static object? Field(object target, string name) =>
         FunctionLowerer.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target);
 
+    private static void SetField(object target, string name, object? value) =>
+        FunctionLowerer.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
+
     private static object New(Compilation c, FunctionSymbol fn) =>
         Activator.CreateInstance(FunctionLowerer, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, [fn, c.Builtins, null, null], null)!;
 
@@ -310,16 +353,21 @@ public sealed class SelfhostEmitterT4Tests
     }
 
     /// The `let` initializers and expression statements of <paramref name="fn"/>'s body, in order.
-    private static IEnumerable<(string Name, BoundExpr Expr)> Cases(FunctionSymbol fn)
+    private static IEnumerable<(string Name, BoundExpr Expr)> Cases(FunctionSymbol fn) => Cases(fn.Body!.Statements);
+
+    /// ... and of each `if`'s then block.
+    private static IEnumerable<(string Name, BoundExpr Expr)> Cases(IEnumerable<BoundStmt> statements)
     {
-        foreach (var s in fn.Body!.Statements)
+        foreach (var s in statements)
         {
             if (s is BoundLocalDecl { Initializer: { } init } d) yield return (d.Local.Name, init);
             if (s is BoundExprStmt x) yield return ("stmt", x.Expr);
+            if (s is BoundIf { Then: BoundBlock b })
+                foreach (var y in Cases(b.Statements)) yield return y;
         }
     }
 
-    private static List<string> ExprOracle(Compilation c, string fnName, string only)
+    private static List<string> ExprOracle(Compilation c, string fnName, string only, string mode = "expr")
     {
         var fn = Function(c, fnName);
         var lines = new List<string>();
@@ -327,6 +375,13 @@ public sealed class SelfhostEmitterT4Tests
         {
             if (only != "*" && name != only) continue;
             var fl = New(c, fn);
+            if (mode is "show" or "showran")
+            {
+                SetField(fl, "_shown", new Dictionary<BoundExpr, BoundExpr?>(ReferenceEqualityComparer.Instance) { [e] = null });
+                var ran = new Dictionary<BoundExpr, LocalSymbol>(ReferenceEqualityComparer.Instance);
+                if (mode == "showran") ran[e] = (LocalSymbol)Call(fl, "NewTemp", PrimitiveType.Bool)!;
+                SetField(fl, "_ran", ran);
+            }
             var r = (BoundExpr)Call(fl, "Expr", e)!;
             var locals = (List<LocalSymbol>)Field(fl, "_locals")!;
             var outs = (List<BoundStmt>)Field(fl, "_out")!;
@@ -352,8 +407,23 @@ public sealed class SelfhostEmitterT4Tests
         return lines;
     }
 
-    private static void SameExprs(string source, string fn, string only = "*") => WithFixture(source, path =>
-        SelfhostSemanticsHarness.AssertSection(RunMode("expr", fn, only, path), "expr", ExprOracle(Compile(path), fn, only)));
+    private static void SameExprs(string source, string fn, string only = "*", string mode = "expr") => WithFixture(source, path =>
+        SelfhostSemanticsHarness.AssertSection(RunMode(mode, fn, only, path), "expr", ExprOracle(Compile(path), fn, only, mode)));
+
+    private static List<string> BecomeOracle(Compilation c, string fnName)
+    {
+        var fn = Function(c, fnName);
+        var lines = new List<string>();
+        foreach (var b in fn.Body!.Statements.OfType<BoundBecome>())
+        {
+            var fl = New(c, fn);
+            Call(fl, "Become", b);
+            var locals = (List<LocalSymbol>)Field(fl, "_locals")!;
+            var outs = (List<BoundStmt>)Field(fl, "_out")!;
+            lines.Add($"become:{string.Concat(outs.Select(o => " " + Dump(o, locals)))} locals={locals.Count}");
+        }
+        return lines;
+    }
 
     // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -496,6 +566,206 @@ public sealed class SelfhostEmitterT4Tests
     [Fact]
     public void Expr_LazySidesSpreadsPatternsMatchCSharp() => SameExprs(Lazy, "lazy");
 
+    /// Never-returning operands (`nev`), the `Operands` orderings (`ops`), the remaining kinds (`kinds`), `requires` checks,
+    /// never-returning failing calls and narrowed union and error locals.
+    private const string More = """
+        union error E {
+            x
+            y(i64 n)
+        }
+
+        struct P {
+            i64 a
+            i64 b
+        }
+
+        struct R {
+            i64 n requires it > 0
+        }
+
+        union U {
+            one(i64 v)
+            two
+        }
+
+        struct Order {
+            i64 id
+            states {
+                draft
+                paid(i64 payment, i64 fee)
+            }
+            void pay(ref this is .draft) becomes .paid {
+                become .paid(1, panic("no"))
+            }
+            void pay2(ref this is .draft) becomes .paid {
+                become .paid(h(), 2)
+            }
+            i64 feeOf(ref this is .paid) {
+                let f = this.fee
+                return f
+            }
+        }
+
+        i64 g() fails E => 1
+
+        never dieF() fails E {
+            fail .x
+        }
+
+        i64 h() => 2
+
+        i64? ho() => 3
+
+        List<i64> mkList() => [1]
+
+        i64[3] mkArr() => [1, 2, 3]
+
+        i64 kinds(i64 k, at bool q, by List<i64> xs, to i64? o, for i64[3] arr, from Span<i64> sp, until (i64 x, i64 y) tu, as P? op, through P p) fails E {
+            let a1: Map<string, i64> = []
+            let a2: Map<string, i64> = ["a": 1, "b": h()]
+            let a3: Span<i64> = []
+            let a4: Span<i64> = [1, h()]
+            let a5: Span<i64> = [..arr, 1]
+            let a6 = [..arr, h()]
+            let a7: List<i64> = [..sp]
+            let a8: List<i64> = []
+            let a9 = xs[..k]
+            let b1 = xs[k..]
+            let b2 = arr[1..2]
+            let b3 = mkArr()[1..2]
+            let b4 = mkList()[1..2]
+            let b5 = arr[k]
+            let b6 = mkArr()[k]
+            let b7 = 3 in 1..h()
+            let b8 = h() is 1
+            let b9 = ho() ?? 3
+            let c1 = o ?? ho()
+            let c2 = Order.paid { id: 1, payment: 5, fee: h() }
+            print("a")
+            log("b")
+            let c4 = R { n: k } catch R { n: 2 }
+            let c7 = o is null
+            let c8 = op is { a: 1 }
+            let c9 = p is { a: 1 } pq
+            let d1 = p is { }
+            let d2 = tu is { x: 1 }
+            let d4 = stackalloc i64[4]
+            let d5 = xs[k..=k]
+            if o is null { return 0 }
+            let d6: i64 = o
+            let z1 = E.x
+            let z2 = 1 + 2
+            let z3 = -(3)
+            return 0
+        }
+
+        void reqNever() fails ValidationError<R> {
+            let a = try R { n: 1 + panic("x") }
+        }
+
+        void reqNever2() {
+            let a = R { n: 1 + panic("x") } catch R { n: 2 }
+        }
+
+        i64 reqTry(i64 k) fails ValidationError<R> {
+            let a = try R { n: k }
+            return a.n
+        }
+
+        void dieTry() fails E {
+            let a: i64 = try dieF()
+        }
+
+        i64 errs(E err, at E? oe) {
+            let a = err is .y(let n)
+            let b = err is .y(1)
+            let c = err is .x
+            return 0
+        }
+
+        i64 nev(i64 k, at bool q, by List<i64> xs, to i64? o, from List<i64?> os, for i64[3] arr) {
+            if q { let a1 = E.y(panic("x")) }
+            if q { let a2 = P { a: 1, b: panic("x") }.a }
+            if q { let a3 = (x: 1, y: 1 + panic("x")).x }
+            if q { let a4 = -(1 + panic("x")) }
+            if q { let a5 = 1 + panic("x") }
+            if q { let a6 = U.one(panic("x")) }
+            if q { let a7 = P { a: 1, b: panic("x") } with { a: 2 } }
+            if q { let a8 = P { a: 1, b: 2 } with { a: panic("x") } }
+            if q { let a9 = 1..panic("x") }
+            if q { let b1 = xs[1 + panic("x")] }
+            if q { let b2 = (1 + panic("x")) is 1 }
+            if q { let b3 = k in panic("x")..3 }
+            if q { let b4 = panic("x") && q }
+            if q { let b5 = q && panic("x") }
+            if q { let b6 = panic("x") ? 1 : 2 }
+            if q { let b7 = q ? panic("a") : panic("b") }
+            if q { let b8 = os[1 + panic("x")] ?? 3 }
+            if q { let b9: List<i64> = [1, panic("x")] }
+            if q { let c1 = [1, panic("x")] }
+            if q { let c2: Map<string, i64> = ["a": panic("x")] }
+            if q { let c3: Span<i64> = [1, panic("x")] }
+            if q { let c4 = xs[(1 + panic("x"))..] }
+            if q { let c5 = Order.paid { id: 1, payment: 1 + panic("x"), fee: 2 }.fee }
+            if q { let c6 = k in 1..(1 + panic("x")) }
+            if q { let c7 = [..arr, 1 + panic("x")] }
+            return 0
+        }
+
+        i64 ops(at bool q) fails E {
+            let a = P { a: (g() catch 0), b: 1 }
+            let b = P { a: h(), b: h() }
+            let c = P { a: h(), b: (g() catch 0) }
+            let n: i64 = 3
+            let e = (a: move n, b: q ? n : (g() catch 0))
+            let f = (a: move n, b: n)
+            let g2 = (a: h(), b: h(), c: (g() catch 0))
+            return 0
+        }
+
+        void main() { }
+
+        i64 uni(U u, by E err) {
+            let a = u is .one uw
+            if u is .one uq {
+                let v = uq.v
+            }
+            if err is .y ey {
+                let n = ey.n
+            }
+            let b = err is .y(1)
+            let c = err is .y(let m) && m > 0
+            return 0
+        }
+        """;
+
+    [Theory]
+    [InlineData("nev")]
+    [InlineData("ops")]
+    [InlineData("kinds")]
+    [InlineData("reqNever")]
+    [InlineData("reqNever2")]
+    [InlineData("reqTry")]
+    [InlineData("dieTry")]
+    [InlineData("uni")]
+    [InlineData("feeOf")]
+    public void Expr_MoreMatchesCSharp(string fn) => SameExprs(More, fn);
+
+    /// `Expr` while an `assert` shows each declaration's initializer, with and without a `ran` flag.
+    [Theory]
+    [InlineData("show", "ops")]
+    [InlineData("showran", "ops")]
+    [InlineData("show", "nev")]
+    [InlineData("showran", "nev")]
+    public void Expr_ShownMatchesCSharp(string mode, string fn) => SameExprs(More, fn, mode: mode);
+
+    /// `Operands` through `Become`: a payload operand that never returns, and one with an effect.
+    [Theory]
+    [InlineData("pay")]
+    [InlineData("pay2")]
+    public void Become_MatchesCSharp(string fn) => WithFixture(More, path =>
+        SelfhostSemanticsHarness.AssertSection(RunMode("become", fn, "*", path), "become", BecomeOracle(Compile(path), fn)));
+
     private const string Claims = """
         union V {
             a(List<i64> xs)
@@ -531,12 +801,34 @@ public sealed class SelfhostEmitterT4Tests
             }
         }
 
+        void sw2(move V v, from move W w, to ref V r, by F f) {
+            switch move v {
+                case .a ax: print("a")
+                case .b(_, let ys): print("b")
+                default: print("d")
+            }
+            switch move w {
+                case { n: 1 } wd: print("w")
+                default: print("d")
+            }
+            switch r {
+                case .a ra: print("r")
+                case .b(let n, _): print("n")
+                default: print("d")
+            }
+            switch f {
+                case .bad(let n): print("f")
+            }
+        }
+
         void main() { }
         """;
 
-    [Fact]
-    public void Claim_MatchesCSharp() => WithFixture(Claims, path =>
-        SelfhostSemanticsHarness.AssertSection(RunMode("claim", "sw", "*", path), "claim", ClaimOracle(Compile(path), "sw")));
+    [Theory]
+    [InlineData("sw")]
+    [InlineData("sw2")]
+    public void Claim_MatchesCSharp(string fn) => WithFixture(Claims, path =>
+        SelfhostSemanticsHarness.AssertSection(RunMode("claim", fn, "*", path), "claim", ClaimOracle(Compile(path), fn)));
 
     /// `LowerExpr`'s two panics and `Call`'s: a spread outside a collection, a node that is already lowered, and a failing
     /// call outside `try`/`catch`; `Expr` is called on the node directly, as no statement reaches it.

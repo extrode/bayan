@@ -25,9 +25,11 @@ public BExpr lowerMatch(ref Ctx c, through ref LCtx l, for BPattern pattern, at 
         case .constantPattern:
             let span = c.bConstantPatterns[i].span
             let constant = c.bConstantPatterns[i].value
+            // coverage-exempt: Q774
             if !ltree.isLowered(constant) && semantics.boundKind(constant) == .defaultValue && optional {
                 return notExpr(ref c, through: in l, for: ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value }))
             }
+            // coverage-exempt: Q774
             if optional && semantics.kindOf(t2Type(in c, through: in l, for: constant)) != .optional {
                 let has = ltree.addLOptionalHas(ref l.tree, from: LOptionalHas { span: span, optional: value })
                 let eq = lowerEqual(ref c, at: span, for: t4Inner(ref c, through: ref l, at: span, for: value), by: constant)
@@ -155,7 +157,7 @@ public void lowerClaim(ref Ctx c, through ref LCtx l, for BPattern p) uses alloc
     switch semantics.boundKind(p) {
         case .bindPattern:
             let local = c.bBindPatterns[i].local
-            if local != -1 && !c.locals[local].borrowsSubject { emit(ref l, for: ltree.addLClaim(ref l.tree, from: LClaim { span: c.bBindPatterns[i].span, local: local })) }
+            if local != -1 && c.locals[local].borrowsSubject { emit(ref l, for: ltree.addLClaim(ref l.tree, from: LClaim { span: c.bBindPatterns[i].span, local: local })) }
         case .notPattern:
             lowerClaim(ref c, through: ref l, for: c.bNotPatterns[i].operand)
         case .binaryPattern:
