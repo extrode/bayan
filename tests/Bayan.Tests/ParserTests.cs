@@ -410,6 +410,17 @@ public sealed class ParserTests
     public void TruncatedInputReportsWithoutThrowing(string text) =>
         Assert.Contains(Parse(text).Diagnostics, d => d.IsError);
 
+    /// <summary>A braceless body that takes no token before <c>}</c>: the header's fix takes the braces too, so applied alone it parses.</summary>
+    [Theory]
+    [InlineData("void main() {\n    if (x) }\n", "BYN1017")]
+    [InlineData("void main() {\n    unless (!x) }\n", "BYN1007")]
+    public void AnEmptyBracelessBodyHeaderFixParses(string text, string code)
+    {
+        var fix = Assert.Single(Parse(text).Diagnostics, d => d.Code == code).Fix!;
+        var fixedText = text[..fix.Span.Start] + fix.Replacement + text[fix.Span.End..];
+        Assert.DoesNotContain(Parse(fixedText).Diagnostics, d => d.Code.StartsWith("BYN1", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void EveryTokenSequenceTerminates()
     {

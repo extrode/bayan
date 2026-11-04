@@ -22,6 +22,11 @@ for (var i = 0; i + 1 < args.Length; i += 2)
 if (args.Length % 2 != 0 || !Directory.Exists(cases)) return Usage();
 
 var corpus = Directory.GetFiles(cases, "*.byn", SearchOption.AllDirectories).Order(StringComparer.Ordinal).Select(File.ReadAllBytes).ToArray();
+if (corpus.Length == 0)
+{
+    Console.Error.WriteLine($"no *.byn files under {cases}");
+    return 2;
+}
 string[] fragments =
 [
     "\"", "$\"", "{", "}", "\\", "\\u{", "\\{", "'", "/*", "*/", "//", "///", "\n", "\r\n", " ", "\t", "0x", "0b", "0o", "1_000", "1e", "1.5",
