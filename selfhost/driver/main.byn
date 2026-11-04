@@ -1,0 +1,178 @@
+// bayan: the self-hosted compiler driver (spec 012). `Run` of CliApp.cs:37 with the global options of
+// `TakeGlobalOptions` (CliApp.cs:315); commands the driver does not port are refused (R3).
+//
+//     bayan [--ascii] [--color auto|always|never] <command> [args]
+
+const exitOk: i32 = 0
+const exitFailure: i32 = 1
+const exitUsage: i32 = 2
+const exitTestFailure: i32 = 3
+const exitToolchain: i32 = 4
+
+/// Toolchain.CompilerVersion (Toolchain.cs:33).
+const version: string = "0.2.0-dev"
+
+/// Messages.Usage (Messages.cs:32), kept equal by SelfhostDriverTests.
+const usageText: string = """
+usage: bayan <command> [args]
+
+commands:
+  new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]
+  init [<dir>]         add a project's missing files to a directory (same options as new)
+  lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)
+  parse [--ast] <file> check syntax; with --ast print the syntax tree
+  types <path>         print each function's parameter and local types as JSON
+  check <path>         report diagnostics for a program (a file or directory)
+  build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]
+                       [-v: print each phase's time and the output path]
+  run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
+  test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
+                       [--json: print the results as JSON instead]
+                       [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]
+                       [--only <text>: only tests whose name contains <text>; repeatable]
+                       [-v: also list the passing and pending tests]
+                       [--mutate: run every mutant against the tests that reach it; with --run <cmd>, run <cmd> once
+                       per mutant instead, with BAYAN_MUTANT set (exit 0 survived, non-zero killed)]
+  mutate --binary <exe> --sites <map.json> -- <cmd>
+                       run <cmd> once per mutant site of a prebuilt --mutate binary, as test --mutate --run does
+  dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
+                       [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
+  clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
+  cache stats          show the shared build cache's location and size
+  format <path>        rewrite input forms (those with a fix-it) in a `.byn` file or a directory of them,
+                       and booleans and primitives to `style` in `package.byn` [--check: list, don't write]
+  audit <path>         list every `because` bypass and `unsafe` or `extern` declaration, with its reason
+  features --used <path>
+                       print the syntax node kinds, builtins and diagnostics a build touched, as JSON
+  explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
+  <script>.byn         run a script, so `#!/usr/bin/env bayan` works
+  doctor               check the C compiler, zig, git and the build cache, with fixes
+  --version            print the compiler version and the commit it was built from
+  --help               print this message
+
+check, types, build, run, test and features take a project directory (one with `package.byn`; the
+default inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
+
+options for every command:
+  --color auto|always|never
+                       color for terminals (auto: on unless piped or NO_COLOR is set;
+                       FORCE_COLOR turns it on, TERM=dumb off)
+  --ascii              use ASCII symbols instead of ◆ ✗ │ (also with TERM=dumb or a non-UTF-8 locale)
+
+options for check, types, build, run and test:
+  --all                show every error instead of the first 20 (JSON is never capped)
+  --diagnostics json   print each diagnostic to stderr as one JSON object per line
+                       (code, severity, file, span, message, label, help, fixes)
+
+exit codes:
+  0  success
+  1  compile errors
+  2  usage errors (unknown command or option, missing path)
+  3  test failures, or a coverage or mutation score below its minimum
+  4  toolchain problems (no C compiler, unwritable cache, C compiler failure)
+
+`bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code
+through unchanged, so it cannot tell a build failure from a program that exits 1. When that
+matters, run `bayan build` first or read `--diagnostics json`.
+"""
+
+/// CliApp.cs:33 `VersionLine` with the commit replaced by `selfhost` (spec Q3).
+string versionLine() => $"bayan {version} (selfhost)"
+
+/// The C# `File.Exists`: `path` reads and is not a directory.
+bool t1FileExists(string path) {
+    let _ = Io.listDir(path) catch {
+        let _ = Io.readFile(path) catch return false
+        return true
+    }
+    return false
+}
+
+/// R3 (spec Q4): one stderr line naming `what`.
+i32 refuse(string what) {
+    Io.stderr.write($"error: `{what}` is not available in the self-hosted compiler; use the C# `bayan`\n")
+    return exitUsage
+}
+
+/// CliApp.cs:315 `TakeGlobalOptions`: `--color` and `--ascii` are removed from `args` into `kept` and `d`, before any `--`
+/// and before a script run without a command; false after reporting a bad colour value.
+bool takeGlobalOptions(ReadOnlySpan<string> args, to ref List<string> kept, through ref DCtx d) {
+    var color = "auto"
+    var command = false
+    var i: i64 = 0
+    while i < args.length {
+        var value: string? = null
+        // A script's arguments are its own (`bayan --ascii tool.byn --color never`).
+        if args[i] == "--" || (!command && !args[i].startsWith("-") && args[i].endsWith(".byn") && t1FileExists(args[i])) {
+            for k in i..args.length { kept.append(args[k]) }
+            break
+        }
+        if !args[i].startsWith("-") { command = true }
+        if args[i] == "--ascii" {
+            d.ascii = true
+            i += 1
+            continue
+        }
+        if args[i] == "--color" && i + 1 < args.length {
+            i += 1
+            value = args[i]
+        } else if args[i].startsWith("--color=") {
+            value = args[i]["--color=".length..args[i].length]
+        } else if args[i] == "--color" {
+            value = ""
+        }
+        if (value is not { } v) {
+            kept.append(args[i])
+            i += 1
+            continue
+        }
+        if v != "auto" && v != "always" && v != "never" {
+            Io.stderr.write($"bayan: unknown color setting `{v}` (expected auto, always or never)\n")
+            return false
+        }
+        color = v
+        i += 1
+    }
+    d.color = color
+    return true
+}
+
+/// CliApp.cs:37 `Run`.
+i32 run(ReadOnlySpan<string> args, through ref DCtx d) {
+    var kept = List<string>()
+    unless takeGlobalOptions(args, to: ref kept, through: ref d) { return exitUsage }
+    if kept.length == 0 {
+        Io.stderr.write($"{usageText}\n")
+        return exitUsage
+    }
+    let command = kept[0]
+    switch command {
+        case "--version" or "version":
+            Io.stdout.write($"{versionLine()}\n")
+            return exitOk
+        case "--help" or "-h" or "help":
+            Io.stdout.write($"{usageText}\n")
+            return exitOk
+        // stub: T2 lex, parse, types, check (the R3 refusal until the task lands)
+        case "lex" or "parse" or "types" or "check":
+            return refuse(command)
+        // stub: T5 build, run (the R3 refusal until the task lands)
+        case "build" or "run":
+            return refuse(command)
+        case "doctor" or "format" or "audit" or "features" or "explain" or "test" or "mutate" or "new" or "dist" or "cache" or "clean" or "init":
+            return refuse(command)
+        default:
+            // `#!/usr/bin/env bayan` runs `bayan script.byn [args]` (CliApp.cs:97).
+            // stub: T5 RunProgram
+            if command.endsWith(".byn") && t1FileExists(command) { return refuse("run") }
+            Io.stderr.write($"bayan: unknown command `{command}`\n")
+            if command == "fmt" { Io.stderr.write("the formatter is `bayan format`\n") }
+            Io.stderr.write($"{usageText}\n")
+            return exitUsage
+    }
+}
+
+i32 main(ReadOnlySpan<string> args) {
+    var d = newDCtx()
+    return run(args, through: ref d)
+}
