@@ -53,4 +53,20 @@ echo "$out" | grep -q '^- coverage: selfhost/x/c.byn:2 is coverage-blocked on T2
 out=$bare
 echo "$out" | grep -q '^- coverage: selfhost/b.byn:6 is coverage-blocked on T4 lowerExpr, but the gate was given no tasks file' || fail "a marker without a tasks file was not a FAIL item"
 echo "$out" | grep -q '^- coverage: missed line selfhost/b.byn:7; ' || fail "a marker without a tasks file exempted its line"
+
+# a file outside <dir> that exists at base (another spec's port): only its changed lines are gated (Q871)
+rm -rf "$r" && mkdir -p "$r/selfhost/x" "$r/selfhost/y" "$r/docs" && cd "$r"
+git init -q -b fixture && git config user.email t@t && git config user.name t && git config core.hooksPath /dev/null
+printf 'void f() {\n    a()\n    b()\n}\n' > selfhost/y/d.byn; printf 'void k() {\n    a()\n}\n' > selfhost/x/e.byn; git add -A; git commit -q -m base
+printf 'void f() {\n    a()\n    c()\n}\n' > selfhost/y/d.byn; printf 'void k() {\n    z()\n    a()\n}\n' > selfhost/x/e.byn
+printf -- '- [ ] T2 two — done\n' > docs/tasks.md; : > docs/bayan-handoff.md
+d=$r/selfhost/y/d.byn; e=$r/selfhost/x/e.byn
+printf '{"version": 1, "kind": "coverage", "files": [{"path": "%s", "lines": {"covered": 0, "total": 2, "missed": [2, 3], "unknown": []}, "branches": {"covered": 0, "total": 1, "missed": [{"line": 2, "column": 5, "outcome": true}], "unknown": []}, "errorPaths": []}, {"path": "%s", "lines": {"covered": 0, "total": 2, "missed": [2, 3], "unknown": []}, "branches": {"covered": 0, "total": 0, "missed": [], "unknown": []}, "errorPaths": []}]}\n' "$d" "$e" > cov.json
+printf '{"version": 1, "files": {"%s": [{"span": [1, 4], "lines": [0, 2], "branches": [0, 1]}], "%s": [{"span": [1, 4], "lines": [0, 2], "branches": [0, 0]}]}}\n' "$d" "$e" > fns.json
+out=$(python3 -I "$root/scripts/selfhost/coverage-gate.py" "$(git rev-parse HEAD)" cov.json fns.json docs/tasks.md T2 selfhost/x)
+cd "$root"; rm -rf "$r"
+echo "$out" | grep -q '^- coverage: missed line selfhost/y/d.byn:3; ' || fail "a changed line outside <dir> was not gated"
+echo "$out" | grep -qE '^- coverage: missed (line selfhost/y/d.byn:2;|branch selfhost/y/d.byn:2:)' && fail "an unchanged line outside <dir> was gated"
+echo "$out" | grep -qx 'coverage: selfhost/y/d.byn: outside selfhost/x, so only its changed lines are gated (Q871)' || fail "no info line for a file outside <dir>"
+echo "$out" | grep -q '^- coverage: missed line selfhost/x/e.byn:3; ' || fail "an unchanged line of a touched function inside <dir> was not gated"
 echo PASS
