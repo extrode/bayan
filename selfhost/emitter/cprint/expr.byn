@@ -73,7 +73,6 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             case .optionalValue:
                 return $"{emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: t.optionalValues[i].optional)}.value"
             case .assignExpr:
-                // coverage-blocked: Q806 T9 checkedStore through 78
                 if (checkedStore(ref cc, for: ref f, from: ref c, through: t, at: t.assignExprs[i].target, to: t.assignExprs[i].value, claim: false) is { } stored) {
                     return stored
                 }
@@ -125,7 +124,6 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             return $"(({cType(ref cc, from: ref c, for: c.bDefaults[i].type)}){{0}})"
         case .local:
             let l = c.bLocals[i].local
-            // coverage-blocked: Q806 T9 hasSlot through 133
             if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
                 if f.hasDryRun { f.reads[l] = true }
                 let slotName = slot(ref cc, for: ref f, from: ref c, at: l)
@@ -140,7 +138,6 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             let operand = c.bMoves[i].operand
             if semantics.boundKind(operand) == .local {
                 let l = c.bLocals[operand & 0xFFFFFFFF].local
-                // coverage-blocked: Q806 T9 hasSlot through 149
                 if hasSlot(ref cc, for: ref f, from: ref c, at: l) {
                     if f.hasDryRun { f.moves[l] = true }
                     let moveFn = ownMove(ref cc, from: ref c, for: c.bLocals[operand & 0xFFFFFFFF].type)
@@ -469,7 +466,6 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
         if c.locals[param].modifier == .outKeyword && semantics.boundKind(argument) == .local {
             outLocal = c.bLocals[argument & 0xFFFFFFFF].local
         }
-        // coverage-blocked: Q806 T9 hasSlot through 474
         if outLocal != -1 && hasSlot(ref cc, for: ref f, from: ref c, at: outLocal) {
             args.append($"({slot(ref cc, for: ref f, from: ref c, at: outLocal)}.line = 0, &{f.names[outLocal]})")
         } else if semantics.paramIsByRef(ref c, by: param) {

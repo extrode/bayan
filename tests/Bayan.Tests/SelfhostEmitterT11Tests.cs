@@ -18,7 +18,7 @@ namespace Bayan.Tests;
 /// Every builtin call, unary, binary, conversion, index and slice of the unlowered bodies is numbered in
 /// <c>BoundTree.Descendants</c> order. Each case is emitted by both sides with the locals named as the C#
 /// <c>FunctionEmitter</c> names them (the generated main's <c>t11Func</c>), and the full text, the helpers and the type
-/// order are compared (Q876). A case that calls T9's <c>claimed</c>, still a stub on feat, runs but is not compared.
+/// order are compared (Q876).
 /// </summary>
 public sealed class SelfhostEmitterT11Tests
 {
@@ -254,15 +254,6 @@ public sealed class SelfhostEmitterT11Tests
         _ => null,
     };
 
-    private static readonly HashSet<BuiltinMember> StubMembers =
-    [
-        BuiltinMember.ListAdd, BuiltinMember.StrBufAppend, BuiltinMember.StrBufAppendRepeated, BuiltinMember.StrBufInsert,
-    ];
-
-    /// <summary>Whether the case calls T9's <c>Claimed</c>, still a stub on feat (func.byn), so its text cannot match
-    /// yet.</summary>
-    private static bool ReachesStub(BoundNode n) => n is BoundBuiltinCall b && StubMembers.Contains(b.Member);
-
     /// <summary>The builtins only <c>Lowerer.cs</c> builds (the text-view and map <c>for</c> loops, Lowerer.cs:668-693).</summary>
     private static readonly HashSet<BuiltinMember> LowererMembers =
     [
@@ -292,9 +283,8 @@ public sealed class SelfhostEmitterT11Tests
     private sealed record Oracle(string File, string Flags, int Count, Dictionary<int, string> Cases, List<int> Run, List<string> Helpers, List<string> Types,
         HashSet<BuiltinMember> Emitted, HashSet<BuiltinMember> Compared, List<string> Locals, Dictionary<int, int> Owners);
 
-    /// <summary>Numbers the cases as the generated main does; a case is compared when it reaches no stub and the C# does
-    /// not throw; it is run only when it reaches a stub. <paramref name="force"/> marks one
-    /// more case to run, for the failure path.</summary>
+    /// <summary>Numbers the cases as the generated main does; a case is compared when the C# does not throw.
+    /// <paramref name="force"/> marks one more case to run, for the failure path.</summary>
     private static Oracle CSharp(Compilation c, Func<BoundNode, bool>? force = null, bool errors = false)
     {
         var p = Lowerer.Lower(c);
@@ -329,13 +319,6 @@ public sealed class SelfhostEmitterT11Tests
             try { m.Invoke(probes[fn], [n]); }
             catch (TargetInvocationException) { return; }
             if (n is BoundBuiltinCall emittedCall) emitted.Add(emittedCall.Member);
-            // A case that calls T9's `Claimed` (a stub on feat) runs but is not compared.
-            if (ReachesStub(n))
-            {
-                flags[index] = '2';
-                run.Add(index);
-                return;
-            }
             flags[index] = '1';
             cases[index] = (string)m.Invoke(emitters[fn], [n])!;
             if (n is BoundBuiltinCall comparedCall) compared.Add(comparedCall.Member);
@@ -858,7 +841,7 @@ public sealed class SelfhostEmitterT11Tests
         Assert.True(failures.IsEmpty, $"{failures.Count} mismatches:\n{string.Join('\n', failures.Order(StringComparer.Ordinal).Take(8))}");
         Assert.True(cases > 100, $"only {cases} cases compared");
         // Q877: the cases compared unnumbered; a fix in T4 lowers this, a new divergence raises it.
-        Assert.True(unnumberedCases <= 984, $"{unnumberedCases} of {cases} cases compared unnumbered (Q877)");
+        Assert.True(unnumberedCases <= 1116, $"{unnumberedCases} of {cases} cases compared unnumbered (Q877)");
         // The fixtures' own tests compare their text; here they add to the two sets.
         foreach (var fixture in new[] { Fixture, Fixture2, Fixture3 })
             WithFixture(fixture, path =>
@@ -876,9 +859,6 @@ public sealed class SelfhostEmitterT11Tests
     /// <summary>The builtins the C# emits over the corpus and fixtures whose text is not compared, with why (Q876).</summary>
     private static readonly Dictionary<BuiltinMember, string> Uncompared = new()
     {
-        [BuiltinMember.ListAdd] = "calls T9's `claimed`",
-        [BuiltinMember.StrBufAppend] = "calls T9's `claimed`",
-        [BuiltinMember.StrBufAppendRepeated] = "calls T9's `claimed`",
-        [BuiltinMember.StrBufInsert] = "calls T9's `claimed`",
+        // Empty since T9 landed: the four builtins that call its `claimed` are compared.
     };
 }

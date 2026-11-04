@@ -50,6 +50,7 @@ public sealed class SelfhostEmitterT10Tests
             var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
             var l = LCtx {}
             if args[0] == "expr" { Io.stdout.write(t10Print(ref c, through: ref l, at: args[1], for: args[2])) }
+            if args[0] == "owned" { Io.stdout.write(t10Owned(ref c, through: ref l, at: args[1], for: args[2])) }
             if args[0] == "fail" { Io.stdout.write(t10Fail(ref c, through: ref l, at: args[1], for: args[2])) }
             if args[0] == "failbound" { Io.stdout.write(t10FailBound(ref c, through: ref l, at: args[1], for: args[2], as: t10Init(in c, for: "itp"))) }
             if args[0] == "failspan" { Io.stdout.write(t10FailBound(ref c, through: ref l, at: args[1], for: args[2], as: c.bCalls[t10Init(in c, for: "vc") & 0xFFFFFFFF].arguments[0])) }
@@ -102,6 +103,39 @@ public sealed class SelfhostEmitterT10Tests
                 }
             }
             return f
+        }
+
+        /// With ownership checks on: reads and moves of the `List` local `lst` (with a slot), outside and inside a dry run
+        /// (`lst` unsequenced), a checked store to it and `fill(out lst)`.
+        string t10Owned(ref Ctx c, through ref LCtx l, at string file, for string linePath) uses alloc {
+            var f = t10Func(in c, at: file, for: linePath)
+            var cc = CCtx { ownershipChecks: true }
+            let g = t10G(in c)
+            let lst = t10Var(in c, for: "lst")
+            var items = List<BExpr>()
+            items.append(t10Read(ref c, for: "lst"))
+            items.append(semantics.addMove(ref c, from: BMove { span: t10At(in c, for: "lst"), operand: t10Read(ref c, for: "lst") }))
+            items.append(ltree.addLAssignExpr(ref l.tree, from: LAssignExpr { span: t10At(in c, for: "lst"), target: t10Read(ref c, for: "lst"), value: t10Init(in c, for: "lst") }))
+            for s in c.bBlocks[c.functions[g].body & 0xFFFFFFFF].statements {
+                if ltree.isLowered(s) || semantics.boundKind(s) != .exprStmt { continue }
+                let e = c.bExprStmts[s & 0xFFFFFFFF].expr
+                if semantics.boundKind(e) == .call && c.functions[c.bCalls[e & 0xFFFFFFFF].function].name == "fill" { items.append(e) }
+            }
+            var sb = StrBuf()
+            sb.append("== owned\n")
+            for i in 0..items.length {
+                let e = items[i]
+                if !ltree.isLowered(e) && semantics.boundKind(e) == .call {
+                    sb.append($"{i} call {cprint.call(ref cc, for: ref f, from: ref c, through: l.tree, at: e & 0xFFFFFFFF, to: null)}\n")
+                    continue
+                }
+                sb.append($"{i} {cprint.emitExpr(ref cc, for: ref f, from: ref c, through: l.tree, at: e)}\n")
+            }
+            f.hasDryRun = true
+            f.unsequenced[lst] = true
+            sb.append($"{items.length} {cprint.emitExpr(ref cc, for: ref f, from: ref c, through: l.tree, at: items[0])}\n")
+            sb.append($"{items.length + 1} {cprint.emitExpr(ref cc, for: ref f, from: ref c, through: l.tree, at: items[1])}\n")
+            return $"{sb.finish()}"
         }
 
         string t10Fail(ref Ctx c, through ref LCtx l, at string file, for string linePath) uses alloc {
@@ -317,6 +351,7 @@ public sealed class SelfhostEmitterT10Tests
             put(out v)
             q0.bump()
             put(out q0.x)
+            fill(out lst)
             var rc = R(k)
             var lg = 2.5
             var bn = lf - lg
@@ -348,6 +383,10 @@ public sealed class SelfhostEmitterT10Tests
 
         void put(out i64 x) {
             x = 1
+        }
+
+        void fill(out List<i64> xs) {
+            xs = List<i64>()
         }
 
         void main() { }
@@ -400,13 +439,13 @@ public sealed class SelfhostEmitterT10Tests
     private static object? Field(object target, string name) =>
         target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target);
 
-    private static CEmitter NewEmitter(LoweredProgram p) =>
-        (CEmitter)Activator.CreateInstance(typeof(CEmitter), BindingFlags.Instance | BindingFlags.NonPublic, null, [p, false], null)!;
+    private static CEmitter NewEmitter(LoweredProgram p, bool ownershipChecks = false) =>
+        (CEmitter)Activator.CreateInstance(typeof(CEmitter), BindingFlags.Instance | BindingFlags.NonPublic, null, [p, ownershipChecks], null)!;
 
     /// <summary>A <c>FunctionEmitter</c> for <c>g</c> whose locals are its top-level declarations, as the generated main names them.</summary>
-    private static (object Fe, FunctionSymbol G, Dictionary<string, BoundLocalDecl> Decls) NewEmitterFor(Compilation c)
+    private static (object Fe, FunctionSymbol G, Dictionary<string, BoundLocalDecl> Decls) NewEmitterFor(Compilation c, bool ownershipChecks = false)
     {
-        var emitter = NewEmitter(Lowerer.Lower(c));
+        var emitter = NewEmitter(Lowerer.Lower(c), ownershipChecks);
         var g = c.Modules.SelectMany(m => m.AllFunctions).First(f => f.Name == "g");
         var decls = g.Body!.Statements.OfType<BoundLocalDecl>().ToDictionary(d => d.Local.Name);
         var lowered = new LoweredFunction(g, g.Body.Statements.OfType<BoundLocalDecl>().Select(d => d.Local).ToList(), 0, 0, g.Body);
@@ -473,6 +512,31 @@ public sealed class SelfhostEmitterT10Tests
         return lines;
     }
 
+    /// <summary>The <c>owned</c> section: the generated main's <c>t10Owned</c> on an emitter with ownership checks on.</summary>
+    private static List<string> OwnedOracle(Compilation c)
+    {
+        var (fe, g, decls) = NewEmitterFor(c, ownershipChecks: true);
+        var at = decls["lst"].Initializer!.Syntax;
+        var lst = decls["lst"].Local;
+        var items = new List<BoundExpr>
+        {
+            new BoundLocal(at, lst),
+            new BoundMove(at, new BoundLocal(at, lst)),
+            new LAssignExpr(at, new BoundLocal(at, lst), decls["lst"].Initializer!),
+        };
+        items.AddRange(g.Body!.Statements.OfType<BoundExprStmt>().Select(s => s.Expr).OfType<BoundCall>().Where(call => call.Function.Name == "fill"));
+        var lines = new List<string>();
+        for (var i = 0; i < items.Count; i++)
+            lines.Add(items[i] is BoundCall call ? $"{i} call {Call(typeof(FunctionEmitter), fe, "Call", call, null)}" : $"{i} {Expr(fe, items[i])}");
+        // A dry run (CEmitter.cs:1326-1328) that found `lst` both read and moved.
+        foreach (var name in new[] { "_reads", "_moves" })
+            typeof(FunctionEmitter).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(fe, new HashSet<LocalSymbol>());
+        typeof(FunctionEmitter).GetField("_unsequenced", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(fe, new HashSet<LocalSymbol> { lst });
+        lines.Add($"{items.Count} {Expr(fe, items[0])}");
+        lines.Add($"{items.Count + 1} {Expr(fe, items[1])}");
+        return lines;
+    }
+
     private static Dictionary<string, List<string>> RunMode(string mode, string path, string file, string linePath, out int exit, out string stderr)
     {
         var (code, stdout, err) = SelfhostParserTests.Run(Build(), [mode, file, linePath, path]);
@@ -497,6 +561,16 @@ public sealed class SelfhostEmitterT10Tests
         Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
         SelfhostSemanticsHarness.AssertSection(actual, "expr", ExprOracle(c, out var helpers));
         SelfhostSemanticsHarness.AssertSection(actual, "helpers", helpers);
+    });
+
+    [Fact]
+    public void Expr_WithOwnershipChecksMatchesCSharp() => WithFixture(Fixture, path =>
+    {
+        var c = Compile(path);
+        var (file, linePath) = FileOf(NewEmitterFor(c).Fe);
+        var actual = RunMode("owned", path, file, linePath, out var exit, out var stderr);
+        Assert.True(exit == 0, $"generated main exited {exit}:\n{stderr}");
+        SelfhostSemanticsHarness.AssertSection(actual, "owned", OwnedOracle(c));
     });
 
     [Fact]
