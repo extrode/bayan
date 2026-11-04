@@ -37,26 +37,32 @@ bool t18ContainsBraces(string text) {
 
 // ── Entry points ─────────────────────────────────────────────────────────────
 
-BExpr constantRef(ref Binder b, through ref Ctx c, at TextSpan span, for ConstId k) {
+BExpr constantRef(ref Binder b, through ref Ctx c, at TextSpan span, for ConstId k) => t21ConstantRef(ref b, through: ref c, at: span, for: k, from: -1)
+
+/// `constantRef` that records `syntax` as the C# `Syntax` of the node it returns (Q849).
+BExpr t21ConstantRef(ref Binder b, through ref Ctx c, at TextSpan span, for ConstId k, from i64 syntax) {
     bindConstant(ref c, for: k)
     if c.consts[k].isStaticArray {
-        return addStaticArray(ref c, from: BStaticArray { span: span, constId: k, type: c.consts[k].type })
+        return recordSyntaxNode(ref c, for: addStaticArray(ref c, from: BStaticArray { span: span, constId: k, type: c.consts[k].type }), at: syntax)
     }
     if !(c.consts[k].value is { } value) {
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
-    return constantLiteral(ref c, at: span, as: c.consts[k].type, by: in value)
+    return t21ConstantLiteral(ref c, at: span, as: c.consts[k].type, by: in value, from: syntax)
 }
 
-BExpr constantLiteral(ref Ctx c, at TextSpan span, as Type type, by in Constant value) {
+BExpr constantLiteral(ref Ctx c, at TextSpan span, as Type type, by in Constant value) => t21ConstantLiteral(ref c, at: span, as: type, by: in value, from: -1)
+
+/// `constantLiteral` that records `syntax` as the C# `Syntax` of the literal (Q849).
+BExpr t21ConstantLiteral(ref Ctx c, at TextSpan span, as Type type, by in Constant value, from i64 syntax) {
     if type == builtinType(.symbol) {
         let sLit = addSymbolLiteral(ref c, from: BSymbolLiteral { span: span, text: value.text })
         setConstant(ref c, for: sLit, to: value)
-        return sLit
+        return recordSyntaxNode(ref c, for: sLit, at: syntax)
     }
     let lit = addLiteral(ref c, from: BLiteral { span: span, type: type, value: value })
     setConstant(ref c, for: lit, to: value)
-    return lit
+    return recordSyntaxNode(ref c, for: lit, at: syntax)
 }
 
 MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
@@ -82,50 +88,53 @@ MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
 }
 
 BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by MemberRef member) {
+    let syntax = syntaxLeaf(ref c, as: .nameExpr, at: n.span)
     let hostFn = host(b, through: c)
     let inInstance = hostFn != -1 && !c.functions[hostFn].isStatic && (c.functions[hostFn].kind == .method || c.functions[hostFn].kind == .getter || c.functions[hostFn].kind == .constructor)
     if member.kind == .method && c.functions[member.id].isStatic {
-        return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: member.id, typeArgs: List<TextSpan>() })
+        return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: member.id, typeArgs: List<TextSpan>() }), at: syntax)
     }
     let nameText = t18Text(in c, from: b.file, at: n.name)
     if !inInstance {
         let staticHost = host(b, through: c)
         let helpText = staticHost != -1 && c.functions[staticHost].isStatic ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields"
         report(ref b, through: ref c, for: .instanceMemberWithoutThis, at: n.span, by: (nameText, "", "", "", ""), help: helpText)
-        return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: n.span }), at: syntax)
     }
     if inLambda(ref b, through: ref c, at: n.span, for: nameText, by: "it is read through `this`, which a lambda does not capture") {
         @unobservable because "Q607: inLambda is a stub; add a lambda read of an implicit this member when T35 lands"
-        return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: n.span }), at: syntax)
     }
-    let self = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
+    let self = recordSyntaxNode(ref c, for: addThis(ref c, from: BThis { span: n.span, type: b.thisType }), at: syntax)
     switch member.kind {
         case .field:
-            return addField(ref c, from: BField { span: n.span, receiver: self, field: member.id, type: c.fields[member.id].type })
+            return recordSyntaxNode(ref c, for: addField(ref c, from: BField { span: n.span, receiver: self, field: member.id, type: c.fields[member.id].type }), at: syntax)
         case .propertyKeyword:
-            return addCall(ref c, from: BCall { span: n.span, function: c.properties[member.id].getter, receiver: self, arguments: List<BExpr>(), type: c.properties[member.id].type })
+            return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: n.span, function: c.properties[member.id].getter, receiver: self, arguments: List<BExpr>(), type: c.properties[member.id].type }), at: syntax)
         case .method:
             if c.functions[member.id].kind == .getter {
                 @unobservable because "Q607: declareInterfaceMembers is a stub; add a getter-through-interface case when T38 lands"
-                return addCall(ref c, from: BCall { span: n.span, function: member.id, receiver: self, arguments: List<BExpr>(), type: c.functions[member.id].returnType })
+                return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: n.span, function: member.id, receiver: self, arguments: List<BExpr>(), type: c.functions[member.id].returnType }), at: syntax)
             }
-            return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: self, function: member.id, typeArgs: List<TextSpan>() })
+            return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: self, function: member.id, typeArgs: List<TextSpan>() }), at: syntax)
         default:
-            return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+            // coverage-exempt: Q853
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: n.span }), at: syntax)
     }
 }
 
 BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
+    let syntax = syntaxOfMember(ref c, from: in m)
     if m.nullConditional {
         report(ref b, through: ref c, for: .unsupported, at: m.span, by: ("`?.`", "", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
     }
     let target = bindExprOrType(ref b, through: ref c, for: in m.target)
     let name = t18Text(in c, from: b.file, at: m.member)
     let bk = boundKind(target)
     if bk == .errorExpr { return target }
     if bk == .moduleRef {
-        return t18BindModuleMember(ref b, through: ref c, for: m, to: c.bModuleRefs[boundIndex(target)].module)
+        return t18BindModuleMember(ref b, through: ref c, for: m, to: c.bModuleRefs[boundIndex(target)].module, from: syntax)
     }
     if bk == .typeRef {
         let refType = c.bTypeRefs[boundIndex(target)].referenced
@@ -134,20 +143,20 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             let set = typeIndex(refType)
             let variant = findErrorVariant(ref c, by: set, for: name)
             if variant != -1 {
-                return addErrorVariant(ref c, from: BErrorVariant { span: m.span, variant: variant, type: refType })
+                return recordSyntaxNode(ref c, for: addErrorVariant(ref c, from: BErrorVariant { span: m.span, variant: variant, type: refType }), at: syntax)
             }
             var varNames = List<string>()
             for v in c.errorSets[set].variants { varNames.append(c.errorVariants[v].name) }
             let close = suggest(name, by: in varNames)
             let help = close is { } ? $"did you mean `{close}`?" : ""
             report(ref b, through: ref c, for: .unknownVariant, at: m.member, by: (name, errorSetDisplayName(ref c, by: set), "", "", ""), help: help)
-            return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
         }
         if tk == .enumType {
-            return t18BindEnumStatic(ref b, through: ref c, for: m, to: typeIndex(refType))
+            return t18BindEnumStatic(ref b, through: ref c, for: m, to: typeIndex(refType), from: syntax)
         }
         if tk == .unionType {
-            return t18BindVariant(ref b, through: ref c, at: m.span, by: m.member, to: typeIndex(refType))
+            return t18BindVariant(ref b, through: ref c, at: m.span, by: m.member, to: typeIndex(refType), from: syntax)
         }
         if tk == .structType {
             let s = typeIndex(refType)
@@ -155,11 +164,11 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             let method: FuncId = methods.length > 0 ? methods[0] : -1
             if method != -1 && c.functions[method].isStatic {
                 checkAccess(ref b, through: ref c, for: c.functions[method].access, from: c.functions[method].owner, by: c.functions[method].module, at: m.member)
-                return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
+                return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: method, typeArgs: List<TextSpan>() }), at: syntax)
             }
             let help = (method != -1 || findField(ref c, by: s, for: name) != -1 || findProperty(ref c, by: s, for: name) != -1) ? $"call it on a `{c.structs[s].name}` value; `{name}` belongs to a value, not the type" : ""
             report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, c.structs[s].name, "", "", ""), help: help)
-            return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
         }
         if tk == .builtin {
             let bKind = builtinKindOf(typeIndex(refType))
@@ -169,33 +178,33 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                     let near = suggest(name, by: in ["readFile", "readText", "writeFile", "listDir", "run", "runBatch", "monotonicNanos", "stdout", "stderr", "stdin"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
                     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
-                    return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
                 }
                 if c.functions[member].builtin == .ioStdout || c.functions[member].builtin == .ioStderr || c.functions[member].builtin == .ioStdin {
-                    return addCall(ref c, from: BCall { span: m.span, function: member, receiver: -1, arguments: List<BExpr>(), type: c.functions[member].returnType })
+                    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: m.span, function: member, receiver: -1, arguments: List<BExpr>(), type: c.functions[member].returnType }), at: syntax)
                 }
-                return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() })
+                return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() }), at: syntax)
             }
             if bKind == .hex {
                 if name == "encode" {
-                    return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: t9Function(ref c, for: "Hex.encode"), typeArgs: List<TextSpan>() })
+                    return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: t9Function(ref c, for: "Hex.encode"), typeArgs: List<TextSpan>() }), at: syntax)
                 }
                 if name == "decode" {
-                    return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: t9Function(ref c, for: "Hex.decode"), typeArgs: List<TextSpan>() })
+                    return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: t9Function(ref c, for: "Hex.decode"), typeArgs: List<TextSpan>() }), at: syntax)
                 }
                 let near = suggest(name, by: in ["encode", "decode"])
                 let help = near is { } ? $"did you mean `{near}`?" : ""
                 report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
-                return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
             }
             if bKind == .symbol {
                 if name == "intern" {
-                    return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: t9Function(ref c, for: "Symbol.intern"), typeArgs: List<TextSpan>() })
+                    return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: t9Function(ref c, for: "Symbol.intern"), typeArgs: List<TextSpan>() }), at: syntax)
                 }
                 let near = suggest(name, by: in ["intern"])
                 let help = near is { } ? $"did you mean `{near}`?" : ""
                 report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
-                return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
             }
             if bKind == .utf8 {
                 let member = findUtf8(ref c, for: name)
@@ -203,9 +212,9 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                     let near = suggest(name, by: in ["decode", "tryDecode"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
                     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
-                    return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
                 }
-                return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() })
+                return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() }), at: syntax)
             }
             if bKind == .path {
                 let member = findPath(ref c, for: name)
@@ -213,70 +222,70 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                     let near = suggest(name, by: in ["isRooted", "relative", "fileName"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
                     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
-                    return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
                 }
-                return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() })
+                return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() }), at: syntax)
             }
         }
         if isString(refType) {
             let member = findString(ref c, for: name)
             if member != -1 {
-                return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() })
+                return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() }), at: syntax)
             }
             let codec = (name == "from" || name == "fromUtf8") ? "Utf8.decode" : (name == "tryFrom" ? "Utf8.tryDecode" : "")
             if codec != "" {
                 report(ref b, through: ref c, for: .renamedMember, at: m.member, by: ($"string.{name}", codec, "", "", ""), label: "the old name", help: $"write `{codec}`", hasFix: true, fixSpan: m.span, fixReplacement: codec)
-                return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
             }
             let near = suggest(name, by: in ["invalidUtf8At"])
             let help = near is { } ? $"did you mean `{near}`?" : ""
             report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, primitiveName(primKindOf(typeIndex(refType))), "", "", ""), help: help)
-            return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
         }
         report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, typeDisplay(ref c, by: refType), "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
     }
-    return bindValueMember(ref b, through: ref c, at: m.span, for: target, by: m.member)
+    return t21BindValueMember(ref b, through: ref c, at: m.span, for: target, by: m.member, from: syntax)
 }
 
 /// A unit variant is a value; a variant with a payload is called like a function.
-BExpr t18BindVariant(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, by TextSpan memberSpan, to UnionId u) {
+BExpr t18BindVariant(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, by TextSpan memberSpan, to UnionId u, from i64 syntax) {
     let name = t18Text(in c, from: b.file, at: memberSpan)
     let foundVariant = findUnionVariant(ref c, by: u, for: name)
     if foundVariant != -1 {
         if c.unionVariants[foundVariant].fields.length == 0 {
-            return addUnionNew(ref c, from: BUnionNew { span: syntaxSpan, variant: foundVariant, payload: List<BExpr>(), type: makeType(.unionType, at: u) })
+            return recordSyntaxNode(ref c, for: addUnionNew(ref c, from: BUnionNew { span: syntaxSpan, variant: foundVariant, payload: List<BExpr>(), type: makeType(.unionType, at: u) }), at: syntax)
         }
-        return addVariantGroup(ref c, from: BVariantGroup { span: syntaxSpan, variant: foundVariant })
+        return recordSyntaxNode(ref c, for: addVariantGroup(ref c, from: BVariantGroup { span: syntaxSpan, variant: foundVariant }), at: syntax)
     }
     var variantNames = List<string>()
     for v in c.unions[u].variants { variantNames.append(c.unionVariants[v].name) }
     let close = suggest(name, by: in variantNames)
     let help = close is { } ? $"did you mean `{close}`?" : ""
     report(ref b, through: ref c, for: .unknownUnionVariant, at: memberSpan, by: (name, c.unions[u].name, "", "", ""), help: help)
-    return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
+    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan }), at: syntax)
 }
 
 /// `Color.red`, `Color.count`, `Color.values`, `Color.fromOrdinal` and `Color.parse`.
-BExpr t18BindEnumStatic(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to EnumId e) {
+BExpr t18BindEnumStatic(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to EnumId e, from i64 syntax) {
     let name = t18Text(in c, from: b.file, at: m.member)
     let foundMember = findEnumMember(ref c, by: e, for: name)
     if foundMember != -1 {
-        return addEnumMember(ref c, from: BEnumMember { span: m.span, member: foundMember, type: makeType(.enumType, at: e) })
+        return recordSyntaxNode(ref c, for: addEnumMember(ref c, from: BEnumMember { span: m.span, member: foundMember, type: makeType(.enumType, at: e) }), at: syntax)
     }
     switch name {
         case "count":
             let count = Constant { kind: .integer, integer: bigFromI64(c.enums[e].members.length) }
-            let lit = addLiteral(ref c, from: BLiteral { span: m.span, type: prim(.i64), value: count })
+            let lit = recordSyntaxNode(ref c, for: addLiteral(ref c, from: BLiteral { span: m.span, type: prim(.i64), value: count }), at: syntax)
             setConstant(ref c, for: lit, to: count)
             return lit
         case "values":
             let spanT = internSpan(ref c, by: makeType(.enumType, at: e), readOnly: true)
-            return addEnumValues(ref c, from: BEnumValues { span: m.span, enumId: e, type: spanT })
+            return recordSyntaxNode(ref c, for: addEnumValues(ref c, from: BEnumValues { span: m.span, enumId: e, type: spanT }), at: syntax)
         case "fromOrdinal":
-            return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].fromOrdinal, typeArgs: List<TextSpan>() })
+            return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].fromOrdinal, typeArgs: List<TextSpan>() }), at: syntax)
         case "parse":
-            return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].parse, typeArgs: List<TextSpan>() })
+            return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].parse, typeArgs: List<TextSpan>() }), at: syntax)
         default:
             var candidates = List<string>()
             for mem in c.enums[e].members { candidates.append(c.enumMembers[mem].name) }
@@ -287,21 +296,21 @@ BExpr t18BindEnumStatic(ref Binder b, through ref Ctx c, for parser.MemberExpr m
             let close = suggest(name, by: in candidates)
             let help = close is { } ? $"did you mean `{close}`?" : ""
             report(ref b, through: ref c, for: .unknownEnumMember, at: m.member, by: (name, c.enums[e].name, "", "", ""), help: help)
-            return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
     }
 }
 
-BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to ModId mod) {
+BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to ModId mod, from i64 syntax = -1) {
     let name = t18Text(in c, from: b.file, at: m.member)
     if c.modules[mod].constants.contains(name) {
         let constId = c.modules[mod].constants[name]
         checkAccess(ref b, through: ref c, for: accessOf(0), from: -1, by: mod, at: m.member, publicRequired: true)
-        return constantRef(ref b, through: ref c, at: m.span, for: constId)
+        return t21ConstantRef(ref b, through: ref c, at: m.span, for: constId, from: syntax)
     }
     if c.modules[mod].functions.contains(name) {
         let fnId = c.modules[mod].functions[name][0]
         checkAccess(ref b, through: ref c, for: c.functions[fnId].access, from: -1, by: mod, at: m.member)
-        return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: fnId, typeArgs: List<TextSpan>() })
+        return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: fnId, typeArgs: List<TextSpan>() }), at: syntax)
     }
     if c.modules[mod].types.contains(name) {
         var path = List<TextSpan>()
@@ -311,10 +320,10 @@ BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr
         }
         path.append(m.member)
         let resolved = resolveType(ref b, through: ref c, for: in parser.TypeSyntax.namedType(Owned(NamedType { span: m.span, path: move path, args: List<parser.TypeSyntax>() })))
-        return addTypeRef(ref c, from: BTypeRef { span: m.span, referenced: resolved })
+        return recordSyntaxNode(ref c, for: addTypeRef(ref c, from: BTypeRef { span: m.span, referenced: resolved }), at: syntax)
     }
     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, $"module {c.modules[mod].name}", "", "", ""))
-    return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
 }
 
 /// Reports a member the current code may not see. Module constants are always module-private in v0.1.
@@ -341,7 +350,10 @@ void checkAccess(ref Binder b, through ref Ctx c, for Accessibility access, from
     }
 }
 
-BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, by TextSpan member) {
+BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, by TextSpan member) => t21BindValueMember(ref b, through: ref c, at: span, for: target, by: member, from: -1)
+
+/// `bindValueMember` that records `syntax` as the C# `Syntax` of the nodes it builds (Q849).
+BExpr t21BindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, by TextSpan member, from i64 syntax) {
     let name = t18Text(in c, from: b.file, at: member)
     let targetType = exprType(in c, for: target)
     var lookupType = targetType
@@ -356,13 +368,13 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         let foundField = findField(ref c, by: s, for: name)
         if foundField != -1 {
             checkAccess(ref b, through: ref c, for: c.fields[foundField].access, from: s, by: c.structs[s].module, at: member)
-            return addField(ref c, from: BField { span: span, receiver: target, field: foundField, type: c.fields[foundField].type })
+            return recordSyntaxNode(ref c, for: addField(ref c, from: BField { span: span, receiver: target, field: foundField, type: c.fields[foundField].type }), at: syntax)
         }
 
         let foundProp = findProperty(ref c, by: s, for: name)
         if foundProp != -1 {
             checkAccess(ref b, through: ref c, for: c.properties[foundProp].access, from: s, by: c.structs[s].module, at: member)
-            return addCall(ref c, from: BCall { span: span, function: c.properties[foundProp].getter, receiver: target, arguments: List<BExpr>(), type: c.properties[foundProp].type })
+            return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: span, function: c.properties[foundProp].getter, receiver: target, arguments: List<BExpr>(), type: c.properties[foundProp].type }), at: syntax)
         }
 
         let methods = findMethods(ref c, by: s, for: name)
@@ -370,14 +382,12 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             let foundMethod = methods[0]
             checkAccess(ref b, through: ref c, for: c.functions[foundMethod].access, from: s, by: c.structs[s].module, at: member)
             let recv = c.functions[foundMethod].isStatic ? -1 : target
-            return addMethodGroup(ref c, from: BMethodGroup { span: span, receiver: recv, function: foundMethod, typeArgs: List<TextSpan>() })
+            return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: span, receiver: recv, function: foundMethod, typeArgs: List<TextSpan>() }), at: syntax)
         }
 
         let states = statesOf(ref c, for: s)
         if states != -1 {
-            @unobservable because "Q607: statesOf and bindPayloadField are stubs; add a union-with-states payload read when T38 lands"
-            let payload = bindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member)
-            @unobservable because "Q607: statesOf and bindPayloadField are stubs; add a union-with-states payload read when T38 lands"
+            let payload = t21BindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member, to: syntax)
             if payload != -1 { return payload }
         }
     } else if lk == .errorSet || lk == .errorUnion {
@@ -389,7 +399,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 for fi in 0..c.errorVariants[v].fields.length {
                     let f = c.errorVariants[v].fields[fi]
                     if c.locals[f].name == name {
-                        return addErrorField(ref c, from: BErrorField { span: span, receiver: target, variant: v, index: fi })
+                        return recordSyntaxNode(ref c, for: addErrorField(ref c, from: BErrorField { span: span, receiver: target, variant: v, index: fi }), at: syntax)
                     }
                 }
             }
@@ -405,7 +415,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 for fi in 0..c.unionVariants[v].fields.length {
                     let f = c.unionVariants[v].fields[fi]
                     if c.locals[f].name == name {
-                        return addUnionField(ref c, from: BUnionField { span: span, receiver: target, variant: v, index: fi })
+                        return recordSyntaxNode(ref c, for: addUnionField(ref c, from: BUnionField { span: span, receiver: target, variant: v, index: fi }), at: syntax)
                     }
                 }
             }
@@ -427,35 +437,35 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         }
         if fieldVariant != -1 {
             report(ref b, through: ref c, for: .payloadNeedsPattern, at: member, by: (c.unions[u].name, name, "", "", ""), help: "match the variant and bind the field, as in `case .Variant(let x):`")
-            return addErrorExpr(ref c, from: BErrorExpr { span: span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
         }
     } else if lk == .tuple {
         let t = typeIndex(lookupType)
         let index = tupleIndexOf(ref c, by: lookupType, for: name)
         if index >= 0 {
-            return addTupleElement(ref c, from: BTupleElement { span: span, receiver: target, index: index, type: c.tupleTypes[t][index].type })
+            return recordSyntaxNode(ref c, for: addTupleElement(ref c, from: BTupleElement { span: span, receiver: target, index: index, type: c.tupleTypes[t][index].type }), at: syntax)
         }
     } else if lk == .enumType {
         let e = typeIndex(lookupType)
         let f = findEnumField(ref c, by: e, for: name)
         if f != -1 {
-            let lit = literal(ref c, at: span, as: prim(.i32), by: Constant { kind: .integer, integer: bigFromI64(c.enumFields[f].index) })
-            return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .enumField, receiver: target, arguments: [lit], type: c.enumFields[f].type })
+            let lit = recordSyntaxNode(ref c, for: literal(ref c, at: span, as: prim(.i32), by: Constant { kind: .integer, integer: bigFromI64(c.enumFields[f].index) }), at: syntax)
+            return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .enumField, receiver: target, arguments: [lit], type: c.enumFields[f].type }), at: syntax)
         }
     } else if lk == .owned {
         let innerType = c.ownedTypes[typeIndex(lookupType)]
         if name != "value" && !isError(innerType) {
-            let innerCall = addBuiltinCall(ref c, from: BBuiltinCall { span: nodeSpan(in c, for: target), member: .ownedValue, receiver: target, arguments: List<BExpr>(), type: innerType })
-            return bindValueMember(ref b, through: ref c, at: span, for: innerCall, by: member)
+            let innerCall = shareSyntax(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: nodeSpan(in c, for: target), member: .ownedValue, receiver: target, arguments: List<BExpr>(), type: innerType }), from: target)
+            return t21BindValueMember(ref b, through: ref c, at: span, for: innerCall, by: member, from: syntax)
         }
     } else if lk == .optional {
         if name != "take" {
             let targetText = t18Text(in c, from: b.file, at: nodeSpan(in c, for: target))
             report(ref b, through: ref c, for: .memberOfOptional, at: member, by: (name, typeDisplay(ref c, by: lookupType), "", "", ""), help: $"check it first: `if ({targetText} is {{ }} value) {{ … value.{name} … }}`")
-            return addErrorExpr(ref c, from: BErrorExpr { span: span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
         }
     } else if lk == .error {
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     } else if lk == .typeParam {
         let tp = typeIndex(lookupType)
         if c.typeParams[tp].constraints.length > 0 {
@@ -471,7 +481,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             }
             if foundMember != -1 {
                 @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
-                return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member)
+                return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member, as: syntax)
             }
             let self = c.interfaces[c.typeParams[tp].constraints[0]].self == tp
             var constraintList = List<string>()
@@ -487,10 +497,10 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             let joinedConstraints = $"{sb.finish()}"
             let help = self ? $"declare `{name}` in `{interfaceDisplayName(ref c, by: c.typeParams[tp].constraints[0])}`; a default method sees only its interface's members" : $"add an interface declaring `{name}` to the `where` clause"
             report(ref b, through: ref c, for: .constraintMember, at: member, by: (c.typeParams[tp].name, name, joinedConstraints, "", ""), help: help)
-            return addErrorExpr(ref c, from: BErrorExpr { span: span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
         }
         report(ref b, through: ref c, for: .typeParameterMember, at: member, by: (name, c.typeParams[tp].name, "", "", ""), help: $"add `where {c.typeParams[tp].name} : …` naming an interface that declares `{name}`, or use a concrete type")
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     } else if lk == .dynRef {
         let d = c.dynRefTypes[typeIndex(lookupType)]
         var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name)
@@ -502,10 +512,10 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
             if d.readOnly && c.functions[foundMember].isMutating {
                 report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, interfaceDisplayName(ref c, by: d.iface), "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {interfaceDisplayName(ref c, by: d.iface)}`")
-                return addErrorExpr(ref c, from: BErrorExpr { span: span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
             }
             @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
-            return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member)
+            return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member, as: syntax)
         }
     }
 
@@ -519,45 +529,45 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             callType = propertyType(ref b, through: ref c, for: builtin.member, as: builtin.type)
         }
         @unobservable because "Q607: propertyType and bindCollection are stubs; add str.length and static-array length cases when T35 lands"
-        return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: builtin.member, receiver: target, arguments: List<BExpr>(), type: callType })
+        return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: builtin.member, receiver: target, arguments: List<BExpr>(), type: callType }), at: syntax)
     }
     @unobservable because "Q607: fact is a stub; add an Untrusted<string> length case when T19 lands"
     if kindOf(targetType) == .untrusted && (name == "length" || name == "isEmpty") {
         let innerType = c.untrustedTypes[typeIndex(targetType)]
         if (builtinProperty(ref c, for: innerType, by: name) is { } factProp) {
-            return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: factProp.member, receiver: fact(ref c, for: target), arguments: List<BExpr>(), type: factProp.type })
+            return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: factProp.member, receiver: fact(ref c, for: target), arguments: List<BExpr>(), type: factProp.type }), at: syntax)
         }
     }
     if hasMethod(ref c, for: targetType, by: name) {
-        return addBuiltinGroup(ref c, from: BBuiltinGroup { span: span, receiver: target, name: name })
+        return recordSyntaxNode(ref c, for: addBuiltinGroup(ref c, from: BBuiltinGroup { span: span, receiver: target, name: name }), at: syntax)
     }
     if reportRenamed(ref b, through: ref c, for: targetType, at: member) {
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
     if name == "take" {
         report(ref b, through: ref c, for: .takeUnsupported, at: member, by: (typeDisplay(ref c, by: targetType), "", "", "", ""), help: "copy it, or move the whole local; only an owned collection or optional has an empty value to leave behind")
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
     let label = name == "matches" && isString(targetType) ? "`matches` arrives with `std.regex` after v0.1" : ""
     let help = memberSuggestion(ref c, for: targetType, by: name) ?? ""
     report(ref b, through: ref c, for: .unknownMember, at: member, by: (name, typeDisplay(ref c, by: targetType), "", "", ""), label: label, help: help)
-    return addErrorExpr(ref c, from: BErrorExpr { span: span })
+    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
 }
 
 /// A member of an interface, reached through a constrained type parameter or a `dyn ref`.
-BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) {
+BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan, as i64 syntax) {
     @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
     if c.functions[m].typeParams.length > 0 {
         report(ref b, through: ref c, for: .unsupported, at: memberSpan, by: ("calling a generic interface method", "", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan }), at: syntax)
     }
     @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
     if c.functions[m].kind == .getter {
         let returnType = returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: target), by: m)
-        return addCall(ref c, from: BCall { span: syntaxSpan, function: m, receiver: target, arguments: List<BExpr>(), type: returnType })
+        return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: syntaxSpan, function: m, receiver: target, arguments: List<BExpr>(), type: returnType }), at: syntax)
     }
     @unobservable because "Q607: declareInterfaceMembers is a stub; add an interface member through a type parameter or dyn ref when T38 lands"
-    return addMethodGroup(ref c, from: BMethodGroup { span: syntaxSpan, receiver: target, function: m, typeArgs: List<TextSpan>() })
+    return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: syntaxSpan, receiver: target, function: m, typeArgs: List<TextSpan>() }), at: syntax)
 }
 
 /// The return type of interface member `m` called on `receiver`: an associated type `Item` is `T.Item`.
@@ -737,6 +747,7 @@ string? memberSuggestion(ref Ctx c, for Type type, by string name) {
 }
 
 BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemberExpr t, to Type expected) {
+    let syntax = syntaxLeaf(ref c, as: .targetMemberExpr, at: t.span)
     var target = expected
     if expected != -1 {
         let ek = kindOf(expected)
@@ -749,24 +760,24 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
 
     if target == -1 {
         report(ref b, through: ref c, for: .noTargetType, at: t.span, by: (t18Text(in c, from: b.file, at: t.member), "", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntax)
     }
     let tk = kindOf(target)
-    if tk == .error { return addErrorExpr(ref c, from: BErrorExpr { span: t.span }) }
+    if tk == .error { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntax) }
     let name = t18Text(in c, from: b.file, at: t.member)
 
     if tk == .function {
         report(ref b, through: ref c, for: .memberNotLambda, at: t.span, by: (name, "", "", "", ""), help: $"write `it.{name}`", hasFix: true, fixSpan: t.span, fixReplacement: $"it.{name}")
-        return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntax)
     }
     if tk == .errorSet {
         let set = typeIndex(target)
         let foundVariant = findErrorVariant(ref c, by: set, for: name)
         if foundVariant != -1 {
-            return addErrorVariant(ref c, from: BErrorVariant { span: t.span, variant: foundVariant, type: target })
+            return recordSyntaxNode(ref c, for: addErrorVariant(ref c, from: BErrorVariant { span: t.span, variant: foundVariant, type: target }), at: syntax)
         }
         report(ref b, through: ref c, for: .unknownVariant, at: t.member, by: (name, errorSetDisplayName(ref c, by: set), "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntax)
     }
     if tk == .errorUnion {
         let u = typeIndex(target)
@@ -785,7 +796,7 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
             }
         }
         if matches.length == 1 {
-            return addErrorVariant(ref c, from: BErrorVariant { span: t.span, variant: matches[0], type: target })
+            return recordSyntaxNode(ref c, for: addErrorVariant(ref c, from: BErrorVariant { span: t.span, variant: matches[0], type: target }), at: syntax)
         }
         if matches.length > 1 {
             var matchedSets = List<string>()
@@ -799,41 +810,42 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
         } else {
             report(ref b, through: ref c, for: .unknownVariant, at: t.member, by: (name, typeDisplay(ref c, by: target), "", "", ""))
         }
-        return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntax)
     }
     if tk == .enumType {
         let e = typeIndex(target)
         let foundMember = findEnumMember(ref c, by: e, for: name)
         if foundMember != -1 {
-            return addEnumMember(ref c, from: BEnumMember { span: t.span, member: foundMember, type: target })
+            return recordSyntaxNode(ref c, for: addEnumMember(ref c, from: BEnumMember { span: t.span, member: foundMember, type: target }), at: syntax)
         }
         var candidates = List<string>()
         for mem in c.enums[e].members { candidates.append(c.enumMembers[mem].name) }
         let close = suggest(name, by: in candidates)
         let help = close is { } ? $"did you mean `{close}`?" : ""
         report(ref b, through: ref c, for: .unknownEnumMember, at: t.member, by: (name, c.enums[e].name, "", "", ""), help: help)
-        return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntax)
     }
     if tk == .unionType {
-        return t18BindVariant(ref b, through: ref c, at: t.span, by: t.member, to: typeIndex(target))
+        return t18BindVariant(ref b, through: ref c, at: t.span, by: t.member, to: typeIndex(target), from: syntax)
     }
     if tk == .structType {
         let methods = findMethods(ref c, by: typeIndex(target), for: name)
         let method: FuncId = methods.length > 0 ? methods[0] : -1
         if method != -1 && c.functions[method].isStatic {
-            return addMethodGroup(ref c, from: BMethodGroup { span: t.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
+            return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: t.span, receiver: -1, function: method, typeArgs: List<TextSpan>() }), at: syntax)
         }
     }
     report(ref b, through: ref c, for: .unknownMember, at: t.member, by: (name, typeDisplay(ref c, by: target), "", "", ""))
-    return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntax)
 }
 
 BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
+    let syntax = syntaxOfIndex(ref c, from: in i)
     let target = bindExpr(ref b, through: ref c, for: in i.target)
     let targetType = exprType(in c, for: target)
     if isError(targetType) {
         let _ = bindExpr(ref b, through: ref c, for: in i.index)
-        return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: i.span }), at: syntax)
     }
     if isString(targetType) {
         switch i.index {
@@ -843,15 +855,15 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
         }
         t18ReportStringIndexer(ref b, through: ref c, for: i)
         let _ = bindExpr(ref b, through: ref c, for: in i.index)
-        return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: i.span }), at: syntax)
     }
     if kindOf(targetType) == .map {
         let mapType = c.mapTypes[typeIndex(targetType)]
         let key = bindConverted(ref b, through: ref c, for: in i.index, to: mapType.key)
         if isError(exprType(in c, for: key)) {
-            return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: i.span }), at: syntax)
         }
-        return addBuiltinCall(ref c, from: BBuiltinCall { span: i.span, member: .mapIndex, receiver: target, arguments: [key], type: mapType.value })
+        return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: i.span, member: .mapIndex, receiver: target, arguments: [key], type: mapType.value }), at: syntax)
     }
     var element: Type = -1
     let tk = kindOf(targetType)
@@ -865,7 +877,7 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
     if element == -1 {
         report(ref b, through: ref c, for: .notIndexable, at: parser.exprSpan(in i.target), by: (typeDisplay(ref c, by: targetType), "", "", "", ""))
         let _ = bindExpr(ref b, through: ref c, for: in i.index)
-        return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: i.span }), at: syntax)
     }
     switch i.index {
         case .rangeExpr(let r):
@@ -898,7 +910,7 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
             report(ref b, through: ref c, for: .indexOutOfRange, at: parser.exprSpan(in i.index), by: (nStr, typeDisplay(ref c, by: targetType), "", "", ""))
         }
     }
-    return addIndex(ref c, from: BIndex { span: i.span, target: target, index: index, fromEnd: fromEnd, type: element })
+    return recordSyntaxNode(ref c, for: addIndex(ref c, from: BIndex { span: i.span, target: target, index: index, fromEnd: fromEnd, type: element }), at: syntax)
 }
 
 BExpr t18BindIndexValue(ref Binder b, through ref Ctx c, for parser.Expr syntax) {
@@ -908,10 +920,10 @@ BExpr t18BindIndexValue(ref Binder b, through ref Ctx c, for parser.Expr syntax)
     let span = parser.exprSpan(in syntax)
     if !isInteger(indexType) {
         report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: indexType), "an integer index", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntaxNode(ref c, from: in syntax))
     }
     if isUnsignedInteger(indexType) && primitiveBits(primKindOf(typeIndex(indexType))) == 64 {
-        return addConversion(ref c, from: BConversion { span: span, operand: index, type: prim(.i64), kind: .numericCast })
+        return recordSyntaxNode(ref c, for: addConversion(ref c, from: BConversion { span: span, operand: index, type: prim(.i64), kind: .numericCast }), at: syntaxNode(ref c, from: in syntax))
     }
     return convert(ref b, through: ref c, for: index, to: prim(.i64), at: span)
 }
@@ -949,7 +961,7 @@ BExpr bindSlice(ref Binder b, through ref Ctx c, for in parser.IndexExpr i, from
             end = t18BindIndexValue(ref b, through: ref c, for: r.end)
     }
 
-    return addSlice(ref c, from: BSlice { span: i.span, target: target, start: start, startFromEnd: startFromEnd, end: end, endFromEnd: endFromEnd, inclusive: r.inclusive, type: type })
+    return recordSyntaxNode(ref c, for: addSlice(ref c, from: BSlice { span: i.span, target: target, start: start, startFromEnd: startFromEnd, end: end, endFromEnd: endFromEnd, inclusive: r.inclusive, type: type }), at: syntaxOfIndex(ref c, from: in i))
 }
 
 string interpolationSource(ref Binder b, through ref Ctx c, for in parser.Expr e) {

@@ -13,7 +13,7 @@ BExpr bindUnary(ref Binder b, through ref Ctx c, for in parser.UnaryExpr u, to T
                     if boundKind(l) != .literal { return l }
                     // `bl with { Syntax = u }`: the same literal, built on the unary expression.
                     let li = boundIndex(l)
-                    let copy = addLiteral(ref c, from: BLiteral { span: u.span, type: c.bLiterals[li].type, value: c.bLiterals[li].value })
+                    let copy = recordSyntaxNode(ref c, for: addLiteral(ref c, from: BLiteral { span: u.span, type: c.bLiterals[li].type, value: c.bLiterals[li].value }), at: syntaxOfUnary(ref c, from: in u))
                     if (exprConstant(in c, for: l) is { } lk) { setConstant(ref c, for: copy, to: lk) }
                     setSyntaxFlags(ref c, for: copy, to: flags)
                     return copy
@@ -24,19 +24,19 @@ BExpr bindUnary(ref Binder b, through ref Ctx c, for in parser.UnaryExpr u, to T
     }
     if u.op == .fromEnd {
         report(ref b, through: ref c, for: .fromEndOutsideIndex, at: u.span, by: ("", "", "", "", ""))
-        let n = addErrorExpr(ref c, from: BErrorExpr { span: u.span })
+        let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: u.span }), at: syntaxOfUnary(ref c, from: in u))
         setSyntaxFlags(ref c, for: n, to: flags)
         return n
     }
     let operand = bindExpr(ref b, through: ref c, for: in u.operand, to: u.op == .notKeyword ? prim(.bool) : expected)
     let t = exprType(in c, for: operand)
     if isError(t) {
-        let n = addErrorExpr(ref c, from: BErrorExpr { span: u.span })
+        let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: u.span }), at: syntaxOfUnary(ref c, from: in u))
         setSyntaxFlags(ref c, for: n, to: flags)
         return n
     }
     if kindOf(t) == .typeParam {
-        let n = t19TypeParameterOperator(ref b, through: ref c, at: u.span, for: t19UnaryText(u.op), by: t)
+        let n = recordSyntaxNode(ref c, for: t19TypeParameterOperator(ref b, through: ref c, at: u.span, for: t19UnaryText(u.op), by: t), at: syntaxOfUnary(ref c, from: in u))
         setSyntaxFlags(ref c, for: n, to: flags)
         return n
     }
@@ -48,17 +48,17 @@ BExpr bindUnary(ref Binder b, through ref Ctx c, for in parser.UnaryExpr u, to T
     if !ok {
         report(ref b, through: ref c, for: .badUnaryOperand, at: u.span, by: (t19UnaryText(u.op), typeDisplay(ref c, by: t), "", "", ""),
             help: u.op == .negate && isUnsignedInteger(t) ? "convert to a signed type first; unsigned values cannot be negative" : "")
-        let n = addErrorExpr(ref c, from: BErrorExpr { span: u.span })
+        let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: u.span }), at: syntaxOfUnary(ref c, from: in u))
         setSyntaxFlags(ref c, for: n, to: flags)
         return n
     }
-    let result = addUnary(ref c, from: BUnary { span: u.span, op: u.op, operand: operand, type: t })
+    let result = recordSyntaxNode(ref c, for: addUnary(ref c, from: BUnary { span: u.span, op: u.op, operand: operand, type: t }), at: syntaxOfUnary(ref c, from: in u))
     setSyntaxFlags(ref c, for: result, to: flags)
     if (exprConstant(in c, for: operand) is { } k) {
         if (foldUnary(ref c, for: u.op, by: in k, as: t) is { } folded) {
             if folded.kind == .integer && kindOf(t) == .primitive && !fits(folded.integer, for: primKindOf(typeIndex(t))) {
                 report(ref b, through: ref c, for: .constantOverflow, at: u.span, by: (typeDisplay(ref c, by: t), "", "", "", ""))
-                let n = addErrorExpr(ref c, from: BErrorExpr { span: u.span })
+                let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: u.span }), at: syntaxOfUnary(ref c, from: in u))
                 setSyntaxFlags(ref c, for: n, to: flags)
                 return n
             }
@@ -139,7 +139,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
             let scope = narrowedBegin(ref b, through: ref c, for: l, whenTrue: e.op == .logicalAnd)
             let r = bindConverted(ref b, through: ref c, for: in e.right, to: prim(.bool))
             narrowedEnd(ref b, through: ref c, by: move scope)
-            let result = addBinary(ref c, from: BBinary { span: e.span, op: e.op, left: l, right: r, type: prim(.bool) })
+            let result = recordSyntaxNode(ref c, for: addBinary(ref c, from: BBinary { span: e.span, op: e.op, left: l, right: r, type: prim(.bool) }), at: syntaxOfBinary(ref c, from: in e))
             if (exprConstant(in c, for: l) is { } lc) {
                 if (exprConstant(in c, for: r) is { } rc) {
                     if (foldBinary(ref c, for: e.op, from: in lc, by: in rc, as: prim(.bool)) is { } k) { setConstant(ref c, for: result, to: k) }
@@ -180,7 +180,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
         }
     }
     if isError(exprType(in c, for: left)) || isError(exprType(in c, for: right)) {
-        let n = addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+        let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: e.span }), at: syntaxOfBinary(ref c, from: in e))
         setSyntaxFlags(ref c, for: n, to: flags)
         return n
     }
@@ -188,7 +188,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
         var tp = t19TypeParameterOf(ref c, for: exprType(in c, for: left))
         if tp == -1 { tp = t19TypeParameterOf(ref c, for: exprType(in c, for: right)) }
         if tp != -1 {
-            let n = t19TypeParameterOperator(ref b, through: ref c, at: e.span, for: binaryText(e.op), by: tp)
+            let n = recordSyntaxNode(ref c, for: t19TypeParameterOperator(ref b, through: ref c, at: e.span, for: binaryText(e.op), by: tp), at: syntaxOfBinary(ref c, from: in e))
             setSyntaxFlags(ref c, for: n, to: flags)
             return n
         }
@@ -199,7 +199,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
             return t19BadOperands(ref b, through: ref c, for: in e, from: left, by: right)
         }
         let lt = exprType(in c, for: left)
-        let shift = addBinary(ref c, from: BBinary { span: e.span, op: e.op, left: left, right: right, type: lt })
+        let shift = recordSyntaxNode(ref c, for: addBinary(ref c, from: BBinary { span: e.span, op: e.op, left: left, right: right, type: lt }), at: syntaxOfBinary(ref c, from: in e))
         setSyntaxFlags(ref c, for: shift, to: flags)
         return fold(ref b, through: ref c, for: shift, from: left, by: right, as: lt)
     }
@@ -219,7 +219,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
             let merged = $"{lText[0..lText.length - 1]}{rText[1..]}"
             report(ref b, through: ref c, for: .stringConcatenation, at: e.span, by: ("", "", "", "", ""),
                 help: $"write one literal: `{merged}`", hasFix: true, fixSpan: e.span, fixReplacement: merged)
-            let n = addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+            let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: e.span }), at: syntaxOfBinary(ref c, from: in e))
             setSyntaxFlags(ref c, for: n, to: flags)
             return n
         }
@@ -228,7 +228,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
         report(ref b, through: ref c, for: .stringConcatenation, at: e.span, by: ("", "", "", "", ""),
             help: "write the parts as one interpolation: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
             hasFix: true, fixSpan: e.span, fixReplacement: $"$\"{lSource}{rSource}\"")
-        let n = addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+        let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: e.span }), at: syntaxOfBinary(ref c, from: in e))
         setSyntaxFlags(ref c, for: n, to: flags)
         return n
     }
@@ -240,7 +240,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
     left = convert(ref b, through: ref c, for: left, to: common, at: parser.exprSpan(in e.left), constrains: false)
     right = convert(ref b, through: ref c, for: right, to: common, at: parser.exprSpan(in e.right), constrains: false)
     let type = t19IsComparison(e.op) ? prim(.bool) : common
-    let bound = addBinary(ref c, from: BBinary { span: e.span, op: e.op, left: left, right: right, type: type })
+    let bound = recordSyntaxNode(ref c, for: addBinary(ref c, from: BBinary { span: e.span, op: e.op, left: left, right: right, type: type }), at: syntaxOfBinary(ref c, from: in e))
     setSyntaxFlags(ref c, for: bound, to: flags)
     return fold(ref b, through: ref c, for: bound, from: left, by: right, as: common)
 }
@@ -255,7 +255,7 @@ BExpr t19Operand(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type 
 BExpr fact(ref Ctx c, for BExpr value) {
     let vt = exprType(in c, for: value)
     if kindOf(vt) == .untrusted {
-        let conv = addConversion(ref c, from: BConversion { span: nodeSpan(in c, for: value), operand: value, type: c.untrustedTypes[typeIndex(vt)], kind: .identity })
+        let conv = shareSyntax(ref c, for: addConversion(ref c, from: BConversion { span: nodeSpan(in c, for: value), operand: value, type: c.untrustedTypes[typeIndex(vt)], kind: .identity }), from: value)
         return t17SameSyntax(ref c, for: conv, from: value)
     }
     return value
@@ -412,7 +412,7 @@ BExpr t19BadOperands(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e
         help = "use `(u32)c` for its value; a `rune` is a Unicode scalar, not a number"
     }
     report(ref b, through: ref c, for: .badBinaryOperands, at: e.span, by: (binaryText(e.op), typeDisplay(ref c, by: lt), typeDisplay(ref c, by: rt), "", ""), help: help)
-    let n = addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+    let n = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: e.span }), at: syntaxOfBinary(ref c, from: in e))
     // C# `IsUntypedLiteral(Syntax)`: `e` is not a comparison, `&&`, `||` or `??`, and both sides are untyped literals.
     let untyped = !t19IsComparison(e.op) && isUntypedLiteral(in e.left) && isUntypedLiteral(in e.right)
     setSyntaxFlags(ref c, for: n, to: untyped ? syntaxUntypedLiteral : 0)
@@ -424,22 +424,22 @@ BExpr bindCoalesce(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, 
     let lt = exprType(in c, for: left)
     if isError(lt) {
         let _ = bindExpr(ref b, through: ref c, for: in e.right)
-        return addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: e.span }), at: syntaxOfBinary(ref c, from: in e))
     }
     if kindOf(lt) != .optional {
         report(ref b, through: ref c, for: .coalesceNotOptional, at: parser.exprSpan(in e.left), by: (typeDisplay(ref c, by: lt), "", "", "", ""))
         let _ = bindExpr(ref b, through: ref c, for: in e.right)
-        return addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: e.span }), at: syntaxOfBinary(ref c, from: in e))
     }
     let inner = c.optionalTypes[typeIndex(lt)]
     var right = bindExpr(ref b, through: ref c, for: in e.right, to: inner)
     let rt = exprType(in c, for: right)
-    if isNever(rt) { return addCoalesce(ref c, from: BCoalesce { span: e.span, left: left, right: right, type: inner }) }
+    if isNever(rt) { return recordSyntaxNode(ref c, for: addCoalesce(ref c, from: BCoalesce { span: e.span, left: left, right: right, type: inner }), at: syntaxOfBinary(ref c, from: in e)) }
     if kindOf(rt) == .optional && rt == lt {
-        return addCoalesce(ref c, from: BCoalesce { span: e.span, left: left, right: right, type: lt })
+        return recordSyntaxNode(ref c, for: addCoalesce(ref c, from: BCoalesce { span: e.span, left: left, right: right, type: lt }), at: syntaxOfBinary(ref c, from: in e))
     }
     right = convert(ref b, through: ref c, for: right, to: inner, at: parser.exprSpan(in e.right))
-    return addCoalesce(ref c, from: BCoalesce { span: e.span, left: left, right: right, type: inner })
+    return recordSyntaxNode(ref c, for: addCoalesce(ref c, from: BCoalesce { span: e.span, left: left, right: right, type: inner }), at: syntaxOfBinary(ref c, from: in e))
 }
 
 BExpr bindRange(ref Binder b, through ref Ctx c, for in parser.RangeExpr r, to Type expected) {
@@ -454,7 +454,7 @@ BExpr bindRange(ref Binder b, through ref Ctx c, for in parser.RangeExpr r, to T
     }
     if open {
         report(ref b, through: ref c, for: .openRange, at: r.span, by: ("", "", "", "", ""), help: "use open ranges (`a..`, `..b`) only inside `[ ]`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: r.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: r.span }), at: syntaxLeaf(ref c, as: .rangeExpr, at: r.span))
     }
     let hint = expected != -1 && kindOf(expected) == .range ? c.rangeTypes[typeIndex(expected)] : -1
     var start: BExpr = -1
@@ -468,16 +468,16 @@ BExpr bindRange(ref Binder b, through ref Ctx c, for in parser.RangeExpr r, to T
     }
     let st = exprType(in c, for: start)
     let et = exprType(in c, for: end)
-    if isError(st) || isError(et) { return addErrorExpr(ref c, from: BErrorExpr { span: r.span }) }
+    if isError(st) || isError(et) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: r.span }), at: syntaxLeaf(ref c, as: .rangeExpr, at: r.span)) }
     let common = common(ref c, for: st, as: et)
     if common == -1 || !(isInteger(common) || common == prim(.char)) {
         report(ref b, through: ref c, for: .badBinaryOperands, at: r.span, by: (r.inclusive ? "..=" : "..", typeDisplay(ref c, by: st), typeDisplay(ref c, by: et), "", ""),
             help: "make both range ends integers or chars of the same type")
-        return addErrorExpr(ref c, from: BErrorExpr { span: r.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: r.span }), at: syntaxLeaf(ref c, as: .rangeExpr, at: r.span))
     }
     let cs = convert(ref b, through: ref c, for: start, to: common, at: parser.exprSpan(in r.start))
     let ce = convert(ref b, through: ref c, for: end, to: common, at: parser.exprSpan(in r.end))
-    return addRange(ref c, from: BRange { span: r.span, start: cs, end: ce, inclusive: r.inclusive, type: internRange(ref c, by: common) })
+    return recordSyntaxNode(ref c, for: addRange(ref c, from: BRange { span: r.span, start: cs, end: ce, inclusive: r.inclusive, type: internRange(ref c, by: common) }), at: syntaxLeaf(ref c, as: .rangeExpr, at: r.span))
 }
 
 /// `x in a..=b`: a range pattern test whose ends may be computed at run time.
@@ -487,20 +487,20 @@ BExpr bindIn(ref Binder b, through ref Ctx c, for in parser.InExpr i) {
     switch i.range {
         case .rangeExpr(let r):
             let range = bindRange(ref b, through: ref c, for: in r.value, to: isInteger(vt) || vt == prim(.char) ? internRange(ref c, by: vt) : -1)
-            if boundKind(range) != .range || isError(vt) { return addErrorExpr(ref c, from: BErrorExpr { span: i.span }) }
+            if boundKind(range) != .range || isError(vt) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: i.span }), at: syntaxLeaf(ref c, as: .inExpr, at: i.span)) }
             let rangeStart = c.bRanges[boundIndex(range)].start
             let rangeEnd = c.bRanges[boundIndex(range)].end
             let common = common(ref c, for: vt, as: exprType(in c, for: rangeStart))
             if common == -1 || !(isInteger(common) || common == prim(.char)) {
                 report(ref b, through: ref c, for: .badBinaryOperands, at: i.span, by: ("in", typeDisplay(ref c, by: vt), typeDisplay(ref c, by: exprType(in c, for: range)), "", ""),
                     help: "make the value and the range ends integers or chars of the same type")
-                return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: i.span }), at: syntaxLeaf(ref c, as: .inExpr, at: i.span))
             }
             let ps = convert(ref b, through: ref c, for: rangeStart, to: common, at: parser.exprSpan(in r.value.start))
             let pe = convert(ref b, through: ref c, for: rangeEnd, to: common, at: parser.exprSpan(in r.value.end))
-            let pattern = addRangePattern(ref c, from: BRangePattern { span: r.value.span, inputType: common, start: ps, end: pe, inclusive: r.value.inclusive })
+            let pattern = recordSyntaxNode(ref c, for: addRangePattern(ref c, from: BRangePattern { span: r.value.span, inputType: common, start: ps, end: pe, inclusive: r.value.inclusive }), at: syntaxLeaf(ref c, as: .rangeExpr, at: r.value.span))
             let converted = convert(ref b, through: ref c, for: value, to: common, at: parser.exprSpan(in i.value))
-            return addIs(ref c, from: BIs { span: i.span, value: converted, pattern: pattern })
+            return recordSyntaxNode(ref c, for: addIs(ref c, from: BIs { span: i.span, value: converted, pattern: pattern }), at: syntaxLeaf(ref c, as: .inExpr, at: i.span))
         default:
             let other = bindExpr(ref b, through: ref c, for: in i.range)
             let ot = exprType(in c, for: other)
@@ -508,7 +508,7 @@ BExpr bindIn(ref Binder b, through ref Ctx c, for in parser.InExpr i) {
                 report(ref b, through: ref c, for: .badBinaryOperands, at: i.span, by: ("in", typeDisplay(ref c, by: vt), typeDisplay(ref c, by: ot), "", ""),
                     help: "write a range after `in`: `x in a..=b`")
             }
-            return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: i.span }), at: syntaxLeaf(ref c, as: .inExpr, at: i.span))
     }
 }
 
@@ -521,15 +521,15 @@ BExpr bindConditional(ref Binder b, through ref Ctx c, for in parser.Conditional
     let type = expected != -1 && implicit(ref c, from: at, to: expected) is not null && implicit(ref c, from: bt, to: expected) is not null ? expected : common(ref c, for: at, as: bt)
     if type == -1 {
         report(ref b, through: ref c, for: .branchTypeMismatch, at: cond.span, by: (typeDisplay(ref c, by: at), typeDisplay(ref c, by: bt), "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: cond.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: cond.span }), at: syntaxOfConditional(ref c, from: in cond))
     }
     if kindOf(type) == .nullType {
         report(ref b, through: ref c, for: .cannotInferType, at: cond.span, by: ("null", "", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: cond.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: cond.span }), at: syntaxOfConditional(ref c, from: in cond))
     }
     whenTrue = convert(ref b, through: ref c, for: whenTrue, to: type, at: parser.exprSpan(in cond.whenTrue))
     whenFalse = convert(ref b, through: ref c, for: whenFalse, to: type, at: parser.exprSpan(in cond.whenFalse))
-    let result = addConditional(ref c, from: BConditional { span: cond.span, condition: condition, whenTrue: whenTrue, whenFalse: whenFalse, type: type })
+    let result = recordSyntaxNode(ref c, for: addConditional(ref c, from: BConditional { span: cond.span, condition: condition, whenTrue: whenTrue, whenFalse: whenFalse, type: type }), at: syntaxOfConditional(ref c, from: in cond))
     if (exprConstant(in c, for: condition) is { } v) {
         if v.kind == .flag {
             if (exprConstant(in c, for: v.flag ? whenTrue : whenFalse) is { } k) {
@@ -546,11 +546,13 @@ BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast, fro
 }
 
 /// `u8(x)` (or the input form `(u8)x`): a checked conversion that traps when the value does not fit.
-BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, from in parser.Expr operandSyntax) {
-    let span = parser.exprSpan(in e)
+BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, from in parser.Expr operandSyntax) => t21BindConversion(ref b, through: ref c, at: parser.exprSpan(in e), to: target, from: in operandSyntax, as: syntaxNode(ref c, from: in e))
+
+/// `bindConversion` where `span` and `syntax` are the C# `c`'s span and recorded node (Q849).
+BExpr t21BindConversion(ref Binder b, through ref Ctx c, at TextSpan span, to Type target, from in parser.Expr operandSyntax, as i64 syntax) {
     let operand = bindExpr(ref b, through: ref c, for: in operandSyntax, to: isNumeric(target) ? -1 : target)
     let ot = exprType(in c, for: operand)
-    if isError(target) || isError(ot) { return addErrorExpr(ref c, from: BErrorExpr { span: span }) }
+    if isError(target) || isError(ot) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax) }
     if (exprConstant(in c, for: operand) is { } n) && n.kind == .integer && isInteger(target)
         && (hasSyntax(in c, for: operand, by: syntaxLiteral) || hasSyntax(in c, for: operand, by: syntaxUnary)) {
         // `u8(300)` is a compile-time error rather than a runtime trap.
@@ -558,11 +560,12 @@ BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
     }
     if (explicit(ref c, from: ot, to: target) is not { } kind) {
         report(ref b, through: ref c, for: .invalidCast, at: span, by: (typeDisplay(ref c, by: ot), typeDisplay(ref c, by: target), "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
     if kind == .identity { return operand }
-    if kind == .nullToOptional { return addDefault(ref c, from: BDefault { span: span, type: target }) }
-    let conv = addConversion(ref c, from: BConversion { span: span, operand: operand, type: target, kind: kind })
+    // coverage-exempt: Q853
+    if kind == .nullToOptional { return recordSyntaxNode(ref c, for: addDefault(ref c, from: BDefault { span: span, type: target }), at: syntax) }
+    let conv = recordSyntaxNode(ref c, for: addConversion(ref c, from: BConversion { span: span, operand: operand, type: target, kind: kind }), at: syntax)
     if (exprConstant(in c, for: operand) is { } k) {
         if (foldCast(ref c, for: in k, from: ot, to: target) is { } folded) {
             setConstant(ref c, for: conv, to: folded)
@@ -584,12 +587,12 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
                 type = expected
             } else {
                 report(ref b, through: ref c, for: .noTargetType, at: s.span, by: ("{ … }", "", "", "", ""), help: "name the type: `Point { x: 1 }`")
-                return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+                return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
             }
         default:
             type = resolveType(ref b, through: ref c, for: in s.type)
     }
-    if isError(type) { return addErrorExpr(ref c, from: BErrorExpr { span: s.span }) }
+    if isError(type) { return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax) }
     // `Order.paid { … }` builds a value in one state; with several states, none is named.
     let stateType: Type = kindOf(type) == .state ? type : -1
     @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
@@ -597,7 +600,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
     if stateType != -1 { type = makeType(.structType, at: c.stateTypes[typeIndex(stateType)].s) }
     if kindOf(type) != .structType {
         report(ref b, through: ref c, for: .notAStruct, at: s.span, by: (typeDisplay(ref c, by: type), "", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
     }
     let st = typeIndex(type)
     let stName = c.structs[st].name
@@ -611,7 +614,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
         }
         report(ref b, through: ref c, for: .literalWithConstructor, at: s.span, by: (stName, "", "", "", ""),
             help: $"call the constructor: `{stName}({parameters.finish()})`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
     }
     if state == -1 {
         @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
@@ -626,7 +629,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             report(ref b, through: ref c, for: .stateLiteralNeedsState, at: at, by: (stName, c.unionVariants[c.unions[states].variants[0]].name, "", "", ""),
                 help: "name the state the value starts in")
             for init in s.fields { let _ = bindExpr(ref b, through: ref c, for: in init.value) }
-            return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+            return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
         }
     }
     var values = List<BExpr>()
@@ -684,18 +687,18 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
         let f = c.structs[st].fields[i]
         if fieldIsRequired(ref c, by: f) || !c.fields[f].hasDefault {
             missing.append(c.fields[f].name)
-            values[i] = addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+            values[i] = recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
         } else {
             let d = fieldDefault(ref c, for: st, by: f, from: b.file, at: s.span)
             @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
-            values[i] = d != -1 ? d : addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+            values[i] = d != -1 ? d : recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
         }
     }
     for i in 0..payload.length {
         @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
         if payload[i] != -1 { continue }
         missing.append(c.locals[c.unionVariants[state].fields[i]].name)
-        payload[i] = addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        payload[i] = recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
     }
     if missing.length > 0 {
         let first = findField(ref c, by: st, for: missing[0])
@@ -713,15 +716,15 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
         let label = missing.length == 1 && first != -1 && fieldIsRequired(ref c, by: first) ? $"`{c.fields[first].name}` is `required`" : ""
         report(ref b, through: ref c, for: .missingFields, at: s.span, by: (stName, joined.finish(), "", "", ""),
             label: label, help: $"set {missing.length == 1 ? "it" : "them"}: `{written} {{ {sets.finish()} }}`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), from: in syntax)
     }
     @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
     if state == -1 {
-        let literal = addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, type: type })
+        let literal = recordSyntax(ref c, for: addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, type: type }), from: in syntax)
         return checkedValue(ref b, through: ref c, for: in syntax, by: literal)
     }
     @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
-    let literal = addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, state: state, payload: move payload, type: stateType })
+    let literal = recordSyntax(ref c, for: addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, state: state, payload: move payload, type: stateType }), from: in syntax)
     @unobservable because "Q613: checkedValue is a stub; add a field default and a returned literal case when T21 lands"
     return checkedValue(ref b, through: ref c, for: in syntax, by: literal)
 }
@@ -729,10 +732,10 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
 BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w, from parser.Expr syntax) {
     let target = bindExpr(ref b, through: ref c, for: in w.target)
     let tt = exprType(in c, for: target)
-    if isError(tt) { return addErrorExpr(ref c, from: BErrorExpr { span: w.span }) }
+    if isError(tt) { return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: w.span }), from: in syntax) }
     if kindOf(tt) != .structType {
         report(ref b, through: ref c, for: .notAStruct, at: parser.exprSpan(in w.target), by: (typeDisplay(ref c, by: tt), "", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: w.span })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: w.span }), from: in syntax)
     }
     let st = typeIndex(tt)
     var updates = List<BWithUpdate>()
@@ -753,7 +756,7 @@ BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w, from p
         updates.append(BWithUpdate { field: field, value: value })
         changed.append(field)
     }
-    let withNode = addWith(ref c, from: BWith { span: w.span, target: target, updates: move updates, type: tt })
+    let withNode = recordSyntax(ref c, for: addWith(ref c, from: BWith { span: w.span, target: target, updates: move updates, type: tt }), from: in syntax)
     let fields: List<FieldId>? = move changed
     return checkedValue(ref b, through: ref c, for: in syntax, by: withNode, changed: in fields)
 }

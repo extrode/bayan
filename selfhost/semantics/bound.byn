@@ -399,6 +399,224 @@ public void setSyntaxFlags(ref Ctx c, for BNode n, to i64 flags) uses alloc {
 
 public bool hasSyntax(in Ctx c, for BNode n, by i64 flag) => (syntaxFlags(in c, for: n) & flag) != 0
 
+// ── Syntax nodes (T21, Q849, Q850) ─────────────────────────────────────────────
+
+/// The case of a recorded `parser.Expr`: the C# record type of `BoundNode.Syntax` when it is an `Expr`.
+public enum ExprSyntaxKind {
+    literalExpr
+    interpolatedExpr
+    nameExpr
+    thisExpr
+    memberExpr
+    targetMemberExpr
+    callExpr
+    indexExpr
+    unaryExpr
+    binaryExpr
+    rangeExpr
+    conditionalExpr
+    castExpr
+    isExpr
+    exceptExpr
+    inExpr
+    switchExpr
+    tryExpr
+    moveExpr
+    catchExpr
+    caughtErrorExpr
+    jumpExpr
+    blockExpr
+    structLiteralExpr
+    withExpr
+    spreadExpr
+    mapEntryExpr
+    collectionExpr
+    tupleExpr
+    parenExpr
+    lambdaExpr
+    stackallocExpr
+    patternExpr
+    errorExpr
+}
+
+/// A recorded `parser.Expr` (a non-owning copy, since `parser.Expr` owns its children): its case and span, and the
+/// children `Lowerer.Anchor` and `IsLiteral` walk, as handles into `Ctx.exprSyntaxNodes` (-1 when the case has none).
+public struct ExprSyntax {
+    public ExprSyntaxKind kind
+    public TextSpan span
+    /// `ParenExpr.Inner`.
+    public i64 inner = -1
+    /// `MemberExpr.Member`.
+    public TextSpan member = TextSpan { start: 0, length: 0 }
+    /// `CallExpr.Callee`.
+    public i64 callee = -1
+    /// `BinaryExpr.Left`.
+    public i64 left = -1
+    /// `IsExpr.Value`.
+    public i64 value = -1
+    /// `IndexExpr.Target`.
+    public i64 target = -1
+    /// `ConditionalExpr.Condition`.
+    public i64 condition = -1
+    /// `UnaryExpr.Operand` and `UnaryExpr.Op`.
+    public i64 operand = -1
+    public parser.UnaryOp op = .plus
+}
+
+/// C# `n.Syntax` when it is an `Expr`, else null.
+public ExprSyntax? exprSyntax(in Ctx c, for BNode n) {
+    let h = c.exprSyntaxOf.tryGet(at: n) ?? -1
+    if h == -1 { return null }
+    return c.exprSyntaxNodes[h]
+}
+
+/// The child `node` of a recorded syntax node (its `inner`, `callee`, … handle).
+public ExprSyntax exprSyntaxNode(in Ctx c, at i64 node) => c.exprSyntaxNodes[node]
+
+/// Records `e` (with the children `exprSyntax` gives) and returns its handle; -1 for `.none`.
+i64 syntaxNode(ref Ctx c, from in parser.Expr e) uses alloc {
+    switch e {
+        case .literalExpr(let x):
+            return syntaxLeaf(ref c, as: .literalExpr, at: x.value.span)
+        case .interpolatedExpr(let x):
+            return syntaxLeaf(ref c, as: .interpolatedExpr, at: x.value.span)
+        case .nameExpr(let x):
+            return syntaxLeaf(ref c, as: .nameExpr, at: x.value.span)
+        case .thisExpr(let x):
+            return syntaxLeaf(ref c, as: .thisExpr, at: x.value.span)
+        case .memberExpr(let x):
+            return syntaxOfMember(ref c, from: in x.value)
+        case .targetMemberExpr(let x):
+            return syntaxLeaf(ref c, as: .targetMemberExpr, at: x.value.span)
+        case .callExpr(let x):
+            return syntaxOfCall(ref c, from: in x.value)
+        case .indexExpr(let x):
+            return syntaxOfIndex(ref c, from: in x.value)
+        case .unaryExpr(let x):
+            return syntaxOfUnary(ref c, from: in x.value)
+        case .binaryExpr(let x):
+            return syntaxOfBinary(ref c, from: in x.value)
+        case .rangeExpr(let x):
+            return syntaxLeaf(ref c, as: .rangeExpr, at: x.value.span)
+        case .conditionalExpr(let x):
+            return syntaxOfConditional(ref c, from: in x.value)
+        case .castExpr(let x):
+            return syntaxLeaf(ref c, as: .castExpr, at: x.value.span)
+        case .isExpr(let x):
+            return syntaxOfIs(ref c, from: in x.value)
+        case .exceptExpr(let x):
+            return syntaxLeaf(ref c, as: .exceptExpr, at: x.value.span)
+        case .inExpr(let x):
+            return syntaxLeaf(ref c, as: .inExpr, at: x.value.span)
+        case .switchExpr(let x):
+            return syntaxLeaf(ref c, as: .switchExpr, at: x.value.span)
+        case .tryExpr(let x):
+            return syntaxLeaf(ref c, as: .tryExpr, at: x.value.span)
+        case .moveExpr(let x):
+            return syntaxLeaf(ref c, as: .moveExpr, at: x.value.span)
+        case .catchExpr(let x):
+            return syntaxLeaf(ref c, as: .catchExpr, at: x.value.span)
+        case .caughtErrorExpr(let x):
+            return syntaxLeaf(ref c, as: .caughtErrorExpr, at: x.value.span)
+        case .jumpExpr(let x):
+            return syntaxLeaf(ref c, as: .jumpExpr, at: x.value.span)
+        case .blockExpr(let x):
+            return syntaxLeaf(ref c, as: .blockExpr, at: x.value.span)
+        case .structLiteralExpr(let x):
+            return syntaxLeaf(ref c, as: .structLiteralExpr, at: x.value.span)
+        case .withExpr(let x):
+            return syntaxLeaf(ref c, as: .withExpr, at: x.value.span)
+        case .spreadExpr(let x):
+            return syntaxLeaf(ref c, as: .spreadExpr, at: x.value.span)
+        case .mapEntryExpr(let x):
+            // coverage-exempt: Q853
+            return syntaxLeaf(ref c, as: .mapEntryExpr, at: x.value.span)
+        case .collectionExpr(let x):
+            return syntaxLeaf(ref c, as: .collectionExpr, at: x.value.span)
+        case .tupleExpr(let x):
+            return syntaxLeaf(ref c, as: .tupleExpr, at: x.value.span)
+        case .parenExpr(let x):
+            return syntaxOfParen(ref c, from: in x.value)
+        case .lambdaExpr(let x):
+            return syntaxLeaf(ref c, as: .lambdaExpr, at: x.value.span)
+        case .stackallocExpr(let x):
+            return syntaxLeaf(ref c, as: .stackallocExpr, at: x.value.span)
+        case .patternExpr(let x):
+            return syntaxLeaf(ref c, as: .patternExpr, at: x.value.span)
+        case .errorExpr(let x):
+            // coverage-exempt: Q853 through 550
+            return syntaxLeaf(ref c, as: .errorExpr, at: x.value.span)
+        case .none:
+            return -1
+    }
+}
+
+/// Records a syntax node with no walked children.
+i64 syntaxLeaf(ref Ctx c, as ExprSyntaxKind kind, at TextSpan span) uses alloc => syntaxAppend(ref c, from: ExprSyntax { kind: kind, span: span })
+
+i64 syntaxAppend(ref Ctx c, from ExprSyntax node) uses alloc {
+    c.exprSyntaxNodes.append(node)
+    return c.exprSyntaxNodes.length - 1
+}
+
+/// Records a `ParenExpr` and the `Inner` child it walks.
+i64 syntaxOfParen(ref Ctx c, from in parser.ParenExpr x) uses alloc {
+    let inner = syntaxNode(ref c, from: in x.inner)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .parenExpr, span: x.span, inner: inner })
+}
+
+/// Records a `MemberExpr` and its `Member` name.
+/// A synthetic `for try` member name (`t28SyntheticName`) is its C# span, `f.Iterable.Span` (Q739).
+i64 syntaxOfMember(ref Ctx c, from in parser.MemberExpr x) uses alloc => syntaxAppend(ref c, from: ExprSyntax { kind: .memberExpr, span: x.span, member: t40RealSpan(in c, for: x.member) })
+
+/// Records a `CallExpr` and the `Callee` child it walks.
+i64 syntaxOfCall(ref Ctx c, from in parser.CallExpr x) uses alloc {
+    let callee = syntaxNode(ref c, from: in x.callee)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .callExpr, span: x.span, callee: callee })
+}
+
+/// Records a `BinaryExpr` and the `Left` child it walks.
+i64 syntaxOfBinary(ref Ctx c, from in parser.BinaryExpr x) uses alloc {
+    let left = syntaxNode(ref c, from: in x.left)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .binaryExpr, span: x.span, left: left })
+}
+
+/// Records an `IsExpr` and the `Value` child it walks.
+i64 syntaxOfIs(ref Ctx c, from in parser.IsExpr x) uses alloc {
+    let value = syntaxNode(ref c, from: in x.value)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .isExpr, span: x.span, value: value })
+}
+
+/// Records an `IndexExpr` and the `Target` child it walks.
+i64 syntaxOfIndex(ref Ctx c, from in parser.IndexExpr x) uses alloc {
+    let target = syntaxNode(ref c, from: in x.target)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .indexExpr, span: x.span, target: target })
+}
+
+/// Records a `ConditionalExpr` and the `Condition` child it walks.
+i64 syntaxOfConditional(ref Ctx c, from in parser.ConditionalExpr x) uses alloc {
+    let condition = syntaxNode(ref c, from: in x.condition)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .conditionalExpr, span: x.span, condition: condition })
+}
+
+/// Records a `UnaryExpr`, its `Op` and the `Operand` child it walks.
+i64 syntaxOfUnary(ref Ctx c, from in parser.UnaryExpr x) uses alloc {
+    let operand = syntaxNode(ref c, from: in x.operand)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .unaryExpr, span: x.span, operand: operand, op: x.op })
+}
+
+/// Records `n`'s syntax as the node `h` (-1 records nothing) and returns `n`.
+BNode recordSyntaxNode(ref Ctx c, for BNode n, at i64 h) uses alloc {
+    if h != -1 { c.exprSyntaxOf[n] = h }
+    return n
+}
+
+/// `n`, built with `Syntax = e`.
+BNode recordSyntax(ref Ctx c, for BNode n, from in parser.Expr e) uses alloc => recordSyntaxNode(ref c, for: n, at: syntaxNode(ref c, from: in e))
+
+/// `n`, built with `Syntax = value.Syntax`.
+BNode shareSyntax(ref Ctx c, for BNode n, from BNode value) uses alloc => recordSyntaxNode(ref c, for: n, at: c.exprSyntaxOf.tryGet(at: value) ?? -1)
+
 // ── Records ────────────────────────────────────────────────────────────────────
 
 public struct BLiteral {

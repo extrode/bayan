@@ -358,21 +358,21 @@ BExpr negate(ref Ctx c, from in parser.Expr syntax, by BExpr cond) {
     let span = parser.exprSpan(in syntax)
     if (exprConstant(in c, for: cond) is { } k) {
         if k.kind == .flag {
-            let lit = addLiteral(ref c, from: BLiteral {
+            let lit = recordSyntax(ref c, for: addLiteral(ref c, from: BLiteral {
                 span: span,
                 type: prim(.bool),
                 value: Constant { kind: .flag, flag: !k.flag },
-            })
+            }), from: in syntax)
             setConstant(ref c, for: lit, to: Constant { kind: .flag, flag: !k.flag })
             return lit
         }
     }
-    return addUnary(ref c, from: BUnary {
+    return recordSyntax(ref c, for: addUnary(ref c, from: BUnary {
         span: span,
         op: .notKeyword,
         operand: cond,
         type: prim(.bool),
-    })
+    }), from: in syntax)
 }
 
 BExpr bindCondition(ref Binder b, through ref Ctx c, for in parser.Expr e) =>

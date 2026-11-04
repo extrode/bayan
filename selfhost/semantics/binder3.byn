@@ -307,16 +307,16 @@ BExpr tryBindFailure(ref Binder b, through ref Ctx c, for in parser.Expr value) 
             let matches = errorMatches(ref c, for: in sets, by: name)
             if matches.length == 1 {
                 checkNotExcluded(ref b, through: ref c, for: matches[0], at: t.value.span)
-                return addErrorVariant(ref c, from: BErrorVariant { span: t.value.span, variant: matches[0] })
+                return recordSyntaxNode(ref c, for: addErrorVariant(ref c, from: BErrorVariant { span: t.value.span, variant: matches[0] }), at: syntaxLeaf(ref c, as: .targetMemberExpr, at: t.value.span))
             }
             if matches.length > 1 {
                 report(ref b, through: ref c, for: .ambiguousVariant, at: t.value.span, by: (name, matchedSets(ref c, for: in matches), "", "", ""))
-                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.value.span }), at: syntaxLeaf(ref c, as: .targetMemberExpr, at: t.value.span))
             }
             if c.functions[fn].infersErrors && c.functions[fn].errorSets.length == 0 && isVoid(returnType) {
                 report(ref b, through: ref c, for: .unknownVariant, at: t.value.span, by: (name, "the inferred error set", "", "", ""),
                     help: "name the set: `fail MyError.x`")
-                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.value.span }), at: syntaxLeaf(ref c, as: .targetMemberExpr, at: t.value.span))
             }
             return -1
         case .memberExpr(let m):
@@ -406,7 +406,7 @@ BStmt bindFail(ref Binder b, through ref Ctx c, for in parser.FailStmt f) {
         let matches = errorMatches(ref c, for: in sets, by: name)
         if matches.length == 1 {
             if !entry { checkNotExcluded(ref b, through: ref c, for: matches[0], at: tSpan) }
-            let variant = addErrorVariant(ref c, from: BErrorVariant { span: tSpan, variant: matches[0] })
+            let variant = recordSyntaxNode(ref c, for: addErrorVariant(ref c, from: BErrorVariant { span: tSpan, variant: matches[0] }), at: syntaxLeaf(ref c, as: .targetMemberExpr, at: tSpan))
             switch f.error {
                 case .callExpr(let call):
                     let built = bindPayload(ref b, through: ref c, for: in call.value, by: variant)
