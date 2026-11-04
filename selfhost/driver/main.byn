@@ -191,9 +191,14 @@ i32 run(ReadOnlySpan<string> args, through ref DCtx d) {
         case "--help" or "-h" or "help":
             Io.stdout.write($"{usageText}\n")
             return exitOk
-        // stub: T2 lex, parse, types, check (the R3 refusal until the task lands)
-        case "lex" or "parse" or "types" or "check":
-            return refuse(command)
+        case "lex":
+            return lexCommand(in kept)
+        case "parse":
+            return parseCommand(in kept)
+        case "types":
+            return typesCommand(in kept, by: in d)
+        case "check":
+            return checkCommand(in kept, by: in d)
         // stub: T5 build, run (the R3 refusal until the task lands)
         case "build" or "run":
             return refuse(command)
