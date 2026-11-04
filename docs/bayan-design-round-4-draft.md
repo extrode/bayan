@@ -352,8 +352,7 @@ The last row gives scripts most of what people want from a GC. If the context al
 | `class`, optional GC | Section 8 |
 | Goose's heap-less model | Conflicts with `alloc`, arenas and collections |
 | Macros, resumable effects, types-as-values comptime | Dialects, stack switching, slow compiles |
-| Inheritance, exceptions, implicit conversions, runtime reflection, explicit lifetimes, dependent types | Each contradicts a recorded decision |
-| `async`/`await` | Replaced by `scope`/`spawn` (bayan-concurrency.md) | Not adopted as a separate form |
+| Inheritance, exceptions, implicit conversions, runtime reflection, `async`/`await` (replaced by `scope`/`spawn`, bayan-concurrency.md), explicit lifetimes, dependent types | Each contradicts a recorded decision |
 
 ### Open questions
 

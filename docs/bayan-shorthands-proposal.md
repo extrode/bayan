@@ -323,7 +323,7 @@ This section follows bayan-style-proposal.md:
 - `{` goes on its own line after a wrapped signature or control head.
 - Alignment is `.runs` by default, with `.none` allowed.
 - `package.byn` is the source of truth.
-- Style lints are `TBD (x9xx of <area>, A2)`.
+- Style lints are `TBD (x9xx of their area, A2)`: `guards.postfix`, `nesting.depth`, `functions.length` and `conditions.named` in 4xxx control flow, `lambdas.it` in 1xxx syntax.
 - `@unformatted because "…"` is the only opt-out.
 
 **Wrapped lists:** each item goes on its own line, indented once, and `)` closes on the last item's line. A wrapped signature or control head then puts `{` on its own line.
@@ -348,7 +348,7 @@ public Grams shippingWeight(
 
 **Spelling:** `u8[]`, `u8[64]`, `var u8[]`, `u8[]?`, `Vec3 a, b`, `.zero`; no inner spaces.
 
-**Lints (TBD, x9xx of the matching area, A2):**
+**Lints (TBD, x9xx of their area, A2: nested leading dot in 2xxx types, hidden allocation and redundant `.span` in 3xxx memory, repeated adjacent types in 1xxx syntax):**
 
 | Lint | Trigger | Fix |
 |---|---|---|

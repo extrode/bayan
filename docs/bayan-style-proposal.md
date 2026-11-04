@@ -297,7 +297,7 @@ One blank line between top-level declarations. Consecutive one-line declarations
 
 Layout never produces a warning. You don't fix it, you run the formatter. That is the gofmt lesson. Idioms are judgement calls, so they are lints with the same severity model as `dotnet_diagnostic.X.severity`.
 
-Style and idiom lints take codes in the `x900–x999` range of their area (addendum A2, docs/revisions/0017-addendum-a2-diagnostic-codes.md): 1xxx syntax, 2xxx types, 3xxx memory, 4xxx control flow and failure, 5xxx grammar, 6xxx effects and concurrency, 7xxx typestate and contracts, 8xxx trust, 9xxx build and traps. Numbers are assigned at the round-4 renumbering.
+Style and idiom lints take codes in the `x900–x999` range of their area (addendum A2, docs/revisions/0017-addendum-a2-diagnostic-codes.md): 0xxx project, files, `package.byn`, CLI and tools; 1xxx syntax, 2xxx types, 3xxx memory, 4xxx control flow and failure, 5xxx grammar and naming, 6xxx effects and concurrency, 7xxx typestate and contracts, 8xxx trust and security, 9xxx build, C backend, toolchain and runtime traps. Numbers are assigned at the round-4 renumbering.
 
 Initial lints (all `.suggestion` by default):
 
