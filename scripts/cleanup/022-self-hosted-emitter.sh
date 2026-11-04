@@ -124,7 +124,9 @@ if [ $execute -eq 1 ] && [ $dead -eq 1 ] && [ ${#tracked_dead[@]} -gt 0 ]; then
     ':(exclude)scripts/cleanup/022-self-hosted-emitter.sh' ':(exclude)scripts/cleanup/022-self-hosted-emitter.test.sh' || true)"
   if [ -n "$refs" ]; then
     blocked=1; failed=1
-    while IFS=: read -r rf rl _; do printf 'refuse: mutation-exempt is still referenced by %s:%s. Left alone.\n' "$rf" "$rl"; done <<< "$refs"
+    for p in "${tracked_dead[@]}"; do
+      while IFS=: read -r rf rl _; do printf 'refuse: %s is still referenced by %s:%s. Left alone.\n' "$p" "$rf" "$rl"; done <<< "$refs"
+    done
   fi
 fi
 if [ $blocked -eq 0 ]; then
