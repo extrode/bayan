@@ -78,6 +78,17 @@ grep -q "no commit for 'nope'" "$tmp/err" || fail "no unknown-ref message: $(cat
 if PINNED_BAYAN="$tmp/none" "$script" 2> "$tmp/err"; then fail "a missing PINNED_BAYAN was accepted"; fi
 grep -q "PINNED_BAYAN=$tmp/none is not an executable" "$tmp/err" || fail "no PINNED_BAYAN message"
 
+# After a build only the newest 3 commits stay, the new one among them; a recent build in progress is left alone.
+for i in 1 2 3 4 5; do mkdir -p "$r/.cache/bayan/fake$i/bin"; touch -t 20200101000$i "$r/.cache/bayan/fake$i"; done
+mkdir -p "$r/.cache/bayan/.build-other-1"
+git checkout -q -b evict race; echo evict > src/Bayan.Cli/stamp; git commit -qam evict; evsha=$(git rev-parse evict)
+PINNED_BAYAN_REF=evict "$script" > "$tmp/out" || fail "the eviction build failed"
+[ -x "$r/.cache/bayan/$evsha/bin/bayan" ] || fail "the new build was evicted"
+[ ! -e "$r/.cache/bayan/$evsha/src" ] || fail "the build's src checkout was kept"
+[ "$(ls "$r/.cache/bayan" | wc -l | tr -d ' ')" -le 3 ] || fail "more than 3 cached commits remain: $(ls "$r/.cache/bayan")"
+[ -d "$r/.cache/bayan/.build-other-1" ] || fail "a recent build in progress was removed"
+git checkout -q feat/x
+
 # Wiring: the mutation step runs the pinned bayan; CI's mutation run pins the commit it checked out.
 grep -q 'pinned-bayan.sh' "$root/scripts/selfhost/mutation-step.sh" || fail "mutation-step.sh does not use pinned-bayan.sh"
 ! grep -q 'bin/Debug/net10.0/bayan' "$root/scripts/selfhost/mutation-step.sh" || fail "mutation-step.sh still names the working-tree build"

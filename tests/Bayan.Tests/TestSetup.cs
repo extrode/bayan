@@ -9,6 +9,33 @@ internal static class TestSetup
     internal static void UseRepoCache() =>
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
 
+    /// <summary>Scratch directories a killed test host left behind are removed after a day (see <see cref="SweepStaleTempDirs"/>).</summary>
+    [ModuleInitializer]
+    internal static void SweepOldTempDirs() => SweepStaleTempDirs(Path.GetTempPath(), TimeSpan.FromHours(24));
+
+    /// <summary>The prefixes of the temp directories this project creates.</summary>
+    internal static readonly string[] TempPrefixes =
+        ["bayan-t8-", "bayan-l012-", "bayan-l013-", "bayan-l014-", "bayan-l015-", "bayan-golden-", "bayan-lsp-ws-", "bayan-standalone-", "bayan-scaffold-", "bayan-sweep-test-"];
+
+    /// <summary>Deletes the directories of <paramref name="tempRoot"/> that start with a <see cref="TempPrefixes"/> prefix and were last written more than <paramref name="age"/> ago. Best effort: errors are ignored.</summary>
+    internal static void SweepStaleTempDirs(string tempRoot, TimeSpan age)
+    {
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(tempRoot))
+            {
+                try
+                {
+                    var name = Path.GetFileName(dir);
+                    if (TempPrefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)) && DateTime.UtcNow - Directory.GetLastWriteTimeUtc(dir) > age)
+                        TestDirs.Delete(dir);
+                }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
     /// <summary>CLI output does not depend on the developer's colour, terminal or locale settings.</summary>
     [ModuleInitializer]
     internal static void UseNeutralTerminal()

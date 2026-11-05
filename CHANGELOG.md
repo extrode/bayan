@@ -9,6 +9,7 @@
 ### Fixed
 
 - `bayan-lsp` no longer indexes every `.byn` under the workspace: hidden directories (`.git`, `.worktrees`, `.bayan-staging-*`), `tmp`, build output and symbolic links are skipped, the file watcher ignores the same paths, and disk indexing stops at 20,000 files, 256 Mi characters or 4 MiB per file. A repo with 2.3 million `.byn` copies drove it past 200 GB; it now peaks at 81 MB.
+- Test and script disk and memory bounds: the test project removes the scratch directories of killed hosts after a day and the T8 fixture deletes its own; `scripts/pinned-bayan.sh` keeps the newest 3 cached commits, drops the build's source checkout and cleans up on INT/TERM; the scripts that run `dotnet` set `MSBUILDDISABLENODEREUSE=1` and `DOTNET_CLI_USE_MSBUILD_SERVER=0` so MSBuild nodes no longer outlive the run (`scripts/dotnet-env.test.sh` checks it).
 
 ## [0.1.0] - 2026-11-02
 
