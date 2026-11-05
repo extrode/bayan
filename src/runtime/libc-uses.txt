@@ -1,5 +1,6 @@
 CloseHandle
 CommandLineToArgvW
+CreateDirectoryW
 CreatePipe
 CreateProcessW
 CreateThread
@@ -22,6 +23,7 @@ MultiByteToWideChar
 QueryPerformanceCounter
 QueryPerformanceFrequency
 ReadFile
+RemoveDirectoryW
 SetHandleInformation
 SetLastError
 WaitForSingleObject
@@ -61,6 +63,7 @@ memchr
 memcmp
 memcpy
 memset
+mkdir
 newlocale
 opendir
 pipe
@@ -73,6 +76,7 @@ qsort
 read
 readdir
 realloc
+rmdir
 setjmp
 snprintf
 stat

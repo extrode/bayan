@@ -6,4 +6,3 @@ error BYN6002: `undeclaredRemove` uses `fs` but does not declare it
   help: add `fs` to the `uses` clause, or remove the call
     │ 2 │ public void undeclaredRemove(string p) fails IoError uses fs {
     │   │                                                     ++++++++
-

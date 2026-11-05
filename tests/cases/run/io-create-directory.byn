@@ -1,0 +1,18 @@
+// `Io.createDirectory` makes missing parents, accepts an existing directory and fails on a file.
+void main() fails IoError uses fs, alloc {
+    try Io.createDirectory("io-create-directory.tmp/a/b")
+    try Io.createDirectory("io-create-directory.tmp/a/b")
+    let names = try Io.listDir("io-create-directory.tmp/a")
+    print($"made: {names.length} {names[0]}")
+    let data: u8[1] = [0x41]
+    try Io.writeFile("io-create-directory.tmp/file", data.span)
+    Io.createDirectory("io-create-directory.tmp/file") catch {
+        print("file: failed")
+        try Io.remove("io-create-directory.tmp/file")
+        try Io.removeDirectory("io-create-directory.tmp/a/b")
+        try Io.removeDirectory("io-create-directory.tmp/a")
+        try Io.removeDirectory("io-create-directory.tmp")
+        return
+    }
+    print("file: made")
+}

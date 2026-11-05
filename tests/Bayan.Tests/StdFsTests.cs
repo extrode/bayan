@@ -134,7 +134,7 @@ public sealed class StdFsTests
                 return dir;
             }
             string Listing(string dir) => string.Join("\n", Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories).Select(e => Path.GetRelativePath(dir, e).Replace('\\', '/')).Order(StringComparer.Ordinal));
-            string Full(string dir, string row) => row.Length == 0 ? "" : Path.Combine(dir, "") + row.Replace("\\0", "\0");
+            string Full(string dir, string row) => row.Length == 0 ? "" : dir + Path.DirectorySeparatorChar + row.Replace("\\0", "\0");
 
             var net = Fixture("net");
             var expected = new List<string>();
@@ -168,6 +168,100 @@ public sealed class StdFsTests
                 Directory.Delete(work, recursive: true);
             }
         }
+    }
+
+    /// <summary>Spec 012 T20: runs <paramref name="rows"/> in order through <paramref name="net"/> (.NET) and through <c>Io.<paramref name="builtin"/></c> in a compiled program, each on its own copy of the fixture, and compares the outcomes and the tree left behind.</summary>
+    private static async Task DirectoryCorpus(string builtin, string[] rows, Action<string> net, bool expectOk, bool expectFail)
+    {
+        var work = Path.Combine(Golden.RepoRoot, "tmp", $"std-io-{builtin}");
+        void Unlock()
+        {
+            if (Directory.Exists(work))
+                foreach (var d in Directory.EnumerateDirectories(work, "rodir", SearchOption.AllDirectories))
+                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(d, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+        try
+        {
+            Unlock();
+            if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
+            string Fixture(string name)
+            {
+                var dir = Path.Combine(work, name);
+                foreach (var d in new[] { "empty", "empty2", "nonempty/inner", "rodir/emptychild" }) Directory.CreateDirectory(Path.Combine(dir, d.Replace('/', Path.DirectorySeparatorChar)));
+                File.WriteAllText(Path.Combine(dir, "file.txt"), "x");
+                File.WriteAllText(Path.Combine(dir, "nonempty", "inner", "f.txt"), "x");
+                Link(Path.Combine(dir, "link-file"), "file.txt", directory: false);
+                Link(Path.Combine(dir, "link-dir"), "empty2", directory: true);
+                Link(Path.Combine(dir, "link-dangling"), "nowhere", directory: false);
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Path.Combine(dir, "rodir"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                return dir;
+            }
+            string Listing(string dir) => string.Join("\n", Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories).Select(e => Path.GetRelativePath(dir, e).Replace('\\', '/')).Order(StringComparer.Ordinal));
+            string Full(string dir, string row) => row.Length == 0 ? "" : dir + Path.DirectorySeparatorChar + row.Replace("\\0", "\0");
+
+            var netDir = Fixture("net");
+            var expected = new List<string>();
+            foreach (var row in rows)
+            {
+                try { net(Full(netDir, row)); expected.Add("ok"); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { expected.Add("fail"); }
+            }
+
+            var bayan = Fixture("bayan");
+            var source = string.Concat(rows.Select(r => $"print(done({Literal(Full(bayan, r))}))\n"));
+            var program = $"string done(string path) uses fs {{\n    Io.{builtin}(path) catch {{ return \"fail\" }}\n    return \"ok\"\n}}\n\nvoid main() uses console, fs {{\n{source}}}\n";
+            var psi = new ProcessStartInfo(Build(program, Path.Combine(Golden.RepoRoot, "tmp", $"std-io-{builtin}-build"))) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            using var proc = Process.Start(psi)!;
+            var stderr = proc.StandardError.ReadToEndAsync();
+            var stdout = await proc.StandardOutput.ReadToEndAsync();
+            Assert.True(proc.WaitForExit(60_000), "program timed out");
+            Assert.True(proc.ExitCode == 0, await stderr);
+            var actual = stdout.Split('\n');
+            Assert.Equal(rows.Length + 1, actual.Length);
+            for (var i = 0; i < rows.Length; i++) Assert.True(expected[i] == actual[i], $"row {i + 1}: {Literal(rows[i])}\n.NET: {expected[i]}\nBayan: {actual[i]}");
+            Assert.Equal(Listing(netDir), Listing(bayan));
+            Assert.True(expectOk == expected.Contains("ok"), string.Join(",", expected));
+            Assert.Equal(expectFail, expected.Contains("fail"));
+        }
+        finally
+        {
+            Unlock();
+            if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
+        }
+    }
+
+    /// <summary>Spec 012 T20: <c>Io.createDirectory</c> succeeds and fails on the same rows as .NET <c>Directory.CreateDirectory</c>, and leaves the same tree behind.</summary>
+    [Fact]
+    public Task IoCreateDirectoryMatchesDotNet() => DirectoryCorpus("createDirectory",
+        [
+            "new", "new", "a/b/c", "a/b/c/", "empty", "empty/", "nonempty/inner", "file.txt", "file.txt/", "file.txt/x", "file.txt/x/y", "link-file", "link-file/x", "link-dir", "link-dir/x",
+            "link-dangling", "link-dangling/x", "./sub/../viaDots", "é ü 日本", "rodir", "rodir/new", "rodir/emptychild", "rodir/new/deep", "", " ", "x\\0", "\\0",
+        ],
+        path => Directory.CreateDirectory(path), expectOk: true, expectFail: true);
+
+    /// <summary>Spec 012 T20: <c>Io.removeDirectory</c> succeeds and fails on the same rows as .NET <c>Directory.Delete(path)</c>, and leaves the same tree behind.</summary>
+    [Fact]
+    public Task IoRemoveDirectoryMatchesDotNet() => DirectoryCorpus("removeDirectory",
+        [
+            "empty", "empty", "nonempty", "nonempty/inner", "nonempty/inner/f.txt", "nonempty/inner/missing", "missing", "missing/x", "file.txt", "file.txt/", "file.txt/x", "link-file", "link-dir",
+            "link-dir/", "link-dangling", "empty2/", "rodir/emptychild", "rodir", "", " ", "x\\0", "\\0",
+        ],
+        path => Directory.Delete(path), expectOk: true, expectFail: true);
+
+    [Fact]
+    public void IoCreateDirectoryNeedsFsEffect() => NeedsFs("createDirectory");
+
+    [Fact]
+    public void IoRemoveDirectoryNeedsFsEffect() => NeedsFs("removeDirectory");
+
+    private static void NeedsFs(string builtin)
+    {
+        var src = $"void f(string p) fails IoError uses console {{\n    try Io.{builtin}(p)\n}}\n";
+        var c = Compilation.Create([new SourceText("e.byn", Encoding.UTF8.GetBytes(src))], Root);
+        var rendered = Rendered(c).Where(r => r.StartsWith("BYN6002")).Select(r => r.Split(" | ")[0]).ToList();
+        Assert.Equal([Expected(DiagnosticCodes.EffectNotDeclared, src, $"Io.{builtin}", "", "f", "fs")], rendered);
+        var ok = Compilation.Create([new SourceText("e.byn", Encoding.UTF8.GetBytes(src.Replace("uses console", "uses console, fs")))], Root);
+        Assert.DoesNotContain(Rendered(ok), r => r.StartsWith("BYN6002"));
     }
 
     [Fact]

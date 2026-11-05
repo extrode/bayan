@@ -31,6 +31,8 @@ public sealed class SelfhostSemanticsT9Tests
         ("io readText", "findIo(ref c, for: \"readText\")", B.FindIo("readText")),
         ("io writeFile", "findIo(ref c, for: \"writeFile\")", B.FindIo("writeFile")),
         ("io remove", "findIo(ref c, for: \"remove\")", B.FindIo("remove")),
+        ("io createDirectory", "findIo(ref c, for: \"createDirectory\")", B.FindIo("createDirectory")),
+        ("io removeDirectory", "findIo(ref c, for: \"removeDirectory\")", B.FindIo("removeDirectory")),
         ("io listDir", "findIo(ref c, for: \"listDir\")", B.FindIo("listDir")),
         ("io run", "findIo(ref c, for: \"run\")", B.FindIo("run")),
         ("io runBatch", "findIo(ref c, for: \"runBatch\")", B.FindIo("runBatch")),

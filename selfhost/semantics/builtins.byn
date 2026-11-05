@@ -112,6 +112,8 @@ ModId t9Create(ref Ctx c) {
     let _ = t9MakeIo(ref c, by: m, for: "readText", as: .ioReadText, to: prim(.string), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "writeFile", as: .ioWriteFile, to: prim(.void), from: t9Two("path", as: prim(.string), for: "bytes", to: roBytes), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "remove", as: .ioRemove, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "createDirectory", as: .ioCreateDirectory, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "removeDirectory", as: .ioRemoveDirectory, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "listDir", as: .ioListDir, to: internList(ref c, by: prim(.string)), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "run", as: .ioRun, to: builtinType(.processResult), from: t9Two("program", as: prim(.string), for: "args", to: roStrings), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "runBatch", as: .ioRunBatch, to: builtinType(.processResult), from: t9Two("path", as: prim(.string), for: "args", to: roStrings), at: ioError)
@@ -341,7 +343,7 @@ FuncId intParse(ref Ctx c, for PrimitiveKind t) {
 /// A static member of `Io`, or -1.
 FuncId findIo(ref Ctx c, for string name) {
     switch name {
-        case "readFile" or "readText" or "writeFile" or "remove" or "listDir" or "run" or "runBatch" or "monotonicNanos" or "stdout" or "stderr" or "stdin":
+        case "readFile" or "readText" or "writeFile" or "remove" or "createDirectory" or "removeDirectory" or "listDir" or "run" or "runBatch" or "monotonicNanos" or "stdout" or "stderr" or "stdin":
             return t9Function(ref c, for: $"Io.{name}")
     }
     return -1

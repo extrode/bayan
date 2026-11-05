@@ -327,8 +327,10 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
             return $"{name}({path}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])})"
         case .ioRemove:
             return $"byn_io_remove({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
-        case .ioRemove:
-            return $"byn_io_remove({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .ioCreateDirectory:
+            return $"byn_io_create_directory({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .ioRemoveDirectory:
+            return $"byn_io_remove_directory({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
         case .ioListDir:
             let list = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
             let name = helper(ref cc, for: "bynh_io_list_dir", from: $"static uint32_t bynh_io_list_dir(byn_str path, {list}* out)",

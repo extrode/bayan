@@ -73,6 +73,8 @@ public sealed class Builtins
         IoWriteFile = MakeIo("writeFile", BuiltinFunction.IoWriteFile, PrimitiveType.Void,
             ("path", PrimitiveType.String), ("bytes", new SpanType(PrimitiveType.U8, readOnly: true)));
         IoRemove = MakeIo("remove", BuiltinFunction.IoRemove, PrimitiveType.Void, ("path", PrimitiveType.String));
+        IoCreateDirectory = MakeIo("createDirectory", BuiltinFunction.IoCreateDirectory, PrimitiveType.Void, ("path", PrimitiveType.String));
+        IoRemoveDirectory = MakeIo("removeDirectory", BuiltinFunction.IoRemoveDirectory, PrimitiveType.Void, ("path", PrimitiveType.String));
         IoListDir = MakeIo("listDir", BuiltinFunction.IoListDir, new ListType(PrimitiveType.String), ("path", PrimitiveType.String));
         IoRun = MakeIo("run", BuiltinFunction.IoRun, BuiltinType.ProcessResult,
             ("program", PrimitiveType.String), ("args", new SpanType(PrimitiveType.String, readOnly: true)));
@@ -371,6 +373,12 @@ public sealed class Builtins
     /// <summary><c>void Io.remove(string path) fails IoError</c> <c>uses fs</c>: as .NET <c>File.Delete</c> (a missing file is not an error; a directory fails).</summary>
     public FunctionSymbol IoRemove { get; }
 
+    /// <summary><c>void Io.createDirectory(string path) fails IoError</c> <c>uses fs</c>: as .NET <c>Directory.CreateDirectory</c> (creates missing parents; an existing directory is not an error, an existing file is).</summary>
+    public FunctionSymbol IoCreateDirectory { get; }
+
+    /// <summary><c>void Io.removeDirectory(string path) fails IoError</c> <c>uses fs</c>: as .NET <c>Directory.Delete(path)</c> (an empty directory only; a missing path, a file or a non-empty directory fails).</summary>
+    public FunctionSymbol IoRemoveDirectory { get; }
+
     /// <summary><c>List&lt;string&gt; Io.listDir(string path) fails IoError</c>: entry names sorted by byte order.</summary>
     public FunctionSymbol IoListDir { get; }
 
@@ -398,6 +406,8 @@ public sealed class Builtins
         "readText" => IoReadText,
         "writeFile" => IoWriteFile,
         "remove" => IoRemove,
+        "createDirectory" => IoCreateDirectory,
+        "removeDirectory" => IoRemoveDirectory,
         "listDir" => IoListDir,
         "run" => IoRun,
         "runBatch" => IoRunBatch,

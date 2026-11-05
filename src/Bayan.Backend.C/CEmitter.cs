@@ -1795,6 +1795,10 @@ internal sealed class FunctionEmitter
             }
             case BuiltinFunction.IoRemove:
                 return $"byn_io_remove({Expr(c.Arguments[0])})";
+            case BuiltinFunction.IoCreateDirectory:
+                return $"byn_io_create_directory({Expr(c.Arguments[0])})";
+            case BuiltinFunction.IoRemoveDirectory:
+                return $"byn_io_remove_directory({Expr(c.Arguments[0])})";
             case BuiltinFunction.IoListDir:
             {
                 var list = _c.CType(fn.ReturnType);
