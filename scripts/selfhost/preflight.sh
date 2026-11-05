@@ -5,7 +5,7 @@
 # come from the base branch (BAYAN_BASE, else the specs.tsv row's), as land.sh's guard reads them.
 #   cites      every `path:N` / `path:N-M` on a line the branch adds to docs/bayan-handoff.md, reviews/<T>.md or the spec's plan names
 #              an existing file and range (a bare name: any tracked file ending in it), and the backticked symbol the citation
-#              quotes in the same clause (the next one after it, else the last before it) is on those lines or the 2 after them
+#              quotes in the same clause (the next one after it, else the last before it) is on those lines (a single-line cite: on it or the 2 after it)
 #   files      every file the branch changes is in the task's files list or one the guard allows; prints the addition
 #   questions  every Question number the branch adds is new to the handoff (the branch's and the base's) and inside the task's
 #              range (its task line, else $BAYAN_QRANGES or <main checkout>/tmp/q-ranges.tsv, written by wave-brief.py)
@@ -106,7 +106,8 @@ while IFS=$'\037' read -r src q cite path lo hi sym; do
     [ -n "$c" ] && [ -f "$c" ] || continue
     k=$(awk 'END { print NR }' "$c")
     if [ "$lo" -lt 1 ] || [ "$hi" -lt "$lo" ] || [ "$hi" -gt "$k" ]; then why="$c has $k lines"
-    elif [ -n "$sym" ] && ! sed -n "${lo},$((hi + 2))p" "$c" | grep -qF -- "$sym"; then why="\`$sym\` is not on $c:$lo$([ "$hi" = "$lo" ] || echo "-$hi") or the 2 lines after it"
+    elif [ "$hi" = "$lo" ] && [ -n "$sym" ] && ! sed -n "${lo},$((lo + 2))p" "$c" | grep -qF -- "$sym"; then why="\`$sym\` is not on $c:$lo or the 2 lines after it"
+    elif [ "$hi" != "$lo" ] && [ -n "$sym" ] && ! sed -n "${lo},${hi}p" "$c" | grep -qF -- "$sym"; then why="\`$sym\` is not on $c:$lo-$hi"
     else good=1; break; fi
   done <<< "$cands"
   [ $good = 1 ] || { fail "cites: $src ${q}\`$cite\`: $why"; bad=1; }
