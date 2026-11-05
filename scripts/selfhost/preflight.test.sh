@@ -14,7 +14,7 @@ rm -rf "$r" "$aux" && mkdir -p "$r/docs/specs/012-self-hosted-bootstrap" "$r/src
 git init -q -b base && git config user.email t@t && git config user.name t
 printf 'tmp/\n' > .gitignore
 cat > docs/specs/012-self-hosted-bootstrap/012-tasks.md <<'EOF'
-- [ ] T99 fixture — files: `src/a.c`, `src/{d,e}.c`, `tests/Bayan.Tests/FooInventoryTests.cs` (declares `FooT8Tests`, not `x.cs`) — covers: R1 — done when: x
+- [ ] T99 fixture — files: `src/a.c`, `src/{d,e}.c`, `bootstrap/r.c`, `tests/Bayan.Tests/FooInventoryTests.cs` (declares `FooT8Tests`, not `x.cs`) — covers: R1 — done when: x
 - [ ] T98 fixture — files: `src/a.c` — covers: R1 — Questions Q300–Q304
 - [ ] T97 fixture — files: `src/a.c` — covers: R1
 EOF
@@ -44,7 +44,7 @@ REV=docs/specs/012-self-hosted-bootstrap/reviews/T99.md
 br good src/a.c 'int delta;' docs/bayan-handoff.md '200. **T99.** `src/a.c:2` `beta` and `a.c:1-2` (bare name) hold it; `src/a.c:3`, then `gamma` elsewhere; `src/a.c:1` `gamma` is 2 lines on.' \
   $REV '| 1 | LOW | `src/a.c:4` `delta` | open |'
 br stale src/a.c 'int delta;' docs/bayan-handoff.md '201. `src/a.c:9` is past the end; `src/a.c:1` `delta` is 3 lines on; `src/a.c:1-2` `gamma` ends short; `nope.c:1` does not exist; `src/a.c:3` `gamma` holds.'
-br outside src/b.c 'int b;' src/d.c 'int d;' src/e.c 'int e;' tests/Bayan.Tests/BarTests.cs 'class BarTests {}' work/todo.md '- x'
+br outside src/b.c 'int b;' bootstrap/r.c "int r;" src/d.c 'int d;' src/e.c 'int e;' tests/Bayan.Tests/BarTests.cs 'class BarTests {}' work/todo.md '- x'
 br qdup docs/bayan-handoff.md '101. again'
 br qout docs/bayan-handoff.md '205. out of range'
 br qbase docs/bayan-handoff.md '202. mine'

@@ -81,6 +81,9 @@ fi
 # a C runtime source named in a task line (012 T16, src/runtime/bayan-rt.c) is in its guard --allow
 python3 -I scripts/selfhost/wave-brief.py . T16 --spec 012 > /dev/null
 grep '^bash scripts/selfhost/guard.sh' tmp/012-t16/prompt.md | grep -q 'src/runtime/bayan-rt.h,src/runtime/bayan-rt.c,' || { echo "FAIL: a .c file is not in the guard --allow"; exit 1; }
+# a top-level bootstrap/ file (012 T6) is in its guard --allow
+python3 -I scripts/selfhost/wave-brief.py . T6 --spec 012 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/012-t6/prompt.md | grep -q 'bootstrap/bayan.c,bootstrap/bayan-rt.h,bootstrap/bayan-rt.c,bootstrap/README.md,' || { echo "FAIL: a bootstrap/ file is not in the guard --allow"; exit 1; }
 # Question ranges (012 plan D6), on a fixture repo: an open task with no range in its line gets the five numbers after the highest
 # Question in the handoff, any local branch's handoff, any tasks-file range and any range already in tmp/q-ranges.tsv; a second
 # brief for it reuses the row; briefs written at once do not overlap; a range in the task line is kept and not recorded;

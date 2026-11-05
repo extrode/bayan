@@ -122,7 +122,7 @@ for t in args[1:]:
     files = owned_files(block)
     # a root file (CHANGELOG.md) and a bare spec file (010-spec.md) are docs this spec owns too
     files = [f"{row['dir']}/{f}" if re.fullmatch(rf'{SPEC}-[a-z]+\.md', f) else f for f in files]
-    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/', 'work/')) or re.fullmatch(r'[A-Z]+\.md', f)]
+    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/', 'work/', 'bootstrap/')) or re.fullmatch(r'[A-Z]+\.md', f)]
     byns = [f for f in files if f.endswith('.byn') and f not in rooted]
     tests = [f for f in files if f.endswith('.cs') and f not in rooted]
     # a task naming its test files only with their directory (`tests/Bayan.Tests/X.cs`, 012 T4) is gated by those classes,

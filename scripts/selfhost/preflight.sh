@@ -53,7 +53,7 @@ braces() { local pre post a A; if [[ $1 =~ $BR_RE ]]; then pre=${BASH_REMATCH[1]
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   [[ $f =~ ^$SPEC-[a-z]+\.md$ ]] && f=$DIR/$f
-  if [[ $f == tests/* || $f == docs/* || $f == src/* || $f == work/* || $f =~ ^[A-Z]+\.md$ ]]; then
+  if [[ $f == tests/* || $f == docs/* || $f == src/* || $f == work/* || $f == bootstrap/* || $f =~ ^[A-Z]+\.md$ ]]; then
     ALLOW+=("$f"); [[ $f =~ ^tests/Bayan\.Tests/[A-Za-z0-9]+Tests\.cs$ ]] && TESTF+=("$f")
   elif [[ $f == *.byn ]]; then [[ $f == selfhost/* ]] && ALLOW+=("$f") || ALLOW+=("$BYDIR/$f")
   elif [[ $f == *.cs ]]; then ALLOW+=("tests/Bayan.Tests/$f"); TESTF+=("tests/Bayan.Tests/$f"); fi
