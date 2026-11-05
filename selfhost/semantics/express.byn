@@ -890,6 +890,9 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
     if name == "Symbol" { return recordSyntaxNode(ref c, for: addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.symbol) }), at: syntax) }
     if name == "Utf8" { return recordSyntaxNode(ref c, for: addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.utf8) }), at: syntax) }
     if name == "Path" { return recordSyntaxNode(ref c, for: addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.path) }), at: syntax) }
+    if name == "Target" { return recordSyntaxNode(ref c, for: addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.target) }), at: syntax) }
+    if name == "Env" { return recordSyntaxNode(ref c, for: addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.env) }), at: syntax) }
+    if name == "Fs" { return recordSyntaxNode(ref c, for: addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.fs) }), at: syntax) }
 
     t17ReportUndefined(ref b, through: ref c, for: n.name)
     return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: n.span }), at: syntax)

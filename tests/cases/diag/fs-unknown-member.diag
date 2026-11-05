@@ -1,0 +1,6 @@
+error BYN2003: `fileExist` is not a member of `Fs`
+
+  2 │ let found = Fs.fileExist("a.txt")
+    │                ^^^^^^^^^
+    │
+  help: did you mean `fileExists`?

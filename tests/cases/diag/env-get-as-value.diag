@@ -1,0 +1,13 @@
+error BYN2019: `get` is a method, not a value
+
+  3 │     let read = Env.get
+    │                ^^^^^^^
+    │
+  help: call it: `get(…)`
+
+error BYN2019: `fileExists` is a method, not a value
+
+  4 │     let exists = Fs.fileExists
+    │                  ^^^^^^^^^^^^^
+    │
+  help: call it: `fileExists(…)`

@@ -140,6 +140,8 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombine, to: prim(.string), from: t9Two("path1", as: prim(.string), for: "path2", to: prim(.string)), at: "Path.combine")
     let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombineSpan, to: prim(.string), from: t9One("paths", as: internSpan(ref c, by: prim(.string), readOnly: true)), at: "Path.combine(paths)")
     let _ = t9Make(ref c, by: m, for: "fullPath", as: .pathFullPath, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fullPath")
+    let _ = t9Make(ref c, by: m, for: "get", as: .envGet, to: internOptional(ref c, by: prim(.string)), from: t9One("name", as: prim(.string)), at: "Env.get")
+    let _ = t9Make(ref c, by: m, for: "fileExists", as: .fsFileExists, to: prim(.bool), from: t9One("path", as: prim(.string)), at: "Fs.fileExists")
 
     // The iteration interfaces are declared from source too; the declare pass declares their members like a user interface's.
     let iteration = t9Parse(ref c, for: iterationSource, by: m)
@@ -285,6 +287,22 @@ InterfaceId findInterface(ref Ctx c, for string name) {
 FuncId findPath(ref Ctx c, for string name) {
     switch name {
         case "isRooted" or "relative" or "fileName" or "directoryName" or "combine" or "fullPath": return t9Function(ref c, for: $"Path.{name}")
+    }
+    return -1
+}
+
+/// A static member of `Env`, or -1.
+FuncId findEnv(ref Ctx c, for string name) {
+    switch name {
+        case "get": return t9Function(ref c, for: "Env.get")
+    }
+    return -1
+}
+
+/// A static member of `Fs`, or -1.
+FuncId findFs(ref Ctx c, for string name) {
+    switch name {
+        case "fileExists": return t9Function(ref c, for: "Fs.fileExists")
     }
     return -1
 }

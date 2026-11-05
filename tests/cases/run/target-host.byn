@@ -1,0 +1,13 @@
+// `Target.os` and `Target.arch` are compile-time strings naming the host; the output does not depend on which host.
+let oses = ["linux", "macos", "windows"]
+let arches = ["x64", "arm64"]
+var osKnown = false
+for name in oses {
+    if Target.os == name { osKnown = true }
+}
+var archKnown = false
+for name in arches {
+    if Target.arch == name { archKnown = true }
+}
+print($"os known: {osKnown}")
+print($"arch known: {archKnown}")
