@@ -48,6 +48,42 @@ public sealed class CliMemoryBoundsTests
     // ── M1 ───────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task M1_TheTailKeepsTheLastBytesInOrderAcrossUnevenWrites()
+    {
+        const int keep = 10;
+        var bytes = Enumerable.Range(0, 1000).Select(i => (byte)('a' + i % 26)).ToArray();
+        var text = await BoundedCapture.ReadAsync(new Chunked(bytes, [3, 7, 1, 13, 25, 2]), keep);
+        var expected = System.Text.Encoding.ASCII.GetString(bytes, 0, keep) + $"\n… {1000 - 2 * keep} bytes elided …\n"
+            + System.Text.Encoding.ASCII.GetString(bytes, 1000 - keep, keep);
+        Assert.Equal(expected, text);
+    }
+
+    [Fact]
+    public async Task M1_ASnapshotOfAPipeStillHeldOpenKeepsWhatWasRead()
+    {
+        var server = new System.IO.Pipes.AnonymousPipeServerStream(System.IO.Pipes.PipeDirection.Out);
+        var client = new System.IO.Pipes.AnonymousPipeClientStream(System.IO.Pipes.PipeDirection.In, server.ClientSafePipeHandle);
+        var capture = BoundedCapture.Start(client, 1024);
+        server.Write(Enumerable.Repeat((byte)'z', 10_000).ToArray());
+        server.Flush();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!capture.Snapshot().Contains("… 7952 bytes elided …") && DateTime.UtcNow < deadline) Thread.Sleep(20);
+        Assert.False(capture.Completion.IsCompleted);
+        Assert.Equal(new string('z', 1024) + "\n… 7952 bytes elided …\n" + new string('z', 1024), capture.Snapshot());
+        // Closing the write end ends the read; the read end is disposed only once nothing reads it.
+        server.Dispose();
+        await capture.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        client.Dispose();
+    }
+
+    /// <summary>Returns <paramref name="bytes"/> in reads of the given sizes, cycling.</summary>
+    private sealed class Chunked(byte[] bytes, int[] sizes) : MemoryStream(bytes)
+    {
+        private int _i;
+        public override int Read(byte[] buffer, int offset, int count) => base.Read(buffer, offset, Math.Min(count, sizes[_i++ % sizes.Length]));
+    }
+
+    [Fact]
     public async Task M1_CaptureKeepsTheFirstAndLastBytesAndCountsTheRest()
     {
         var text = await BoundedCapture.ReadAsync(new Endless(50_000_000));

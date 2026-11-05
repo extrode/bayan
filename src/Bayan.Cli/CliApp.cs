@@ -1037,8 +1037,6 @@ public static class CliApp
         return dir;
     }
 
-    private static string Captured(Task<string> read) => read.IsCompletedSuccessfully ? read.Result : "";
-
     private static TestOutcome RunTest(string executable, int index, string? coveragePrefix = null)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(executable)
@@ -1054,17 +1052,18 @@ public static class CliApp
         if (coveragePrefix is not null) psi.Environment["BAYAN_COVERAGE"] = coveragePrefix;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         using var p = System.Diagnostics.Process.Start(psi)!;
-        var stdout = BoundedCapture.ReadAsync(p.StandardOutput.BaseStream);
-        var stderr = BoundedCapture.ReadAsync(p.StandardError.BaseStream);
+        var stdout = BoundedCapture.Start(p.StandardOutput.BaseStream);
+        var stderr = BoundedCapture.Start(p.StandardError.BaseStream);
         if (!p.WaitForExit(TestTimeout))
         {
             p.Kill(entireProcessTree: true);
             p.WaitForExit();
             // A grandchild may still hold the pipes open; do not wait for them forever.
-            Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(5));
-            return new TestOutcome(-1, true, Captured(stdout), Captured(stderr), clock.Elapsed);
+            // What was read so far is kept either way.
+            Task.WaitAll([stdout.Completion, stderr.Completion], TimeSpan.FromSeconds(5));
+            return new TestOutcome(-1, true, stdout.Snapshot(), stderr.Snapshot(), clock.Elapsed);
         }
-        return new TestOutcome(p.ExitCode, false, stdout.Result, stderr.Result, clock.Elapsed);
+        return new TestOutcome(p.ExitCode, false, stdout.Completion.Result, stderr.Completion.Result, clock.Elapsed);
     }
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)
