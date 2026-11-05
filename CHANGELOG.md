@@ -6,6 +6,10 @@
 
 - The repository moved to `github.com/ikhbat-org/bayan` (Ikhbat Foundation); home page `https://bayan.run`.
 
+### Fixed
+
+- `bayan-lsp` no longer indexes every `.byn` under the workspace: hidden directories (`.git`, `.worktrees`, `.bayan-staging-*`), `tmp`, build output and symbolic links are skipped, the file watcher ignores the same paths, and disk indexing stops at 20,000 files, 256 Mi characters or 4 MiB per file. A repo with 2.3 million `.byn` copies drove it past 200 GB; it now peaks at 81 MB.
+
 ## [0.1.0] - 2026-11-02
 
 First release: milestones M0–M12 of the handoff's "What v0.1 is". Compiler archives for linux-x64, linux-arm64,
