@@ -2,6 +2,7 @@
 # C# coverage report (spec 013 R15): dotnet test with coverlet, converted to bayan-quality.json (kind "coverage").
 # usage: coverage.sh [--out FILE] [-- dotnet test args, e.g. --filter ...]
 set -euo pipefail
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0  # no MSBuild worker or build server outlives the run
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 out="$repo/tmp/quality/bayan-quality.json"

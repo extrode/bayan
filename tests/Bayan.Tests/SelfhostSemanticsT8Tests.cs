@@ -334,19 +334,23 @@ public sealed class SelfhostSemanticsT8Tests
         var text = Fixtures.Single(f => f.Name == name).Text.Replace("\r", "");
         // An imported module is a directory the compiler reads from disk.
         var root = Path.Combine(Path.GetTempPath(), $"bayan-t8-{Guid.NewGuid():N}");
-        if (Others.TryGetValue(name, out var other))
+        try
         {
-            Directory.CreateDirectory(Path.Combine(root, "geo"));
-            File.WriteAllText(Path.Combine(root, "geo", "geo.byn"), other.Replace("\r", ""));
+            if (Others.TryGetValue(name, out var other))
+            {
+                Directory.CreateDirectory(Path.Combine(root, "geo"));
+                File.WriteAllText(Path.Combine(root, "geo", "geo.byn"), other.Replace("\r", ""));
+            }
+            var c = Compilation.Create([SourceText.FromString(Path.Combine(root, "t8.byn"), text)], root, new CompilationOptions(Library: true));
+            var probe = c.Modules.SelectMany(m => m.Structs).SingleOrDefault(s => s.Name == "Probe")
+                ?? throw new InvalidOperationException(string.Join("\n", c.Diagnostics.Items.Select(d => $"{d.Code} {LineCol(text, d.Span.Start)} {d.Message}")));
+            var fields = probe.Fields.Select(f => $"{f.Name}: {f.Type.DisplayName}").ToList();
+            // BYN2822 and BYN3001 are the field checks of the struct pass, BYN6003 the effect analysis (a stub here).
+            var diagnostics = c.Diagnostics.Items.Where(d => d.Code is not ("BYN2822" or "BYN3001" or "BYN6003"))
+                .Select(d => $"{d.Code} {LineCol(text, d.Span.Start)} {d.Message}" + (string.IsNullOrEmpty(d.Help) ? "" : $" help: {d.Help}")).ToList();
+            return (fields, diagnostics);
         }
-        var c = Compilation.Create([SourceText.FromString(Path.Combine(root, "t8.byn"), text)], root, new CompilationOptions(Library: true));
-        var probe = c.Modules.SelectMany(m => m.Structs).SingleOrDefault(s => s.Name == "Probe")
-            ?? throw new InvalidOperationException(string.Join("\n", c.Diagnostics.Items.Select(d => $"{d.Code} {LineCol(text, d.Span.Start)} {d.Message}")));
-        var fields = probe.Fields.Select(f => $"{f.Name}: {f.Type.DisplayName}").ToList();
-        // BYN2822 and BYN3001 are the field checks of the struct pass, BYN6003 the effect analysis (a stub here).
-        var diagnostics = c.Diagnostics.Items.Where(d => d.Code is not ("BYN2822" or "BYN3001" or "BYN6003"))
-            .Select(d => $"{d.Code} {LineCol(text, d.Span.Start)} {d.Message}" + (string.IsNullOrEmpty(d.Help) ? "" : $" help: {d.Help}")).ToList();
-        return (fields, diagnostics);
+        finally { TestDirs.Delete(root); }
     }
 
     private static void Compare(string name)
@@ -376,4 +380,13 @@ public sealed class SelfhostSemanticsT8Tests
 
     [Fact]
     public void Imports() => Compare("imports");
+
+    [Fact]
+    public void OracleLeavesNoTempDirectory()
+    {
+        string[] Dirs() => Directory.GetDirectories(Path.GetTempPath(), "bayan-t8-*");
+        var before = Dirs();
+        Oracle(Others.Keys.First());
+        Assert.Empty(Dirs().Except(before));
+    }
 }
