@@ -15,7 +15,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lock="" plock=""
-trap '[ -z "$plock" ] || rmdir "$plock" 2>/dev/null; [ -z "$lock" ] || rmdir "$lock" 2>/dev/null' EXIT
+trap '[ -z "$plock" ] || rmdir "$plock" 2>/dev/null || :; [ -z "$lock" ] || rmdir "$lock" 2>/dev/null || :' EXIT
 die() { echo "dist: $*" >&2; exit 1; }
 usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
