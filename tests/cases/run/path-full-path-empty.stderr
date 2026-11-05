@@ -1,0 +1,2 @@
+panic: Path.fullPath: the path is empty
+  at path-full-path-empty.byn:4

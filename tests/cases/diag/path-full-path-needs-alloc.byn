@@ -1,0 +1,12 @@
+// `Path.fullPath` and `Path.combine` allocate their results, so a public function calling either declares `alloc` (spec 014).
+public string undeclaredFull(string p) {
+    return Path.fullPath(p)
+}
+
+public string declaredFull(string p) uses alloc {
+    return Path.fullPath(p)
+}
+
+void main() {
+    print($"{undeclaredFull("/a")} {declaredFull("/b")}")
+}

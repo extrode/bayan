@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <spawn.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -2803,6 +2804,129 @@ static char* byn_cstr(byn_str s) {
     return c;
 }
 #endif
+
+#ifndef _WIN32
+/* The bytes of an environment value as .NET decodes them: each well-formed sequence cut short, each lone invalid byte, and each lead
+   with an out-of-range second byte, is one U+FFFD (measured against live .NET in StdEnvTests; `byn_utf8_decode_replace` skips the continuation bytes
+   a lead byte expects instead). */
+static byn_str byn_env_decode(const uint8_t* p, int64_t n, byn_alloc* to) {
+    uint8_t* out = n == 0 ? NULL : to->resize(to, NULL, 0, n * 3);
+    int64_t len = 0, i = 0;
+    while (i < n) {
+        uint8_t c = p[i];
+        int need = c >= 0xC2 && c <= 0xDF ? 1 : c >= 0xE0 && c <= 0xEF ? 2 : c >= 0xF0 && c <= 0xF4 ? 3 : 0;
+        uint8_t lo = 0x80, hi = 0xBF;
+        if (c == 0xE0) lo = 0xA0;
+        else if (c == 0xED) hi = 0x9F;
+        else if (c == 0xF0) lo = 0x90;
+        else if (c == 0xF4) hi = 0x8F;
+        int64_t j = i + 1;
+        int k = 0;
+        for (; k < need && j < n && p[j] >= lo && p[j] <= hi; k++, j++) lo = 0x80, hi = 0xBF;
+        /* A second byte that is a continuation but out of range (overlong, surrogate, past U+10FFFF) goes with its lead, as in .NET. */
+        int skip = need > 0 && k == 0 && j < n && (p[j] & 0xC0) == 0x80;
+        if (skip) j++;
+        if (!skip && (c < 0x80 || (need > 0 && k == need))) {
+            memcpy(out + len, p + i, (size_t)(j - i));
+            len += j - i;
+        } else {
+            out[len++] = 0xEF, out[len++] = 0xBF, out[len++] = 0xBD;
+        }
+        i = j;
+    }
+    if (out) out = to->resize(to, out, n * 3, len);
+    return (byn_str){out, len};
+}
+#endif
+
+bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to) {
+#ifdef _WIN32
+    wchar_t* w = byn_wide(name.ptr, name.len);
+    DWORD n = 128;
+    wchar_t* v = NULL;
+    DWORD got = 0;
+    /* As .NET: grow the buffer while the value does not fit. */
+    for (;;) {
+        v = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)n);
+        if (!v) byn_panic("out of memory", NULL, 0);
+        SetLastError(ERROR_SUCCESS);
+        got = GetEnvironmentVariableW(w, v, n);
+        if (got == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+            free(v);
+            free(w);
+            return false;
+        }
+        if (got < n) break;
+        free(v);
+        n = got;
+    }
+    free(w);
+    int un = got > 0 ? WideCharToMultiByte(CP_UTF8, 0, v, (int)got, NULL, 0, NULL, NULL) : 0;
+    char* u = (char*)malloc((size_t)un + 1);
+    if (!u) byn_panic("out of memory", NULL, 0);
+    if (un > 0) WideCharToMultiByte(CP_UTF8, 0, v, (int)got, u, un, NULL, NULL);
+    free(v);
+    *out = byn_utf8_decode_replace((const uint8_t*)u, un, to);
+    free(u);
+    return true;
+#else
+    /* .NET passes the name as a C string, so a NUL ends it; a name with `=` is never found. */
+    const uint8_t* nul = name.len > 0 ? memchr(name.ptr, 0, (size_t)name.len) : NULL;
+    if (nul) name.len = nul - name.ptr;
+    if (name.len > 0 && memchr(name.ptr, '=', (size_t)name.len)) return false;
+    char* c = byn_cstr(name);
+    const char* v = getenv(c);
+    free(c);
+    if (!v) return false;
+    *out = byn_env_decode((const uint8_t*)v, (int64_t)strlen(v), to);
+    return true;
+#endif
+}
+
+/* As .NET `File.Exists`: an empty path, a NUL, a path (made full as `Path.GetFullPath`) ending in a separator, a missing entry and a directory give false; a dangling symlink gives true on POSIX. */
+bool byn_fs_file_exists(byn_str path) {
+    if (byn_path_effectively_empty(path) || (path.len > 0 && memchr(path.ptr, 0, (size_t)path.len))) return false;
+    byn_path_buf f = byn_path_full(path, "Fs.fileExists", NULL, 0);
+    bool found = false;
+    if (f.n > 0 && !byn_path_sep(f.p[f.n - 1])) {
+#ifdef _WIN32
+        wchar_t* w = byn_path_wide_of(f.p, f.n);
+        size_t wn = wcslen(w);
+        /* As .NET `EnsureExtendedPrefixIfNeeded`: a full path of 260 or more chars gets `\\?\` (`\\?\UNC\` for `\\server\share`). */
+        if (wn >= 260 && !byn_path_extended((const uint8_t*)f.p, f.n) && !(wn >= 4 && w[0] == L'\\' && w[1] == L'\\' && w[2] == L'.' && w[3] == L'\\')) {
+            bool unc = wn >= 2 && w[0] == L'\\' && w[1] == L'\\';
+            const wchar_t* prefix = unc ? L"\\\\?\\UNC\\" : L"\\\\?\\";
+            size_t pn = wcslen(prefix);
+            wchar_t* x = (wchar_t*)malloc(sizeof(wchar_t) * (wn + pn + 1));
+            if (!x) byn_panic("out of memory", NULL, 0);
+            wcscpy(x, prefix);
+            wcscpy(x + pn, unc ? w + 2 : w);
+            free(w);
+            w = x;
+        }
+        DWORD attrs = GetFileAttributesW(w);
+        /* As .NET `FillAttributeInfo`: a sharing violation falls back to the directory listing's attributes. */
+        if (attrs == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_SHARING_VIOLATION) {
+            WIN32_FIND_DATAW fd;
+            HANDLE h = FindFirstFileW(w, &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                attrs = fd.dwFileAttributes;
+                FindClose(h);
+            }
+        }
+        found = attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+        free(w);
+#else
+        char* c = byn_cstr((byn_str){f.p, f.n});
+        struct stat st;
+        /* As .NET: a link whose target is missing is still an entry, and not a directory. */
+        found = (stat(c, &st) == 0 || lstat(c, &st) == 0) && (st.st_mode & S_IFMT) != S_IFDIR;
+        free(c);
+#endif
+    }
+    free(f.p);
+    return found;
+}
 
 uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* alloc) {
     byn_str* names = NULL;

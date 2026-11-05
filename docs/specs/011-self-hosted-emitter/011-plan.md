@@ -111,7 +111,7 @@ Sizing notes. T4 is the largest lowering task because `LowerExpr` (190 lines) an
   | `Binder.cs:31`, `BinderExpressions.cs:1922`, `:1932` | the lambda stack, push and pop | 3 | `selfhost/semantics/ctx.byn:623` (`lambdas`), `express4.byn:366` (push), `:399-404` (captures collected, pop), `:415-426` (`inLambda` and the lambda-of helper) |
   | `BinderExpressions.cs:1961-1983` | `Capture` | 23 | `express4.byn:430-473` (`capture`, 44) |
   | `BoundNodes.cs:246-247` | `BoundLambda` with its captures | 2 | `bound.byn:670` (field), `:1631` (children) |
-  | `Symbols.cs:245` | `FunctionSymbol.Captures` | 1 | `symbols.byn:182` |
+  | `Symbols.cs:245` | `FunctionSymbol.Captures` | 1 | `symbols.byn:189` |
   | `RegionAnalysis.cs:351-352`, `:458`, `:463` | lambda environment region, rule 4's environment exclusion | 4 | `region.byn:52` (environments), `:490-503` (lambda borrow and environment), `region2.byn:131` (exclusion) |
   | `OwnershipAnalysis.cs:383` | captures in ownership | 1 | `ownership.byn:533-537` |
   | `RegionAnalysis.cs` `Call` (after Q745) | written `ref`/`out` arguments and `ref this` receivers take borrows | measured when Q745 lands | `region*.byn`, same change (D13) |

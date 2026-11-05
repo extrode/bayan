@@ -379,6 +379,8 @@ public enum BuiltinFunction
     PathCombine,
     PathCombineSpan,
     PathFullPath,
+    EnvGet,
+    FsFileExists,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }

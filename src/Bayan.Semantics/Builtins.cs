@@ -121,6 +121,8 @@ public sealed class Builtins
         PathCombine = Make("combine", BuiltinFunction.PathCombine, PrimitiveType.String, ("path1", PrimitiveType.String), ("path2", PrimitiveType.String));
         PathCombineSpan = Make("combine", BuiltinFunction.PathCombineSpan, PrimitiveType.String, ("paths", new SpanType(PrimitiveType.String, readOnly: true)));
         PathFullPath = Make("fullPath", BuiltinFunction.PathFullPath, PrimitiveType.String, ("path", PrimitiveType.String));
+        EnvGet = Make("get", BuiltinFunction.EnvGet, new OptionalType(PrimitiveType.String), ("name", PrimitiveType.String));
+        FsFileExists = Make("fileExists", BuiltinFunction.FsFileExists, PrimitiveType.Bool, ("path", PrimitiveType.String));
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
         var iterationFile = new FileContext(Module, SyntaxTree.Parse(SourceText.FromString("<builtin>", IterationSource)));
@@ -274,6 +276,26 @@ public sealed class Builtins
 
     /// <summary><c>string Path.fullPath(string path)</c>: as .NET <c>Path.GetFullPath</c> on this OS (a relative path against the working directory), a fresh copy from <c>context.allocator</c>; panics on an empty path or a NUL byte.</summary>
     public FunctionSymbol PathFullPath { get; }
+
+    /// <summary><c>string? Env.get(string name)</c> <c>uses env</c>: as .NET <c>Environment.GetEnvironmentVariable</c> (null when unset), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol EnvGet { get; }
+
+    /// <summary>A static member of <c>Env</c>, or null.</summary>
+    public FunctionSymbol? FindEnv(string name) => name switch
+    {
+        "get" => EnvGet,
+        _ => null,
+    };
+
+    /// <summary><c>bool Fs.fileExists(string path)</c> <c>uses fs</c>: as .NET <c>File.Exists</c> (false for a directory, a missing entry, an empty path and a path ending in a separator).</summary>
+    public FunctionSymbol FsFileExists { get; }
+
+    /// <summary>A static member of <c>Fs</c>, or null.</summary>
+    public FunctionSymbol? FindFs(string name) => name switch
+    {
+        "fileExists" => FsFileExists,
+        _ => null,
+    };
 
     /// <summary>A static member of <c>Path</c>, or null.</summary>
     public FunctionSymbol? FindPath(string name) => name switch

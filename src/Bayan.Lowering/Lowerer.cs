@@ -157,7 +157,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins, IRea
     private static bool IsTrivial(BoundExpr e) => e switch
     {
         BoundErrorVariant { Payload.Length: > 0 } v => v.Payload.All(IsTrivial),
-        BoundLiteral or BoundSymbolLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
+        BoundLiteral or BoundSymbolLiteral or BoundHostTarget or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
         BoundMove m => IsTrivial(m.Operand),
@@ -916,7 +916,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins, IRea
                 var payload = Operands(v.Payload);
                 return payload is null ? new LNever(e.Syntax, e.Type) : v with { Payload = payload };
             }
-            case BoundLiteral or BoundSymbolLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
+            case BoundLiteral or BoundSymbolLiteral or BoundHostTarget or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return e;
             case BoundLocal l:
                 Note(l.Local);

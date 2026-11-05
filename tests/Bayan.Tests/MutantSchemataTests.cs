@@ -31,7 +31,7 @@ public sealed class MutantSchemataTests
         var input = Path.Combine(Golden.CasesRoot, name);
         var tests = name.EndsWith(".test.byn", StringComparison.Ordinal);
         var c = Compilation.Create([Golden.Load(input)], Path.GetDirectoryName(input)!,
-            tests ? new CompilationOptions(IncludeTests: true, Library: true) : null);
+            tests ? new CompilationOptions(IncludeTests: true, Library: true) : new CompilationOptions());
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
         return c;
     }
@@ -116,7 +116,8 @@ public sealed class MutantSchemataTests
     public void MutantZeroIsThePlainProgram(string name)
     {
         var input = Path.Combine(Golden.CasesRoot, name);
-        if (OperatingSystem.IsWindows() && File.ReadLines(input).Take(2).Contains("// os: unix")) return;
+        var head = File.ReadLines(input).Take(2).ToList();
+        if (OperatingSystem.IsWindows() ? head.Contains("// os: unix") : head.Contains("// os: windows")) return;
         _ = Warm.Value;
         var exe = SchemataBuild(name);
         var work = Path.Combine(Golden.RepoRoot, "tmp", "run-schemata", Path.ChangeExtension(name, null).Replace('/', '_').Replace('\\', '_'));

@@ -1,0 +1,15 @@
+[/a/b.txt] [/a]
+[a/b] [a]
+[a//b] [a]
+[file] []
+[/] null
+[/a] [/]
+[a/] [a]
+[/a/b/] [/a/b]
+[] null
+[.] []
+[..] []
+[a/.] [a]
+[/dir/.hidden] [/dir]
+[x y/z w.c] [x y]
+[/é/ü] [/é]

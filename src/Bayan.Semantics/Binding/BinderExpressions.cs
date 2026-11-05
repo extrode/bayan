@@ -549,6 +549,9 @@ internal sealed partial class Binder
         if (name == "Symbol") return new BoundTypeRef(n, BuiltinType.Symbol);
         if (name == "Utf8") return new BoundTypeRef(n, BuiltinType.Utf8);
         if (name == "Path") return new BoundTypeRef(n, BuiltinType.Path);
+        if (name == "Target") return new BoundTypeRef(n, BuiltinType.Target);
+        if (name == "Env") return new BoundTypeRef(n, BuiltinType.Env);
+        if (name == "Fs") return new BoundTypeRef(n, BuiltinType.Fs);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -709,6 +712,26 @@ internal sealed partial class Binder
                 if (_c.Builtins.FindPath(name) is { } pathMember) return new BoundMethodGroup(m, null, pathMember);
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, path.Name], help: Suggest(name, ["isRooted", "relative", "fileName", "directoryName", "combine", "fullPath"]) is { } nearPath ? $"did you mean `{nearPath}`?" : null);
                 return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Env } env }:
+                if (_c.Builtins.FindEnv(name) is { } envMember) return new BoundMethodGroup(m, null, envMember);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, env.Name], help: Suggest(name, ["get"]) is { } nearEnv ? $"did you mean `{nearEnv}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Fs } fs }:
+                if (_c.Builtins.FindFs(name) is { } fsMember) return new BoundMethodGroup(m, null, fsMember);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, fs.Name], help: Suggest(name, ["fileExists"]) is { } nearFs ? $"did you mean `{nearFs}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Target } targetType }:
+            {
+                if (name is "os" or "arch")
+                {
+                    if (_c.Options.Target is null) return new BoundHostTarget(m, name == "os");
+                    var (os, arch) = HostTarget.Split(_c.Options.Target);
+                    var text = new ConstantValue(name == "os" ? os : arch);
+                    return new BoundLiteral(m, PrimitiveType.String, text) { Constant = text };
+                }
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, targetType.Name], help: Suggest(name, ["os", "arch"]) is { } nearTarget ? $"did you mean `{nearTarget}`?" : null);
+                return new BoundErrorExpr(m);
+            }
             case BoundTypeRef { Referenced: PrimitiveType { IsString: true } str }:
             {
                 if (_c.Builtins.FindString(name) is { } member) return new BoundMethodGroup(m, null, member);

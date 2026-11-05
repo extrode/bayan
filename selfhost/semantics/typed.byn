@@ -134,7 +134,7 @@ void t26WriteSpan(ref StrBuf sb, by TextSpan span, at string indent) {
 
 /// TypedDump.cs:89 `PathOf`: a rooted path relative to `DisplayRoot`, with forward slashes.
 string t26PathOf(ref Ctx c, for string path) {
-    let shown = path.startsWith("/") ? t11RelativePath(c.displayRoot, to: path) : path
+    let shown = Path.isRooted(path) ? Path.relative(c.displayRoot, to: path) : path
     var sb = StrBuf()
     var start: i64 = 0
     var k: i64 = 0

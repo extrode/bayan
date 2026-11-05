@@ -1,0 +1,7 @@
+// os: unix
+// `Path.fullPath` on absolute Unix paths, so the working directory does not matter: dot segments and repeated separators are resolved.
+string full(string p) uses alloc => Path.fullPath(p)
+
+for p in ["/a/b", "/a/./b", "/a/b/../c", "/a//b", "/", "/a/b/", "/..", "/a/../..", "/x y/é"] {
+    print($"[{p}] -> [{full(p)}]")
+}

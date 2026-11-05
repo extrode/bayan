@@ -505,6 +505,12 @@ public enum BuiltinKind
     Symbol,
     /// <summary>The static path functions <c>Path</c> (spec 014's slice); it has no values.</summary>
     Path,
+    /// <summary>The compile-time constants <c>Target.os</c> and <c>Target.arch</c>; it has no values.</summary>
+    Target,
+    /// <summary>The static environment functions <c>Env</c>; it has no values.</summary>
+    Env,
+    /// <summary>The static file-system queries <c>Fs</c>; it has no values.</summary>
+    Fs,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -535,6 +541,9 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType FormatSpec = new(BuiltinKind.FormatSpec, "FormatSpec");
     public static readonly BuiltinType Symbol = new(BuiltinKind.Symbol, "Symbol");
     public static readonly BuiltinType Path = new(BuiltinKind.Path, "Path");
+    public static readonly BuiltinType Target = new(BuiltinKind.Target, "Target");
+    public static readonly BuiltinType Env = new(BuiltinKind.Env, "Env");
+    public static readonly BuiltinType Fs = new(BuiltinKind.Fs, "Fs");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>

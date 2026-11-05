@@ -1,0 +1,8 @@
+// os: windows
+// `Path.combine` with Windows rules: `\` joins, a drive-rooted second part wins.
+print(Path.combine("C:\\a", "b"))
+print(Path.combine("C:\\a\\", "b"))
+print(Path.combine("C:\\a", "D:\\b"))
+print(Path.combine("a", "b"))
+let parts = ["C:\\a", "b", "c"]
+print(Path.combine(parts.span))

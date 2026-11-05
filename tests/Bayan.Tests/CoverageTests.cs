@@ -81,7 +81,8 @@ public sealed class CoverageTests
     public void CoverageBuildIsThePlainProgram(string name)
     {
         var input = Path.Combine(Golden.CasesRoot, name);
-        if (OperatingSystem.IsWindows() && File.ReadLines(input).Take(2).Contains("// os: unix")) return;
+        var head = File.ReadLines(input).Take(2).ToList();
+        if (OperatingSystem.IsWindows() ? head.Contains("// os: unix") : head.Contains("// os: windows")) return;
         _ = Warm.Value;
         var exe = CoverageBuild(name);
         var work = Scratch("run-coverage", name);

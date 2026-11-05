@@ -1622,6 +1622,8 @@ internal sealed class FunctionEmitter
         {
             case BoundLiteral l:
                 return _c.Constant(l.Value, l.Type);
+            case BoundHostTarget h:
+                return h.IsOs ? "BYN_HOST_OS" : "BYN_HOST_ARCH";
             case BoundSymbolLiteral s:
                 return _c.SymbolLiteral(s.Text);
             case BoundDefault d:
@@ -1888,6 +1890,15 @@ internal sealed class FunctionEmitter
             }
             case BuiltinFunction.PathFullPath:
                 return $"byn_path_full_path({Expr(c.Arguments[0])}, byn_context, {Loc(c.Syntax)})";
+            case BuiltinFunction.EnvGet:
+            {
+                var opt = _c.CType(fn.ReturnType);
+                var name = _c.Helper("bynh_env_get", $"static {opt} bynh_env_get(byn_str name)", () =>
+                    $"{{\n    {opt} r = {{0}};\n    r.has = byn_env_get(name, &r.value, byn_context);\n    return r;\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
+            case BuiltinFunction.FsFileExists:
+                return $"byn_fs_file_exists({Expr(c.Arguments[0])})";
             case BuiltinFunction.HexEncode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
