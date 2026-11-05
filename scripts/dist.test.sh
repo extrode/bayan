@@ -13,6 +13,7 @@ cat > "$t/bin/dotnet" <<'FAKE'
 #!/usr/bin/env bash
 while [ $# -gt 0 ]; do case "$1" in -r) rid=$2; shift 2 ;; -o) out=$2; shift 2 ;; *) shift ;; esac; done
 [ "${FAKE_FAIL:-}" = 1 ] && exit 1
+[ "${FAKE_NOWRITE:-}" = 1 ] && exit 0
 mkdir -p "$out"; exe=bayan; case "$rid" in win-*) exe=bayan.exe ;; esac
 echo "$rid ${FAKE_BUILD:-1}" > "$out/$exe"
 touch "${FAKE_MARK:-/dev/null}"
@@ -97,5 +98,19 @@ grun() { PATH="$t/bin:$PATH" bash "$g/scripts/dist.sh" --dist "$t/gdist" --rid o
 check "clean scratch repo has no .dirty" "$(grun | grep -c '\.dirty/')" 0
 touch "$g/notes.txt"
 check "untracked file outside src/ is dirty" "$(grun | grep -c '\.dirty/')" 1
+
+
+# a publish that succeeds without writing a binary must not pick up the previous run's from tmp/dist-publish/<rid>
+FAKE_NOWRITE=1 run --rid osx-arm64 --label 4.0.0 >/dev/null 2>&1; check "publish without a binary exits 1" "$?" 1
+check "publish without a binary makes no version dir" "$([ -e "$d/macos-arm64/4.0.0" ] && echo y || echo n)" n
+touch "$t/afile"
+err=$(PATH="$t/bin:$PATH" bash "$root/scripts/dist.sh" --dist "$t/afile" --rid osx-arm64 --label 1.0.0 2>&1); check "--dist on a file exits 1" "$?" 1
+check "--dist on a file says why" "$err" "dist: cannot create $t/afile/macos-arm64"
+mkdir -p "$g/tmp/dist-publish.lock"
+FAKE_MARK="$t/gpublished" grun >/dev/null; check "held publish lock exits 1" "$?" 1
+check "held publish lock refuses before publishing" "$([ -e "$t/gpublished" ] && echo y || echo n)" n
+check "held publish lock frees the target lock" "$([ -e "$t/gdist/macos-arm64/.lock" ] && echo y || echo n)" n
+rmdir "$g/tmp/dist-publish.lock"
+grun >/dev/null; check "publish lock released after a run" "$([ -e "$g/tmp/dist-publish.lock" ] && echo y || echo n)" n
 
 exit $fail

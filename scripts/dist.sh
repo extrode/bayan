@@ -14,8 +14,8 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-lock=""
-trap '[ -z "$lock" ] || rmdir "$lock" 2>/dev/null' EXIT
+lock="" plock=""
+trap '[ -z "$plock" ] || rmdir "$plock" 2>/dev/null; [ -z "$lock" ] || rmdir "$lock" 2>/dev/null' EXIT
 die() { echo "dist: $*" >&2; exit 1; }
 usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
@@ -83,7 +83,7 @@ for rid in "${rids[@]}"; do
   t="$(target "$rid")" || die "unknown rid $rid"
   tgt="${t% *}" exe="${t#* }"
   # One run per target at a time, taken before publishing: two runs would share tmp/dist-publish/<rid> and obj/.
-  mkdir -p "$dist/$tgt"
+  mkdir -p "$dist/$tgt" 2>/dev/null || die "cannot create $dist/$tgt"
   lock="$dist/$tgt/.lock"
   mkdir "$lock" 2>/dev/null || { lock=""; die "another dist run holds $dist/$tgt/.lock (remove it if no run is going)"; }
   if [ -n "$from" ]; then
@@ -91,10 +91,15 @@ for rid in "${rids[@]}"; do
   else
     command -v dotnet >/dev/null || die "dotnet not on PATH"
     mkdir -p "$root/tmp"
+    # Every rid shares src/*/obj/ (restore writes project.assets.json there): one publish at a time per checkout.
+    plock="$root/tmp/dist-publish.lock"
+    mkdir "$plock" 2>/dev/null || { plock=""; die "another dist run is publishing in this checkout (remove $root/tmp/dist-publish.lock if none is)"; }
     pub="$root/tmp/dist-publish/$rid"
+    rm -rf "$pub"
     echo "dist: publishing $rid" >&2
     dotnet publish "$root/src/Bayan.Cli" -c Release -r "$rid" -o "$pub" >"$root/tmp/dist-publish-$rid.log" 2>&1 \
       || die "dotnet publish -r $rid failed, see tmp/dist-publish-$rid.log"
+    rmdir "$plock"; plock=""
   fi
   [ -f "$pub/$exe" ] || die "$pub/$exe not found"
 
