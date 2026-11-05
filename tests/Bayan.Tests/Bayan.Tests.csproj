@@ -19,5 +19,6 @@
     <ProjectReference Include="../../src/Bayan.Semantics/Bayan.Semantics.csproj" />
     <ProjectReference Include="../../src/Bayan.Cli/Bayan.Cli.csproj" />
     <ProjectReference Include="../../src/Bayan.Testing/Bayan.Testing.csproj" />
+    <ProjectReference Include="../../editors/language-server/Bayan.LanguageServer.csproj" />
   </ItemGroup>
 </Project>
