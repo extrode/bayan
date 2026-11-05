@@ -22,6 +22,21 @@ public sealed class Lexer
     public readonly List<Token> Tokens = new(256);
     public readonly List<(int Start, int Length, string Message, string? Code)> Problems = [];
 
+    /// <summary>Problems kept per file; the rest are only counted in <see cref="Hidden"/>.</summary>
+    public const int MaxProblems = 1000;
+    public int Hidden { get; private set; }
+
+    void Problem((int, int, string, string?) p)
+    {
+        if (Problems.Count < MaxProblems) Problems.Add(p);
+        else Hidden++;
+    }
+
+    /// <summary>Interpolation holes nested deeper than this lex as plain string content.</summary>
+    public const int MaxInterpolationDepth = 256;
+    int _depth;
+    bool _tooDeep;
+
     public static Lexer Run(string text)
     {
         var lx = new Lexer();
@@ -52,7 +67,7 @@ public sealed class Lexer
                 int close = s.IndexOf("*/", i + 2, StringComparison.Ordinal);
                 i = close < 0 ? n : close + 2;
                 Add(TokenKind.BlockComment, start, i - start);
-                Problems.Add((start, 2, close < 0 ? "unclosed `/*` comment" : "`/* */` is an input form; write `//`", "BYN1047"));
+                Problem((start, 2, close < 0 ? "unclosed `/*` comment" : "`/* */` is an input form; write `//`", "BYN1047"));
                 continue;
             }
             if (c == '"' && i + 2 < n && s[i + 1] == '"' && s[i + 2] == '"')
@@ -60,7 +75,7 @@ public sealed class Lexer
                 int start = i;
                 int close = s.IndexOf("\"\"\"", i + 3, StringComparison.Ordinal);
                 i = close < 0 ? n : close + 3;
-                if (close < 0) Problems.Add((start, 3, "unclosed raw string literal", null));
+                if (close < 0) Problem((start, 3, "unclosed raw string literal", null));
                 Add(TokenKind.String, start, i - start);
                 continue;
             }
@@ -82,7 +97,7 @@ public sealed class Lexer
                     if (d == '"') { i++; closed = true; break; }
                     i++;
                 }
-                if (!closed) Problems.Add((start, Math.Max(1, i - start), "unclosed string literal", null));
+                if (!closed) Problem((start, Math.Max(1, i - start), "unclosed string literal", null));
                 Add(TokenKind.String, start, Math.Min(i, n) - start);
                 i = Math.Min(i, n);
                 continue;
@@ -95,7 +110,7 @@ public sealed class Lexer
                 // `'\u{1F600}'` is the longest form (10 chars + quotes).
                 while (i < n && s[i] != '\'' && s[i] != '\n' && i - start < 14) i++;
                 i = Math.Min(i, n);
-                if (i < n && s[i] == '\'') i++; else Problems.Add((start, 1, "unclosed rune literal", null));
+                if (i < n && s[i] == '\'') i++; else Problem((start, 1, "unclosed rune literal", null));
                 Add(TokenKind.Rune, start, Math.Min(i, n) - start);
                 continue;
             }
@@ -116,7 +131,7 @@ public sealed class Lexer
                 continue;
             }
             if (c == '@') { Add(TokenKind.At, i, 1); i++; continue; }
-            if (c == ';') Problems.Add((i, 1, "`;` is not needed; a newline ends the statement", "BYN1040"));
+            if (c == ';') Problem((i, 1, "`;` is not needed; a newline ends the statement", "BYN1040"));
 
             // Multi-char punctuation the analyzer cares about.
             int len = 1;
@@ -141,6 +156,16 @@ public sealed class Lexer
             if (d == '\\') { i += i + 1 < n && s[i + 1] != '\n' ? 2 : 1; continue; }
             if (d == '{' && i + 1 < n && s[i + 1] == '{') { i += 2; continue; }
             if (d == '"') { i++; Add(TokenKind.String, frag, i - frag); return i; }
+            if (d == '{' && _depth >= MaxInterpolationDepth)
+            {
+                // Too deep to lex the holes without risking the stack: the rest of the line is string content.
+                int end = s.IndexOf('\n', i, n - i);
+                end = end < 0 ? n : end;
+                if (!_tooDeep) Problem((frag, end - frag, $"string interpolation nested deeper than {MaxInterpolationDepth} levels", null));
+                _tooDeep = true;
+                Add(TokenKind.String, frag, end - frag);
+                return end;
+            }
             if (d == '{')
             {
                 Add(TokenKind.String, frag, i + 1 - frag);
@@ -152,13 +177,15 @@ public sealed class Lexer
                     else if (s[j] == '}') depth--;
                     if (depth > 0) j++;
                 }
+                _depth++;
                 Scan(s, hole, Math.Min(j, n));
+                _depth--;
                 i = frag = Math.Min(j, n);
                 continue;
             }
             i++;
         }
-        Problems.Add((frag, Math.Max(1, i - frag), "unclosed string literal", null));
+        Problem((frag, Math.Max(1, i - frag), "unclosed string literal", null));
         Add(TokenKind.String, frag, Math.Min(i, n) - frag);
         return Math.Min(i, n);
     }
