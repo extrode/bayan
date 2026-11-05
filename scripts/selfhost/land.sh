@@ -78,6 +78,8 @@ fi
 # bootstrap/bayan.c and the runtime copies in the checked worktree before the merge; the tick commit carries them
 REGEN=0
 if [ -f "$WT/tests/Bayan.Tests/BootstrapTests.cs" ] && [ -n "$(git diff --name-only "$BASE...$SHA" -- selfhost/ src/runtime/)" ]; then
+  [ -z "$(git diff --name-only "$SHA...$BASE" -- selfhost/ src/runtime/)" ] \
+    || { echo "LAND REFUSED: $BASE changed selfhost/ or src/runtime/ after $BR branched, so bootstrap/ regenerated on $BR would not be the merged tree's; merge $BASE into $BR and land again"; exit 1; }
   REGEN=1; mkdir -p tmp
   ( cd "$WT" && BAYAN_UPDATE=1 nice dotnet test -v q --filter FullyQualifiedName~BootstrapTests ) > "tmp/land-$t-bootstrap.txt" 2>&1 \
     || { tail -20 "tmp/land-$t-bootstrap.txt"; echo "LAND REFUSED: BAYAN_UPDATE=1 BootstrapTests failed (tmp/land-$t-bootstrap.txt)"; exit 1; }

@@ -5,7 +5,8 @@
 # refuses before any merge when the base checkout's preflight.sh fails (and passes it the spec, task, branch and BAYAN_BASE), and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left its coverage report
 # (tmp/guard-run/coverage/bayan-quality.json, the only place the real guard writes one; no quality-*.json): a landing with
 # none leaves the baseline alone, one fills coverage and branches, one with a higher coverage raises it (both in the tick commit),
-# a lower filtered coverage lands and leaves the recorded value unchanged, and a malformed report is refused before the merge.
+# a lower filtered coverage lands and leaves the recorded value unchanged, and a malformed report is refused before the merge. With tests/Bayan.Tests/BootstrapTests.cs on the base, a branch that changes selfhost/ is refused before the merge when the base
+# changed selfhost/ or src/runtime/ after it branched (012 T6: bootstrap/ is regenerated on the branch).
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/land&test'q"; aux="$root/tmp/land-test-aux"
@@ -60,6 +61,9 @@ cmp -s tests/quality-baseline.json $aux/before-drop.json && dropsame=1 || dropsa
 next feat-bad; echo '{' > $aux/covreport; badbase=$(git rev-parse HEAD)
 bad=$(land feat-bad); badhead=$(git rev-parse HEAD); badtree=$(git status --porcelain --untracked-files=no)
 cmp -s tests/quality-baseline.json $aux/before-drop.json && badsame=1 || badsame=0
+rm -f $aux/covreport; mkdir -p tests/Bayan.Tests selfhost; echo t > tests/Bayan.Tests/BootstrapTests.cs; echo a > selfhost/a.byn; git add -A; git commit -qm "test: bootstrap tests"
+code feat-stale; echo b > selfhost/a.byn; git commit -qam "test: selfhost"; review; git switch -q base
+echo c > selfhost/c.byn; git add -A; git commit -qm "test: base selfhost"; stalehead=$(git rev-parse HEAD); stale=$(land feat-stale); stalehead2=$(git rev-parse HEAD)
 rm -f $aux/covreport; baseline=$(land feat-baseline)  # last: if it were accepted, its merge must not break the cases above
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
@@ -77,6 +81,7 @@ echo "$ok" | grep -q '^LANDED T99$' || fail "a well-reviewed branch did not land
 [ "$ticked" = 1 ] || fail "the task was not ticked" "$ok"
 [ "$ran" = "$r/scripts/selfhost/guard.sh" ] || fail "the guard ran as '$ran', not the base checkout's by absolute path" "$ok"
 [ "$gargs" = "--base base --filter F" ] || fail "the guard ran with '$gargs', not without --mutate and --seed" "$ok"
+echo "$stale" | grep -q "LAND REFUSED: base changed selfhost/ or src/runtime/ after feat-stale branched" && [ "$stalehead" = "$stalehead2" ] || fail "a selfhost/ branch landed after the base changed selfhost/ (bootstrap/ would not match the merged tree)" "$stale"
 [ $noreport = 1 ] || fail "a landing without a coverage report changed tests/quality-baseline.json" "$ok"
 echo "$fill" | grep -q '^LANDED T99$' && [ "$filled" = "{'mutation': None, 'coverage': 0.75, 'branches': 0.5}" ] || fail "a landing with a coverage report did not fill coverage and branches (y.byn: $filled)" "$fill"
 [ "$intick" = "chore(010): tick T99" ] || fail "the baseline change is not in the tick commit (last commit touching it: $intick)" "$fill"
