@@ -96,12 +96,17 @@ public sealed class CliMemoryBoundsTests
         long peak = 0;
         while (!p.WaitForExit(100))
         {
-            try { peak = Math.Max(peak, p.PeakWorkingSet64); }
+            try
+            {
+                p.Refresh();
+                peak = Math.Max(peak, Math.Max(p.WorkingSet64, p.PeakWorkingSet64));
+            }
             catch (InvalidOperationException) { }
         }
+        Assert.True(peak > 0, "no sample");
+        Assert.True(peak < 300L * 1024 * 1024, $"peak working set {peak / 1024 / 1024} MB");
         Assert.Equal(CliApp.ExitTestFailure, p.ExitCode);
         Assert.Matches(@"… \d+ bytes elided …", await stdout);
-        Assert.True(peak < 300L * 1024 * 1024, $"peak working set {peak / 1024 / 1024} MB");
     }
 
     // ── M2 ───────────────────────────────────────────────────────────────────────
