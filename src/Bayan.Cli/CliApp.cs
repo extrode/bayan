@@ -278,11 +278,11 @@ public static class CliApp
                 return null;
             }
             c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib,
-                Capabilities: manifest.Capabilities, PackageName: manifest.Name));
+                Capabilities: manifest.Capabilities, PackageName: manifest.Name, Target: o.Target));
         }
         else
         {
-            c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests), wholeDirectory: !IsScript(o.Path));
+            c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests, Target: o.Target), wholeDirectory: !IsScript(o.Path));
         }
         progress.Done();
         Report(o, c.Diagnostics.Items, stderr);

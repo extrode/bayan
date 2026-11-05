@@ -11,8 +11,9 @@ namespace Bayan.Semantics;
 /// <param name="SkipOwnershipCheck">Test-only: skips the static ownership check, so the debug-build checker can be exercised.</param>
 /// <param name="Capabilities">The package's <c>capabilities</c>, the upper bound on its effects (§13); null for no bound.</param>
 /// <param name="PackageName">The package's name, for BYN6004.</param>
+/// <param name="Target">The build target <c>Target.os</c>/<c>Target.arch</c> name; null for the compiling host.</param>
 public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false,
-    IReadOnlyList<string>? Capabilities = null, string? PackageName = null);
+    IReadOnlyList<string>? Capabilities = null, string? PackageName = null, string? Target = null);
 
 /// <summary>An <c>@unobservable</c> mark: the attributed statement's span, the operator it narrows to (null for all) and the reason.</summary>
 public sealed record UnobservableMark(string File, TextSpan Span, string? Operator, string Reason);

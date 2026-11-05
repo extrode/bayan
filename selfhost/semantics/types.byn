@@ -92,6 +92,7 @@ public enum BuiltinKind {
     formatSpec
     symbol
     path
+    target
 }
 
 // ── Handles ─────────────────────────────────────────────────────────────────────
@@ -172,6 +173,7 @@ public BuiltinKind builtinKindOf(i64 i) {
         case 8: return .panic
         case 9: return .formatSpec
         case 10: return .symbol
+        case 12: return .target
         default: return .path
     }
 }
@@ -599,6 +601,7 @@ string builtinName(BuiltinKind k) {
         case .panic: return "Panic"
         case .formatSpec: return "FormatSpec"
         case .symbol: return "Symbol"
+        case .target: return "Target"
         default: return "Path"
     }
 }

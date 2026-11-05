@@ -19,6 +19,7 @@ public type BNode = i64
 public enum BoundKind {
     literal
     symbolLiteral
+    hostTarget
     defaultValue
     local
     thisRef
@@ -544,7 +545,7 @@ i64 syntaxNode(ref Ctx c, from in parser.Expr e) uses alloc {
         case .patternExpr(let x):
             return syntaxLeaf(ref c, as: .patternExpr, at: x.value.span)
         case .errorExpr(let x):
-            // coverage-exempt: Q853 through 550
+            // coverage-exempt: Q853 through 551
             return syntaxLeaf(ref c, as: .errorExpr, at: x.value.span)
         case .none:
             return -1
@@ -628,6 +629,11 @@ public struct BLiteral {
 public struct BSymbolLiteral {
     public TextSpan span
     public string text
+}
+
+public struct BHostTarget {
+    public TextSpan span
+    public bool isOs
 }
 
 public struct BDefault {
@@ -1203,6 +1209,11 @@ public BExpr addSymbolLiteral(ref Ctx c, from move BSymbolLiteral n) uses alloc 
     return makeBound(.symbolLiteral, at: c.bSymbolLiterals.length - 1)
 }
 
+public BExpr addHostTarget(ref Ctx c, from move BHostTarget n) uses alloc {
+    c.bHostTargets.append(move n)
+    return makeBound(.hostTarget, at: c.bHostTargets.length - 1)
+}
+
 public BExpr addDefault(ref Ctx c, from move BDefault n) uses alloc {
     c.bDefaults.append(move n)
     return makeBound(.defaultValue, at: c.bDefaults.length - 1)
@@ -1610,6 +1621,7 @@ public Type exprType(in Ctx c, for BExpr e) {
     switch boundKind(e) {
         case .literal: return c.bLiterals[i].type
         case .symbolLiteral: return builtinType(.symbol)
+        case .hostTarget: return prim(.string)
         case .defaultValue: return c.bDefaults[i].type
         case .local: return c.bLocals[i].type
         case .thisRef: return c.bThises[i].type
@@ -1665,6 +1677,7 @@ public TextSpan nodeSpan(in Ctx c, for BNode n) {
     switch boundKind(n) {
         case .literal: return c.bLiterals[i].span
         case .symbolLiteral: return c.bSymbolLiterals[i].span
+        case .hostTarget: return c.bHostTargets[i].span
         case .defaultValue: return c.bDefaults[i].span
         case .local: return c.bLocals[i].span
         case .thisRef: return c.bThises[i].span

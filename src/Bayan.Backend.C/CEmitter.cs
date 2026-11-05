@@ -1622,6 +1622,8 @@ internal sealed class FunctionEmitter
         {
             case BoundLiteral l:
                 return _c.Constant(l.Value, l.Type);
+            case BoundHostTarget h:
+                return h.IsOs ? "BYN_HOST_OS" : "BYN_HOST_ARCH";
             case BoundSymbolLiteral s:
                 return _c.SymbolLiteral(s.Text);
             case BoundDefault d:
