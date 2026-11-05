@@ -59,6 +59,12 @@ public sealed class SelfhostSemanticsT9Tests
         ("path fullPath", "findPath(ref c, for: \"fullPath\")", B.FindPath("fullPath")),
         ("Path.combine(paths)", "t9Function(ref c, for: \"Path.combine(paths)\")", B.PathCombineSpan),
         ("Symbol.intern", "t9Function(ref c, for: \"Symbol.intern\")", B.SymbolIntern),
+        ("env get", "findEnv(ref c, for: \"get\")", B.FindEnv("get")),
+        ("env nope", "findEnv(ref c, for: \"nope\")", B.FindEnv("nope")),
+        ("fs fileExists", "findFs(ref c, for: \"fileExists\")", B.FindFs("fileExists")),
+        ("fs nope", "findFs(ref c, for: \"nope\")", B.FindFs("nope")),
+        ("Env.get", "t9Function(ref c, for: \"Env.get\")", B.EnvGet),
+        ("Fs.fileExists", "t9Function(ref c, for: \"Fs.fileExists\")", B.FsFileExists),
     ];
 
     /// <summary>The types the member tables are asked about: label, Bayan expression, C# type.</summary>
@@ -107,6 +113,15 @@ public sealed class SelfhostSemanticsT9Tests
     private static readonly string[] NameTypes =
         ["string", "i64", "rune", "roBytes", "spanStr", "listI64", "listStr", "listBool", "listRune", "listList", "listStrBuf", "map", "array", "strBuf", "symbol",
          "processResult", "formatSpec", "result", "owned", "optional", "optStrBuf", "optList", "enum", "runes", "utf16", "ioInput"];
+
+    /// <summary>The builtin kinds the type table names: Bayan expression and C# type, compared by ordinal and display name.</summary>
+    private static readonly (string Bayan, BuiltinType Oracle)[] Kinds =
+    [
+        ("builtinType(.path)", BuiltinType.Path),
+        ("builtinType(.target)", BuiltinType.Target),
+        ("builtinType(.env)", BuiltinType.Env),
+        ("builtinType(.fs)", BuiltinType.Fs),
+    ];
 
     private static readonly string[] Enums = ["Stream", "Radix", "Edge", "Align", "Comparison", "LogLevel", "Utf8Invalid"];
 
@@ -241,6 +256,9 @@ public sealed class SelfhostSemanticsT9Tests
         for (var i = 0; i < Types.Length; i++) s.AppendLine($"    let t{i} = {Types[i].Bayan}");
         s.AppendLine("    print(\"== members\")");
         for (var i = 0; i < Types.Length; i++) s.AppendLine($"    members(ref c, for: \"{Types[i].Label}\", at: t{i}, by: all)");
+        s.AppendLine("    print(\"== kinds\")");
+        foreach (var (bayan, _) in Kinds)
+            s.AppendLine($"    print($\"{{builtinKindOf(typeIndex({bayan})).ordinal}} {{typeDisplay(ref c, by: {bayan})}}\")");
         s.AppendLine("    print(\"== names\")");
         foreach (var n in NameTypes)
             s.AppendLine($"    namesLine(ref c, for: \"{n}\", at: t{Array.FindIndex(Types, t => t.Label == n)})");
@@ -305,6 +323,13 @@ public sealed class SelfhostSemanticsT9Tests
             if ((bool)Call("HasMethod", type, n)!) expected.Add($"{label}.{n} has");
         }
         SelfhostSemanticsHarness.AssertSection(Output.Value, "members", expected);
+    }
+
+    [Fact]
+    public void BuiltinKindsMatchTheCSharp()
+    {
+        var expected = Kinds.Select(k => $"{(int)k.Oracle.Kind} {k.Oracle.DisplayName}").ToList();
+        SelfhostSemanticsHarness.AssertSection(Output.Value, "kinds", expected);
     }
 
     [Fact]
