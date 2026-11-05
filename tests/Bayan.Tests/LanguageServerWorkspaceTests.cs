@@ -196,4 +196,111 @@ public sealed class LanguageServerWorkspaceTests : IDisposable
         ws.IndexFolder(Path.Combine(_root, "src"));
         Assert.Equal(["b.byn"], Names(ws));
     }
+
+    static long Sum(Workspace ws) => ws.Documents.Sum(d => (long)d.Text.Length);
+
+    [Fact]
+    public void WalkStopsAfterFileRejectedForBudget()
+    {
+        for (int i = 0; i < 4; i++) Touch($"src/f{i}.byn");
+        var order = Directory.EnumerateFiles(Path.Combine(_root, "src"), "*.byn").ToList();
+        File.WriteAllText(order[0], "aaaaaa");
+        File.WriteAllText(order[1], new string('b', 20));
+        File.WriteAllText(order[2], "c");
+        File.WriteAllText(order[3], "d");
+        var ws = new Workspace(maxChars: 10);
+        ws.IndexFolder(_root);
+        Assert.Equal([Path.GetFileName(order[0])], Names(ws));
+    }
+
+    [Fact]
+    public void CloseKeepsClientUri()
+    {
+        var a = Touch("Abc.byn", "disk");
+        var spelled = new Uri(Path.GetDirectoryName(a)! + Path.DirectorySeparatorChar).AbsoluteUri + "%41bc.byn";
+        var ws = new Workspace();
+        ws.Open(spelled, "buffer text", 1);
+        ws.Close(spelled);
+        Assert.Equal(spelled, ws.Get(spelled)!.Uri);
+        Assert.Equal("disk", ws.Get(spelled)!.Text);
+    }
+
+    [Fact]
+    public void KnownFileThatDoesNotGrowIsNeverEvictedForBudget()
+    {
+        var a = Touch("src/a.byn", "12345678");
+        var ws = new Workspace(maxChars: 10);
+        ws.IndexFolder(_root);
+        ws.Open(new Uri(Path.Combine(_root, "src", "open.byn")).AbsoluteUri, new string('x', 20), 1);
+        Assert.True(ws.CharCount > 10);
+        File.WriteAllText(a, "12345");
+        ws.LoadFromDisk(a);
+        Assert.Contains("a.byn", Names(ws));
+        Assert.Equal(25, ws.CharCount);
+    }
+
+    [Fact]
+    public void LoadFromDiskSkipsNewSymlinkedFile()
+    {
+        if (OperatingSystem.IsWindows()) return; // file symlinks need a privilege there
+        var real = Touch("real/a.byn");
+        var link = Path.Combine(_root, "src", "link.byn");
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        File.CreateSymbolicLink(link, real);
+        var ws = new Workspace();
+        ws.LoadFromDisk(link);
+        Assert.Empty(ws.Documents);
+    }
+
+    [Fact]
+    public void CloseKeepsPreviousDocumentWhenReloadIsDenied()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var a = Touch("src/a.byn", "disk");
+        var ws = new Workspace();
+        var uri = new Uri(a).AbsoluteUri;
+        ws.Open(uri, "buffer", 1);
+        File.SetUnixFileMode(a, UnixFileMode.None);
+        try
+        {
+            try { File.ReadAllText(a); return; } catch (UnauthorizedAccessException) { } // running as root
+            ws.Close(uri);
+            var d = ws.Get(uri);
+            Assert.NotNull(d);
+            Assert.False(d!.IsOpen);
+        }
+        finally { File.SetUnixFileMode(a, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public void CharCountStaysExactWhenOpenReplacesDocumentUnderOtherSpelling()
+    {
+        var a = Touch("Abc.byn", "disk");
+        var ws = new Workspace();
+        ws.IndexFolder(_root);
+        var old = ws.Documents.Single();
+        var spelled = new Uri(Path.GetDirectoryName(a)! + Path.DirectorySeparatorChar).AbsoluteUri + "%41bc.byn";
+        ws.Open(spelled, "buffer text", 1);
+        Assert.NotSame(old, ws.Get(spelled));
+        Assert.Equal(Sum(ws), ws.CharCount);
+        old.Replace(new string('z', 500));
+        Assert.Equal(Sum(ws), ws.CharCount);
+    }
+
+    [Fact]
+    public void CharCountStaysExactAfterDirectEditsAndCloseReload()
+    {
+        var a = Touch("a.byn", "disk");
+        var ws = new Workspace();
+        var uri = new Uri(a).AbsoluteUri;
+        var doc = ws.Open(uri, "buffer", 1);
+        doc.Replace("a longer buffer");
+        Assert.Equal(Sum(ws), ws.CharCount);
+        doc.Apply(0, 0, 0, 2, "");
+        Assert.Equal(Sum(ws), ws.CharCount);
+        File.WriteAllText(a, "different disk content");
+        ws.Close(uri);
+        Assert.Equal("different disk content", ws.Get(uri)!.Text);
+        Assert.Equal(Sum(ws), ws.CharCount);
+    }
 }
