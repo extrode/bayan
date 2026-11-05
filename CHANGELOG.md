@@ -16,6 +16,7 @@ First release: milestones M0–M12 of the handoff's "What v0.1 is". Compiler arc
 macos-arm64, macos-x64, windows-x64 and windows-arm64, with SHA256SUMS.
 
 ### Known limits
+- Windows is a preview: 82 tests fail there (spec 013 T19, `tests/windows-known-failures.txt`).
 - `bayan dist --target all` fails on wasm32: the runtime needs `sys/wait.h`, signals and `pipe` (WASM is v0.3).
 - No `List.sort(by:)` (only primitive lists sort) and no format specifiers such as `{x,8}` (spec Appendix B).
 - Laws L018 "No parser panic" and L023 "No checker panic" are proved but stay proposed (C# parser counterexamples).
