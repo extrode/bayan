@@ -81,7 +81,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
                 return t4Keep(ref c, from: e, to: n)
             }
             return e
-        case .literal or .symbolLiteral or .defaultValue or .thisRef or .enumMember or .enumValues or .staticArray:
+        case .literal or .symbolLiteral or .hostTarget or .defaultValue or .thisRef or .enumMember or .enumValues or .staticArray:
             return e
         case .local:
             note(ref c, through: ref l, for: c.bLocals[i].local)

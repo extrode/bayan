@@ -27,7 +27,7 @@ string t10LoweredName(ltree.LKind k) uses alloc {
 /// T10 (private): the C# class name of a bound node of kind `k`, `e.GetType().Name` at CEmitter.cs:1722.
 string t10BoundName(semantics.BoundKind k) uses alloc {
     let names = [
-        "BoundLiteral", "BoundSymbolLiteral", "BoundDefault", "BoundLocal", "BoundThis", "BoundField", "BoundTupleElement",
+        "BoundLiteral", "BoundSymbolLiteral", "BoundHostTarget", "BoundDefault", "BoundLocal", "BoundThis", "BoundField", "BoundTupleElement",
         "BoundCall", "BoundBuiltinCall", "BoundUnary", "BoundBinary", "BoundConversion", "BoundTryFrom", "BoundConditional",
         "BoundCoalesce", "BoundStructLiteral", "BoundWith", "BoundTuple", "BoundCollection", "BoundSpread", "BoundIndex",
         "BoundSlice", "BoundRange", "BoundIs", "BoundSwitchExpr", "BoundInterpolated", "BoundMove", "BoundTry", "BoundCatch",
@@ -120,6 +120,8 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
             return constant(ref cc, from: ref c, for: value, as: c.bLiterals[i].type)
         case .symbolLiteral:
             return symbolLiteral(ref cc, for: c.bSymbolLiterals[i].text)
+        case .hostTarget: // coverage-blocked: Q978 emitExpr
+            return c.bHostTargets[i].isOs ? "BYN_HOST_OS" : "BYN_HOST_ARCH"
         case .defaultValue:
             return $"(({cType(ref cc, from: ref c, for: c.bDefaults[i].type)}){{0}})"
         case .local:

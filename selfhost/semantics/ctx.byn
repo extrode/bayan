@@ -358,6 +358,7 @@ public struct Ctx {
     // ── Bound arenas (T4): one per node struct of bound.byn, in `BoundKind` order ──
     public List<BLiteral> bLiterals = List<BLiteral>()
     public List<BSymbolLiteral> bSymbolLiterals = List<BSymbolLiteral>()
+    public List<BHostTarget> bHostTargets = List<BHostTarget>()
     public List<BDefault> bDefaults = List<BDefault>()
     public List<BLocal> bLocals = List<BLocal>()
     public List<BThis> bThises = List<BThis>()
