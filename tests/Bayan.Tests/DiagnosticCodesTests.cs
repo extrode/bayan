@@ -76,7 +76,6 @@ public sealed class DiagnosticCodesTests
         ["BYN1030"] = "retired: the C# primitive spellings are accepted now",
         ["BYN1032"] = "retired: `if !x` is accepted",
         ["BYN1049"] = "retired: merged into BYN1007",
-        ["BYN1066"] = "no `extern` form parses yet (BYN1016)",
         ["BYN2005"] = "multi-file: needs a `money` module",
         ["BYN2006"] = "stale: the example now reports BYN5004 and BYN5006",
         ["BYN2010"] = "multi-file: two modules importing each other",
@@ -114,6 +113,7 @@ public sealed class DiagnosticCodesTests
     // Error codes an example may report besides its own ("doc/extra"), each with the reason.
     private static readonly Dictionary<string, string> AllowedExtras = new()
     {
+        ["BYN1066/BYN1016"] = "no `extern` form parses yet (BYN1016; logged in work/todo.md), so the pointer-spelling example cannot be valid otherwise",
         ["BYN5004/BYN5006"] = "BYN5004 is reported with BYN5006 for each parameter besides the object",
         ["BYN5006/BYN5004"] = "BYN5006 is reported with BYN5004 for the same function",
     };
