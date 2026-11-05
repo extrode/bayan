@@ -525,3 +525,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 012 T17 review LOW (T28): Q980 and its progress-log line still say the Windows branch is "pending a wp1 run"; it ran at fdc9b40f, 28/28, symlink rows included.
 - 012 T17 review LOW: the 012-tasks T17 filter `SelfhostDriverT17Tests` matches no class (the checks are `StdFsTests`/`StdEnvTests`); preflight's filter check covers the brief side.
 - [ ] `scripts/selfhost/preflight.sh` files check sees only files a branch changed: a test file the task needs but never edited (a coverage test it should have extended, the 012 T15 case with the T10/T2 tests) passes it unseen (found 2026-11-05 building preflight).
+- 012 T3 review LOW (T28): `targetHostFrom` cases expecting `none` (SelfhostDriverT3Tests.cs:538-541) are hand-typed with no `// no-oracle:` marker; `HostTarget.Detect` takes no parameters, so there is no in-process oracle.
+- 012 T3 review LOW (user): Q1009, `Io.run` has no working directory, so BYN4001 help names `<dir>/main.c` where the C# says `main.c` (cc.byn:174-181 — Toolchain.cs:288, :291). Decision needed.
+- [ ] `scripts/selfhost/preflight.sh` wp1 check: accept the wp1 result of HEAD^ when HEAD only adds `reviews/T<n>.md` (land.sh wants the review last, so every land runs wp1 twice today).
