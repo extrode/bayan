@@ -1,4 +1,4 @@
-bayan friction c43f9bd3 (counts in selfhost/**/*.byn)
+bayan friction 32330daf (counts in selfhost/**/*.byn)
 unsafe 2
 @allow 0
 Unchecked_calls 4
