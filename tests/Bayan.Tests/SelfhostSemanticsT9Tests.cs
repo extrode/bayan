@@ -366,10 +366,10 @@ public sealed class SelfhostSemanticsT9Tests
         {
             var source = SourceText.FromString("main.byn", TargetSource);
             var compilation = Compilation.Create([source], Path.Combine(Golden.RepoRoot, "tmp", "t18-target"), new CompilationOptions(Target: target));
-            var literals = target is null
-                ? ""
-                : $"[{HostTarget.Split(target).Os}][{HostTarget.Split(target).Arch}]";
-            expected.Add($"{TargetLabel(target)} diagnostics={compilation.Diagnostics.Count} host={(target is null ? 2 : 0)} literals={literals}");
+            var bound = Bayan.Semantics.Binding.BoundTree.Descendants(compilation.EntryModule.Functions["main"][0].Body!).ToList();
+            var host = bound.OfType<Bayan.Semantics.Binding.BoundHostTarget>().Count();
+            var literals = string.Concat(bound.OfType<Bayan.Semantics.Binding.BoundLiteral>().Select(l => $"[{l.Value.Value}]"));
+            expected.Add($"{TargetLabel(target)} diagnostics={compilation.Diagnostics.Count} host={host} literals={literals}");
         }
         SelfhostSemanticsHarness.AssertSection(Output.Value, "target", expected);
     }
