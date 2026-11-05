@@ -35,7 +35,7 @@ def changed(base, path):
     return lines
 
 
-BLOCKED = r'// coverage-blocked: Q(\d{3}) (T\d+) (\w+)(?: through (\d+))?'
+BLOCKED = r'// coverage-blocked: Q(\d{3,4}) (T\d+) (\w+)(?: through (\d+))?'
 
 
 def open_tasks(tasks):
@@ -72,11 +72,11 @@ def exempt(path, handoff='docs/bayan-handoff.md', open_=None, task=None):
         return set(), set(), []
     questions = {}
     for q in (open(handoff, encoding='utf-8').read().split('\n') if os.path.exists(handoff) else []):
-        m = re.match(r'(\d{3})\. ', q)
+        m = re.match(r'(\d{3,4})\. ', q)
         if m: questions[m.group(1)] = q
     base, skip, blocked, bad = os.path.basename(path), set(), set(), []
     for i, text in enumerate(lines, 1):
-        m, into = re.search(r'// coverage-exempt: Q(\d{3})(?: through (\d+))?', text), skip
+        m, into = re.search(r'// coverage-exempt: Q(\d{3,4})(?: through (\d+))?', text), skip
         if m:
             q, last = m.group(1), m.group(2)
         else:

@@ -9,11 +9,11 @@ path, handoff = sys.argv[1], sys.argv[2]
 lines = open(path, encoding='utf-8').read().split('\n')
 questions = {}
 for q in open(handoff, encoding='utf-8').read().split('\n'):
-    m = re.match(r'(\d{3})\. ', q)
+    m = re.match(r'(\d{3,4})\. ', q)
     if m: questions[m.group(1)] = q
 base = os.path.basename(path)
 for i, text in enumerate(lines, 1):
-    m = re.search(r'// mutation-exempt: Q(\d{3})(?: through (\d+))?', text)
+    m = re.search(r'// mutation-exempt: Q(\d{3,4})(?: through (\d+))?', text)
     if not m: continue
     q, last = m.group(1), int(m.group(2) or i + 1)
     if last <= i or last > len(lines):
