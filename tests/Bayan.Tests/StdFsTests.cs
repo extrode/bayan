@@ -118,8 +118,18 @@ public sealed class StdFsTests
             "file.txt", "file.txt", "empty", "é ü 日本.txt", "missing", "sub/missing", "nodir/missing", "sub", "sub/", "sub/inner", "sub/inner/deep.txt", "file2.txt/", "file2.txt/.", "file2.txt/x",
             "link-file", "link-dir", "link-dangling", "link-loop", "readonly.txt", "./sub/../file2.txt", "file3.txt ", " file3.txt", "", " ", ".", "..", "x\0", "\0",
         ];
+        // A file inside a read-only directory (unlink fails with EACCES): POSIX only, and not as root, which ignores the mode.
+        var readOnlyDir = !OperatingSystem.IsWindows() && Environment.UserName != "root";
+        if (readOnlyDir) rows = [.. rows, "rodir/inner.txt", "rodir/missing"];
+        void Unlock()
+        {
+            if (readOnlyDir && Directory.Exists(work))
+                foreach (var d in Directory.EnumerateDirectories(work, "rodir", SearchOption.AllDirectories))
+                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(d, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
         try
         {
+            Unlock();
             if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
             string Fixture(string name)
             {
@@ -131,6 +141,12 @@ public sealed class StdFsTests
                 Link(Path.Combine(dir, "link-dir"), "sub", directory: true);
                 Link(Path.Combine(dir, "link-dangling"), "nowhere", directory: false);
                 Link(Path.Combine(dir, "link-loop"), "link-loop", directory: false);
+                if (readOnlyDir)
+                {
+                    Directory.CreateDirectory(Path.Combine(dir, "rodir"));
+                    File.WriteAllText(Path.Combine(dir, "rodir", "inner.txt"), "x");
+                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Path.Combine(dir, "rodir"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                }
                 return dir;
             }
             string Listing(string dir) => string.Join("\n", Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories).Select(e => Path.GetRelativePath(dir, e).Replace('\\', '/')).Order(StringComparer.Ordinal));
@@ -162,6 +178,7 @@ public sealed class StdFsTests
         }
         finally
         {
+            Unlock();
             if (Directory.Exists(work))
             {
                 foreach (var f in Directory.EnumerateFiles(work, "readonly.txt", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
@@ -171,7 +188,7 @@ public sealed class StdFsTests
     }
 
     /// <summary>Spec 012 T20: runs <paramref name="rows"/> in order through <paramref name="net"/> (.NET) and through <c>Io.<paramref name="builtin"/></c> in a compiled program, each on its own copy of the fixture, and compares the outcomes and the tree left behind.</summary>
-    private static async Task DirectoryCorpus(string builtin, string[] rows, Action<string> net, bool expectOk, bool expectFail)
+    private static async Task DirectoryCorpus(string builtin, string[] rows, Action<string> net, bool expectOk, bool expectFail, string prefix = "")
     {
         var work = Path.Combine(Golden.RepoRoot, "tmp", $"std-io-{builtin}");
         void Unlock()
@@ -197,7 +214,7 @@ public sealed class StdFsTests
                 return dir;
             }
             string Listing(string dir) => string.Join("\n", Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories).Select(e => Path.GetRelativePath(dir, e).Replace('\\', '/')).Order(StringComparer.Ordinal));
-            string Full(string dir, string row) => row.Length == 0 ? "" : dir + Path.DirectorySeparatorChar + row.Replace("\\0", "\0");
+            string Full(string dir, string row) => row.Length == 0 ? "" : prefix + dir + Path.DirectorySeparatorChar + row.Replace("\\0", "\0");
 
             var netDir = Fixture("net");
             var expected = new List<string>();
@@ -247,6 +264,12 @@ public sealed class StdFsTests
             "link-dir/", "link-dangling", "empty2/", "rodir/emptychild", "rodir", "", " ", "x\\0", "\\0",
         ],
         path => Directory.Delete(path), expectOk: true, expectFail: true);
+
+    /// <summary>Spec 012 T20 review r1: on Windows <c>Io.createDirectory</c> through an extended <c>\\?\</c> full path skips the whole root, as .NET does (the dispatcher runs it on wp1).</summary>
+    [Fact]
+    public Task IoCreateDirectoryExtendedPathMatchesDotNet() => !OperatingSystem.IsWindows() ? Task.CompletedTask : DirectoryCorpus("createDirectory",
+        ["ext\\a\\b\\c", "ext\\a\\b\\c", "empty", "file.txt", "file.txt\\x"],
+        path => Directory.CreateDirectory(path), expectOk: true, expectFail: true, prefix: @"\\?\");
 
     [Fact]
     public void IoCreateDirectoryNeedsFsEffect() => NeedsFs("createDirectory");

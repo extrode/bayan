@@ -3071,11 +3071,15 @@ uint32_t byn_io_create_directory(byn_str path) {
     byn_path_buf f = byn_path_full(path, "Io.createDirectory", NULL, 0);
     while (f.n > 1 && byn_path_sep(f.p[f.n - 1])) f.n--;
 #ifdef _WIN32
+    /* .NET starts after `Path.GetPathRoot`: `C:\`, `\\?\C:\` or `\\server\share\`, so the walk never creates a root. */
+    wchar_t* wroot = byn_wide(f.p, byn_path_root_length(f.p, f.n));
+    size_t root = wcslen(wroot);
+    free(wroot);
     wchar_t* w = byn_wide(f.p, f.n);
     free(f.p);
     size_t wn = wcslen(w);
     uint32_t result = 0;
-    for (size_t i = 3; i <= wn && result == 0; i++) {
+    for (size_t i = root; i <= wn && result == 0; i++) {
         if (i < wn && w[i] != L'\\' && w[i] != L'/') continue;
         wchar_t keep = w[i];
         w[i] = 0;
