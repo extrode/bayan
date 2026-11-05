@@ -394,15 +394,11 @@ public sealed class SelfhostDriverT5Tests
     {
         var cs = Project("cs", "demo", lib: false);
         var self = Project("self", "demo", lib: false);
-        // The driver creates no directory (spec Q1, Q1016): the `out/` tree the C# makes is made for it beforehand.
-        Assert.Equal(0, Cs(cs, "build").Exit);
-        foreach (var d in Directory.EnumerateDirectories(Path.Combine(cs, "out"), "*", SearchOption.AllDirectories))
-            Directory.CreateDirectory(Path.Combine(self, Path.GetRelativePath(cs, d)));
+        // A fresh project, no `out/` on either side: `PrepareOut` makes `out/<mode>/<target>/c/` (CliApp.cs:440).
         foreach (var args in new[] { new[] { "build" }, ["build"], ["build", "-v"], ["build", "-v", "-o", "prog"], ["run"], ["build", "--package", "..", "."] })
         {
             Assert.Null(Differs(string.Join(' ', args), Cs(cs, args), Self(self, args)));
-            foreach (var file in Directory.EnumerateFiles(cs, "*", SearchOption.AllDirectories))
-                Assert.True(File.Exists(Path.Combine(self, Path.GetRelativePath(cs, file))), $"`{string.Join(' ', args)}`: the driver did not write {Path.GetRelativePath(cs, file)}");
+            Assert.Equal(Tree(cs), Tree(self));
         }
         // A rebuild after a source edit: `out/.../c/main.c` exists and differs, so `WriteIfChanged` rewrites it.
         foreach (var side in new[] { cs, self })
@@ -414,6 +410,83 @@ public sealed class SelfhostDriverT5Tests
         var selfLib = Project("self", "kit", lib: true);
         foreach (var args in new[] { new[] { "build" }, ["run"] })
             Assert.Null(Differs(string.Join(' ', args), Cs(csLib, args), Self(selfLib, args)));
+    }
+
+    /// <summary>The paths under `dir`, files and directories, relative to it, in ordinal order.</summary>
+    private static List<string> Tree(string dir) =>
+        [.. Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories).Select(e => Path.GetRelativePath(dir, e)).Order(StringComparer.Ordinal)];
+
+    /// <summary>The first `bayan:` line of `err` up to its first `(`, or null without one: the C#'s text after it names its
+    /// cache and .NET's exception message (Toolchain.cs:178), which the driver has not (Q1018 (j)).</summary>
+    private static string? BayanPrefix(string err) =>
+        err.Split('\n').FirstOrDefault(l => l.StartsWith("bayan:", StringComparison.Ordinal)) is { } line ? line[..(line.IndexOf('(') is var i and >= 0 ? i : line.Length)] : null;
+
+    private static void SameFailure(string label, (int Exit, byte[] Out, string Err) expected, (int Exit, byte[] Out, string Err) actual)
+    {
+        Assert.True(expected.Exit == actual.Exit, $"{label}: exit {expected.Exit} != {actual.Exit}\n{actual.Err}");
+        Assert.Equal(Text(expected.Out), Text(actual.Out));
+        Assert.Equal(BayanPrefix(expected.Err), BayanPrefix(actual.Err));
+    }
+
+    /// <summary>
+    /// The output cannot be written: `-o` into a missing directory (spec Q1) or under a regular file fails with exit 4
+    /// (Toolchain.cs:178) and creates nothing; in a project, `out/safe` as a file kills the C# in `PrepareOut` (CliApp.cs:440,
+    /// an unhandled exception), and a read-only `out/safe/<target>/` fails in `ReplaceFile` (exit 4).
+    /// </summary>
+    [Fact]
+    public void CannotWriteTheOutputAsCliApp()
+    {
+        if (OperatingSystem.IsWindows()) return; // an unhandled exception's exit code and a read-only directory are Unix's here
+        foreach (var args in new[] { new[] { "build", "-o", "nodir/sub/prog", "arithmetic.byn" }, ["build", "-o", "file/prog", "arithmetic.byn"] })
+        {
+            var label = string.Join(' ', args);
+            var cs = Fresh("cs", "unwritable");
+            var self = Fresh("self", "unwritable");
+            foreach (var dir in new[] { cs, self }) File.WriteAllText(Path.Combine(dir, "file"), "a file\n");
+            var expected = Cs(cs, args);
+            Assert.Equal(CliApp.ExitToolchain, expected.Exit);
+            var actual = Self(self, args);
+            SameFailure(label, expected, actual);
+            Assert.Empty(actual.Out);
+            Assert.False(Path.Exists(Path.Combine(self, "nodir")), $"`{label}`: the driver created nodir");
+            Assert.Equal(Entries(cs), Entries(self));
+        }
+        foreach (var args in new[] { new[] { "run" }, ["build"] })
+        {
+            var label = $"{string.Join(' ', args)} with out/safe a file";
+            var cs = Project("cs", "unwritable", lib: false);
+            var self = Project("self", "unwritable", lib: false);
+            foreach (var dir in new[] { cs, self })
+            {
+                Directory.CreateDirectory(Path.Combine(dir, "out"));
+                File.WriteAllText(Path.Combine(dir, "out", "safe"), "a file\n");
+            }
+            SameFailure(label, Cs(cs, args), Self(self, args));
+            Assert.Equal(Tree(cs), Tree(self));
+        }
+        foreach (var args in new[] { new[] { "run" }, ["build"] })
+        {
+            var label = $"{string.Join(' ', args)} with out/safe/<target> read-only";
+            var cs = Project("cs", "read-only", lib: false);
+            var self = Project("self", "read-only", lib: false);
+            Assert.Equal(0, Cs(cs, "build").Exit);
+            Assert.Equal(0, Self(self, "build").Exit);
+            var target = Path.Combine("out", "safe", CliApp.HostTarget);
+            foreach (var dir in new[] { cs, self })
+                File.SetUnixFileMode(Path.Combine(dir, target), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            try
+            {
+                var expected = Cs(cs, args);
+                Assert.Equal(CliApp.ExitToolchain, expected.Exit);
+                SameFailure(label, expected, Self(self, args));
+                Assert.Equal(Tree(cs), Tree(self));
+            }
+            finally
+            {
+                foreach (var dir in new[] { cs, self })
+                    File.SetUnixFileMode(Path.Combine(dir, target), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
     }
 
     /// <summary>No C compiler on an empty `PATH` (and no `BAYAN_CC`): `build` and `run` report it as the C# and exit 4, as plain text under `--diagnostics json` too (CliApp.cs:405-409).</summary>
