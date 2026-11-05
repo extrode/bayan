@@ -12,7 +12,7 @@ namespace Bayan.Tests;
 /// <see cref="StdPathTests"/> corpus. One program per seed runs every function's whole corpus. Where .NET throws, the program panics.</summary>
 public sealed class StdPathLawTests
 {
-    /// <summary>Quick tier (unset): one seed at the size of <c>StdPathTests.EachFunctionMatchesDotNet</c>. <c>BAYAN_LAW_TIER=full</c>: five seeds, 2000 inputs each.</summary>
+    /// <summary>Quick tier (unset): one seed, 300 inputs per corpus and 300 and 150 pairs (<c>StdPathTests.EachFunctionMatchesDotNet</c> uses 400 and 200). <c>BAYAN_LAW_TIER=full</c>: five seeds, 2000 inputs each.</summary>
     private static (int[] Seeds, int Count) Tier =>
         Environment.GetEnvironmentVariable("BAYAN_LAW_TIER") == "full" ? ([14, 15, 16, 17, 18], 2000) : ([14], 300);
 
