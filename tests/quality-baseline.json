@@ -273,8 +273,8 @@
     },
     "selfhost/semantics/types.byn": {
       "mutation": null,
-      "coverage": 0.8626,
-      "branches": 0.8081
+      "coverage": 0.9738,
+      "branches": 0.8721
     }
   }
 }
