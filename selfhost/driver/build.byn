@@ -145,6 +145,7 @@ bool t5HasErrors(in semantics.Ctx c) {
 /// The `*.byn` files of `dir` in ordinal order, without the `*.test.byn` ones (Compilation.cs:155 `ModuleFiles`, `includeTests: false`).
 List<string> t5ModuleFiles(string dir) uses alloc, fs {
     var files = List<string>()
+    // coverage-exempt: Q1018 reached only if the directory goes away between `t5DirectoryExists` and this read (a race no test can stage)
     let names = Io.listDir(dir) catch return files
     for name in names {
         let f = Path.combine(dir, name)
@@ -193,14 +194,30 @@ semantics.Ctx t5Compile(in T5Options o, by in semantics.T26Symbols symbols, to r
                 let bytes = Io.readFile(f) catch List<u8>()
                 sources.append(lexer.SourceText.create(f, from: move bytes))
             }
-            let options = T5CompilationOptions {}
+            let options = T5CompilationOptions { target: o.target }
             var c = semantics.create(from: move sources, at: Path.fullPath(package), by: in options)
             semantics.t26Report(in o26, by: in symbols, for: ref c, to: ref reported)
             ok = !t5HasErrors(in c)
             return c
         }
     }
-    return semantics.t26Compile(in o26, by: in symbols, to: ref reported, through: ref ok)
+    if t5DirectoryExists(o.path) && t1FileExists(manifestPath) {
+        return semantics.t26Compile(in o26, by: in symbols, to: ref reported, through: ref ok)
+    }
+    // The path branch, here rather than in `t26Compile`, so that `--target` reaches `CompilationOptions` (Q1018).
+    let options = T5CompilationOptions { target: o.target }
+    var c = semantics.fromPath(o.path, by: in options, wholeDirectory: !t5IsScript(o.path))
+    semantics.t26Report(in o26, by: in symbols, for: ref c, to: ref reported)
+    ok = !t5HasErrors(in c)
+    return c
+}
+
+/// CliApp.cs:362 `IsScript`: a file whose first two bytes are `#!` (as `semantics/cli.byn` `t26IsScript`, which is private).
+bool t5IsScript(string path) uses alloc, fs {
+    unless t1FileExists(path) { return false }
+    // coverage-exempt: Q1018 reached only if the file changes between `t1FileExists` and this read (a race no test can stage)
+    let bytes = Io.readFile(path) catch return false
+    return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
 }
 
 /// CliApp.cs:409 `EmitC`: the C translation unit for an error-free compilation.
@@ -224,6 +241,7 @@ string? t5PrepareOut(in semantics.Ctx compiled, by string mode, for string targe
 void t5WriteIfChanged(string path, from string text) uses alloc, fs {
     let old = Io.readText(path) catch ""
     if !t1FileExists(path) || old != text {
+        // coverage-exempt: Q1018 the catch is reached only if a file under `out/` cannot be written (the C# throws there)
         Io.writeFile(path, text.bytes) catch return
     }
 }
@@ -330,6 +348,7 @@ string t5RunOutput(string path, for string name) uses alloc, fs {
 /// CliApp.cs:573 `Start`: runs `executable` with `programArgs`; `Io.run` captures its output, written stdout then stderr
 /// after it ends (spec Q5).
 i32 t5Start(string executable, by in List<string> programArgs) uses alloc, console, process {
+    // coverage-exempt: Q1018 the catch is reached only if the just-built executable cannot be started; the C# `Process.Start` throws there
     let r = Io.run(executable, programArgs.span) catch return exitFailure
     Io.stdout.write(r.stdout)
     Io.stderr.write(r.stderr)

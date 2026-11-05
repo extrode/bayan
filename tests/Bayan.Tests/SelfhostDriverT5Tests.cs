@@ -18,7 +18,7 @@ public sealed class SelfhostDriverT5Tests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
 
     private static string Mask(string text) =>
-        Regex.Replace(Regex.Replace(text, @"\d+\.\d\ds|from cache", "masked"), @" · masked", "");
+        Regex.Replace(Regex.Replace(Regex.Replace(text, @"\d+\.\d\ds|from cache", "masked"), @" · masked", ""), @"^(bayan \S+) \(.*\)$", "$1 (masked)", RegexOptions.Multiline);
 
     private static (int Exit, string Out, string Err) InProcess(params string[] args)
     {
@@ -28,9 +28,14 @@ public sealed class SelfhostDriverT5Tests
         return (exit, stdout.ToString().ReplaceLineEndings("\n"), stderr.ToString().ReplaceLineEndings("\n"));
     }
 
-    private static (int Exit, byte[] Out, string Err) Process(string program, string[]? prefix, string cwd, string[] args)
+    private static (int Exit, byte[] Out, string Err) Process(string program, string[]? prefix, string cwd, string[] args, string? path = null)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = cwd };
+        if (path is not null)
+        {
+            psi.Environment["PATH"] = path;
+            psi.Environment.Remove("BAYAN_CC");
+        }
         foreach (var a in prefix ?? []) psi.ArgumentList.Add(a);
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = System.Diagnostics.Process.Start(psi)!;
@@ -179,6 +184,8 @@ public sealed class SelfhostDriverT5Tests
         SameIn("json", "build", "--diagnostics", "json", "arithmetic.byn");
         SameIn("debug", "build", "--mode", "fast", "--target", "host", "arithmetic.byn");
         SameIn("run", "run", "arithmetic.byn");
+        SameIn("run-dir", "run", ".");
+        SameIn("safe", "build", "--mode", "safe", "--verbose", "arithmetic.byn");
     }
 
     private static void SameAsInProcess(params string[] args)
@@ -215,6 +222,25 @@ public sealed class SelfhostDriverT5Tests
         SameAsInProcess("run", "-o", "x", file);
         SameAsInProcess("run", "-v", file);
         SameAsInProcess("build", "--emit-c", "--package", Path.Combine(Golden.RepoRoot, "selfhost"), broken);
+        foreach (var dangling in new[] { "--mode", "--diagnostics", "-o", "--target", "--package" })
+            SameAsInProcess("build", file, dangling);
+        SameAsInProcess("run", "--emit-c", file);
+        SameAsInProcess("run", "--target", "linux-x64", file);
+        SameAsInProcess("build", "--emit-c", "--all", "--diagnostics", "text", "--mode", "debug", file);
+    }
+
+    /// <summary>`Target.os`/`Target.arch` fold to the `--target`'s strings on the path and `--package` branches, and stay the host macros without it.</summary>
+    [Fact]
+    public void FoldsTheTargetAsCliApp()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", "target", "app");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "void main() {\n    print(Target.os)\n    print(Target.arch)\n}\n");
+        var root = Path.GetDirectoryName(dir)!;
+        SameAsInProcess("build", "--emit-c", "--target", "linux-x64", dir);
+        SameAsInProcess("build", "--emit-c", "--target", "windows-x64", "--package", root, dir);
+        SameAsInProcess("build", "--emit-c", "--target", "host", dir);
+        Assert.Contains("BYN_STR(\"linux\", 5)", InProcess("build", "--emit-c", "--target", "linux-x64", dir).Out);
     }
 
     /// <summary>
@@ -245,5 +271,108 @@ public sealed class SelfhostDriverT5Tests
         var arithmetic = Path.Combine(Golden.CasesRoot, "run", "arithmetic.byn");
         foreach (var args in new[] { new[] { "version" }, ["help"], ["build", "--emit-c", arithmetic], ["check", arithmetic], ["build", "--mode", "bogus", arithmetic] })
             Assert.Null(Differs(string.Join(' ', args), Process(SelfhostDriverHarness.Build(), null, dir, args), Process(built, null, dir, args)));
+    }
+
+    /// <summary>
+    /// `--package` and path builds read a directory's module files in ordinal order (CliApp.cs:290), skipping `.test.byn`, other
+    /// extensions and directories; `a.byn` sorts before `a.byn.byn`, its extension. A `#!` file is a script, compiled alone
+    /// (CliApp.cs:362); an empty file is not.
+    /// </summary>
+    [Fact]
+    public void ReadsModuleFilesAndScriptsAsCliApp()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "tmp", "t5", "modules");
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        var dir = Path.Combine(root, "app");
+        Directory.CreateDirectory(Path.Combine(dir, "d.byn"));
+        File.WriteAllText(Path.Combine(dir, "b.byn"), "i32 bee() => 2\n");
+        File.WriteAllText(Path.Combine(dir, "a.byn.byn"), "i32 ayy() => 1\n");
+        File.WriteAllText(Path.Combine(dir, "ab.byn"), "i32 abb() => 3\n");
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "void main() {\n    print($\"{ayy() + bee() + abb()}\")\n}\n");
+        File.WriteAllText(Path.Combine(dir, "c.test.byn"), "test \"never\" {\n}\n");
+        File.WriteAllText(Path.Combine(dir, "notes.txt"), "not code\n");
+        SameAsInProcess("build", "--emit-c", "--package", root, dir);
+        SameAsInProcess("build", "--emit-c", dir);
+        var scripts = Path.Combine(root, "scripts");
+        Directory.CreateDirectory(scripts);
+        File.WriteAllText(Path.Combine(scripts, "s.byn"), "#!/usr/bin/env bayan\nprint(\"hi\")\n");
+        File.WriteAllText(Path.Combine(scripts, "other.byn"), "this does not parse (\n");
+        SameAsInProcess("build", "--emit-c", Path.Combine(scripts, "s.byn"));
+        var empty = Path.Combine(root, "empty");
+        Directory.CreateDirectory(empty);
+        File.WriteAllText(Path.Combine(empty, "e.byn"), "");
+        File.WriteAllText(Path.Combine(empty, "f.byn"), "#");
+        SameAsInProcess("build", "--emit-c", Path.Combine(empty, "e.byn"));
+        SameAsInProcess("build", "--emit-c", Path.Combine(empty, "f.byn"));
+    }
+
+    /// <summary>A project made by the C# `bayan new` under `tmp/t5/<side>/project/`, its directory.</summary>
+    private static string Project(string side, string name, bool lib)
+    {
+        var parent = Path.Combine(Golden.RepoRoot, "tmp", "t5", side, "project");
+        Directory.CreateDirectory(parent);
+        var dir = Path.Combine(parent, name);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        var made = InProcess(lib ? ["new", dir, "--lib", "--vcs", "none"] : ["new", dir, "--vcs", "none"]);
+        Assert.True(made.Exit == 0, made.Err);
+        return dir;
+    }
+
+    /// <summary>`build` and `run` inside a project (`package.byn` in the working directory, no path): `out/<mode>/<target>/`
+    /// (CliApp.cs `PrepareOut`), the `-v` output path relative to the root, a second build, and a library's refusal.</summary>
+    [Fact]
+    public void ProjectsAsCliApp()
+    {
+        var cs = Project("cs", "demo", lib: false);
+        var self = Project("self", "demo", lib: false);
+        // The driver creates no directory (spec Q1, Q1016): the `out/` tree the C# makes is made for it beforehand.
+        Assert.Equal(0, Cs(cs, "build").Exit);
+        foreach (var d in Directory.EnumerateDirectories(Path.Combine(cs, "out"), "*", SearchOption.AllDirectories))
+            Directory.CreateDirectory(Path.Combine(self, Path.GetRelativePath(cs, d)));
+        foreach (var args in new[] { new[] { "build" }, ["build"], ["build", "-v"], ["build", "-v", "-o", "prog"], ["run"], ["build", "--package", "..", "."] })
+        {
+            Assert.Null(Differs(string.Join(' ', args), Cs(cs, args), Self(self, args)));
+            foreach (var file in Directory.EnumerateFiles(cs, "*", SearchOption.AllDirectories))
+                Assert.True(File.Exists(Path.Combine(self, Path.GetRelativePath(cs, file))), $"`{string.Join(' ', args)}`: the driver did not write {Path.GetRelativePath(cs, file)}");
+        }
+        var csLib = Project("cs", "kit", lib: true);
+        var selfLib = Project("self", "kit", lib: true);
+        foreach (var args in new[] { new[] { "build" }, ["run"] })
+            Assert.Null(Differs(string.Join(' ', args), Cs(csLib, args), Self(selfLib, args)));
+    }
+
+    /// <summary>No C compiler on an empty `PATH` (and no `BAYAN_CC`): `build` and `run` report it as the C# and exit 4.</summary>
+    [Fact]
+    public void NoCompilerAsCliApp()
+    {
+        foreach (var args in new[] { new[] { "build", "arithmetic.byn" }, ["run", "arithmetic.byn"] })
+        {
+            var cs = Fresh("cs", "no-cc");
+            var self = Fresh("self", "no-cc");
+            var empty = Path.Combine(Golden.RepoRoot, "tmp", "t5", "empty-path");
+            Directory.CreateDirectory(empty);
+            var expected = Process("dotnet", [typeof(CliApp).Assembly.Location], cs, args, empty);
+            Assert.Equal(CliApp.ExitToolchain, expected.Exit);
+            Assert.Null(Differs(string.Join(' ', args), expected, Process(SelfhostDriverHarness.Build(), null, self, args, empty)));
+        }
+    }
+
+    /// <summary>The dispatch of `run` (main.byn) the T5 commands sit in, under this class's filter: global options, usage,
+    /// the T2 commands, a `#!` script with its arguments, an unknown command and `fmt`.</summary>
+    [Fact]
+    public void DispatchAsCliApp()
+    {
+        var file = Path.Combine(Fresh("self", "dispatch"), "arithmetic.byn");
+        foreach (var args in new[] { [], ["--color", "bad", "help"], ["version"], ["help"], ["lex", file], ["parse", "--ast", file], ["types", file], ["check", file], ["frobnicate"], ["fmt"], new[] { "missing-script.byn" } })
+            SameAsInProcess(args);
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", "script");
+        Directory.CreateDirectory(dir);
+        var script = Path.Combine(dir, "hello.byn");
+        File.WriteAllText(script, "#!/usr/bin/env bayan\nprint(\"hello\")\n");
+        Assert.Null(Differs("script", Cs(dir, script, "a", "b"), Self(dir, script, "a", "b")));
+        var (exit, stdout, stderr) = SelfhostDriverHarness.Run("doctor");
+        Assert.Equal(CliApp.ExitUsage, exit); // no-oracle: Q917 the C# runs `doctor`; the refusal text is R3's (Q4)
+        Assert.Equal("", stdout);
+        Assert.StartsWith("error: `", stderr);
     }
 }
