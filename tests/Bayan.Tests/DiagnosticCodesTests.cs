@@ -146,10 +146,10 @@ public sealed class DiagnosticCodesTests
                     inBlock = !inBlock;
                     bayan = inBlock && line.Length == 3;
                 }
-                else if (inBlock && bayan && line.TrimEnd().EndsWith(';'))
+                else if (inBlock && bayan && System.Text.RegularExpressions.Regex.IsMatch(line, @";\s*(\}|$)"))
                     found.Add($"{code}:{number}");
             }
         }
-        Assert.True(found.Count == 0, "`;` ends a line in a Bayan block: " + string.Join(", ", found));
+        Assert.True(found.Count == 0, "`;` ends a statement in a Bayan block: " + string.Join(", ", found));
     }
 }
