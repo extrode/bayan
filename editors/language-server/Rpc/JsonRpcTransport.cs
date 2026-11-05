@@ -8,12 +8,14 @@ namespace Bayan.LanguageServer.Rpc;
 /// <summary>LSP base protocol: `Content-Length` framed JSON over a byte stream.</summary>
 public sealed class JsonRpcTransport
 {
-    const int MaxMessage = 256 * 1024 * 1024;
+    const int MaxMessage = 64 * 1024 * 1024;
+    const int Chunk = 64 * 1024;
+    const int MaxRetainedBody = 1024 * 1024;
 
     readonly Stream _in;
     readonly Stream _out;
     readonly Lock _writeLock = new();
-    readonly ArrayBufferWriter<byte> _body = new(16 * 1024);
+    ArrayBufferWriter<byte> _body = new(16 * 1024);
     readonly Utf8JsonWriter _writer;
     readonly byte[] _header = new byte[256];
     readonly byte[] _head = new byte[32];
@@ -49,8 +51,20 @@ public sealed class JsonRpcTransport
                     contentLength = len;
             }
             // JsonDocument keeps a reference to the memory it parses, so the array is owned by the document.
-            var buffer = new byte[contentLength];
-            _in.ReadExactly(buffer);
+            // The buffer grows as bytes arrive, so a lying header cannot allocate up front.
+            var buffer = new byte[Math.Min(contentLength, Chunk)];
+            int read = 0;
+            try
+            {
+                while (read < contentLength)
+                {
+                    if (read == buffer.Length) Array.Resize(ref buffer, (int)Math.Min(contentLength, 2L * buffer.Length));
+                    int n = Math.Min(buffer.Length - read, Chunk);
+                    _in.ReadExactly(buffer, read, n);
+                    read += n;
+                }
+            }
+            catch (EndOfStreamException) { return null; } // truncated body: the stream ended mid-message
             try { return JsonDocument.Parse(buffer); }
             catch (JsonException ex) { Console.Error.WriteLine($"bayan-lsp: bad message skipped: {ex.Message}"); }
         }
@@ -90,6 +104,12 @@ public sealed class JsonRpcTransport
             _out.Write(_head, 0, pos);
             _out.Write(_body.WrittenSpan);
             _out.Flush();
+            // A large response would otherwise pin its buffer for the rest of the session.
+            if (_body.WrittenCount > MaxRetainedBody)
+            {
+                _body = new ArrayBufferWriter<byte>(16 * 1024);
+                _writer.Reset(_body);
+            }
         }
     }
 }
