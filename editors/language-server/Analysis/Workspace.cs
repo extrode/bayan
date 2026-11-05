@@ -198,9 +198,18 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
 
     /// <summary>
     /// True when <paramref name="fullPath"/> lies outside every indexed root, or under a skipped
-    /// directory of one. With no root indexed, nothing is excluded.
+    /// directory of one. With no root indexed, nothing is excluded. Links among the directories
+    /// of <paramref name="fullPath"/> are resolved, as they are for roots.
     /// </summary>
     public bool IsExcluded(string fullPath)
+    {
+        var full = Path.GetFullPath(fullPath);
+        var dir = Path.GetDirectoryName(full);
+        return IsExcludedKey(dir is null ? full : Path.Combine(RealPath(dir), Path.GetFileName(full)));
+    }
+
+    /// <summary><see cref="IsExcluded"/> for a path already resolved by <see cref="Key"/>.</summary>
+    bool IsExcludedKey(string fullPath)
     {
         if (_roots.Count == 0) return false;
         var cmp = PathComparer == StringComparer.Ordinal ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -256,10 +265,10 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
     /// <paramref name="full"/> with every symbolic link along it resolved; components that
     /// cannot be inspected are kept as written.
     /// </summary>
-    static string RealPath(string full)
+    static string RealPath(string full, int depth = 0)
     {
         var root = Path.GetPathRoot(full);
-        if (string.IsNullOrEmpty(root)) return full;
+        if (string.IsNullOrEmpty(root) || depth > 40) return full; // 40 links: a cycle
         var cur = root;
         foreach (var part in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -268,7 +277,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
             {
                 var info = new DirectoryInfo(cur);
                 if (info.LinkTarget is not null && info.ResolveLinkTarget(returnFinalTarget: true) is { } target)
-                    cur = Path.TrimEndingDirectorySeparator(target.FullName);
+                    cur = RealPath(Path.TrimEndingDirectorySeparator(target.FullName), depth + 1); // the target may sit under a link
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
@@ -320,7 +329,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         if (!_docs.TryGetValue(key, out var d)) return;
         d.IsOpen = false;
         d.Release();
-        if (LocalPath(uri) is not { } path || !File.Exists(path) || IsExcluded(key) || IsReparsePoint(path)) RemoveKey(key, d);
+        if (LocalPath(uri) is not { } path || !File.Exists(path) || IsExcludedKey(key) || IsReparsePoint(path)) RemoveKey(key, d);
         else LoadFromDisk(path, uri); // a failed read keeps the previous document
     }
 
@@ -345,7 +354,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         var key = Key(uri);
         bool known = _docs.TryGetValue(key, out var existing);
         if (known && existing!.IsOpen) return false;
-        if (!known && (IsExcluded(key) || IsReparsePoint(full))) return false;
+        if (!known && (IsExcludedKey(key) || IsReparsePoint(full))) return false;
         string text;
         try
         {
@@ -386,7 +395,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
     {
         var removed = new List<string>();
         var key = Key(uri);
-        if (LocalPath(uri) is null || IsExcluded(key)) return removed; // nothing is indexed under an excluded path
+        if (LocalPath(uri) is null || IsExcludedKey(key)) return removed; // nothing is indexed under an excluded path
         var prefix = Path.TrimEndingDirectorySeparator(key) + Path.DirectorySeparatorChar;
         var cmp = PathComparer == StringComparer.Ordinal ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         foreach (var (k, d) in _docs.ToList())
@@ -566,7 +575,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         var named = Named(name);
         // Prefer a top-level symbol, then one in this document, then any.
         foreach (var e in named) if (e.Sym.Container is null) return e;
-        foreach (var e in named) if (e.Doc == doc) return e;
+        foreach (var e in named) if (e.Doc == doc || Key(e.Doc.Uri) == Key(doc.Uri)) return e; // doc may be a Full() copy
         return named.Count > 0 ? named[0] : null;
     }
 

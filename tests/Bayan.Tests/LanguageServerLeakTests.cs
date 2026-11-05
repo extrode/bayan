@@ -15,7 +15,8 @@ public sealed class LanguageServerLeakCollection;
 [Collection(nameof(LanguageServerLeakTests))]
 public sealed class LanguageServerLeakTests(ITestOutputHelper output) : IDisposable
 {
-    readonly string _root = Directory.CreateTempSubdirectory("bayan-lsp-leak-").FullName;
+    // Real path (macOS /var is a link to /private/var), the form disk documents report.
+    readonly string _root = new Workspace().Key(Uri(Directory.CreateTempSubdirectory("bayan-lsp-leak-").FullName));
 
     public void Dispose()
     {
@@ -365,6 +366,39 @@ public sealed class LanguageServerLeakTests(ITestOutputHelper output) : IDisposa
             ws.Open(Uri(file), "struct C {}\n", 2);
             Assert.Equal(["C"], ws.Documents.SelectMany(d => d.Symbols).Select(s => s.Name));
             Assert.False(ws.IsExcluded(ws.Key(viaLink)));
+        }
+        finally { Directory.Delete(links, recursive: true); }
+    }
+
+    [Fact]
+    public void ResolvePrefersTheRecomputedCopyOfTheSameDocument()
+    {
+        var a = Touch("a.byn", "\nstruct A {\n  i64 total\n}\n");
+        var b = Touch("b.byn", "\nstruct B {\n  i64 total\n}\n");
+        var ws = new Workspace();
+        ws.IndexFolder(_root);
+        foreach (var f in new[] { a, b })
+        {
+            var full = ws.Get(Uri(f))!.Full();
+            Assert.Equal(Uri(f), ws.Resolve(full, "total", 0)?.Doc.Uri);
+        }
+    }
+
+    [Fact]
+    public void IsExcludedResolvesLinksLikeRoots()
+    {
+        var links = Directory.CreateTempSubdirectory("bayan-lsp-link-").FullName;
+        try
+        {
+            var link = Path.Combine(links, "root");
+            Directory.CreateSymbolicLink(link, _root);
+            var ws = new Workspace();
+            ws.IndexFolder(_root);
+            Assert.False(ws.IsExcluded(Path.Combine(link, "src", "a.byn")));
+            Assert.True(ws.IsExcluded(Path.Combine(link, "tmp", "a.byn")));
+            ws = new Workspace();
+            ws.IndexFolder(link);
+            Assert.False(ws.IsExcluded(Path.Combine(_root, "src", "a.byn")));
         }
         finally { Directory.Delete(links, recursive: true); }
     }
