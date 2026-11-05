@@ -126,4 +126,30 @@ public sealed class DiagnosticCodesTests
         }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
+
+    [Fact]
+    public void NoDocBayanBlockEndsALineWithASemicolon()
+    {
+        var found = new List<string>();
+        foreach (var file in Directory.GetFiles(Path.Combine(Golden.RepoRoot, "docs", "diagnostics"), "*.md"))
+        {
+            var code = Path.GetFileNameWithoutExtension(file);
+            if (code == "BYN1040") continue;
+            var inBlock = false;
+            var bayan = false;
+            var number = 0;
+            foreach (var line in File.ReadAllLines(file))
+            {
+                number++;
+                if (line.StartsWith("```", StringComparison.Ordinal))
+                {
+                    inBlock = !inBlock;
+                    bayan = inBlock && line.Length == 3;
+                }
+                else if (inBlock && bayan && line.TrimEnd().EndsWith(';'))
+                    found.Add($"{code}:{number}");
+            }
+        }
+        Assert.True(found.Count == 0, "`;` ends a line in a Bayan block: " + string.Join(", ", found));
+    }
 }
