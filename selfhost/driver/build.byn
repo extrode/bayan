@@ -132,7 +132,7 @@ string t5Join(in List<string> xs) {
 }
 
 /// The `BuildOptions` `t26Compile` and `t26Report` read.
-T5T26Options t5T26(in T5Options o) => T5T26Options { path: o.path, json: o.json, all: o.all }
+T5T26Options t5T26(in T5Options o) => T5T26Options { path: o.path, json: o.json, all: o.all, target: o.target }
 
 /// `Compilation.Diagnostics.HasErrors`.
 bool t5HasErrors(in semantics.Ctx c) {
@@ -171,6 +171,7 @@ semantics.Ctx t5Compile(in T5Options o, by in semantics.T26Symbols symbols, to r
             }
             var sources = List<lexer.SourceText>()
             for f in files {
+                // coverage-exempt: Q1018 an unreadable module file; the C# `SourceText.FromFile` (CliApp.cs:294) throws there, uncaught
                 let bytes = Io.readFile(f) catch List<u8>()
                 sources.append(lexer.SourceText.create(f, from: move bytes))
             }
@@ -186,18 +187,10 @@ semantics.Ctx t5Compile(in T5Options o, by in semantics.T26Symbols symbols, to r
     }
     // The path branch, here rather than in `t26Compile`, so that `--target` reaches `CompilationOptions` (Q1018).
     let options = T5CompilationOptions { target: o.target }
-    var c = semantics.fromPath(o.path, by: in options, wholeDirectory: !t5IsScript(o.path))
+    var c = semantics.fromPath(o.path, by: in options, wholeDirectory: !t1IsScript(o.path))
     semantics.t26Report(in o26, by: in symbols, for: ref c, to: ref reported)
     ok = !t5HasErrors(in c)
     return c
-}
-
-/// CliApp.cs:362 `IsScript`: a file whose first two bytes are `#!` (as `semantics/cli.byn` `t26IsScript`, which is private).
-bool t5IsScript(string path) uses alloc, fs {
-    unless t1FileExists(path) { return false }
-    // coverage-exempt: Q1018 reached only if the file changes between `t1FileExists` and this read (a race no test can stage)
-    let bytes = Io.readFile(path) catch return false
-    return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
 }
 
 /// CliApp.cs:409 `EmitC`: the C translation unit for an error-free compilation.
@@ -261,7 +254,7 @@ i32 buildCommand(in List<string> kept, by in DCtx d) uses alloc, clock, console,
     let result = cc.compile(t5ScratchDir(output), from: source, to: output, by: o.mode, for: o.target)
     let nativeTime = Io.monotonicNanos() - native
     unless result.succeeded {
-        ccReportToolchain(in result)
+        t5ReportToolchain(result, by: o.json, for: symbols)
         return exitToolchain
     }
     if o.json { return exitOk }
@@ -280,6 +273,32 @@ i32 buildCommand(in List<string> kept, by in DCtx d) uses alloc, clock, console,
 
 /// Where the scratch files of a link to `output` go (spec Q1): the output's directory.
 string t5ScratchDir(string output) uses alloc => Path.directoryName(Path.fullPath(output)) ?? ""
+
+/// CliApp.cs:403 `ReportToolchain`: its `--diagnostics json` branch (:411-415), BYN4001 as one `DiagnosticJson.Render` line;
+/// the plain text is cc.byn `ccReportToolchain`.
+void t5ReportToolchain(NativeBuild result, by bool json, for semantics.T26Symbols symbols) uses alloc, console {
+    if !(json && result.rejected) {
+        ccReportToolchain(result)
+        return
+    }
+    var c = CcCtx {
+        files: List<semantics.SourceFile>(),
+        modules: List<semantics.Mod>(),
+        diagnostics: List<CcDiag>(),
+        bags: List<semantics.DiagBag>(),
+    }
+    // DiagnosticCodes.cs:330 BYN4001, with no file and no span; `CcCtx` and the other aliases are cc.byn's (a qualified struct literal does not parse).
+    c.diagnostics.append(CcDiag {
+        code: "BYN4001",
+        span: CcSpan { start: 0, length: 0 },
+        fixSpan: CcSpan { start: 0, length: 0 },
+        message: "internal compiler error: the C compiler rejected the generated C; this is a bug in the Bayan compiler",
+        help: result.errors,
+        related: List<CcRelated>(),
+    })
+    var reported = List<semantics.T26Reported>()
+    semantics.t26Report(T5T26Options { path: "", json: true }, by: symbols, for: ref c, to: ref reported)
+}
 
 /// CliApp.cs:507 `Phase`: `Messages.PhaseLine` (`  {0,-11}{1}`).
 string t5Phase(string name, by string value) uses alloc {
@@ -311,7 +330,7 @@ i32 runProgram(in List<string> args, by in DCtx d) uses alloc, clock, console, e
     var cc = ZigOrCc {}
     let result = cc.compile(t5ScratchDir(output), from: source, to: output, by: o.mode, for: null)
     unless result.succeeded {
-        ccReportToolchain(in result)
+        t5ReportToolchain(result, by: o.json, for: symbols)
         return exitToolchain
     }
     return t5Start(output, by: in o.programArgs)

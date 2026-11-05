@@ -183,7 +183,8 @@ public sealed class SelfhostDriverT5Tests
         SameIn("named", "build", "-o", "prog", "arithmetic.byn");
         SameIn("verbose", "build", "-v", "arithmetic.byn");
         SameIn("json", "build", "--diagnostics", "json", "arithmetic.byn");
-        SameIn("debug", "build", "--mode", "fast", "--target", "host", "arithmetic.byn");
+        SameIn("debug", "build", "--mode", "debug", "--target", "host", "arithmetic.byn");
+        SameIn("run-package", "run", "--package", ".", "arithmetic.byn");
         SameIn("run", "run", "arithmetic.byn");
         SameIn("run-dir", "run", ".");
         SameIn("safe", "build", "--mode", "safe", "--verbose", "arithmetic.byn");
@@ -242,6 +243,11 @@ public sealed class SelfhostDriverT5Tests
         SameAsInProcess("build", "--emit-c", "--target", "windows-x64", "--package", root, dir);
         SameAsInProcess("build", "--emit-c", "--target", "host", dir);
         Assert.Contains("BYN_STR(\"linux\", 5)", InProcess("build", "--emit-c", "--target", "linux-x64", dir).Out);
+        // The `package.byn` branch passes the target too (CliApp.cs:283-284).
+        var project = Project("self", "target", lib: false);
+        File.WriteAllText(Path.Combine(project, "src", "app", "main.byn"), "void main() {\n    print(Target.os)\n    print(Target.arch)\n}\n");
+        SameAsInProcess("build", "--emit-c", "--target", "windows-x64", project);
+        Assert.Contains("BYN_STR(\"windows\", 7)", InProcess("build", "--emit-c", "--target", "windows-x64", project).Out);
     }
 
     /// <summary>
@@ -363,11 +369,11 @@ public sealed class SelfhostDriverT5Tests
             Assert.Null(Differs(string.Join(' ', args), Cs(csLib, args), Self(selfLib, args)));
     }
 
-    /// <summary>No C compiler on an empty `PATH` (and no `BAYAN_CC`): `build` and `run` report it as the C# and exit 4.</summary>
+    /// <summary>No C compiler on an empty `PATH` (and no `BAYAN_CC`): `build` and `run` report it as the C# and exit 4, as plain text under `--diagnostics json` too (CliApp.cs:405-409).</summary>
     [Fact]
     public void NoCompilerAsCliApp()
     {
-        foreach (var args in new[] { new[] { "build", "arithmetic.byn" }, ["run", "arithmetic.byn"] })
+        foreach (var args in new[] { new[] { "build", "arithmetic.byn" }, ["run", "arithmetic.byn"], ["build", "--diagnostics", "json", "arithmetic.byn"] })
         {
             var cs = Fresh("cs", "no-cc");
             var self = Fresh("self", "no-cc");
@@ -376,6 +382,26 @@ public sealed class SelfhostDriverT5Tests
             var expected = Process("dotnet", [typeof(CliApp).Assembly.Location], cs, args, empty);
             Assert.Equal(CliApp.ExitToolchain, expected.Exit);
             Assert.Null(Differs(string.Join(' ', args), expected, Process(SelfhostDriverHarness.Build(), null, self, args, empty)));
+        }
+    }
+
+    /// <summary>A C compiler that rejects the C (a `cc` on `PATH` that fails): BYN4001 as the C# `ReportToolchain` (CliApp.cs:403-419),
+    /// in text and as `--diagnostics json` (:411-415), for `build` and `run`.</summary>
+    [Fact]
+    public void RejectedCAsCliApp()
+    {
+        if (OperatingSystem.IsWindows()) return; // a `/bin/sh` script stands for the compiler
+        var bin = Path.Combine(Golden.RepoRoot, "tmp", "t5", "rejecting-bin");
+        Directory.CreateDirectory(bin);
+        var fake = Path.Combine(bin, "cc");
+        File.WriteAllText(fake, "#!/bin/sh\necho \"main.c:2:5: error: injected\" >&2\nexit 1\n");
+        File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        foreach (var args in new[] { new[] { "build", "--diagnostics", "json", "arithmetic.byn" }, ["run", "--diagnostics", "json", "arithmetic.byn"], ["build", "arithmetic.byn"] })
+        {
+            var expected = Process("dotnet", [typeof(CliApp).Assembly.Location], Fresh("cs", "rejected"), args, bin);
+            Assert.Equal(CliApp.ExitToolchain, expected.Exit);
+            Assert.Contains("BYN4001", expected.Err);
+            Assert.Null(Differs(string.Join(' ', args), expected, Process(SelfhostDriverHarness.Build(), null, Fresh("self", "rejected"), args, bin)));
         }
     }
 
