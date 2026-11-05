@@ -24,4 +24,4 @@ Everything in R4 and later. In particular: `BY_RESTRICT`, `bayan check`, any CLI
 
 ## Errata for A1
 
-A1's K2 example names the runtime header `bayan_rt.h`. The file in the tree is `bayan-rt.h`. K2's macros and R4.6's `BY_RESTRICT` both go in `bayan-rt.h`.
+A1's K2 example named the runtime header `bayan_rt.h` (fixed in place). The file in the tree is `bayan-rt.h`. K2's macros and R4.6's `BY_RESTRICT` both go in `bayan-rt.h`.

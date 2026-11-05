@@ -23,7 +23,7 @@ Date: 2026-11-05. Append to the round-4 draft as §10 (appended: [`docs/bayan-de
 
 **(a) Decision**
 
-Non-public functions may omit `fails`; the compiler infers the set from the body. This is the rule SPEC §13 already applies to `uses` (public declares, private infers), extended to `fails`.
+Non-public functions may omit `fails`; the compiler infers the set from the body. This is the rule SPEC §14 already applies to `uses` (public declares, private infers), extended to `fails`.
 
 These always declare:
 - public functions
@@ -62,7 +62,7 @@ public Order parseOrder(string text) uses alloc fails ParseError {
 
 **(b) Spec and style**
 
-- SPEC: the `fails` section and §13 effects cite one shared rule, "public declares, private infers".
+- SPEC: the `fails` section (§8) and §14 effects cite one shared rule, "public declares, private infers".
 - SPEC §19.2 `package.byn` schema gains `signatures`.
 - The key is **not** under `style`, because SPEC §21.5 says style is never compiler-enforced and this is. Hover and `bayan show` display inferred clauses.
 - No dialect results: code written under `.declared` compiles unchanged under `.inferred`, and turning `.declared` on is one fix-it pass.
@@ -141,7 +141,7 @@ extend JsonPoint : IJsonEncodable {
 
 **(b) Spec and grammar**
 
-- SPEC §11 interfaces: a coherence subsection with the four-package example above.
+- SPEC §3.15 interfaces: a coherence subsection with the four-package example above.
 - GRAMMAR keyword list: the final spelling of `extend`.
 - SPEC §21.5: no input form.
 
@@ -299,7 +299,7 @@ Docs only. The syntax is designed with derivations later (parking lot).
 
 **(b) Spec**
 
-SPEC: the list in round-3 J6 gains `@unformatted`.
+SPEC §4.4: the purpose-clause list (round-3 J6) gains `@unformatted`.
 
 **(c) Diagnostics**
 
