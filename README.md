@@ -27,7 +27,7 @@ target that every build replaces:
 ```sh
 scripts/dist.sh                                # this host: dist/macos-arm64/0.2.0-dev+<commit>/bayan
 scripts/dist.sh --rid osx-x64                  # another arch of the same OS
-scripts/dist.sh --from <publish-dir> --rid win-x64   # import a binary published on another OS
+scripts/dist.sh --from <publish-dir> --rid win-x64 --commit <sha>   # import a binary published on another OS
 dist/macos-arm64/latest/bayan --version
 ```
 
