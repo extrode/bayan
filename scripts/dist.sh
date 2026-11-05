@@ -6,15 +6,18 @@
 #   dist/<target>/latest/                 a copy of the most recent build for that target, replaced on every build
 # Targets use the release names (scripts/release/package.sh): osx-arm64 -> macos-arm64, win-x64 -> windows-x64.
 # <version> is Toolchain.CompilerVersion; a prerelease (0.2.0-dev) gets +<12-hex commit>, and a tree with
-# uncommitted changes gets .dirty, so every dev build has its own directory and a release keeps its plain number.
+# any change not yet committed, untracked files included (the binary embeds docs/diagnostics too), gets .dirty:
+# each commit has its own directory, a release keeps its plain number, and .dirty builds of one commit replace each other.
 # NativeAOT does not cross-compile between operating systems: run this on each OS (mb1, wlt1, wp1), or publish
 # elsewhere and import the binary with --from <dir> --rid <rid> (its label is this checkout's unless --label is given;
 # its BUILD-INFO commit is "unknown" unless --commit names the commit it was built from).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+lock=""
+trap '[ -z "$lock" ] || rmdir "$lock" 2>/dev/null' EXIT
 die() { echo "dist: $*" >&2; exit 1; }
-usage() { sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 host_rid() {
   local arch
@@ -41,7 +44,7 @@ label() {
   local v sha dirty=""
   v="$(sed -nE 's/.*const string CompilerVersion = "([^"]+)";.*/\1/p' "$root/src/Bayan.Backend.C/Toolchain.cs")"
   [ -n "$v" ] || die "no CompilerVersion in src/Bayan.Backend.C/Toolchain.cs"
-  [ -z "$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)" ] || dirty=.dirty
+  [ -z "$(git -C "$root" status --porcelain 2>/dev/null)" ] || dirty=.dirty
   case "$v" in
     *-*) sha="$(git -C "$root" rev-parse --short=12 HEAD 2>/dev/null)" || die "a prerelease label needs a git checkout"
          echo "$v+$sha$dirty" ;;
@@ -68,8 +71,9 @@ if [ ${#rids[@]} -eq 0 ]; then
   rids=("$r")
 fi
 [ -z "$from" ] || [ ${#rids[@]} -eq 1 ] || die "--from takes exactly one --rid"
+[ -n "$dist" ] || die "--dist needs a directory"
 [ -n "$lbl" ] || lbl="$(label)"
-case "$lbl" in ''|*/*|*\\*|.|..|latest) die "bad version label '$lbl'" ;; esac
+case "$lbl" in ''|.*|*/*|*\\*|*[[:space:]]*|latest) die "bad version label '$lbl'" ;; esac
 # An imported binary was built elsewhere: this checkout's HEAD says nothing about it unless --commit names it.
 if [ -z "$commit" ]; then
   if [ -n "$from" ]; then commit=unknown; else commit="$(git -C "$root" rev-parse HEAD 2>/dev/null || echo unknown)"; fi
@@ -78,6 +82,10 @@ fi
 for rid in "${rids[@]}"; do
   t="$(target "$rid")" || die "unknown rid $rid"
   tgt="${t% *}" exe="${t#* }"
+  # One run per target at a time, taken before publishing: two runs would share tmp/dist-publish/<rid> and obj/.
+  mkdir -p "$dist/$tgt"
+  lock="$dist/$tgt/.lock"
+  mkdir "$lock" 2>/dev/null || { lock=""; die "another dist run holds $dist/$tgt/.lock (remove it if no run is going)"; }
   if [ -n "$from" ]; then
     pub="$from"
   else
@@ -97,11 +105,19 @@ for rid in "${rids[@]}"; do
   printf 'version %s\ntarget %s\nrid %s\ncommit %s\nbuilt %s\nhost %s\nsource %s\n' \
     "$lbl" "$tgt" "$rid" "$commit" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(uname -n)" "${from:-dotnet publish}" > "$dir/BUILD-INFO"
 
-  # latest: build a fresh copy beside it, then swap, so a failed copy never leaves latest half-written.
-  next="$dist/$tgt/.latest-next"
-  rm -rf "$next"
+  # latest: copy beside it, move the old one aside, move the copy in. A failed step leaves the old latest in place
+  # (Windows refuses to move a folder holding a running bayan.exe).
+  latest="$dist/$tgt/latest" next="$dist/$tgt/.latest-next" old="$dist/$tgt/.latest-old"
+  rm -rf "$next" "$old" 2>/dev/null || die "cannot clear $old or $next (is a bayan from it running?); $dir is written, latest is not updated"
   cp -R "$dir" "$next"
-  rm -rf "$dist/$tgt/latest"
-  mv "$next" "$dist/$tgt/latest"
+  if [ -e "$latest" ] && ! mv "$latest" "$old"; then
+    rm -rf "$next"; die "cannot replace $latest (is its bayan running?); it is unchanged"
+  fi
+  if ! mv "$next" "$latest"; then
+    if [ -e "$old" ] && ! mv "$old" "$latest"; then die "cannot move the new build into $latest, nor the old one back from $old"; fi
+    die "cannot move the new build into $latest; the old one is back"
+  fi
+  rm -rf "$old" || echo "dist: could not remove $old" >&2
+  rmdir "$lock"; lock=""
   echo "$dir/$exe"
 done

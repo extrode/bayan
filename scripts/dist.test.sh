@@ -15,6 +15,7 @@ while [ $# -gt 0 ]; do case "$1" in -r) rid=$2; shift 2 ;; -o) out=$2; shift 2 ;
 [ "${FAKE_FAIL:-}" = 1 ] && exit 1
 mkdir -p "$out"; exe=bayan; case "$rid" in win-*) exe=bayan.exe ;; esac
 echo "$rid ${FAKE_BUILD:-1}" > "$out/$exe"
+touch "${FAKE_MARK:-/dev/null}"
 FAKE
 chmod +x "$t/bin/dotnet"
 run() { PATH="$t/bin:$PATH" bash "$root/scripts/dist.sh" --dist "$d" "$@"; }
@@ -61,4 +62,40 @@ run --bogus >/dev/null 2>&1; check "unknown argument refused" "$?" 1
 
 lbl=$(FAKE_BUILD=4 run 2>/dev/null); check "host build exits 0" "$?" 0
 check "default label is CompilerVersion(+commit)(.dirty)" "$(echo "$lbl" | grep -cE '/[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+\+[0-9a-f]{12})?(\.dirty)?/bayan(\.exe)?$')" 1
+prev="$(cat "$d/macos-arm64/latest/bayan")" prevv="$(grep '^version ' "$d/macos-arm64/latest/BUILD-INFO")"
+mkdir "$d/macos-arm64/.lock"
+FAKE_MARK="$t/published" FAKE_BUILD=5 run --rid osx-arm64 --label 3.0.0 >/dev/null 2>&1; check "held lock exits 1" "$?" 1
+check "held lock refuses before publishing" "$([ -e "$t/published" ] && echo y || echo n)" n
+check "held lock leaves latest" "$(cat "$d/macos-arm64/latest/bayan")" "$prev"
+check "held lock makes no version dir" "$([ -e "$d/macos-arm64/3.0.0" ] && echo y || echo n)" n
+rmdir "$d/macos-arm64/.lock"
+
+# a mv that cannot move latest aside, as Windows refuses for a folder holding a running bayan.exe
+mkdir -p "$t/nomv"
+printf '#!/usr/bin/env bash\ncase "$1" in */latest) exit 1 ;; esac\nexec /bin/mv "$@"\n' > "$t/nomv/mv"; chmod +x "$t/nomv/mv"
+PATH="$t/nomv:$PATH" FAKE_BUILD=6 run --rid osx-arm64 --label 3.1.0 >/dev/null 2>&1; check "latest in use exits 1" "$?" 1
+check "latest in use is unchanged" "$(cat "$d/macos-arm64/latest/bayan")" "$prev"
+check "latest in use keeps its BUILD-INFO" "$(grep '^version ' "$d/macos-arm64/latest/BUILD-INFO")" "$prevv"
+check "latest in use leaves no staging or lock" "$(ls -A "$d/macos-arm64" | grep -c '^\.')" 0
+
+mkdir -p "$d/macos-arm64/.latest-old/sub"; touch "$d/macos-arm64/.latest-old/sub/f"; chmod 500 "$d/macos-arm64/.latest-old/sub"
+err=$(FAKE_BUILD=7 run --rid osx-arm64 --label 3.2.0 2>&1); check "uncleanable .latest-old exits 1" "$?" 1
+check "uncleanable .latest-old says why" "$(echo "$err" | grep -c '^dist: cannot clear')" 1
+chmod 700 "$d/macos-arm64/.latest-old/sub"
+check "--help ends with the --commit line" "$(bash "$root/scripts/dist.sh" --help | tail -1 | grep -c -- --commit)" 1
+
+err=$(run --rid osx-arm64 --label .latest-next 2>&1); check "label starting with . refused" "$err" "dist: bad version label '.latest-next'"
+run --rid osx-arm64 --label "1.0 x" >/dev/null 2>&1; check "label with a space refused" "$?" 1
+err=$(PATH="$t/bin:$PATH" bash "$root/scripts/dist.sh" --dist "" --rid osx-arm64 --label 1.0.0 2>&1); check "empty --dist refused" "$err" "dist: --dist needs a directory"
+
+# .dirty counts untracked files: a scratch repo holding just the script and Toolchain.cs
+g="$t/repo"; mkdir -p "$g/scripts" "$g/src/Bayan.Backend.C"
+cp "$root/scripts/dist.sh" "$g/scripts/"; cp "$root/src/Bayan.Backend.C/Toolchain.cs" "$g/src/Bayan.Backend.C/"
+git -C "$g" init -q && git -C "$g" add -A && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git -C "$g" -c core.hooksPath=/dev/null commit -qm "test: fixture"
+check "scratch repo committed" "$(git -C "$g" rev-list --count HEAD 2>/dev/null)" 1
+grun() { PATH="$t/bin:$PATH" bash "$g/scripts/dist.sh" --dist "$t/gdist" --rid osx-arm64 2>/dev/null; }
+check "clean scratch repo has no .dirty" "$(grun | grep -c '\.dirty/')" 0
+touch "$g/notes.txt"
+check "untracked file outside src/ is dirty" "$(grun | grep -c '\.dirty/')" 1
+
 exit $fail
