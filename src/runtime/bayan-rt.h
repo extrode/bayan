@@ -34,6 +34,28 @@ typedef struct byn_str {
 
 #define BYN_STR(lit, n) ((byn_str){(const uint8_t*)(lit), (n)})
 
+/* `Target.os` / `Target.arch` of a build with no `--target`: the C compiler's own target, resolved by the preprocessor. */
+#if defined(_WIN32)
+#define BYN_HOST_OS BYN_STR("windows", 7)
+#elif defined(__APPLE__)
+#define BYN_HOST_OS BYN_STR("macos", 5)
+#elif defined(__linux__)
+#define BYN_HOST_OS BYN_STR("linux", 5)
+#elif defined(__wasm32__)
+#define BYN_HOST_OS BYN_STR("wasi", 4)
+#else
+#define BYN_HOST_OS BYN_STR("", 0)
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define BYN_HOST_ARCH BYN_STR("arm64", 5)
+#elif defined(__x86_64__) || defined(_M_X64)
+#define BYN_HOST_ARCH BYN_STR("x64", 3)
+#elif defined(__wasm32__)
+#define BYN_HOST_ARCH BYN_STR("wasm32", 6)
+#else
+#define BYN_HOST_ARCH BYN_STR("", 0)
+#endif
+
 /* ── Panics ──────────────────────────────────────────────────────────────── */
 
 BYN_NORETURN void byn_panic(const char* msg, const char* file, int line);

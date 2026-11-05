@@ -29,6 +29,9 @@ public abstract record BoundExpr(Node Syntax, TypeSymbol Type) : BoundNode(Synta
 
 public sealed record BoundLiteral(Node Syntax, TypeSymbol Type, ConstantValue Value) : BoundExpr(Syntax, Type);
 
+/// <summary><c>Target.os</c> (or <c>Target.arch</c>) of a build with no <c>--target</c>: not a constant, the C preprocessor resolves it so the emitted C is host-neutral.</summary>
+public sealed record BoundHostTarget(Node Syntax, bool IsOs) : BoundExpr(Syntax, PrimitiveType.String);
+
 /// <summary>A string literal where a <c>Symbol</c> is expected: an entry of the program's literal table, fixed at compile time (spec 008 R2).</summary>
 public sealed record BoundSymbolLiteral(Node Syntax, string Text) : BoundExpr(Syntax, BuiltinType.Symbol);
 

@@ -714,7 +714,8 @@ internal sealed partial class Binder
             {
                 if (name is "os" or "arch")
                 {
-                    var (os, arch) = HostTarget.Split(_c.Options.Target is { } named ? named : HostTarget.Detect());
+                    if (_c.Options.Target is null) return new BoundHostTarget(m, name == "os");
+                    var (os, arch) = HostTarget.Split(_c.Options.Target);
                     var text = new ConstantValue(name == "os" ? os : arch);
                     return new BoundLiteral(m, PrimitiveType.String, text) { Constant = text };
                 }

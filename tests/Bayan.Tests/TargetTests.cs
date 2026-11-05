@@ -63,15 +63,16 @@ public sealed class TargetTests
     }
 
     [Fact]
-    public void HostAndAbsentTargetUseTheHost()
+    public void WithoutATargetTheEmittedCIsHostNeutral()
     {
         var path = Write("default", Program);
         var (_, plain, _) = Cli("build", "--emit-c", path);
         var (_, host, _) = Cli("build", "--emit-c", "--target", "host", path);
         Assert.Equal(plain, host);
-        var (os, arch) = HostTarget.Split(Targets.Host);
-        Assert.Contains($"\"{os}\"", plain);
-        Assert.Contains($"\"{arch}\"", plain);
+        Assert.Contains("BYN_HOST_OS", plain);
+        Assert.Contains("BYN_HOST_ARCH", plain);
+        foreach (var name in new[] { "windows", "macos", "linux", "wasi", "x64", "arm64", "wasm32" })
+            Assert.DoesNotContain($"\"{name}\"", plain);
     }
 
     [Fact]
