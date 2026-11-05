@@ -388,7 +388,7 @@ public sealed class SelfhostDriverT3Tests
     [Fact]
     public void TheHostNameIsACrossBuildWhileTargetHostIsAStub()
     {
-        if (Targets.Host is not { } host) return;
+        if (Targets.Host is not { } host) { Assert.Fail("this machine has no Bayan target, so the host-name case cannot run"); return; }
         var bin = Bin("bin-host-name", Recording, "cc");
         var scratch = Fresh("host-name");
         var cs = Start(Cli, bin, ["build", Hello, "-o", Path.Combine(scratch, "cs-out"), "--target", host]);
