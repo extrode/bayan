@@ -34,16 +34,23 @@ public sealed class SelfhostDriverT3Tests
                 Io.stdout.write($"{ccFindOnPath(args[2], for: args[1]) ?? "none"}\n")
                 return 0
             }
+            if args[0] == "arguments" {
+                // No target (null) and `cc` alone: what `compile` would pass for the host.
+                var compiler = List<string>()
+                compiler.append("cc")
+                for a in ccArguments(in compiler, for: args[1], to: args[2], by: args[3], through: null) { Io.stdout.write($"{a}\n") }
+                return 0
+            }
             if args[0] == "refusal" {
                 var compiler = List<string>()
                 for i in 2..args.length { compiler.append(args[i]) }
-                Io.stdout.write($"{ccRefusal(in compiler, for: args[1])}\n")
+                // `-` is no target at all (null): the host has none and `--target` was not given.
+                Io.stdout.write($"{ccRefusal(in compiler, for: args[1] == "-" ? null : args[1])}\n")
                 return 0
             }
             var cc = ZigOrCc {}
-            // `target ?? Targets.Host` of Toolchain.Build: an empty argument is no `--target`.
-            let target = args[5] == "" ? (targetHost() ?? "") : args[5]
-            let r = cc.compile(args[1], from: args[2], to: args[3], by: args[4], for: target)
+            // An empty argument is no `--target`: null, which `compile` resolves to the host as `target ?? Targets.Host` of Toolchain.Build.
+            let r = cc.compile(args[1], from: args[2], to: args[3], by: args[4], for: args[5] == "" ? null : args[5])
             if r.succeeded { return 0 }
             ccReportToolchain(in r)
             return 4
@@ -88,7 +95,10 @@ public sealed class SelfhostDriverT3Tests
         return path!;
     }
 
-    private static string Cli => Path.Combine(Golden.RepoRoot, "src", "Bayan.Cli", "bin", "Debug", "net10.0", "bayan");
+    private static string Cli => Path.Combine(Golden.RepoRoot, "src", "Bayan.Cli", "bin", "Debug", "net10.0", OperatingSystem.IsWindows() ? "bayan.exe" : "bayan");
+
+    /// <summary>The file name <c>FindOnPath</c> finds for <paramref name="name"/> on this OS (Toolchain.cs:153: <c>.exe</c> first on Windows).</summary>
+    private static string Tool(string name) => OperatingSystem.IsWindows() ? name + ".exe" : name;
 
     private static string Hello => Path.Combine(Golden.RepoRoot, "examples", "hello", "main.byn");
 
@@ -100,12 +110,69 @@ public sealed class SelfhostDriverT3Tests
         return dir;
     }
 
+    /// <summary>
+    /// A fake compiler named <paramref name="path"/>: a <c>/bin/sh</c> script on Unix; on Windows (no <c>/bin/sh</c>, and <c>Io.run</c>
+    /// refuses <c>.cmd</c>/<c>.bat</c>) a copy of <see cref="FakeExe"/> as <c>path.exe</c>, with the behaviour of <paramref name="body"/> in a <c>.mode</c> file.
+    /// </summary>
     private static void Script(string path, string body)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            File.Copy(FakeExe.Value, path + ".exe", overwrite: true);
+            File.WriteAllText(path + ".mode", body == Recording ? "record" : body == Rejecting ? "reject" : body == RejectingBare ? "bare" : "nothing");
+            return;
+        }
         File.WriteAllText(path, "#!/bin/sh\n" + body);
-        // The fake compilers are shell scripts: unix only.
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
+
+    /// <summary>The fake compiler as C, for Windows: the same four behaviours as the scripts, chosen by <c>&lt;name&gt;.mode</c> beside it.</summary>
+    private const string FakeSource = """
+        #include <stdio.h>
+        #include <string.h>
+        int main(int argc, char **argv) {
+            char dir[1024], name[256], file[1400], mode[32] = "nothing";
+            const char *self = argv[0], *slash = strrchr(self, '\\'), *fwd = strrchr(self, '/');
+            if (fwd > slash) slash = fwd;
+            snprintf(dir, sizeof dir, "%.*s", slash ? (int)(slash - self) : 1, slash ? self : ".");
+            snprintf(name, sizeof name, "%s", slash ? slash + 1 : self);
+            size_t n = strlen(name);
+            if (n > 4 && strcmp(name + n - 4, ".exe") == 0) name[n - 4] = 0;
+            snprintf(file, sizeof file, "%s/%s.mode", dir, name);
+            FILE *m = fopen(file, "r");
+            if (m) { if (fscanf(m, "%31s", mode) != 1) strcpy(mode, "nothing"); fclose(m); }
+            if (strcmp(mode, "reject") == 0) { fputs("main.c:2:5: error: injected\n", stderr); puts("stdout note"); return 1; }
+            if (strcmp(mode, "bare") == 0) { fputs("no newline", stderr); return 1; }
+            if (strcmp(mode, "record") != 0) return 0;
+            snprintf(file, sizeof file, "%s/argv", dir);
+            FILE *f = fopen(file, "w");
+            if (!f) return 1;
+            fprintf(f, "%s\n", name);
+            for (int i = 1; i < argc; i++) fprintf(f, "%s\n", argv[i]);
+            fclose(f);
+            for (int i = 2; i < argc; i++)
+                if (strcmp(argv[i - 1], "-o") == 0) { FILE *o = fopen(argv[i], "w"); if (o) fclose(o); }
+            return 0;
+        }
+        """;
+
+    private static readonly Lazy<string> FakeExe = new(() =>
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t3", "fake-cc");
+        Directory.CreateDirectory(dir);
+        var source = Path.Combine(dir, "fake.c");
+        var exe = Path.Combine(dir, "fake.exe");
+        File.WriteAllText(source, FakeSource);
+        var compiler = Toolchain.FindCompiler() ?? throw new InvalidOperationException("no C compiler to build the fake compiler");
+        var psi = new ProcessStartInfo(compiler[0]) { RedirectStandardError = true, UseShellExecute = false };
+        foreach (var a in compiler[1..]) psi.ArgumentList.Add(a);
+        foreach (var a in new[] { source, "-o", exe }) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi)!;
+        var err = p.StandardError.ReadToEnd();
+        p.WaitForExit();
+        Assert.True(p.ExitCode == 0 && File.Exists(exe), $"the fake compiler did not build:\n{err}");
+        return exe;
+    });
 
     /// <summary>A fake compiler: records its own name and its argv beside itself and creates the file after <c>-o</c>.</summary>
     private const string Recording = """
@@ -258,7 +325,7 @@ public sealed class SelfhostDriverT3Tests
     {
         var zig = Bin("bin-unknown", Recording, "zig");
         var saved = Environment.GetEnvironmentVariable("BAYAN_CC");
-        Environment.SetEnvironmentVariable("BAYAN_CC", Path.Combine(zig, "zig") + " cc");
+        Environment.SetEnvironmentVariable("BAYAN_CC", Path.Combine(zig, Tool("zig")) + " cc");
         NativeBuild expected;
         try { expected = Toolchain.Build("int main(void){return 0;}", BuildMode.Safe, null, "not-a-target"); }
         finally { Environment.SetEnvironmentVariable("BAYAN_CC", saved); }
@@ -282,6 +349,26 @@ public sealed class SelfhostDriverT3Tests
         Assert.Equal(r.Cs.Err, err);
     }
 
+    /// <summary>
+    /// No target (null) for <c>ccArguments</c>: the C# never has it on a host with a target (<c>Build</c> resolves it), where it is the
+    /// host's own argument list, so the oracle is <c>bayan build</c> without <c>--target</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("debug")]
+    [InlineData("safe")]
+    public void ArgumentsWithoutATargetAreTheHostsAsToolchain(string mode)
+    {
+        var bin = Bin("bin-null-args", Recording, "cc");
+        var scratch = Fresh($"null-args-{mode}");
+        var argv = Path.Combine(bin, "argv");
+        File.Delete(argv);
+        Assert.Equal(0, Start(Cli, bin, ["build", Hello, "-o", Path.Combine(scratch, "cs-out"), "--mode", mode], scratch).Exit);
+        var expected = Masked(File.ReadAllText(argv), scratch).Split('\n')[1..];
+        var (exit, stdout, _) = Start(Probe(), bin, ["arguments", scratch, "program", mode], scratch);
+        Assert.Equal(0, exit);
+        SelfhostEmitterHarness.AssertSame($"arguments of {mode} without a target", string.Join("\n", expected), Masked(stdout, scratch));
+    }
+
     [Fact]
     public void ACompilerFailureIsReportedAsCliApp()
     {
@@ -299,11 +386,11 @@ public sealed class SelfhostDriverT3Tests
     public void ACompilerThatCannotBeStartedIsReportedAsToolchain()
     {
         var plain = Fresh("bin-no-exec");
-        File.WriteAllText(Path.Combine(plain, "cc"), "#!/bin/sh\nexit 0\n");
+        File.WriteAllText(Path.Combine(plain, Tool("cc")), "#!/bin/sh\nexit 0\n");
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Path.Combine(plain, "cc"), UnixFileMode.UserRead | UnixFileMode.UserWrite);
         var cs = Start(Cli, plain, ["build", Hello, "-o", Path.Combine(Fresh("no-exec"), "cs-out")]);
         Assert.Equal(4, cs.Exit);
-        Assert.StartsWith($"bayan: cannot run the C compiler `{Path.Combine(plain, "cc")}`: ", cs.Err);
+        Assert.StartsWith($"bayan: cannot run the C compiler `{Path.Combine(plain, Tool("cc"))}`: ", cs.Err);
         var (exit, _, err) = Start(Probe(), plain, ["compile", Fresh("no-exec-byn"), "int main(void){return 0;}", "program", "safe", ""]);
         Assert.Equal(4, exit);
         Assert.Equal(cs.Err[..(cs.Err.IndexOf("`:", StringComparison.Ordinal) + 1)] + "\n", err);
@@ -376,6 +463,29 @@ public sealed class SelfhostDriverT3Tests
         SelfhostEmitterHarness.AssertSame($"refusal for {target} with {compiler}", expected.Errors + "\n", stdout);
     }
 
+    /// <summary>
+    /// No target at all (null) on a host that has one: <c>Build</c> never passes it (<c>target ?? Targets.Host</c>), so the oracle is the
+    /// private <c>BuildCached</c>, where it is a cross build (Toolchain.cs:184) of an unknown target (:190), whatever the compiler.
+    /// </summary>
+    [Theory]
+    [InlineData("zig cc")]
+    [InlineData("cc")]
+    public void NoTargetIsAnUnknownCrossBuildAsToolchain(string compiler)
+    {
+        if (Targets.Host is null) { Assert.Fail("this machine has no Bayan target, so a null target is not a cross build here"); return; }
+        var buildCached = typeof(Toolchain).GetMethod("BuildCached", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(buildCached);
+        var saved = Environment.GetEnvironmentVariable("BAYAN_CC");
+        Environment.SetEnvironmentVariable("BAYAN_CC", compiler);
+        NativeBuild expected;
+        try { expected = (NativeBuild)buildCached!.Invoke(null, ["int main(void){return 0;}", BuildMode.Safe, null, null, false])!; }
+        finally { Environment.SetEnvironmentVariable("BAYAN_CC", saved); }
+        Assert.StartsWith("unknown target ``; targets are linux-x64, ", expected.Errors);
+        var (exit, stdout, _) = Start(Probe(), Fresh("bin-null-target"), ["refusal", "-", .. compiler.Split(' ')]);
+        Assert.Equal(0, exit);
+        SelfhostEmitterHarness.AssertSame($"refusal for no target with {compiler}", expected.Errors + "\n", stdout);
+    }
+
     /// <summary>A path to <c>zig.exe</c> is zig to the C# (Toolchain.cs:192), so there is no refusal and the build goes on to fail at the start.</summary>
     [Fact]
     public void ZigIsNamedWithoutItsExtensionAsToolchain()
@@ -434,7 +544,7 @@ public sealed class SelfhostDriverT3Tests
     {
         var root = Fresh("bin-path");
         var first = Path.Combine(root, "first");
-        Directory.CreateDirectory(Path.Combine(first, "cc"));
+        Directory.CreateDirectory(Path.Combine(first, Tool("cc")));
         var second = Path.Combine(root, "second");
         Directory.CreateDirectory(second);
         Script(Path.Combine(second, "cc"), Recording);
@@ -451,7 +561,7 @@ public sealed class SelfhostDriverT3Tests
         Assert.Equal(0, byn.Exit);
         Assert.StartsWith("cc\n", File.ReadAllText(Path.Combine(second, "argv")));
         var found = Start(Probe(), path, ["findpath", OperatingSystem.IsWindows() ? "windows" : "linux", "cc"]);
-        Assert.Equal(Path.Combine(second, "cc") + "\n", found.Out);
+        Assert.Equal(Path.Combine(second, Tool("cc")) + "\n", found.Out);
     }
 
     /// <summary>

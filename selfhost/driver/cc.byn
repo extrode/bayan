@@ -1,6 +1,6 @@
 // The C compiler interface of the self-hosted driver (spec 012 T3, plan D3, R5). Ports `Toolchain.cs` :83 `FindCompiler`,
-// :151 `FindOnPath`, :186-204 (the errors, flags and mode flags of `BuildCached`) and :276 `Compile`, `Targets.cs` :1-48 and
-// `CliApp.cs` :390 `ReportToolchain`. The scratch files go into `dir` and are named by absolute path (spec Q1, no cache).
+// :151 `FindOnPath`, :186-204 (the errors, flags and mode flags of `BuildCached`) and :276 `Compile`, `Targets.cs` (`All`, `IsKnown`,
+// `Triple`, `Host`, `ExecutableName`, :20-30), `HostTarget.cs` `Detect` and `CliApp.cs` :390 `ReportToolchain`. The scratch files go into `dir` and are named by absolute path (spec Q1, no cache).
 
 import lexer
 import semantics
@@ -17,7 +17,7 @@ public struct NativeBuild {
     public bool rejected = false
 }
 
-/// Targets.cs:22 `All`'s names, in the order of `Table` (:11).
+/// Targets.cs `All` (:20): the names of `Table` (:9), in its order.
 List<string> targetNames() {
     var names = List<string>()
     names.append("linux-x64")
@@ -30,12 +30,12 @@ List<string> targetNames() {
     return names
 }
 
-/// Targets.cs:24 `IsKnown`.
+/// Targets.cs `IsKnown` (:22).
 bool targetIsKnown(string name) {
     return targetTriple(name) is not null
 }
 
-/// Targets.cs:26 `Triple`: null for a name that is not in the table.
+/// Targets.cs `Triple` (:24): null for a name that is not in the table.
 string? targetTriple(string name) {
     if name == "linux-x64" { return "x86_64-linux-musl" }
     if name == "linux-arm64" { return "aarch64-linux-musl" }
@@ -47,7 +47,7 @@ string? targetTriple(string name) {
     return null
 }
 
-/// Targets.cs:29 `Host` (`DetectHost` :31-41) from the constants of `Target` (plan Q970 Item 1): the machine this runs on, null on one with no Bayan target.
+/// Targets.cs `Host` (:27, which is `HostTarget.Detect`, HostTarget.cs:9-19) from the constants of `Target` (plan Q970 Item 1): the machine this runs on, null on one with no Bayan target.
 string? targetHost() uses alloc {
     return targetHostFrom(Target.os, for: Target.arch)
 }
@@ -57,7 +57,7 @@ string? targetHostFrom(string os, for string arch) uses alloc {
     return os == "" ? null : arch == "wasm32" ? "wasm32" : $"{os}-{arch}"
 }
 
-/// Targets.cs:44 `ExecutableName`: `tally`, `tally.exe` or `tally.wasm`.
+/// Targets.cs `ExecutableName` (:30): `tally`, `tally.exe` or `tally.wasm`.
 string targetExecutableName(string name, for string target) {
     if target.startsWith("windows-") { return $"{name}.exe" }
     if target == "wasm32" { return $"{name}.wasm" }
@@ -112,21 +112,23 @@ string ccJoin(in List<string> compiler) {
     return joined.finish()
 }
 
-/// The `Toolchain.cs:189-194` refusals of `BuildCached`, in its order; an empty string when the compiler can build for `target`.
-string ccRefusal(in List<string> compiler, for string target) {
+/// The `Toolchain.cs:189-194` refusals of `BuildCached`, in its order; an empty string when the compiler can build for `target` (null: the host has no target and `--target` was not given).
+string ccRefusal(in List<string> compiler, for string? target) {
     if compiler.length == 0 { return "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC" }
     let cross = target != targetHost()
-    if cross && targetTriple(target) is null {
+    var known = false
+    if (target is { } t) { known = targetTriple(t) is not null }
+    if cross && !known {
         var all = StrBuf()
         let names = targetNames()
         for i in 0..names.length {
             if i > 0 { all.append(", ") }
             all.append(names[i])
         }
-        return $"unknown target `{target}`; targets are {all.finish()}"
+        return $"unknown target `{target ?? ""}`; targets are {all.finish()}"
     }
     if cross && !(compiler.length > 1 && compiler[1] == "cc" && ccWithoutExtension(Path.fileName(compiler[0])) == "zig") {
-        return $"building for {target} on this machine needs zig (https://ziglang.org); the C compiler is `{ccJoin(in compiler)}`"
+        return $"building for {target ?? ""} on this machine needs zig (https://ziglang.org); the C compiler is `{ccJoin(in compiler)}`"
     }
     return ""
 }
@@ -160,13 +162,16 @@ List<string> ccFlags(string mode, for string? triple) {
 }
 
 /// Toolchain.cs:284-290: the arguments after the compiler's own (`compiler[1..]`), for scratch files in `dir`.
-List<string> ccArguments(in List<string> compiler, for string dir, to string output, by string mode, through string target) {
+List<string> ccArguments(in List<string> compiler, for string dir, to string output, by string mode, through string? target) {
     var args = List<string>()
     for i in 1..compiler.length { args.append(compiler[i]) }
     var triple: string? = null
-    if target != targetHost() { triple = targetTriple(target) }
+    if (target is { } t) {
+        if t != targetHost() { triple = targetTriple(t) }
+    }
     let flags = ccFlags(mode, for: triple)
     for f in flags { args.append(f) }
+    // Toolchain.cs:288 runs in the work directory with `-I .` and relative names; `Io.run` has no working directory (Q1009), so these are absolute.
     // Debug info names `main.c`, not the scratch directory.
     args.append($"-ffile-prefix-map={dir}=.")
     args.append("-I")
@@ -176,23 +181,25 @@ List<string> ccArguments(in List<string> compiler, for string dir, to string out
     args.append("-o")
     args.append(output)
     // `CommandLineToArgvW` (program arguments) is in shell32.
-    args.append(target.startsWith("windows") ? "-lshell32" : "-lm")
+    // Toolchain.cs:194: no target is the host; `Target.os` is `windows` exactly when the C#'s `OperatingSystem.IsWindows()` is.
+    args.append((target ?? Target.os).startsWith("windows") ? "-lshell32" : "-lm")
     return args
 }
 
 interface ICCompiler {
     /// Writes `source` and the runtime into `dir` and links `output`; `target` is the `--target` value, else `targetHost()` (Toolchain.cs:174).
-    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string target) uses alloc, env, fs, process
+    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string? target) uses alloc, env, fs, process
 }
 
 /// The one implementation (plan D3): the `FindCompiler` order.
 struct ZigOrCc : ICCompiler {
     /// Toolchain.cs:276 `Compile` with the checks of `BuildCached` :186-194 before it.
-    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string target) {
+    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string? target) {
         let compiler = ccFindCompiler()
-        let refusal = ccRefusal(in compiler, for: target)
+        let resolved = target ?? targetHost()
+        let refusal = ccRefusal(in compiler, for: resolved)
         if refusal != "" { return NativeBuild { errors: refusal } }
-        let args = ccArguments(in compiler, for: dir, to: output, by: mode, through: target)
+        let args = ccArguments(in compiler, for: dir, to: output, by: mode, through: resolved)
         // Toolchain.cs:280-283: the runtime and the generated C, where the compiler reads them.
         var names = List<string>()
         names.append("bayan-rt.h")
