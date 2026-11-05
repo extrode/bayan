@@ -521,3 +521,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - [ ] `scripts/selfhost/wave-brief.test.sh:84` (014 T6 golden-files check) fails on feat/012: `wave-brief.py` has no `BRIEF` text for spec 014 (never had, also on feat/014), so the test stops there with "no brief text for spec 014" (found 2026-11-05 fixing the .c extraction).
 - 012 T16 review LOW (T28): Q979 cites the Windows grow loop as `bayan-rt.c:2843-2860`; the loop runs to `:2861`.
 - 012 T16 review LOW (T28): Q979's `byn_env_decode` summary omits the third rule (a lead plus an out-of-range continuation is one U+FFFD, `bayan-rt.c:2825-2826`).
+- 012 T17 review LOW (T28): `bayan-rt.c` `byn_fs_file_exists` (Windows) falls back to `FindFirstFileW` only on `ERROR_SHARING_VIOLATION`; .NET `FillAttributeInfo` retries on more errors (e.g. `ERROR_ACCESS_DENIED` for delete-pending files). Check the .NET source, add a row.
+- 012 T17 review LOW (T28): Q980 and its progress-log line still say the Windows branch is "pending a wp1 run"; it ran at fdc9b40f, 28/28, symlink rows included.
+- 012 T17 review LOW: the 012-tasks T17 filter `SelfhostDriverT17Tests` matches no class (the checks are `StdFsTests`/`StdEnvTests`); preflight's filter check covers the brief side.
