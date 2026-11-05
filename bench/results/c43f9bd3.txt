@@ -1,0 +1,5 @@
+bayan bench c43f9bd3 (Darwin arm64, median of 5 runs, ratio to C, lower is better)
+benchmark bayan                    c                        rust                     zig                      checksum
+hash     190.6 ms (0.99x)         191.7 ms (1.00x)         188.8 ms (0.99x)         178.9 ms (0.93x)         12143377579992967301
+parse    31.8 ms (0.67x)          47.3 ms (1.00x)          23.1 ms (0.49x)          75.2 ms (1.59x)          14091657157103084200
+lexer    8.9 ms (n/a)             n/a (no port)            n/a (no port)            n/a (no port)            -

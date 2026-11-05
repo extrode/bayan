@@ -1,0 +1,7 @@
+bayan baseline c43f9bd3 (Darwin arm64)
+clean_build_selfhost_seconds 30.093
+rebuild_one_file_seconds 32.106
+size bayan 7937064
+size golden arithmetic 55336
+size golden collection-copy 73048
+size golden collection-literals 72488
