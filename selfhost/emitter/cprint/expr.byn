@@ -405,6 +405,13 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
             return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
         case .pathFullPath:
             return $"byn_path_full_path({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, byn_context, {loc(in c, by: in f, at: c.bCalls[n].span)})"
+        case .envGet:
+            let opt = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let name = helper(ref cc, for: "bynh_env_get", from: $"static {opt} bynh_env_get(byn_str name)",
+                as: $"{{\n    {opt} r = {{0}};\n    r.has = byn_env_get(name, &r.value, byn_context);\n    return r;\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .fsFileExists:
+            return $"byn_fs_file_exists({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
         case .hexEncode:
             let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
             let name = helper(ref cc, for: "bynh_hex_encode", from: $"static byn_str bynh_hex_encode({span} bytes)",
