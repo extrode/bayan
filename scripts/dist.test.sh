@@ -43,6 +43,10 @@ mkdir -p "$t/pub"; echo imported > "$t/pub/bayan.exe"
 run --from "$t/pub" --rid win-x64 --label 1.2.0 >/dev/null 2>&1; check "--from exits 0" "$?" 0
 check "--from imported" "$(cat "$d/windows-x64/latest/bayan.exe")" imported
 check "--from source recorded" "$(grep '^source ' "$d/windows-x64/1.2.0/BUILD-INFO")" "source $t/pub"
+check "--from commit unknown without --commit" "$(grep '^commit ' "$d/windows-x64/1.2.0/BUILD-INFO")" "commit unknown"
+run --from "$t/pub" --rid win-x64 --label 1.2.1 --commit abc123 >/dev/null 2>&1
+check "--commit recorded" "$(grep '^commit ' "$d/windows-x64/1.2.1/BUILD-INFO")" "commit abc123"
+check "host build records this checkout" "$(grep '^commit ' "$d/macos-arm64/1.0.0/BUILD-INFO")" "commit $(git -C "$root" rev-parse HEAD)"
 
 FAKE_FAIL=1 run --rid osx-arm64 --label 2.0.0 >/dev/null 2>&1; check "failed publish exits 1" "$?" 1
 check "failed publish leaves latest" "$(cat "$d/macos-arm64/latest/bayan")" "osx-arm64 2"
