@@ -71,11 +71,11 @@ i32 parseCommand(in List<string> kept) {
 /// CliApp.cs:141 `Types`.
 i32 typesCommand(in List<string> kept, by in DCtx d) {
     let args = t2Rest(kept)
-    let o = semantics.t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
+    let o = t5ParseBuildOptions(in args, by: false, for: false) ?? return exitUsage
     let symbols = semantics.t26Symbols(d.styleErr.ascii)
     var reported = List<semantics.T26Reported>()
     var ok = false
-    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    var c = t5Compile(in o, by: in symbols, to: ref reported, through: ref ok)
     unless ok { return exitFailure }
     Io.stdout.write(semantics.typedDump(ref c))
     return exitOk
@@ -85,12 +85,12 @@ i32 typesCommand(in List<string> kept, by in DCtx d) {
 i32 checkCommand(in List<string> kept, by in DCtx d) {
     let clock = Io.monotonicNanos()
     let args = t2Rest(kept)
-    let o = semantics.t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
+    let o = t5ParseBuildOptions(in args, by: false, for: false) ?? return exitUsage
     let symbols = semantics.t26Symbols(d.styleErr.ascii)
     var reported = List<semantics.T26Reported>()
     var ok = false
-    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
-    unless ok { return semantics.t26Failed(in o, from: in reported, by: in symbols) }
+    var c = t5Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return semantics.t26Failed(in t5T26(in o), from: in reported, by: in symbols) }
     unless o.json {
         let dot = semantics.t26Symbols(d.styleOut.ascii).dot
         print(semantics.checkSummary(dot, for: semantics.programName(ref c, for: o.path), by: semantics.t26Seconds(Io.monotonicNanos() - clock)))
