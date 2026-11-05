@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Spec 014: `Path.combine` (two strings or a `span<string>`), `Path.directoryName` (`string?`, null for a root), `Path.fullPath` and the existing `Path.isRooted`, `Path.relative` and `Path.fileName` agree with .NET's `Path.*` on each OS (Law L026, `StdPathLawTests`); the self-hosted checker calls them, so `tests/windows-known-failures.txt` is empty. Questions 900–1006
+
 ### Changed
 
 - The repository moved to `github.com/ikhbat-org/bayan` (Ikhbat Foundation); home page `https://bayan.run`.
