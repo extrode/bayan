@@ -22,6 +22,8 @@ public struct DCtx {
     DStyle styleErr = DStyle {}
     /// `s_stderrTty` of `Run` (CliApp.cs:31).
     bool stderrTty = false
+    // ── T3 state
+    // T3 keeps no state: `Targets.Host` is recomputed from `Target` (cc.byn `targetHost`).
 }
 
 /// The state of a run before any option is read. On the base so the coverage report has an entry for this file (Q920).
