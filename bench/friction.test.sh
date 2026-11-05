@@ -44,8 +44,10 @@ check "@unformatted count" "$(grep '^@unformatted ' "$f")" "@unformatted 1"
 check "BYN50xx line" "$(grep '^BYN50xx_reported ' "$f")" "BYN50xx_reported (selfhost compiler package) 1 (BYN5014=1)"
 
 # An absolute BENCH_TMP is used as is: its cache lands under it and nothing is created at $PWD$PWD/$d.
+touch "$d/marker"; sleep 1
 BAYAN_BIN="$d/bayan" BENCH_TMP="$PWD/$d/abs" BENCH_RESULTS="$d/results" FRICTION_SRC="$d/src" bash bench/friction.sh >/dev/null 2>&1
 check "absolute BENCH_TMP exits 0" "$?" 0
 check "cache under the absolute BENCH_TMP" "$(ls -d "$d"/abs/friction-*/cache 2>/dev/null | wc -l | tr -d ' ')" 1
+check "nothing changed in the repo outside tmp/" "$(find . -path ./tmp -prune -o -path ./.git -prune -o -newer "$d/marker" -print | wc -l | tr -d ' ')" 0
 check "nothing created at the doubled path" "$([ -e "$PWD$PWD/$d" ] && echo yes || echo no)" no
 exit $fail
