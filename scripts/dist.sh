@@ -6,7 +6,7 @@
 #   dist/<target>/latest/                 a copy of the most recent build for that target, replaced on every build
 # Targets use the release names (scripts/release/package.sh): osx-arm64 -> macos-arm64, win-x64 -> windows-x64.
 # <version> is Toolchain.CompilerVersion; a prerelease (0.2.0-dev) gets +<12-hex commit>, and a tree with
-# changes under src/ (or Directory.Build.props, global.json) not yet committed, untracked files included, gets .dirty:
+# any change not yet committed, untracked files included (the binary embeds docs/diagnostics too), gets .dirty:
 # each commit has its own directory, a release keeps its plain number, and .dirty builds of one commit replace each other.
 # NativeAOT does not cross-compile between operating systems: run this on each OS (mb1, wlt1, wp1), or publish
 # elsewhere and import the binary with --from <dir> --rid <rid> (its label is this checkout's unless --label is given;
@@ -17,7 +17,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lock=""
 trap '[ -z "$lock" ] || rmdir "$lock" 2>/dev/null' EXIT
 die() { echo "dist: $*" >&2; exit 1; }
-usage() { sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 host_rid() {
   local arch
@@ -44,7 +44,7 @@ label() {
   local v sha dirty=""
   v="$(sed -nE 's/.*const string CompilerVersion = "([^"]+)";.*/\1/p' "$root/src/Bayan.Backend.C/Toolchain.cs")"
   [ -n "$v" ] || die "no CompilerVersion in src/Bayan.Backend.C/Toolchain.cs"
-  [ -z "$(git -C "$root" status --porcelain -- src Directory.Build.props global.json 2>/dev/null)" ] || dirty=.dirty
+  [ -z "$(git -C "$root" status --porcelain 2>/dev/null)" ] || dirty=.dirty
   case "$v" in
     *-*) sha="$(git -C "$root" rev-parse --short=12 HEAD 2>/dev/null)" || die "a prerelease label needs a git checkout"
          echo "$v+$sha$dirty" ;;
@@ -82,6 +82,10 @@ fi
 for rid in "${rids[@]}"; do
   t="$(target "$rid")" || die "unknown rid $rid"
   tgt="${t% *}" exe="${t#* }"
+  # One run per target at a time, taken before publishing: two runs would share tmp/dist-publish/<rid> and obj/.
+  mkdir -p "$dist/$tgt"
+  lock="$dist/$tgt/.lock"
+  mkdir "$lock" 2>/dev/null || { lock=""; die "another dist run holds $dist/$tgt/.lock (remove it if no run is going)"; }
   if [ -n "$from" ]; then
     pub="$from"
   else
@@ -94,9 +98,6 @@ for rid in "${rids[@]}"; do
   fi
   [ -f "$pub/$exe" ] || die "$pub/$exe not found"
 
-  mkdir -p "$dist/$tgt"
-  lock="$dist/$tgt/.lock"
-  mkdir "$lock" 2>/dev/null || { lock=""; die "another dist run holds $dist/$tgt/.lock (remove it if no run is going)"; }
   dir="$dist/$tgt/$lbl"
   mkdir -p "$dir"
   cp "$pub/$exe" "$dir/$exe"
@@ -105,15 +106,16 @@ for rid in "${rids[@]}"; do
     "$lbl" "$tgt" "$rid" "$commit" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(uname -n)" "${from:-dotnet publish}" > "$dir/BUILD-INFO"
 
   # latest: copy beside it, move the old one aside, move the copy in. A failed step leaves the old latest in place
-  # (Windows refuses to move a folder holding a running bayan.exe). One run per target at a time: the lock.
+  # (Windows refuses to move a folder holding a running bayan.exe).
   latest="$dist/$tgt/latest" next="$dist/$tgt/.latest-next" old="$dist/$tgt/.latest-old"
-  rm -rf "$next" "$old"
+  rm -rf "$next" "$old" 2>/dev/null || die "cannot clear $old or $next (is a bayan from it running?); $dir is written, latest is not updated"
   cp -R "$dir" "$next"
   if [ -e "$latest" ] && ! mv "$latest" "$old"; then
     rm -rf "$next"; die "cannot replace $latest (is its bayan running?); it is unchanged"
   fi
   if ! mv "$next" "$latest"; then
-    [ ! -e "$old" ] || mv "$old" "$latest"; die "cannot move the new build into $latest; the old one is back"
+    if [ -e "$old" ] && ! mv "$old" "$latest"; then die "cannot move the new build into $latest, nor the old one back from $old"; fi
+    die "cannot move the new build into $latest; the old one is back"
   fi
   rm -rf "$old" || echo "dist: could not remove $old" >&2
   rmdir "$lock"; lock=""
