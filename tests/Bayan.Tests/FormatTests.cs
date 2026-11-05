@@ -528,7 +528,7 @@ public sealed class FormatTests
     }
 
     [Fact]
-    public async Task ASymlinkToAParentOfTheRootIsWalkedOnce()
+    public async Task ASymlinkToAParentOfTheRootIsNotFollowed()
     {
         if (OperatingSystem.IsWindows()) return;
         var dir = Directory.CreateDirectory(Path.Combine(Fresh("parent-link"), "outer", "dir")).FullName;
@@ -538,8 +538,8 @@ public sealed class FormatTests
         var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(CliApp.ExitFailure, result.Exit);
         var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(2, lines.Length);
-        Assert.Single(lines, l => l.Contains("outside.byn"));
+        Assert.Single(lines);
+        Assert.DoesNotContain(lines, l => l.Contains("outside.byn"));
     }
 
     /// <summary>
@@ -583,11 +583,11 @@ public sealed class FormatTests
     }
 
     [Fact]
-    public async Task TheWalkKeepsFilesALexicalResolutionWouldMerge()
+    public async Task TheWalkDoesNotEnterLinksLeavingTheRoot()
     {
         if (OperatingSystem.IsWindows()) return;
         var (proj, real) = LinkThroughALinkedDirectory("walk-through-dir", "let b = true\nif (b) { print(\"y\") }\n");
-        // `up` is `other` to the kernel and `proj` read lexically, which would skip it as already walked.
+        // Every link here leaves `proj`, so only the file in it is walked.
         var other = Directory.CreateDirectory(Path.Combine(real, "..", "other", "deep")).Parent!.FullName;
         File.WriteAllText(Path.Combine(other, "h.byn"), "let c = true\nif (c) { print(\"z\") }\n");
         Directory.CreateSymbolicLink(Path.Combine(proj, "x"), "../other/deep");
@@ -595,10 +595,8 @@ public sealed class FormatTests
         var result = await Task.Factory.StartNew(() => Run("format", "--check", proj), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(CliApp.ExitFailure, result.Exit);
         var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(3, lines.Length);
-        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "sub", "f.byn")));
-        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "g.byn")));
-        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "up", "h.byn")));
+        Assert.Single(lines);
+        Assert.Contains(Path.Combine(proj, "g.byn"), lines[0]);
     }
 
     [Fact]
