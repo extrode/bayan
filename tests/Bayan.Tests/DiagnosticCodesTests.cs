@@ -113,52 +113,9 @@ public sealed class DiagnosticCodesTests
     // Error codes an example may report besides its own ("doc/extra"), each with the reason.
     private static readonly Dictionary<string, string> AllowedExtras = new()
     {
-        ["BYN0002/BYN1005"] = "the example is also a bad statement end",
-        ["BYN0002/BYN1012"] = "the example is also a bad statement end",
-        ["BYN1015/BYN0002"] = "the bad input form the doc shows also trips the lexer",
-        ["BYN1018/BYN1017"] = "reported together with BYN1018 for the same condition",
-        ["BYN1031/BYN0002"] = "the bad input form the doc shows also trips the lexer",
-        ["BYN1043/BYN0002"] = "the bad input form the doc shows also trips the lexer",
-        ["BYN1058/BYN0002"] = "the bad input form the doc shows also trips the lexer",
-        ["BYN1063/BYN0002"] = "the bad input form the doc shows also trips the lexer",
-        ["BYN1065/BYN0002"] = "the bad input form the doc shows also trips the lexer",
-        ["BYN1066/BYN1001"] = "the example is also an unexpected token",
-        ["BYN1066/BYN1016"] = "the example is also an unexpected token",
-        ["BYN1067/BYN0002"] = "the bad input form the doc shows also trips the lexer",
-        ["BYN2007/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2023/BYN2002"] = "the example uses an undeclared type",
-        ["BYN2102/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2103/BYN5004"] = "reported together with BYN5006 for the same parameter",
-        ["BYN2103/BYN5006"] = "reported together with BYN5004 for the same parameter",
-        ["BYN2209/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2216/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2302/BYN3201"] = "the example has a bare call whose value is unused",
-        ["BYN2311/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2405/BYN2403"] = "the example has a second return mistake",
-        ["BYN2406/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2407/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2409/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2601/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2606/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2607/BYN2401"] = "the example has a second return mistake",
-        ["BYN2608/BYN2401"] = "the example has a second return mistake",
-        ["BYN2612/BYN2613"] = "the handler also reads a `var`",
-        ["BYN2614/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2741/BYN2780"] = "the example also copies a unique value",
-        ["BYN2741/BYN5004"] = "reported together with BYN5006 for the same parameter",
-        ["BYN2741/BYN5006"] = "reported together with BYN5004 for the same parameter",
-        ["BYN2742/BYN2780"] = "the example also copies a unique value",
-        ["BYN2742/BYN5004"] = "reported together with BYN5006 for the same parameter",
-        ["BYN2742/BYN5006"] = "reported together with BYN5004 for the same parameter",
-        ["BYN2743/BYN5004"] = "reported together with BYN5006 for the same parameter",
-        ["BYN2743/BYN5006"] = "reported together with BYN5004 for the same parameter",
-        ["BYN2784/BYN2001"] = "the example calls a name it does not declare",
-        ["BYN2786/BYN2202"] = "the example also passes a mismatched type",
-        ["BYN2786/BYN3201"] = "the example has a bare call whose value is unused",
-        ["BYN2791/BYN3201"] = "the example has a bare call whose value is unused",
-        ["BYN5004/BYN5006"] = "reported together with BYN5004 for the same parameter",
-        ["BYN5006/BYN5004"] = "reported together with BYN5006 for the same parameter",
-        ["BYN7006/BYN0002"] = "the bad input form the doc shows also trips the lexer",
+        ["BYN1066/BYN1016"] = "the parser rejects `extern` on a function, so the pointer-spelling example cannot be valid otherwise",
+        ["BYN5004/BYN5006"] = "BYN5004 is reported with BYN5006 for each parameter besides the object",
+        ["BYN5006/BYN5004"] = "BYN5006 is reported with BYN5004 for the same function",
     };
 
     // A doc example is a library snippet; a missing `main` is not what the doc is about.
@@ -237,6 +194,17 @@ public sealed class DiagnosticCodesTests
             if (errors.Count > 0) failures.Add($"{code}: fix block reports [{string.Join(", ", errors)}]");
         }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    [Fact]
+    public void FunctionPreconditionDocsSayExpectsAndExample612AgreesWithItsFix()
+    {
+        foreach (var code in new[] { "BYN2320", "BYN2321" })
+            Assert.DoesNotContain("requires", File.ReadAllText(Path.Combine(DocsDir, code + ".md")));
+        var example = BlockAfter(Path.Combine(DocsDir, "BYN2612.md"), "**Example")!;
+        var fix = BlockAfter(Path.Combine(DocsDir, "BYN2612.md"), "**Fix")!;
+        Assert.Contains("db.name", fix);
+        Assert.Contains("string name", example);
     }
 
     [Fact]
