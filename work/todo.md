@@ -464,3 +464,10 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - [x] `scripts/dist.sh:94-99` LOW: `tmp/dist-publish/<rid>` is not emptied before publishing, so a publish that exits 0 without writing `bayan[.exe]` would file the previous binary under the new label (review 230cfcee2880..ae25e426).
 - [x] `scripts/dist.sh:86` LOW: `mkdir -p "$dist/$tgt"` on a path that is a file exits with mkdir's error, no `dist:` message (review 230cfcee2880..ae25e426, loop 3).
 - `docs/diagnostics/BYN2006.md`, `BYN2011.md`, `BYN2026.md`, `BYN2787.md`, `BYN3201.md`: the example no longer reports the doc's own code (2006 gives BYN5004/5006, 2026 gives BYN1017/1018, 2787's `trust(x, reason:)` is BYN1062, 3201's stray `-2` is BYN1012, 2011 reports nothing standalone); rewrite each example and drop it from `UncompilableExamples` in `DiagnosticCodesTests.cs`.
+- docs/diagnostics: the docs listed in `AllowedExtras` (3 entries at f35a0e76) (tests/Bayan.Tests/DiagnosticCodesTests.cs); fix each example and drop its entry (review e27c9208..c1dae2fc).
+- docs/diagnostics/BYN1012.md: the Fix still writes `y = x + 1;` with a semicolon (review e27c9208..c1dae2fc).
+- docs/diagnostics/BYN2311.md:20: Fix prose writes `let total = prices.length;`; the semicolon test checks code blocks only (review e27c9208..c1dae2fc).
+- docs/diagnostics/BYN2741.md:12: the Fix suggests `both<string>(…)` but the example passes `1`, so the suggestion does not compile (review e27c9208..c1dae2fc).
+- parser: no `extern` form parses (BYN1016 on `extern void f(...)`, BYN1001 on spec §`extern c { … }`, docs/bayan-spec.md:2033), so BYN1066/BYN1067 examples cannot compile; spec gap, needs a Question before a fix (review e27c9208..c1dae2fc).
+- docs/diagnostics/BYN2789.md: Fix prose uses `box.items.take();` but `Box` has no `items` field, and ends with `;` (review e27c9208..c1dae2fc).
+- src/Bayan.Semantics Compilation.cs:1927: BYN2321 help says "meets `requires …`" for a function declared with `expects` (review e27c9208..c1dae2fc).

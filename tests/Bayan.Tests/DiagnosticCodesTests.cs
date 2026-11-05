@@ -103,50 +103,175 @@ public sealed class DiagnosticCodesTests
         ["BYN6004"] = "project-level: needs a package.byn and a second file",
     };
 
+    // Skipped docs whose example is not compilable text, or that have no example block (the rest must still fail to report their own code).
+    private static readonly HashSet<string> StructuralExamples =
+    [
+        "BYN0001", "BYN0005", "BYN0015", "BYN0016", "BYN2005", "BYN2010", "BYN2015",
+        "BYN3100", "BYN3101", "BYN3102", "BYN3103", "BYN3104", "BYN3213", "BYN3215", "BYN3217", "BYN4001", "BYN6004",
+    ];
+
+    // Error codes an example may report besides its own ("doc/extra"), each with the reason.
+    private static readonly Dictionary<string, string> AllowedExtras = new()
+    {
+        ["BYN1066/BYN1016"] = "no `extern` form parses yet (BYN1016; logged in work/todo.md), so the pointer-spelling example cannot be valid otherwise",
+        ["BYN5004/BYN5006"] = "BYN5004 is reported with BYN5006 for each parameter besides the object",
+        ["BYN5006/BYN5004"] = "BYN5006 is reported with BYN5004 for the same function",
+    };
+
+    // A doc example is a library snippet; a missing `main` is not what the doc is about.
+    private const string NoEntryPoint = "BYN2014";
+
+    // Docs whose Fix block is a complete program. The other docs' fix blocks are fragments (76 of 116, over 25%),
+    // so only the docs fixed in the review of the example rewrites are checked.
+    private static readonly string[] CompleteFixBlocks = ["BYN2027", "BYN2235", "BYN2236", "BYN2320", "BYN2321", "BYN2612"];
+
+    private static readonly string DocsDir = Path.Combine(Golden.RepoRoot, "docs", "diagnostics");
+
+    // The fenced blocks of the paragraph starting with `heading`, up to the next `**` paragraph.
+    private static List<string> BlocksAfter(string file, string heading)
+    {
+        var lines = File.ReadAllLines(file);
+        var blocks = new List<string>();
+        var at = Array.FindIndex(lines, l => l.StartsWith(heading, StringComparison.Ordinal));
+        if (at < 0) return blocks;
+        for (var i = at + 1; i < lines.Length && !lines[i].StartsWith("**", StringComparison.Ordinal); i++)
+        {
+            if (!lines[i].StartsWith("```", StringComparison.Ordinal)) continue;
+            var close = Array.FindIndex(lines, i + 1, l => l.StartsWith("```", StringComparison.Ordinal));
+            if (close < 0) break;
+            blocks.Add(string.Join("\n", lines[(i + 1)..close]) + "\n");
+            i = close;
+        }
+        return blocks;
+    }
+
+    // The first fenced block of the paragraph starting with `heading`, or null.
+    private static string? BlockAfter(string file, string heading) => BlocksAfter(file, heading).FirstOrDefault();
+
+    private static List<Bayan.Syntax.Diagnostics.Diagnostic> Compile(string code, string source) =>
+        Compilation.Create([new Bayan.Syntax.Text.SourceText(code + ".byn", System.Text.Encoding.UTF8.GetBytes(source))], Golden.RepoRoot, new CompilationOptions())
+            .Diagnostics.Items.ToList();
+
+    [Fact]
+    public void SkipListNamesExistingDocsAndStillNeedsIt()
+    {
+        var failures = new List<string>();
+        foreach (var code in UncompilableExamples.Keys.Concat(StructuralExamples))
+            if (!File.Exists(Path.Combine(DocsDir, code + ".md"))) failures.Add($"{code}: skip entry names no doc");
+        foreach (var code in StructuralExamples)
+            if (!UncompilableExamples.ContainsKey(code)) failures.Add($"{code}: structural entry is not in the skip list");
+        foreach (var code in UncompilableExamples.Keys)
+        {
+            if (StructuralExamples.Contains(code) || !File.Exists(Path.Combine(DocsDir, code + ".md"))) continue;
+            var source = BlockAfter(Path.Combine(DocsDir, code + ".md"), "**Example");
+            if (source is null) failures.Add($"{code}: the doc has no Bayan example block; add it to StructuralExamples");
+            else if (Compile(code, source).Any(d => d.Code == code))
+                failures.Add($"{code}: the example now reports its own code; remove the skip entry");
+        }
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    [Fact]
+    public void AllowedExtrasNameLiveDocsAndStillNeedThem()
+    {
+        var failures = new List<string>();
+        foreach (var key in AllowedExtras.Keys)
+        {
+            var (code, extra) = (key[..7], key[8..]);
+            var file = Path.Combine(DocsDir, code + ".md");
+            if (!File.Exists(file)) { failures.Add($"{key}: names no doc; remove the entry"); continue; }
+            if (UncompilableExamples.ContainsKey(code)) { failures.Add($"{key}: the doc is in the skip list; remove the entry"); continue; }
+            var source = BlockAfter(file, "**Example");
+            if (source is null || !Compile(code, source).Any(d => d.Code == extra))
+                failures.Add($"{key}: the example no longer reports {extra}; remove the entry");
+        }
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
     [Fact]
     public void EveryDocExampleReportsItsOwnCode()
     {
-        var docs = Directory.GetFiles(Path.Combine(Golden.RepoRoot, "docs", "diagnostics"), "*.md");
+        var docs = Directory.GetFiles(DocsDir, "*.md");
         Assert.True(UncompilableExamples.Count * 4 < docs.Length, "the skip list is over 25% of the docs");
         var failures = new List<string>();
         foreach (var file in docs)
         {
             var code = Path.GetFileNameWithoutExtension(file);
             if (UncompilableExamples.ContainsKey(code)) continue;
-            var lines = File.ReadAllLines(file);
-            var heading = Array.FindIndex(lines, l => l.StartsWith("**Example", StringComparison.Ordinal));
-            var open = heading < 0 ? -1 : Array.FindIndex(lines, heading, l => l.StartsWith("```", StringComparison.Ordinal));
-            var close = open < 0 ? -1 : Array.FindIndex(lines, open + 1, l => l.StartsWith("```", StringComparison.Ordinal));
-            if (close < 0) { failures.Add($"{code}: no example block"); continue; }
-            var source = string.Join("\n", lines[(open + 1)..close]) + "\n";
-            var c = Compilation.Create([new Bayan.Syntax.Text.SourceText(code + ".byn", System.Text.Encoding.UTF8.GetBytes(source))], Golden.RepoRoot, new CompilationOptions());
-            var reported = c.Diagnostics.Items.Select(d => d.Code).Distinct().ToList();
-            if (!reported.Contains(code)) failures.Add($"{code}: reported [{string.Join(", ", reported)}]");
-            else if (code != "BYN1040" && reported.Contains("BYN1040")) failures.Add($"{code}: example uses `;`");
+            var sources = BlocksAfter(file, "**Example");
+            if (sources.Count == 0) { failures.Add($"{code}: no example block"); continue; }
+            for (var b = 0; b < sources.Count; b++)
+            {
+                var at = sources.Count == 1 ? code : $"{code} block {b + 1}";
+                var diagnostics = Compile(code, sources[b]);
+                var reported = diagnostics.Select(d => d.Code).Distinct().ToList();
+                var extra = diagnostics.Where(d => d.IsError).Select(d => d.Code).Distinct()
+                    .Where(c => c != code && c != NoEntryPoint && !AllowedExtras.ContainsKey($"{code}/{c}")).ToList();
+                if (!reported.Contains(code)) failures.Add($"{at}: reported [{string.Join(", ", reported)}]");
+                else if (extra.Count > 0) failures.Add($"{at}: also reports [{string.Join(", ", extra)}]");
+            }
         }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    [Fact]
+    public void CompleteFixBlocksCompileClean()
+    {
+        var failures = new List<string>();
+        foreach (var code in CompleteFixBlocks)
+        {
+            var sources = BlocksAfter(Path.Combine(DocsDir, code + ".md"), "**Fix");
+            if (sources.Count == 0) { failures.Add($"{code}: no fix block"); continue; }
+            for (var b = 0; b < sources.Count; b++)
+            {
+                var errors = Compile(code, sources[b]).Where(d => d.IsError && d.Code != NoEntryPoint).Select(d => d.Code).Distinct().ToList();
+                if (errors.Count > 0) failures.Add($"{code}: fix block {b + 1} reports [{string.Join(", ", errors)}]");
+            }
+        }
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    [Fact]
+    public void PreconditionDocsNameRequiresAndExpectsAndExample612AgreesWithItsFix()
+    {
+        foreach (var code in new[] { "BYN2320", "BYN2321" })
+        {
+            var text = File.ReadAllText(Path.Combine(DocsDir, code + ".md"));
+            Assert.Contains("requires", text);
+            Assert.Contains("expects", text);
+        }
+        var example = BlockAfter(Path.Combine(DocsDir, "BYN2612.md"), "**Example")!;
+        var fix = BlockAfter(Path.Combine(DocsDir, "BYN2612.md"), "**Fix")!;
+        Assert.Contains("db.name", fix);
+        Assert.Contains("string name", example);
     }
 
     [Fact]
     public void NoDocBayanBlockEndsALineWithASemicolon()
     {
         var found = new List<string>();
-        foreach (var file in Directory.GetFiles(Path.Combine(Golden.RepoRoot, "docs", "diagnostics"), "*.md"))
+        foreach (var file in Directory.GetFiles(DocsDir, "*.md"))
         {
             var code = Path.GetFileNameWithoutExtension(file);
-            if (code == "BYN1040") continue;
             var inBlock = false;
             var bayan = false;
+            var skipping = false;
+            var seenExample = false;
             var number = 0;
             foreach (var line in File.ReadAllLines(file))
             {
                 number++;
+                if (!inBlock && line.StartsWith("**Example", StringComparison.Ordinal)) seenExample = true;
                 if (line.StartsWith("```", StringComparison.Ordinal))
                 {
                     inBlock = !inBlock;
-                    bayan = inBlock && line.Length == 3;
+                    var fence = line.TrimEnd();
+                    bayan = inBlock && fence is "```" or "```bayan" or "```byn";
+                    // BYN1040 shows `;` on purpose in its first Example block; its fix blocks are checked.
+                    if (inBlock) skipping = code == "BYN1040" && seenExample;
+                    else if (skipping) { skipping = false; seenExample = false; }
                 }
-                else if (inBlock && bayan && System.Text.RegularExpressions.Regex.IsMatch(line, @";\s*(\}|$)"))
+                else if (inBlock && bayan && !skipping && System.Text.RegularExpressions.Regex.IsMatch(line, @";\s*(\}|$)"))
                     found.Add($"{code}:{number}");
             }
         }
