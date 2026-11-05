@@ -103,7 +103,7 @@ public sealed class DiagnosticCodesTests
         ["BYN6004"] = "project-level: needs a package.byn and a second file",
     };
 
-    // Skipped docs whose example is not compilable text at all (the rest must still fail to report their own code).
+    // Skipped docs whose example is not compilable text, or that have no example block (the rest must still fail to report their own code).
     private static readonly HashSet<string> StructuralExamples =
     [
         "BYN0001", "BYN0005", "BYN0015", "BYN0016", "BYN2005", "BYN2010", "BYN2015",
@@ -127,16 +127,26 @@ public sealed class DiagnosticCodesTests
 
     private static readonly string DocsDir = Path.Combine(Golden.RepoRoot, "docs", "diagnostics");
 
-    // The first fenced block of the paragraph starting with `heading`, or null.
-    private static string? BlockAfter(string file, string heading)
+    // The fenced blocks of the paragraph starting with `heading`, up to the next `**` paragraph.
+    private static List<string> BlocksAfter(string file, string heading)
     {
         var lines = File.ReadAllLines(file);
+        var blocks = new List<string>();
         var at = Array.FindIndex(lines, l => l.StartsWith(heading, StringComparison.Ordinal));
-        var open = at < 0 ? -1 : Array.FindIndex(lines, at, l => l.StartsWith("```", StringComparison.Ordinal));
-        var close = open < 0 ? -1 : Array.FindIndex(lines, open + 1, l => l.StartsWith("```", StringComparison.Ordinal));
-        if (close < 0 || lines[(at + 1)..open].Any(l => l.StartsWith("**", StringComparison.Ordinal))) return null;
-        return string.Join("\n", lines[(open + 1)..close]) + "\n";
+        if (at < 0) return blocks;
+        for (var i = at + 1; i < lines.Length && !lines[i].StartsWith("**", StringComparison.Ordinal); i++)
+        {
+            if (!lines[i].StartsWith("```", StringComparison.Ordinal)) continue;
+            var close = Array.FindIndex(lines, i + 1, l => l.StartsWith("```", StringComparison.Ordinal));
+            if (close < 0) break;
+            blocks.Add(string.Join("\n", lines[(i + 1)..close]) + "\n");
+            i = close;
+        }
+        return blocks;
     }
+
+    // The first fenced block of the paragraph starting with `heading`, or null.
+    private static string? BlockAfter(string file, string heading) => BlocksAfter(file, heading).FirstOrDefault();
 
     private static List<Bayan.Syntax.Diagnostics.Diagnostic> Compile(string code, string source) =>
         Compilation.Create([new Bayan.Syntax.Text.SourceText(code + ".byn", System.Text.Encoding.UTF8.GetBytes(source))], Golden.RepoRoot, new CompilationOptions())
@@ -188,14 +198,18 @@ public sealed class DiagnosticCodesTests
         {
             var code = Path.GetFileNameWithoutExtension(file);
             if (UncompilableExamples.ContainsKey(code)) continue;
-            var source = BlockAfter(file, "**Example");
-            if (source is null) { failures.Add($"{code}: no example block"); continue; }
-            var diagnostics = Compile(code, source);
-            var reported = diagnostics.Select(d => d.Code).Distinct().ToList();
-            var extra = diagnostics.Where(d => d.IsError).Select(d => d.Code).Distinct()
-                .Where(c => c != code && c != NoEntryPoint && !AllowedExtras.ContainsKey($"{code}/{c}")).ToList();
-            if (!reported.Contains(code)) failures.Add($"{code}: reported [{string.Join(", ", reported)}]");
-            else if (extra.Count > 0) failures.Add($"{code}: also reports [{string.Join(", ", extra)}]");
+            var sources = BlocksAfter(file, "**Example");
+            if (sources.Count == 0) { failures.Add($"{code}: no example block"); continue; }
+            for (var b = 0; b < sources.Count; b++)
+            {
+                var at = sources.Count == 1 ? code : $"{code} block {b + 1}";
+                var diagnostics = Compile(code, sources[b]);
+                var reported = diagnostics.Select(d => d.Code).Distinct().ToList();
+                var extra = diagnostics.Where(d => d.IsError).Select(d => d.Code).Distinct()
+                    .Where(c => c != code && c != NoEntryPoint && !AllowedExtras.ContainsKey($"{code}/{c}")).ToList();
+                if (!reported.Contains(code)) failures.Add($"{at}: reported [{string.Join(", ", reported)}]");
+                else if (extra.Count > 0) failures.Add($"{at}: also reports [{string.Join(", ", extra)}]");
+            }
         }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
@@ -206,10 +220,13 @@ public sealed class DiagnosticCodesTests
         var failures = new List<string>();
         foreach (var code in CompleteFixBlocks)
         {
-            var source = BlockAfter(Path.Combine(DocsDir, code + ".md"), "**Fix");
-            if (source is null) { failures.Add($"{code}: no fix block"); continue; }
-            var errors = Compile(code, source).Where(d => d.IsError && d.Code != NoEntryPoint).Select(d => d.Code).Distinct().ToList();
-            if (errors.Count > 0) failures.Add($"{code}: fix block reports [{string.Join(", ", errors)}]");
+            var sources = BlocksAfter(Path.Combine(DocsDir, code + ".md"), "**Fix");
+            if (sources.Count == 0) { failures.Add($"{code}: no fix block"); continue; }
+            for (var b = 0; b < sources.Count; b++)
+            {
+                var errors = Compile(code, sources[b]).Where(d => d.IsError && d.Code != NoEntryPoint).Select(d => d.Code).Distinct().ToList();
+                if (errors.Count > 0) failures.Add($"{code}: fix block {b + 1} reports [{string.Join(", ", errors)}]");
+            }
         }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
