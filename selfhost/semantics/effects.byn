@@ -527,7 +527,7 @@ T23Fix t23DeclareFix(ref Ctx c, from FileId f, for in T23Decl decl, by in List<s
 List<string> t23Builtin(BuiltinFunction f) {
     if f == .print || f == .ioStdout || f == .ioStderr || f == .ioStdin { return ["console"] }
     if f == .ioReadFile || f == .ioReadText || f == .ioListDir { return ["fs", "alloc"] }
-    if f == .ioWriteFile || f == .fsFileExists { return ["fs"] }
+    if f == .ioWriteFile || f == .ioRemove || f == .fsFileExists { return ["fs"] }
     if f == .ioRun || f == .ioRunBatch { return ["process", "alloc"] }
     if f == .ioMonotonicNanos { return ["clock"] }
     if f == .envGet { return ["env", "alloc"] }

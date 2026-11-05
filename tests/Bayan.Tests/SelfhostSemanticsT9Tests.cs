@@ -30,6 +30,7 @@ public sealed class SelfhostSemanticsT9Tests
         ("io readFile", "findIo(ref c, for: \"readFile\")", B.FindIo("readFile")),
         ("io readText", "findIo(ref c, for: \"readText\")", B.FindIo("readText")),
         ("io writeFile", "findIo(ref c, for: \"writeFile\")", B.FindIo("writeFile")),
+        ("io remove", "findIo(ref c, for: \"remove\")", B.FindIo("remove")),
         ("io listDir", "findIo(ref c, for: \"listDir\")", B.FindIo("listDir")),
         ("io run", "findIo(ref c, for: \"run\")", B.FindIo("run")),
         ("io runBatch", "findIo(ref c, for: \"runBatch\")", B.FindIo("runBatch")),

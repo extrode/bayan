@@ -74,6 +74,7 @@ public enum BuiltinFunction {
     ioReadFile
     ioReadText
     ioWriteFile
+    ioRemove
     ioListDir
     ioRun
     ioRunBatch

@@ -3004,6 +3004,41 @@ uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* a
     return 0;
 }
 
+uint32_t byn_io_remove(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    BOOL ok = DeleteFileW(wpath);
+    DWORD e = ok ? 0 : GetLastError();
+    free(wpath);
+    if (ok || e == ERROR_FILE_NOT_FOUND) return 0;
+    return byn_win_error(e);
+#else
+    char* cpath = byn_cstr(path);
+    int rc = unlink(cpath);
+    int e = errno;
+    free(cpath);
+    if (rc == 0) return 0;
+    if (e == ENOENT) {
+        /* As .NET: a missing file is not an error, but a missing directory is. */
+        byn_path_buf f = byn_path_full(path, "Io.remove", NULL, 0);
+        int64_t i = f.n;
+        while (i > 0 && !byn_path_sep(f.p[i - 1])) i--;
+        bool missing = false;
+        if (i > 0) {
+            char* d = byn_cstr((byn_str){f.p, i > 1 ? i - 1 : i});
+            struct stat st;
+            missing = stat(d, &st) != 0 || (st.st_mode & S_IFMT) != S_IFDIR;
+            free(d);
+        }
+        free(f.p);
+        return missing ? BYN_IO_NOT_FOUND : 0;
+    }
+    if (e == EISDIR) return BYN_IO_PERMISSION_DENIED;
+    return byn_io_error(e);
+#endif
+}
+
 static void byn_bytes_add(byn_bytes* b, const void* p, int64_t n) {
     byn_bytes_reserve(b, n);
     memcpy(b->ptr + b->len, p, (size_t)n);

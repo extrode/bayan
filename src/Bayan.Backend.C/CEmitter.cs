@@ -1793,6 +1793,8 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_io_write_file(path, bytes.ptr, bytes.len);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])})";
             }
+            case BuiltinFunction.IoRemove:
+                return $"byn_io_remove({Expr(c.Arguments[0])})";
             case BuiltinFunction.IoListDir:
             {
                 var list = _c.CType(fn.ReturnType);

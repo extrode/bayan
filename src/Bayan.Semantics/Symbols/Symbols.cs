@@ -355,6 +355,7 @@ public enum BuiltinFunction
     IoReadFile,
     IoReadText,
     IoWriteFile,
+    IoRemove,
     IoListDir,
     IoRun,
     IoRunBatch,

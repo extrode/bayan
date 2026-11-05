@@ -108,6 +108,79 @@ public sealed class StdFsTests
         }
     }
 
+    /// <summary>Spec 012 T20: <c>Io.remove</c> succeeds and fails on the same rows as .NET <c>File.Delete</c>, and leaves the same files behind.</summary>
+    [Fact]
+    public async Task IoRemoveMatchesDotNet()
+    {
+        var work = Path.Combine(Golden.RepoRoot, "tmp", "std-io-remove");
+        string[] rows =
+        [
+            "file.txt", "file.txt", "empty", "é ü 日本.txt", "missing", "sub/missing", "nodir/missing", "sub", "sub/", "sub/inner", "sub/inner/deep.txt", "file2.txt/", "file2.txt/.", "file2.txt/x",
+            "link-file", "link-dir", "link-dangling", "link-loop", "readonly.txt", "./sub/../file2.txt", "file3.txt ", " file3.txt", "", " ", ".", "..", "x\0", "\0",
+        ];
+        try
+        {
+            if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
+            string Fixture(string name)
+            {
+                var dir = Path.Combine(work, name);
+                Directory.CreateDirectory(Path.Combine(dir, "sub", "inner"));
+                foreach (var f in new[] { "file.txt", "empty", "é ü 日本.txt", "file2.txt", "file3.txt", "readonly.txt", Path.Combine("sub", "inner", "deep.txt") }) File.WriteAllText(Path.Combine(dir, f), "x");
+                File.SetAttributes(Path.Combine(dir, "readonly.txt"), FileAttributes.ReadOnly);
+                Link(Path.Combine(dir, "link-file"), "file2.txt", directory: false);
+                Link(Path.Combine(dir, "link-dir"), "sub", directory: true);
+                Link(Path.Combine(dir, "link-dangling"), "nowhere", directory: false);
+                Link(Path.Combine(dir, "link-loop"), "link-loop", directory: false);
+                return dir;
+            }
+            string Listing(string dir) => string.Join("\n", Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories).Select(e => Path.GetRelativePath(dir, e).Replace('\\', '/')).Order(StringComparer.Ordinal));
+            string Full(string dir, string row) => row.Length == 0 ? "" : Path.Combine(dir, "") + row.Replace("\\0", "\0");
+
+            var net = Fixture("net");
+            var expected = new List<string>();
+            foreach (var row in rows)
+            {
+                try { File.Delete(Full(net, row)); expected.Add("ok"); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { expected.Add("fail"); }
+            }
+
+            var bayan = Fixture("bayan");
+            var source = string.Concat(rows.Select(r => $"print(removed({Literal(Full(bayan, r))}))\n"));
+            var program = "string removed(string path) uses fs {\n    Io.remove(path) catch { return \"fail\" }\n    return \"ok\"\n}\n\n" + $"void main() uses console, fs {{\n{source}}}\n";
+            var psi = new ProcessStartInfo(Build(program, Path.Combine(Golden.RepoRoot, "tmp", "std-io-remove-build"))) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            using var proc = Process.Start(psi)!;
+            var stderr = proc.StandardError.ReadToEndAsync();
+            var stdout = await proc.StandardOutput.ReadToEndAsync();
+            Assert.True(proc.WaitForExit(60_000), "program timed out");
+            Assert.True(proc.ExitCode == 0, await stderr);
+            var actual = stdout.Split('\n');
+            Assert.Equal(rows.Length + 1, actual.Length);
+            for (var i = 0; i < rows.Length; i++) Assert.True(expected[i] == actual[i], $"row {i + 1}: {Literal(rows[i])}\n.NET: {expected[i]}\nBayan: {actual[i]}");
+            Assert.Equal(Listing(net), Listing(bayan));
+            Assert.Contains("ok", expected);
+            Assert.Contains("fail", expected);
+        }
+        finally
+        {
+            if (Directory.Exists(work))
+            {
+                foreach (var f in Directory.EnumerateFiles(work, "readonly.txt", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
+                Directory.Delete(work, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void IoRemoveNeedsFsEffect()
+    {
+        var src = "void f(string p) fails IoError uses console {\n    try Io.remove(p)\n}\n";
+        var c = Compilation.Create([new SourceText("e.byn", Encoding.UTF8.GetBytes(src))], Root);
+        var rendered = Rendered(c).Where(r => r.StartsWith("BYN6002")).Select(r => r.Split(" | ")[0]).ToList();
+        Assert.Equal([Expected(DiagnosticCodes.EffectNotDeclared, src, "Io.remove", "", "f", "fs")], rendered);
+        var ok = Compilation.Create([new SourceText("e.byn", Encoding.UTF8.GetBytes(src.Replace("uses console", "uses console, fs")))], Root);
+        Assert.DoesNotContain(Rendered(ok), r => r.StartsWith("BYN6002"));
+    }
+
     /// <summary>The compiler's diagnostics as <c>code line:col message</c>, with the help line when there is one.</summary>
     private static List<string> Rendered(Compilation c) =>
         c.Diagnostics.Items.Select(d =>
@@ -133,6 +206,15 @@ public sealed class StdFsTests
         Assert.Equal([Expected(DiagnosticCodes.EffectNotDeclared, src, "Fs.fileExists", "", "f", "fs")], rendered);
         var ok = Compilation.Create([new SourceText("e.byn", Encoding.UTF8.GetBytes(src.Replace("uses console", "uses console, fs")))], Root);
         Assert.DoesNotContain(Rendered(ok), r => r.StartsWith("BYN6002"));
+    }
+
+    [Fact]
+    public void IoUnknownMemberSuggestsRemove()
+    {
+        var src = "void f() uses fs {\n    let x = Io.remov(\"A\")\n}\n";
+        var c = Compilation.Create([new SourceText("e.byn", Encoding.UTF8.GetBytes(src))], Root);
+        var rendered = Rendered(c).Where(r => r.StartsWith("BYN2003")).ToList();
+        Assert.Equal([Expected(DiagnosticCodes.UnknownMember, src, "remov", "did you mean `remove`?", "remov", "Io")], rendered);
     }
 
     [Fact]

@@ -3,6 +3,7 @@ CommandLineToArgvW
 CreatePipe
 CreateProcessW
 CreateThread
+DeleteFileW
 FindClose
 FindFirstFileW
 FindNextFileW
@@ -80,6 +81,7 @@ strlen
 strtod
 strtod_l
 strtof_l
+unlink
 waitpid
 wcschr
 wcscmp
