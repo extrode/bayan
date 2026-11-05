@@ -2804,6 +2804,42 @@ static char* byn_cstr(byn_str s) {
 }
 #endif
 
+bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to) {
+#ifdef _WIN32
+    wchar_t* w = byn_wide(name.ptr, name.len);
+    DWORD n = GetEnvironmentVariableW(w, NULL, 0);
+    if (n == 0) {
+        free(w);
+        if (GetLastError() == ERROR_ENVVAR_NOT_FOUND) return false;
+        *out = (byn_str){NULL, 0};
+        return true;
+    }
+    wchar_t* v = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)n);
+    if (!v) byn_panic("out of memory", NULL, 0);
+    DWORD got = GetEnvironmentVariableW(w, v, n);
+    free(w);
+    int un = got > 0 ? WideCharToMultiByte(CP_UTF8, 0, v, (int)got, NULL, 0, NULL, NULL) : 0;
+    char* u = (char*)malloc((size_t)un + 1);
+    if (!u) byn_panic("out of memory", NULL, 0);
+    if (un > 0) WideCharToMultiByte(CP_UTF8, 0, v, (int)got, u, un, NULL, NULL);
+    free(v);
+    *out = byn_utf8_decode_replace((const uint8_t*)u, un, to);
+    free(u);
+    return true;
+#else
+    /* .NET passes the name as a C string, so a NUL ends it; a name with `=` is never found. */
+    const uint8_t* nul = name.len > 0 ? memchr(name.ptr, 0, (size_t)name.len) : NULL;
+    if (nul) name.len = nul - name.ptr;
+    if (memchr(name.ptr, '=', (size_t)name.len)) return false;
+    char* c = byn_cstr(name);
+    const char* v = getenv(c);
+    free(c);
+    if (!v) return false;
+    *out = byn_utf8_decode_replace((const uint8_t*)v, (int64_t)strlen(v), to);
+    return true;
+#endif
+}
+
 uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* alloc) {
     byn_str* names = NULL;
     int64_t n = 0;

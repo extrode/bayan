@@ -355,6 +355,9 @@ byn_str byn_path_full_path(byn_str p, byn_alloc* to, const char* file, int line)
 /* `Path.relative(from, to)`: .NET `Path.GetRelativePath(from, to)` on this OS, copied into `to`; both paths are made full against
    the working directory first. Panics on an empty path or one with a NUL byte, where .NET throws `ArgumentException`. */
 byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line);
+/* `Env.get`: .NET `Environment.GetEnvironmentVariable`, the value copied into `*out` with each invalid UTF-8 sequence as U+FFFD.
+   False, where .NET returns null, when the variable is not set. */
+bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to);
 
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);

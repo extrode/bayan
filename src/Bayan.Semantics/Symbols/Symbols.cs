@@ -379,6 +379,7 @@ public enum BuiltinFunction
     PathCombine,
     PathCombineSpan,
     PathFullPath,
+    EnvGet,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }

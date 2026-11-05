@@ -50,6 +50,7 @@ fread
 free
 fwrite
 getcwd
+getenv
 getpid
 longjmp
 malloc
