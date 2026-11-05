@@ -35,12 +35,11 @@ internal static class BoundedCapture
                 else tailStart = (tailStart + 1) % keep;
             }
         }
-        var text = Encoding.UTF8.GetString(head, 0, headLength);
-        if (tailLength == 0) return text;
         var last = new byte[tailLength];
         for (var i = 0; i < tailLength; i++) last[i] = tail[(tailStart + i) % keep];
         var elided = total - headLength - tailLength;
-        var gap = elided > 0 ? $"\n… {elided} bytes elided …\n" : "";
-        return text + gap + Encoding.UTF8.GetString(last);
+        // Nothing elided: decode the bytes as one, so a character is never cut at the head's end.
+        if (elided == 0) return Encoding.UTF8.GetString([.. head.AsSpan(0, headLength), .. last]);
+        return Encoding.UTF8.GetString(head, 0, headLength) + $"\n… {elided} bytes elided …\n" + Encoding.UTF8.GetString(last);
     });
 }

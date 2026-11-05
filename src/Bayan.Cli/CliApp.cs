@@ -682,7 +682,8 @@ public static class CliApp
                     4 => TestStatus.Pending,
                     _ => TestStatus.Panic,
                 };
-                var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) : (outcome.Stdout + outcome.Stderr).TrimEnd();
+                var captured = (outcome.Stdout + outcome.Stderr).TrimEnd();
+                var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) + (captured.Length > 0 ? "\n" + captured : "") : captured;
                 var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
                 results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
                 var module = Path.GetFileName(ModuleOf(compiled, test));

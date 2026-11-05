@@ -164,6 +164,8 @@ internal static class Format
                 try
                 {
                     var real = RealPath(Path.Combine(canonical, name!));
+                    // With a bound, a directory link is never followed, inside it or out.
+                    if (within is not null && new DirectoryInfo(Path.Combine(canonical, name!)).LinkTarget is not null) continue;
                     if (Inside(real)) pending.Push((sub, real));
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Report(sub, e); }

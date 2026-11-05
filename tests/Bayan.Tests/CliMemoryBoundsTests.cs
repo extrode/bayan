@@ -64,16 +64,44 @@ public sealed class CliMemoryBoundsTests
     }
 
     [Fact]
-    public void M1_ALoudTestReportsTheElidedBytes()
+    public async Task M1_ACharacterSplitAtTheHeadCapSurvivesWhenNothingIsElided()
     {
-        var file = Path.Combine(Fresh("loud"), "main.byn");
+        var bytes = new byte[BoundedCapture.Keep + 2];
+        Array.Fill(bytes, (byte)'a');
+        bytes[BoundedCapture.Keep - 1] = 0xC3; // "é" straddles the head's end
+        bytes[BoundedCapture.Keep] = 0xA9;
+        var text = await BoundedCapture.ReadAsync(new MemoryStream(bytes));
+        Assert.DoesNotContain('\uFFFD', text);
+        Assert.Equal(bytes, System.Text.Encoding.UTF8.GetBytes(text));
+    }
+
+    [Fact]
+    public async Task M1_ATestPrintingUntilKilledStaysSmallAndReportsTheElidedBytes()
+    {
+        var dir = Fresh("spam");
+        var file = Path.Combine(dir, "main.byn");
         File.WriteAllText(file,
-            "void main() {\n}\n\ntest \"loud\" {\n    var i = 0\n    while i < 3000 {\n" +
+            "void main() {\n}\n\ntest \"spam\" {\n    while true {\n" +
             "        print(\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\")\n" +
-            "        i += 1\n    }\n    assert(false)\n}\n");
-        var (exit, stdout, _) = Run("test", file);
-        Assert.Equal(CliApp.ExitTestFailure, exit);
-        Assert.Matches(@"… \d+ bytes elided …", stdout);
+            "    }\n}\n");
+        var psi = new System.Diagnostics.ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        psi.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "bayan.dll"));
+        psi.ArgumentList.Add("test");
+        psi.ArgumentList.Add(file);
+        psi.Environment["BAYAN_TEST_TIMEOUT_MS"] = "3000";
+        psi.Environment["BAYAN_CACHE"] = Path.Combine(dir, "cache");
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var stdout = p.StandardOutput.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
+        long peak = 0;
+        while (!p.WaitForExit(100))
+        {
+            try { peak = Math.Max(peak, p.PeakWorkingSet64); }
+            catch (InvalidOperationException) { }
+        }
+        Assert.Equal(CliApp.ExitTestFailure, p.ExitCode);
+        Assert.Matches(@"… \d+ bytes elided …", await stdout);
+        Assert.True(peak < 300L * 1024 * 1024, $"peak working set {peak / 1024 / 1024} MB");
     }
 
     // ── M2 ───────────────────────────────────────────────────────────────────────
@@ -103,6 +131,7 @@ public sealed class CliMemoryBoundsTests
             File.WriteAllText(file, Unformatted);
         }
         Directory.CreateSymbolicLink(Path.Combine(fixture, "link"), outside);
+        Directory.CreateSymbolicLink(Path.Combine(fixture, "inner-link"), Path.Combine(fixture, "tmp"));
         var (exit, stdout, stderr) = Run("format", "--check", fixture);
         var output = stdout + stderr;
         Assert.Equal(CliApp.ExitFailure, exit);
@@ -110,6 +139,7 @@ public sealed class CliMemoryBoundsTests
         Assert.DoesNotContain("a.byn", output);
         Assert.DoesNotContain("b.byn", output);
         Assert.DoesNotContain("c.byn", output);
+        Assert.DoesNotContain("inner-link", output);
     }
 
     // ── M4 ───────────────────────────────────────────────────────────────────────
