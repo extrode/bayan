@@ -1,0 +1,12 @@
+// `Io.remove` reads and writes the file system, so a public function calling it declares `fs` (BYN6002).
+public void undeclaredRemove(string p) fails IoError {
+    try Io.remove(p)
+}
+
+public void declaredRemove(string p) fails IoError uses fs {
+    try Io.remove(p)
+}
+
+void main() {
+    print("ok")
+}

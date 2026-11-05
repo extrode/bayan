@@ -553,6 +553,15 @@ bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to);
 /* `Fs.fileExists`: .NET `File.Exists`; false for a directory, a missing entry, an empty path, a path with a NUL, and a path ending in a separator. */
 bool byn_fs_file_exists(byn_str path);
 
+/* `Io.remove`: as .NET `File.Delete`: a missing file is not an error, a directory is `permissionDenied`; a missing directory is `notFound`. */
+uint32_t byn_io_remove(byn_str path);
+
+/* `Io.createDirectory`: as .NET `Directory.CreateDirectory`: missing parents are made, an existing directory is not an error, an existing file (or a file as a parent) is. */
+uint32_t byn_io_create_directory(byn_str path);
+
+/* `Io.removeDirectory`: as .NET `Directory.Delete(path)`: an empty directory only; a missing path, a file and a non-empty directory fail. */
+uint32_t byn_io_remove_directory(byn_str path);
+
 #endif
 """
 
@@ -3560,6 +3569,128 @@ uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* a
     *ptr = names;
     *len = n;
     return 0;
+}
+
+uint32_t byn_io_remove(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    BOOL ok = DeleteFileW(wpath);
+    DWORD e = ok ? 0 : GetLastError();
+    free(wpath);
+    if (ok || e == ERROR_FILE_NOT_FOUND) return 0;
+    return byn_win_error(e);
+#else
+    /* As .NET: the path is made full (`.` and `..` resolved) before it is deleted. */
+    byn_path_buf f = byn_path_full(path, "Io.remove", NULL, 0);
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    int rc = unlink(cpath);
+    int e = errno;
+    free(cpath);
+    if (rc == 0) {
+        free(f.p);
+        return 0;
+    }
+    if (e == ENOENT) {
+        /* A missing file is not an error, but a missing directory is. */
+        int64_t i = f.n;
+        while (i > 0 && !byn_path_sep(f.p[i - 1])) i--;
+        bool missing = false;
+        if (i > 0) {
+            char* d = byn_cstr((byn_str){f.p, i > 1 ? i - 1 : i});
+            struct stat st;
+            missing = stat(d, &st) != 0 || (st.st_mode & S_IFMT) != S_IFDIR;
+            free(d);
+        }
+        free(f.p);
+        return missing ? BYN_IO_NOT_FOUND : 0;
+    }
+    free(f.p);
+    if (e == EISDIR) return BYN_IO_PERMISSION_DENIED;
+    return byn_io_error(e);
+#endif
+}
+
+#ifndef _WIN32
+/* `mkdir` with the missing parents made first; 0 or the errno. An existing directory is not an error, an existing file is. */
+static int byn_mkdir_all(char* p, int64_t n) {
+    if (mkdir(p, 0777) == 0) return 0;
+    int e = errno;
+    struct stat st;
+    if (e == EEXIST) return stat(p, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR ? 0 : EEXIST;
+    if (e != ENOENT) return e;
+    int64_t i = n;
+    while (i > 0 && p[i - 1] != '/') i--;
+    if (i <= 1) return e;
+    p[i - 1] = 0;
+    int r = byn_mkdir_all(p, i - 1);
+    p[i - 1] = '/';
+    if (r != 0) return r;
+    if (mkdir(p, 0777) == 0) return 0;
+    e = errno;
+    return e == EEXIST && stat(p, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR ? 0 : e;
+}
+#endif
+
+uint32_t byn_io_create_directory(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+    /* As .NET: the full path without its trailing separators. */
+    byn_path_buf f = byn_path_full(path, "Io.createDirectory", NULL, 0);
+    while (f.n > 1 && byn_path_sep(f.p[f.n - 1])) f.n--;
+#ifdef _WIN32
+    /* .NET starts after `Path.GetPathRoot`: `C:\`, `\\?\C:\` or `\\server\share\`, so the walk never creates a root. */
+    wchar_t* wroot = byn_wide(f.p, byn_path_root_length(f.p, f.n));
+    size_t root = wcslen(wroot);
+    free(wroot);
+    wchar_t* w = byn_wide(f.p, f.n);
+    free(f.p);
+    size_t wn = wcslen(w);
+    uint32_t result = 0;
+    for (size_t i = root; i <= wn && result == 0; i++) {
+        if (i < wn && w[i] != L'\\' && w[i] != L'/') continue;
+        wchar_t keep = w[i];
+        w[i] = 0;
+        if (!CreateDirectoryW(w, NULL)) {
+            DWORD e = GetLastError();
+            DWORD attrs = e == ERROR_ALREADY_EXISTS ? GetFileAttributesW(w) : INVALID_FILE_ATTRIBUTES;
+            if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY)) result = e == ERROR_ALREADY_EXISTS ? BYN_IO_OTHER : byn_win_error(e);
+        }
+        w[i] = keep;
+    }
+    free(w);
+    return result;
+#else
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    free(f.p);
+    int e = byn_mkdir_all(cpath, (int64_t)strlen(cpath));
+    free(cpath);
+    return e == 0 ? 0 : byn_io_error(e);
+#endif
+}
+
+uint32_t byn_io_remove_directory(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    BOOL ok = RemoveDirectoryW(wpath);
+    DWORD e = ok ? 0 : GetLastError();
+    free(wpath);
+    return ok ? 0 : byn_win_error(e);
+#else
+    /* As .NET: the path is made full first, and a symlink to a directory is unlinked. */
+    byn_path_buf f = byn_path_full(path, "Io.removeDirectory", NULL, 0);
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    free(f.p);
+    int rc = rmdir(cpath);
+    int e = errno;
+    struct stat st;
+    if (rc != 0 && e == ENOTDIR && lstat(cpath, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK && stat(cpath, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR) {
+        rc = unlink(cpath);
+        e = errno;
+    }
+    free(cpath);
+    return rc == 0 ? 0 : byn_io_error(e);
+#endif
 }
 
 static void byn_bytes_add(byn_bytes* b, const void* p, int64_t n) {

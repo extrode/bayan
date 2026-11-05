@@ -551,4 +551,13 @@ bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to);
 /* `Fs.fileExists`: .NET `File.Exists`; false for a directory, a missing entry, an empty path, a path with a NUL, and a path ending in a separator. */
 bool byn_fs_file_exists(byn_str path);
 
+/* `Io.remove`: as .NET `File.Delete`: a missing file is not an error, a directory is `permissionDenied`; a missing directory is `notFound`. */
+uint32_t byn_io_remove(byn_str path);
+
+/* `Io.createDirectory`: as .NET `Directory.CreateDirectory`: missing parents are made, an existing directory is not an error, an existing file (or a file as a parent) is. */
+uint32_t byn_io_create_directory(byn_str path);
+
+/* `Io.removeDirectory`: as .NET `Directory.Delete(path)`: an empty directory only; a missing path, a file and a non-empty directory fail. */
+uint32_t byn_io_remove_directory(byn_str path);
+
 #endif

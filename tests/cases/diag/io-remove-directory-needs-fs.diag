@@ -1,0 +1,8 @@
+error BYN6002: `undeclared` uses `fs` but does not declare it
+
+  3 │     try Io.removeDirectory(p)
+    │         ^^^^^^^^^^^^^^^^^^^^^ uses `fs`
+    │
+  help: add `fs` to the `uses` clause, or remove the call
+    │ 2 │ public void undeclared(string p) fails IoError uses fs {
+    │   │                                               ++++++++
