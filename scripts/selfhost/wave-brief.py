@@ -1,7 +1,7 @@
 # Usage: python3 -I scripts/selfhost/wave-brief.py <repo-or-worktree> T10 [T11 ...] [--spec 011] — writes tmp/010-<t>/prompt.md for each task:
 # a self-contained writer brief for one spec 010 task (task text, plan rows, its 010-api.md entry points, guard command).
 # The spec is a row of specs.tsv (paths, shared-state files, test-class prefix, base branch); without --spec it is 010.
-import os, re, sys
+import fcntl, os, re, subprocess, sys
 
 args = sys.argv[1:]
 SPEC = '010'
@@ -59,8 +59,50 @@ def plan_rows(byns):
 
 
 def qrange(block):
-    m = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))
+    m = re.search(r'Q(\d{3,4})–Q(\d{3,4})', ' '.join(block))
     return (m.group(1), m.group(2)) if m else None
+
+
+def git(*a):
+    return subprocess.run(['git', '-C', wt, *a], capture_output=True).stdout
+
+
+# Question ranges (plan D6): an open task with none in its line gets the next five numbers after every Question in this
+# checkout's handoff, every local branch's handoff, every range in a tasks file and every range already assigned, recorded in
+# tmp/q-ranges.tsv of the main checkout (BAYAN_QRANGES overrides) under a lock, so briefs written at once do not overlap
+QRANGES = os.environ.get('BAYAN_QRANGES') or os.path.join(os.path.dirname(git('rev-parse', '--path-format=absolute', '--git-common-dir').decode().strip() or os.path.join(wt, '.git')), 'tmp', 'q-ranges.tsv')
+
+
+def taken():
+    texts = [open(os.path.join(wt, 'docs/bayan-handoff.md'), encoding='utf-8').read() if os.path.exists(os.path.join(wt, 'docs/bayan-handoff.md')) else '']
+    refs = git('for-each-ref', 'refs/heads', '--format=%(refname:short)').decode().split()
+    out = subprocess.run(['git', '-C', wt, 'cat-file', '--batch'], input=''.join(f'{r}:docs/bayan-handoff.md\n' for r in refs).encode(), capture_output=True).stdout
+    while out:
+        head, _, out = out.partition(b'\n')
+        if head.endswith(b' missing') or not head:
+            continue
+        size = int(head.split()[2]); texts.append(out[:size].decode('utf-8', 'replace')); out = out[size + 1:]
+    nums = [int(n) for x in texts for n in re.findall(r'^(\d{3,4})\. ', x, re.M)]
+    sd = os.path.join(wt, 'docs/specs')
+    for d in os.listdir(sd) if os.path.isdir(sd) else []:
+        for f in os.listdir(os.path.join(sd, d)):
+            if f.endswith('-tasks.md'):
+                nums += [int(n) for pair in re.findall(r'Q(\d{3,4})–Q(\d{3,4})', open(os.path.join(sd, d, f), encoding='utf-8').read()) for n in pair]
+    return nums
+
+
+def assign(t):
+    os.makedirs(os.path.dirname(QRANGES), exist_ok=True)
+    with open(QRANGES, 'a+', encoding='utf-8') as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        f.seek(0)
+        rows = [l.split('\t') for l in f.read().splitlines()[1:] if l]
+        mine = next((r for r in rows if r[0] == SPEC and r[1] == t), None)
+        if mine: return (mine[2], mine[3])
+        top = max(taken() + [int(x) for r in rows for x in r[2:4]] + [0])
+        if os.fstat(f.fileno()).st_size == 0: f.write('spec\ttask\tfirst\tlast\n')
+        f.write(f'{SPEC}\t{t}\t{top + 1}\t{top + 5}\n')
+        return (str(top + 1), str(top + 5))
 
 
 for t in args[1:]:
@@ -79,6 +121,7 @@ for t in args[1:]:
     allow = ','.join(dict.fromkeys(paths + ['docs/bayan-handoff.md', f"{row['dir']}/{row['tasks']}"]))
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = qrange(block)
+    if not q and SPEC != '010' and block[0].startswith('- [ ]'): q = assign(t)
     # T28 integrates: its gate is every SelfhostSemantics* class, parity and corpus parity included
     test_class = 'SelfhostSemantics' if SPEC == '010' and t == 'T28' else tests[0][:-3] if tests else f"{row['prefix']}{t[1:]}Tests"
     # a law-enact task owns only its law page: its gate is that law's proof
@@ -95,6 +138,12 @@ for t in args[1:]:
     proto = '\n'.join(protocol[2:])
     if SPEC != '010': proto = proto.replace('`selfhost/semantics/ctx.byn`', sharedx).replace('nothing else in ctx.byn', 'nothing else in those files').replace('SelfhostSemanticsT10Tests.Expected', BRIEF[SPEC]['oracle'])
     proto = proto.replace('SelfhostSemanticsT3Tests', test_class).replace('restore with `git checkout -- <file>`', 'restore by copying back a copy you took first (`cp f tmp/f.orig` … `cp tmp/f.orig f`; never `git checkout`, which reverts to the stub and loses your work)').replace('Skeleton by turn 12', 'Skeleton by turn 15')
+    pre = '' if SPEC == '010' else f"""Preflight (after the guard passes, before you return; `land.sh` runs it again and refuses on any FAIL):
+```
+bash scripts/selfhost/preflight.sh {SPEC} {t} "$(git rev-parse --abbrev-ref HEAD)"
+```
+Every line must say `ok` except `wp1`, which the dispatcher runs after your commit. It checks that each `file:line` you added cites the line as it stands after your last edit and that the backticked code you quote with it is on that line, that every file you changed is in your files list (if not, put the addition it prints in your final message; do not edit the tasks file), that your Questions are new numbers inside {'Q'+q[0]+'–Q'+q[1] if q else 'your range'}, and that your test classes and the cross-cutting ones (`CInventoryTests`, `SelfhostDriverT8Tests`, `SelfhostDriverRuntimeTests`, `plan-strings-check.js`) pass, none matching zero tests. Paste its output into your summary.
+"""
     s = f"""You are doing task {t} of spec {SPEC} ({BRIEF[SPEC]['desc']}). Other writers port the sibling files in parallel; every cross-file function already exists as a compiling stub with its final signature, so you call real names and never write stand-ins. A separate reviewer compares your port with the C# line by line before it lands; invented logic, sibling fallbacks and hand-typed test expectations fail that review.
 
 {proto}
@@ -103,7 +152,7 @@ Guard (run before you finish):
 ```
 bash scripts/selfhost/guard.sh --base {BASE} --allow '{allow}' --filter '{filt}' --task {t}{'' if SPEC == '010' else ' --spec ' + SPEC}
 ```
-Do not commit, merge, checkout, reset or stash; the dispatcher commits for you.
+{pre}Do not commit, merge, checkout, reset or stash; the dispatcher commits for you.
 
 **Order of work:** turns 1–6 read; by turn 15 your file(s) compile with every function stubbed and the test file has one passing test; then port in C# order, ~80 lines per compile; tests for each function as you go; guard; docs. If you reach turn 100 with tests unwritten, stop porting and write tests: the dispatcher resumes you for the rest.
 

@@ -2,6 +2,8 @@
 # Smoke test (with the T28 review brief's paths and filter): the brief for T10 carries its task text, its 010-api.md entry points and a guard line on the given base.
 set -e
 cd "$(dirname "$0")/../.."
+# an open task with no range gets one assigned (below); these runs must not record one in the main checkout's tmp/q-ranges.tsv
+export BAYAN_QRANGES=$PWD/tmp/wave-brief-q-ranges.tsv; rm -f "$BAYAN_QRANGES"
 BAYAN_BASE=test-base python3 -I scripts/selfhost/wave-brief.py . T10 > /dev/null
 b=tmp/010-t10/prompt.md
 grep -q '^- \[.\] T10 ' $b || { echo "FAIL: task text missing"; exit 1; }
@@ -79,6 +81,46 @@ fi
 # a C runtime source named in a task line (012 T16, src/runtime/bayan-rt.c) is in its guard --allow
 python3 -I scripts/selfhost/wave-brief.py . T16 --spec 012 > /dev/null
 grep '^bash scripts/selfhost/guard.sh' tmp/012-t16/prompt.md | grep -q 'src/runtime/bayan-rt.h,src/runtime/bayan-rt.c,' || { echo "FAIL: a .c file is not in the guard --allow"; exit 1; }
+# Question ranges (012 plan D6), on a fixture repo: an open task with no range in its line gets the five numbers after the highest
+# Question in the handoff, any local branch's handoff, any tasks-file range and any range already in tmp/q-ranges.tsv; a second
+# brief for it reuses the row; briefs written at once do not overlap; a range in the task line is kept and not recorded;
+# a ticked task gets none; the 012 brief tells the writer to run preflight.sh, the 010 brief does not.
+here=$PWD; q=$here/tmp/wave-brief-q; rm -rf "$q"; mkdir -p "$q/docs/specs/012-self-hosted-bootstrap" "$q/docs/specs/011-self-hosted-emitter"
+( cd "$q"; git init -q -b base; git config user.email t@t; git config user.name t
+  printf '1005. a\n1007. b\n' > docs/bayan-handoff.md
+  printf -- '- [ ] T90 a — files: `x.byn` — covers: R1\n' > docs/specs/011-self-hosted-emitter/011-tasks.md
+  : > docs/specs/012-self-hosted-bootstrap/012-plan.md
+  for n in 91 92 93 94 95; do printf -- '- [ ] T%s t — files: `selfhost/driver/t%s.byn` — covers: R1\n' $n $n; done > docs/specs/012-self-hosted-bootstrap/012-tasks.md
+  printf -- '- [ ] T96 t — files: `t.byn` — covers: R1 — Questions Q1100–Q1104\n- [x] T97 t — files: `t.byn` — covers: R1\n' >> docs/specs/012-self-hosted-bootstrap/012-tasks.md
+  git add -A; git commit -qm "test: base"; git switch -q -c other; printf '1012. c\n' >> docs/bayan-handoff.md; git commit -qam "test: other"; git switch -q base )
+export BAYAN_QRANGES=$q/tmp/q-ranges.tsv
+python3 -I scripts/selfhost/wave-brief.py "$q" T96 --spec 012 > /dev/null
+grep -q 'Questions Q1100–Q1104 only' "$q/tmp/012-t96/prompt.md" || { echo "FAIL: a range in the task line is not the brief's"; exit 1; }
+[ ! -f "$BAYAN_QRANGES" ] || { echo "FAIL: a range in the task line was recorded"; exit 1; }
+python3 -I scripts/selfhost/wave-brief.py "$q" T91 --spec 012 > /dev/null
+grep -q 'Questions Q1105–Q1109 only' "$q/tmp/012-t91/prompt.md" || { echo "FAIL: the range is not the block after the highest Question, branch or tasks range"; grep -o 'Questions Q[^ ]* only' "$q/tmp/012-t91/prompt.md"; exit 1; }
+python3 -I scripts/selfhost/wave-brief.py "$q" T91 --spec 012 > /dev/null
+[ "$(grep -c '^012	T91	1105	1109$' "$BAYAN_QRANGES")" = 1 ] && grep -q 'Questions Q1105–Q1109 only' "$q/tmp/012-t91/prompt.md" || { echo "FAIL: a second brief does not reuse the recorded range"; cat "$BAYAN_QRANGES"; exit 1; }
+perl -i -pe 's/ — Questions Q1100–Q1104//' "$q/docs/specs/012-self-hosted-bootstrap/012-tasks.md"
+python3 -I scripts/selfhost/wave-brief.py "$q" T92 --spec 012 > /dev/null
+grep -q 'Questions Q1110–Q1114 only' "$q/tmp/012-t92/prompt.md" || { echo "FAIL: a range already recorded is not skipped"; exit 1; }
+printf '1200. d\n' >> "$q/docs/bayan-handoff.md"
+python3 -I scripts/selfhost/wave-brief.py "$q" T93 --spec 012 > /dev/null & python3 -I scripts/selfhost/wave-brief.py "$q" T94 --spec 012 > /dev/null &
+python3 -I scripts/selfhost/wave-brief.py "$q" T95 --spec 012 > /dev/null & wait
+r=$(awk -F'\t' '$2 ~ /^T9[345]$/ { print $3 "-" $4 }' "$BAYAN_QRANGES" | sort | tr '\n' ' ')
+[ "$r" = "1201-1205 1206-1210 1211-1215 " ] || { echo "FAIL: briefs written at once overlap or skip ($r)"; cat "$BAYAN_QRANGES"; exit 1; }
+python3 -I scripts/selfhost/wave-brief.py "$q" T97 --spec 012 > /dev/null
+grep -q 'Questions in your range only' "$q/tmp/012-t97/prompt.md" && ! grep -q 'T97' "$BAYAN_QRANGES" || { echo "FAIL: a ticked task got a range"; exit 1; }
+grep -qF 'bash scripts/selfhost/preflight.sh 012 T91 "$(git rev-parse --abbrev-ref HEAD)"' "$q/tmp/012-t91/prompt.md" || { echo "FAIL: the 012 brief does not tell the writer to run preflight.sh"; exit 1; }
+grep -q 'preflight.sh' tmp/010-t10/prompt.md && { echo "FAIL: the 010 brief names preflight.sh"; exit 1; }
+rm -rf "$q"
+# 012 T17 names its test files with their directory: its review runs those classes, not SelfhostDriverT17Tests (no such class);
+# a file declaring another class (SelfhostDriverInventoryTests.cs holds SelfhostDriverT8Tests) is gated by that class
+python3 -I scripts/selfhost/review-brief.py . T17 --spec 012 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostDriverRuntimeTests|FullyQualifiedName~StdEnvTests|FullyQualifiedName~StdFsTests"`' tmp/012-t17/review.md || { echo "FAIL: the 012 T17 review filter is not its files' classes"; grep -o 'filter "[^"]*"' tmp/012-t17/review.md; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T8 --spec 012 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostDriverT8Tests' tmp/012-t8/review.md || { echo "FAIL: the review filter is the file name, not the class it declares"; grep -o 'filter "[^"]*"' tmp/012-t8/review.md; exit 1; }
+rm -f "$here/tmp/wave-brief-q-ranges.tsv"
 # golden expected files named in a task line (014 T6) are in its guard --allow
 python3 -I scripts/selfhost/wave-brief.py . T6 --spec 014 > /dev/null
 grep '^bash scripts/selfhost/guard.sh' tmp/014-T6/prompt.md | grep -q 'tests/cases/run/path-full-path-empty.exitcode,.*tests/cases/emit/run-c.sha256' || { echo "FAIL: golden expected files are not in the guard --allow"; exit 1; }

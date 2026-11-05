@@ -40,8 +40,13 @@ for t in args[1:]:
     filt = f'Law=L{law[0]}' if law and not own_tests else f'FullyQualifiedName~{test_class}'
     if SPEC == '010' and not law and not own_tests and not byns: filt = 'FullyQualifiedName~SelfhostSemanticsApiTests'  # a docs-only task
     # 011: every test class the task owns gates it (a task with a law page and tests too, T14), and T21 also counts the SelfhostSemantics* tests (Q867, Q870)
-    if SPEC != '010' and (own_tests or not law):
-        filt = '|'.join(f'FullyQualifiedName~{c[:-3]}' for c in own_tests) or filt
+    # the classes are those the task's tests/Bayan.Tests/*.cs files declare, bare names or with their directory (SelfhostDriverInventoryTests.cs
+    # holds SelfhostDriverT8Tests); a file not written yet counts by its name; never a `<prefix><n>Tests` class the task does not have (012 T17).
+    # As in wave-brief.py, a task with bare test names keeps them alone (011 T14 re-pins the rooted ones)
+    test_paths = [f'tests/Bayan.Tests/{f}' for f in own_tests] or [f for f in rooted if re.fullmatch(r'tests/Bayan\.Tests/[A-Za-z0-9]+Tests\.cs', f)]
+    if SPEC != '010' and (test_paths or not law):
+        classes = [c for p in test_paths for c in (re.findall(r'\bclass\s+(\w+Tests)\b', open(os.path.join(wt, p), encoding='utf-8').read()) if os.path.exists(os.path.join(wt, p)) else []) or [os.path.basename(p)[:-3]]]
+        filt = '|'.join(f'FullyQualifiedName~{c}' for c in dict.fromkeys(classes)) or filt
         if SPEC == '011' and t == 'T21': filt += '|FullyQualifiedName~SelfhostSemantics'
         if SPEC == '011' and t == 'T13': filt += '|FullyQualifiedName~SelfhostEmitter'  # integration: every emitter class (Q886)
     shared = '`ctx.byn`' if SPEC == '010' else ' and '.join('`'+c+'`' for c in row['shared'].split(','))
