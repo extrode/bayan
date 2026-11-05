@@ -15,6 +15,14 @@ public struct CompilationOptions {
     public bool skipOwnershipCheck = false
     public List<string>? capabilities = null
     public string? packageName = null
+    public string? target = null
+}
+
+/// C# `HostTarget.Split` (HostTarget.cs): the `Target.os` and `Target.arch` of a target name; `wasm32` is `wasi`/`wasm32`.
+public (string os, string arch) hostTargetSplit(string target) uses alloc {
+    if target == "wasm32" { return (os: "wasi", arch: "wasm32") }
+    if (target.position("-") is { } dash) { return (os: $"{target[0..dash]}", arch: $"{target[(dash + 1)..target.length]}") }
+    return (os: "", arch: "")
 }
 
 
@@ -85,6 +93,7 @@ public Ctx create(from move List<lexer.SourceText> entryFiles, at string package
         library: options.library,
         capabilities: move capabilities,
         packageName: options.packageName ?? "",
+        target: options.target,
         packageRoot: packageRoot,
         displayRoot: displayRoot ?? packageRoot,
         includeTests: options.includeTests,

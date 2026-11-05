@@ -1,5 +1,6 @@
 using System.Text;
 using Bayan.Semantics;
+using Bayan.Syntax.Text;
 using Bayan.Semantics.Symbols;
 using ArrayType = Bayan.Semantics.Symbols.ArrayType;
 
@@ -122,6 +123,13 @@ public sealed class SelfhostSemanticsT9Tests
         ("builtinType(.env)", BuiltinType.Env),
         ("builtinType(.fs)", BuiltinType.Fs),
     ];
+
+    /// <summary>Build targets for <c>Target.os</c>/<c>Target.arch</c>; null is the compiling host.</summary>
+    private static readonly string?[] Targets = ["linux-x64", "macos-arm64", "windows-x64", "wasm32", "nodash", "", null];
+
+    private const string TargetSource = "void main() {\n    let a = Target.os\n    let b = Target.arch\n}\n";
+
+    private static string TargetLabel(string? t) => t is null ? "host" : $"[{t}]";
 
     private static readonly string[] Enums = ["Stream", "Radix", "Edge", "Align", "Comparison", "LogLevel", "Utf8Invalid"];
 
@@ -259,6 +267,24 @@ public sealed class SelfhostSemanticsT9Tests
         s.AppendLine("    print(\"== kinds\")");
         foreach (var (bayan, _) in Kinds)
             s.AppendLine($"    print($\"{{builtinKindOf(typeIndex({bayan})).ordinal}} {{typeDisplay(ref c, by: {bayan})}}\")");
+        s.AppendLine("    print(\"== target\")");
+        foreach (var target in Targets)
+        {
+            var option = target is null ? "" : $", target: \"{target}\"";
+            s.AppendLine($$"""
+                    {
+                        var files = List<lexer.SourceText>()
+                        var bytes = List<u8>()
+                        for ch in "{{TargetSource.Replace("\n", "\\n")}}".bytes { bytes.append(ch) }
+                        files.append(lexer.SourceText.create("main.byn", from: move bytes))
+                        let compiled = create(from: move files, at: "tmp/t18-target", by: in CompilationOptions { includeTests: false{{option}} })
+                        var sb = StrBuf()
+                        sb.append($"{{TargetLabel(target)}} diagnostics={compiled.diagnostics.length} host={compiled.bHostTargets.length} literals=")
+                        for lit in compiled.bLiterals { sb.append($"[{lit.value.text}]") }
+                        print(sb.finish())
+                    }
+                """);
+        }
         s.AppendLine("    print(\"== names\")");
         foreach (var n in NameTypes)
             s.AppendLine($"    namesLine(ref c, for: \"{n}\", at: t{Array.FindIndex(Types, t => t.Label == n)})");
@@ -330,6 +356,22 @@ public sealed class SelfhostSemanticsT9Tests
     {
         var expected = Kinds.Select(k => $"{(int)k.Oracle.Kind} {k.Oracle.DisplayName}").ToList();
         SelfhostSemanticsHarness.AssertSection(Output.Value, "kinds", expected);
+    }
+
+    [Fact]
+    public void TargetMembersMatchTheCSharp()
+    {
+        var expected = new List<string>();
+        foreach (var target in Targets)
+        {
+            var source = SourceText.FromString("main.byn", TargetSource);
+            var compilation = Compilation.Create([source], Path.Combine(Golden.RepoRoot, "tmp", "t18-target"), new CompilationOptions(Target: target));
+            var literals = target is null
+                ? ""
+                : $"[{HostTarget.Split(target).Os}][{HostTarget.Split(target).Arch}]";
+            expected.Add($"{TargetLabel(target)} diagnostics={compilation.Diagnostics.Count} host={(target is null ? 2 : 0)} literals={literals}");
+        }
+        SelfhostSemanticsHarness.AssertSection(Output.Value, "target", expected);
     }
 
     [Fact]

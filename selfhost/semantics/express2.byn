@@ -248,7 +248,11 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             }
             if bKind == .target {
                 if name == "os" || name == "arch" {
-                    // stub: T18 `_c.Options.Target is null` (blocked: Q1008)
+                    if (c.target is { } buildTarget) {
+                        let split = hostTargetSplit(buildTarget)
+                        let text = Constant { kind: .text, text: name == "os" ? split.os : split.arch }
+                        return recordSyntaxNode(ref c, for: literal(ref c, at: m.span, as: prim(.string), by: text), at: syntax)
+                    }
                     return recordSyntaxNode(ref c, for: addHostTarget(ref c, from: BHostTarget { span: m.span, isOs: name == "os" }), at: syntax)
                 }
                 let near = suggest(name, by: in ["os", "arch"])
