@@ -9,7 +9,7 @@ This index maps every Planned and Watch lesson to one handoff. Adopted lessons n
 
 | Handoff | File | Gate to start |
 |---|---|---|
-| A2 Mid-flight | `docs/revisions/A2-lessons-mid-flight.md` | Now. Docs and measurement only (A1 ground rules) |
+| A2 Mid-flight | `docs/revisions/a2-lessons-mid-flight.md` | Now. Docs and measurement only (A1 ground rules) |
 | R4 Lessons in the round-4 batch | `docs/plans/2026-11-05-r4-section-10-lessons.md`, appended to the round-4 draft as §10 | 012 passes; lands with the round-4 batch |
 | v0.2a Fast loop, inspection, testing | `docs/plans/2026-11-05-001-v0.2a-loop.md` | Round-4 batch merged |
 | v0.2b IDE and syntax API | `docs/plans/2026-11-05-002-v0.2b-ide.md` | Round-4 batch merged; runs in parallel with v0.2a after v0.2a #2 |

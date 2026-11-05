@@ -1,6 +1,6 @@
 # Round 4 draft, §10: Lessons intake
 
-Date: 2026-11-05. Append to the round-4 draft as §10. It lands with the round-4 batch after 012: one migration, one renumbering.
+Date: 2026-11-05. Append to the round-4 draft as §10 (appended: [`docs/bayan-design-round-4-draft.md` §10](../bayan-design-round-4-draft.md#10-lessons-intake); edit both together). It lands with the round-4 batch after 012: one migration, one renumbering.
 
 ## Conventions
 
