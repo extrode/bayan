@@ -12,6 +12,7 @@ d="$t/dist"
 cat > "$t/bin/dotnet" <<'FAKE'
 #!/usr/bin/env bash
 while [ $# -gt 0 ]; do case "$1" in -r) rid=$2; shift 2 ;; -o) out=$2; shift 2 ;; *) shift ;; esac; done
+[ -n "${FAKE_RMDIR:-}" ] && rmdir "$FAKE_RMDIR" && exit 1
 [ "${FAKE_FAIL:-}" = 1 ] && exit 1
 [ "${FAKE_NOWRITE:-}" = 1 ] && exit 0
 mkdir -p "$out"; exe=bayan; case "$rid" in win-*) exe=bayan.exe ;; esac
@@ -112,5 +113,8 @@ check "held publish lock refuses before publishing" "$([ -e "$t/gpublished" ] &&
 check "held publish lock frees the target lock" "$([ -e "$t/gdist/macos-arm64/.lock" ] && echo y || echo n)" n
 rmdir "$g/tmp/dist-publish.lock"
 grun >/dev/null; check "publish lock released after a run" "$([ -e "$g/tmp/dist-publish.lock" ] && echo y || echo n)" n
+
+FAKE_RMDIR="$g/tmp/dist-publish.lock" grun >/dev/null; check "publish lock removed mid-run exits 1" "$?" 1
+check "publish lock removed mid-run still frees the target lock" "$([ -e "$t/gdist/macos-arm64/.lock" ] && echo y || echo n)" n
 
 exit $fail
