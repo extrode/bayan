@@ -1,0 +1,337 @@
+// The commands `build` (with `--emit-c`) and `run` of the self-hosted driver (spec 012 T5). Ports `CliApp.cs` :151
+// `ParseBuildOptions`, :259 `Compile` (its `--package` branch; the rest is `semantics/cli.byn` `t26Compile`), :409 `EmitC`,
+// :422 `PrepareOut`, :434 `WriteIfChanged`, :458 `Build`, :505 `Phase`, :544 `RunProgram` and :573 `Start`. The C compiler
+// is `cc.byn`'s `ZigOrCc`; there is no build cache (R6), so the scratch files go beside the output (spec Q1).
+
+import lexer
+import semantics
+import emitter
+
+type T5T26Options = semantics.T26Options
+type T5CompilationOptions = semantics.CompilationOptions
+
+/// The `BuildOptions` (CliApp.cs:149) fields `build` and `run` read; the test-only ones stay C# (R3).
+struct T5Options {
+    string path
+    string mode = "safe"
+    string? output = null
+    bool emitC = false
+    bool json = false
+    List<string> programArgs = List<string>()
+    string? target = null
+    bool verbose = false
+    bool all = false
+    string? package = null
+}
+
+/// The C# `Directory.Exists`: `path` lists.
+bool t5DirectoryExists(string path) {
+    let _ = Io.listDir(path) catch return false
+    return true
+}
+
+/// CliApp.cs:151 `ParseBuildOptions` with `allowTestJson: false` (the `--changed`, `--base`, `--json`, `--mutate`, `--run`,
+/// `--coverage` and `--only` arms are then the `default` arm's). Null after reporting.
+T5Options? t5ParseBuildOptions(in List<string> args, by bool allowOutput, for bool allowVerbose) uses alloc, console, fs {
+    var path: string? = null
+    var output: string? = null
+    var target: string? = null
+    var package: string? = null
+    var mode = "safe"
+    var json = false
+    var all = false
+    var verbose = false
+    var emitC = false
+    var programArgs = List<string>()
+    var i: i64 = 0
+    while i < args.length {
+        let a = args[i]
+        if a == "--" {
+            for k in (i + 1)..args.length { programArgs.append(args[k]) }
+            i = args.length
+        } else if a == "--mode" && i + 1 < args.length {
+            // Toolchain.cs:68 `TryParseMode`.
+            i += 1
+            mode = args[i]
+            if mode != "debug" && mode != "safe" && mode != "fast" {
+                Io.stderr.write($"bayan: unknown mode `{args[i]}` (expected debug, safe or fast)\n")
+                return null
+            }
+        } else if a == "--diagnostics" && i + 1 < args.length {
+            i += 1
+            if args[i] == "json" {
+                json = true
+            } else if args[i] == "text" {
+                json = false
+            } else {
+                Io.stderr.write($"bayan: unknown diagnostics format `{args[i]}` (expected json or text)\n")
+                return null
+            }
+        } else if a == "-o" && allowOutput && i + 1 < args.length {
+            i += 1
+            output = args[i]
+        } else if a == "--emit-c" && allowOutput {
+            emitC = true
+        } else if a == "--target" && allowOutput && i + 1 < args.length {
+            i += 1
+            target = args[i]
+            if args[i] == "host" {
+                target = null
+            } else if !targetIsKnown(args[i]) {
+                Io.stderr.write($"bayan: unknown target `{args[i]}` (expected host, {t5Join(in targetNames())})\n")
+                return null
+            }
+        } else if a == "--all" {
+            all = true
+        } else if (a == "-v" || a == "--verbose") && allowVerbose {
+            verbose = true
+        } else if a == "--package" && i + 1 < args.length {
+            i += 1
+            package = args[i]
+        } else {
+            if path is not null || a.startsWith("-") {
+                Io.stderr.write($"bayan: unexpected argument `{a}`\n")
+                return null
+            }
+            path = a
+        }
+        i += 1
+    }
+    // `File.Exists("package.byn")`: a relative name resolves against the working directory.
+    if path is null && t1FileExists("package.byn") { path = "." }
+    if (path is not { } p) {
+        Io.stderr.write("bayan: expected a file or directory (or run inside a project with a `package.byn`)\n")
+        return null
+    }
+    if !t1FileExists(p) && !t5DirectoryExists(p) {
+        Io.stderr.write($"bayan: not found: {p}\n")
+        return null
+    }
+    return T5Options {
+        path: p,
+        mode: mode,
+        output: output,
+        emitC: emitC,
+        json: json,
+        programArgs: move programArgs,
+        target: target,
+        verbose: verbose,
+        all: all,
+        package: package,
+    }
+}
+
+/// `string.Join(", ", xs)`.
+string t5Join(in List<string> xs) {
+    var sb = StrBuf()
+    for i in 0..xs.length {
+        if i > 0 { sb.append(", ") }
+        sb.append(xs[i])
+    }
+    return $"{sb.finish()}"
+}
+
+/// The `BuildOptions` `t26Compile` and `t26Report` read.
+T5T26Options t5T26(in T5Options o) => T5T26Options { path: o.path, json: o.json, all: o.all }
+
+/// `Compilation.Diagnostics.HasErrors`.
+bool t5HasErrors(in semantics.Ctx c) {
+    for d in c.diagnostics {
+        if !d.isWarning { return true }
+    }
+    return false
+}
+
+/// The `*.byn` files of `dir` in ordinal order, without the `*.test.byn` ones (Compilation.cs:155 `ModuleFiles`, `includeTests: false`).
+List<string> t5ModuleFiles(string dir) uses alloc, fs {
+    var files = List<string>()
+    let names = Io.listDir(dir) catch return files
+    for name in names {
+        let f = Path.combine(dir, name)
+        if name.endsWith(".byn") && !name.endsWith(".test.byn") && t1FileExists(f) { files.append(f) }
+    }
+    for i in 1..files.length {
+        var j = i
+        while j > 0 && t5OrdinalLess(files[j], by: files[j - 1]) {
+            let t = files[j]
+            files[j] = files[j - 1]
+            files[j - 1] = t
+            j -= 1
+        }
+    }
+    return files
+}
+
+/// `StringComparer.Ordinal`: `a` sorts before `b` byte by byte.
+bool t5OrdinalLess(string a, by string b) {
+    let x = a.bytes
+    let y = b.bytes
+    let n = x.length < y.length ? x.length : y.length
+    for i in 0..n {
+        if x[i] < y[i] { return true }
+        if x[i] > y[i] { return false }
+    }
+    return x.length < y.length
+}
+
+/// CliApp.cs:259 `Compile`: the `--package <root>` branch, else `semantics/cli.byn` `t26Compile` (the project, script and
+/// path branches). Prints diagnostics and adds them to `reported`; `ok` is false where the C# returns null.
+semantics.Ctx t5Compile(in T5Options o, by in semantics.T26Symbols symbols, to ref List<semantics.T26Reported> reported, through ref bool ok) uses alloc, clock, console, fs {
+    let o26 = t5T26(in o)
+    let manifestPath = Path.combine(o.path, "package.byn")
+    if (o.package is { } package) {
+        if !(t5DirectoryExists(o.path) && t1FileExists(manifestPath)) {
+            let full = Path.fullPath(o.path)
+            var files = List<string>()
+            if t5DirectoryExists(full) {
+                files = t5ModuleFiles(full)
+            } else {
+                files.append(full)
+            }
+            var sources = List<lexer.SourceText>()
+            for f in files {
+                let bytes = Io.readFile(f) catch List<u8>()
+                sources.append(lexer.SourceText.create(f, from: move bytes))
+            }
+            let options = T5CompilationOptions {}
+            var c = semantics.create(from: move sources, at: Path.fullPath(package), by: in options)
+            semantics.t26Report(in o26, by: in symbols, for: ref c, to: ref reported)
+            ok = !t5HasErrors(in c)
+            return c
+        }
+    }
+    return semantics.t26Compile(in o26, by: in symbols, to: ref reported, through: ref ok)
+}
+
+/// CliApp.cs:409 `EmitC`: the C translation unit for an error-free compilation.
+string t5EmitC(ref semantics.Ctx c, by string mode) uses alloc => emitter.t12Emit(ref c, by: mode)
+
+/// CliApp.cs:422 `PrepareOut`: a project's `out/<mode>/<target>/`, with the emitted C written to its `c/`; null outside a
+/// project. `Directory.CreateDirectory` has no builtin (spec Q1), so a missing `c/` is not created and the build fails later.
+string? t5PrepareOut(in semantics.Ctx compiled, by string mode, for string target, from string source) uses alloc, fs {
+    if compiled.manifest is null { return null }
+    let root = compiled.displayRoot
+    let dir = Path.combine(Path.combine(Path.combine(root, "out"), mode), target)
+    let c = Path.combine(dir, "c")
+    t5WriteIfChanged(Path.combine(c, "main.c"), from: source)
+    t5WriteIfChanged(Path.combine(c, "bayan-rt.h"), from: runtimeHeader)
+    t5WriteIfChanged(Path.combine(c, "bayan-rt.c"), from: runtimeSource)
+    return dir
+}
+
+/// CliApp.cs:434 `WriteIfChanged`. `Toolchain.ReplaceFile` (Toolchain.cs:220) writes through a temporary file and a rename,
+/// which has no builtin; the file is written in place.
+void t5WriteIfChanged(string path, from string text) uses alloc, fs {
+    let old = Io.readText(path) catch ""
+    if !t1FileExists(path) || old != text {
+        Io.writeFile(path, text.bytes) catch return
+    }
+}
+
+/// CliApp.cs:420 `HostTarget`.
+string t5HostTarget() uses alloc => targetHost() ?? "host"
+
+/// CliApp.cs:458 `Build`. `kept` is the command and its arguments.
+i32 buildCommand(in List<string> kept, by in DCtx d) uses alloc, clock, console, env, fs, process {
+    let clock = Io.monotonicNanos()
+    let args = t2Rest(kept)
+    let o = t5ParseBuildOptions(in args, by: true, for: true) ?? return exitUsage
+    let symbols = semantics.t26Symbols(d.styleErr.ascii)
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var compiled = t5Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return semantics.t26Failed(in t5T26(in o), from: in reported, by: in symbols) }
+    if refuseLibrary(compiled, by: "build") { return exitUsage }
+    let emit = Io.monotonicNanos()
+    let source = t5EmitC(ref compiled, by: o.mode)
+    let emitTime = Io.monotonicNanos() - emit
+    if o.emitC {
+        Io.stdout.write(source)
+        return exitOk
+    }
+    let target = o.target ?? t5HostTarget()
+    var output = ""
+    if (o.output is { } given) {
+        output = given
+    } else if (t5PrepareOut(in compiled, by: o.mode, for: target, from: source) is { } dir) {
+        output = Path.combine(dir, targetExecutableName(semantics.programName(ref compiled, for: o.path), for: target))
+    } else {
+        output = targetExecutableName(semantics.programName(ref compiled, for: o.path), for: target)
+    }
+    let native = Io.monotonicNanos()
+    var cc = ZigOrCc {}
+    let result = cc.compile(t5ScratchDir(output), from: source, to: output, by: o.mode, for: o.target)
+    let nativeTime = Io.monotonicNanos() - native
+    unless result.succeeded {
+        ccReportToolchain(in result)
+        return exitToolchain
+    }
+    if o.json { return exitOk }
+    if o.verbose {
+        print(t5Phase("parse", by: semantics.t26Seconds(compiled.parseTime)))
+        print(t5Phase("check", by: semantics.t26Seconds(compiled.checkTime)))
+        print(t5Phase("emit", by: semantics.t26Seconds(emitTime)))
+        print(t5Phase("compile", by: semantics.t26Seconds(nativeTime)))
+        let shown = compiled.manifest is not null && o.output is null ? Path.relative(compiled.displayRoot, to: output).replaced("\\", by: "/") : output
+        print($"  {shown}")
+    }
+    let dot = semantics.t26Symbols(d.styleOut.ascii).dot
+    print($"{dot} built {semantics.programName(ref compiled, for: o.path)} ({o.mode}, {target}) in {semantics.t26Seconds(Io.monotonicNanos() - clock)}")
+    return exitOk
+}
+
+/// Where the scratch files of a link to `output` go (spec Q1): the output's directory.
+string t5ScratchDir(string output) uses alloc => Path.directoryName(Path.fullPath(output)) ?? ""
+
+/// CliApp.cs:507 `Phase`: `Messages.PhaseLine` (`  {0,-11}{1}`).
+string t5Phase(string name, by string value) uses alloc {
+    var sb = StrBuf()
+    sb.append("  ")
+    sb.append(name)
+    for _ in name.length..11 { sb.append(" ") }
+    sb.append(value)
+    return $"{sb.finish()}"
+}
+
+/// CliApp.cs:544 `RunProgram`. `args` is what follows `run` (a script run passes `[file, "--", ..rest]`, CliApp.cs:99).
+i32 runProgram(in List<string> args, by in DCtx d) uses alloc, clock, console, env, fs, process {
+    let o = t5ParseBuildOptions(in args, by: false, for: false) ?? return exitUsage
+    let symbols = semantics.t26Symbols(d.styleErr.ascii)
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var compiled = t5Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return semantics.t26Failed(in t5T26(in o), from: in reported, by: in symbols) }
+    if refuseLibrary(compiled, by: "run") { return exitUsage }
+    let source = t5EmitC(ref compiled, by: o.mode)
+    let host = t5HostTarget()
+    var output = ""
+    if (t5PrepareOut(in compiled, by: o.mode, for: host, from: source) is { } dir) {
+        output = Path.combine(dir, targetExecutableName(semantics.programName(ref compiled, for: o.path), for: host))
+    } else {
+        output = t5RunOutput(o.path, for: semantics.programName(ref compiled, for: o.path))
+    }
+    var cc = ZigOrCc {}
+    let result = cc.compile(t5ScratchDir(output), from: source, to: output, by: o.mode, for: null)
+    unless result.succeeded {
+        ccReportToolchain(in result)
+        return exitToolchain
+    }
+    return t5Start(output, by: in o.programArgs)
+}
+
+/// The executable `run` builds outside a project. The C# builds into its cache (`output: null`, Toolchain.cs:217), which the
+/// driver has not (R6): it is `<name>` beside the program, in the directory of `path` (the directory itself for one).
+string t5RunOutput(string path, for string name) uses alloc, fs {
+    let full = Path.fullPath(path)
+    let dir = t5DirectoryExists(full) ? full : Path.directoryName(full) ?? ""
+    return Path.combine(dir, targetExecutableName(name, for: t5HostTarget()))
+}
+
+/// CliApp.cs:573 `Start`: runs `executable` with `programArgs`; `Io.run` captures its output, written stdout then stderr
+/// after it ends (spec Q5).
+i32 t5Start(string executable, by in List<string> programArgs) uses alloc, console, process {
+    let r = Io.run(executable, programArgs.span) catch return exitFailure
+    Io.stdout.write(r.stdout)
+    Io.stderr.write(r.stderr)
+    return r.exitCode
+}

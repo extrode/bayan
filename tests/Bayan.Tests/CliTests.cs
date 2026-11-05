@@ -70,6 +70,26 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void PackageResolvesImportsUnderItsRootAndNamesLinesFromIt()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "tmp", "cli", "package");
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        Directory.CreateDirectory(Path.Combine(root, "util"));
+        Directory.CreateDirectory(Path.Combine(root, "app"));
+        File.WriteAllText(Path.Combine(root, "util", "util.byn"), "public i32 twice(i32 x) => x * 2\n");
+        File.WriteAllText(Path.Combine(root, "app", "main.byn"), "import util\n\nvoid main() {\n    print($\"{util.twice(21)}\")\n}\n");
+        var app = Path.Combine(root, "app");
+        var (exit, stdout, stderr) = Run("build", "--emit-c", "--mode", "debug", "--package", root, app);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Contains("#line 4 \"app/main.byn\"", stdout);
+        Assert.Contains("#line 1 \"util/util.byn\"", stdout);
+        Assert.NotEqual(CliApp.ExitOk, Run("build", "--emit-c", app).Exit);
+        var (usage, _, err) = Run("build", app, "--package");
+        Assert.Equal(CliApp.ExitUsage, usage);
+        Assert.Contains("unexpected argument `--package`", err);
+    }
+
+    [Fact]
     public void AuditListsEveryBypassWithItsReason()
     {
         var dir = Fresh("audit", "@allow(BYN2230) because \"kept for the C ABI\"\nvoid toHex() {\n}\n\nunsafe void poke() {\n}\n\n"

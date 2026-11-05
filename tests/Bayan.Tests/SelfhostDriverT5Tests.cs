@@ -1,0 +1,249 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
+using Bayan.Cli;
+
+namespace Bayan.Tests;
+
+/// <summary>
+/// 012 T5: <c>build</c>, <c>build --emit-c</c> and <c>run</c> of the driver against the C# <c>bayan</c> (R2, R6, R7). The C# side
+/// is <see cref="CliApp.Run"/>: in-process where the paths are absolute and no child process prints, else <c>dotnet Bayan.Cli.dll</c>
+/// (its <c>Program.cs</c> calls <c>CliApp.Run</c>) in the same working directory as the driver, because <c>run</c>'s program
+/// inherits the C# process's streams (CliApp.cs:573) and default output names are relative to the working directory.
+/// Masked: the elapsed seconds, and the C#'s ` · from cache` (the driver has no cache, R6).
+/// </summary>
+public sealed class SelfhostDriverT5Tests
+{
+    static SelfhostDriverT5Tests() =>
+        Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
+
+    private static string Mask(string text) =>
+        Regex.Replace(Regex.Replace(text, @"\d+\.\d\ds|from cache", "masked"), @" · masked", "");
+
+    private static (int Exit, string Out, string Err) InProcess(params string[] args)
+    {
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var exit = CliApp.Run(args, stdout, stderr);
+        return (exit, stdout.ToString().ReplaceLineEndings("\n"), stderr.ToString().ReplaceLineEndings("\n"));
+    }
+
+    private static (int Exit, byte[] Out, string Err) Process(string program, string[]? prefix, string cwd, string[] args)
+    {
+        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = cwd };
+        foreach (var a in prefix ?? []) psi.ArgumentList.Add(a);
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var stdout = new MemoryStream();
+        var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
+        var stderr = p.StandardError.ReadToEndAsync();
+        p.WaitForExit();
+        copy.Wait();
+        return (p.ExitCode, stdout.ToArray(), stderr.Result.ReplaceLineEndings("\n"));
+    }
+
+    private static (int Exit, byte[] Out, string Err) Cs(string cwd, params string[] args) =>
+        Process("dotnet", [typeof(CliApp).Assembly.Location], cwd, args);
+
+    private static (int Exit, byte[] Out, string Err) Self(string cwd, params string[] args) =>
+        Process(SelfhostDriverHarness.Build(), null, cwd, args);
+
+    private static string Text(byte[] bytes) => System.Text.Encoding.UTF8.GetString(bytes).ReplaceLineEndings("\n");
+
+    /// <summary>A difference as `label: what`, or null when exit code and both streams are equal after <see cref="Mask"/>.</summary>
+    private static string? Differs(string label, (int Exit, byte[] Out, string Err) expected, (int Exit, byte[] Out, string Err) actual)
+    {
+        if (expected.Exit != actual.Exit) return $"{label}: exit {expected.Exit} != {actual.Exit}\n{actual.Err}";
+        if (Mask(Text(expected.Out)) != Mask(Text(actual.Out))) return $"{label}: stdout differs\n--- C#\n{Text(expected.Out)}\n--- driver\n{Text(actual.Out)}";
+        if (Mask(expected.Err) != Mask(actual.Err)) return $"{label}: stderr differs\n--- C#\n{expected.Err}\n--- driver\n{actual.Err}";
+        return null;
+    }
+
+    /// <summary>The `run/` inputs RunTests runs as programs (no `.test.byn`, no `.stdin`, not skipped on this OS).</summary>
+    private static IEnumerable<string> RunInputs()
+    {
+        foreach (string name in Golden.Cases("run"))
+        {
+            var input = Path.Combine(Golden.CasesRoot, name);
+            if (name.EndsWith(".test.byn", StringComparison.Ordinal) || File.Exists(Path.ChangeExtension(input, ".stdin"))) continue;
+            var head = File.ReadLines(input).Take(2).ToList();
+            if (head.Contains("// os: unix") && OperatingSystem.IsWindows()) continue;
+            if (head.Contains("// os: windows") && !OperatingSystem.IsWindows()) continue;
+            yield return name;
+        }
+    }
+
+    /// <summary>`--mode m` from a `// mode: m` first line (RunTests.cs:78), else nothing.</summary>
+    private static string[] ModeArgs(string input)
+    {
+        var first = File.ReadLines(input).FirstOrDefault() ?? "";
+        return first.StartsWith("// mode: ", StringComparison.Ordinal) ? ["--mode", first["// mode: ".Length..].Trim()] : [];
+    }
+
+    /// <summary>
+    /// `name` copied alone into a fresh `tmp/t5/<side>/<case>/`: a path compiles its whole directory (CliApp.cs:286). Each side
+    /// runs on a fresh copy at the same path, so the paths in diagnostics and `#line` agree.
+    /// </summary>
+    private static string Isolated(string name, string side)
+    {
+        var source = Path.Combine(Golden.CasesRoot, name);
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", side, Path.ChangeExtension(name, null).Replace('/', '_'));
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        var copy = Path.Combine(dir, Path.GetFileName(source));
+        File.Copy(source, copy);
+        return copy;
+    }
+
+    /// <summary>A fresh empty working directory for a `run` case (as RunTests.cs runs each case), apart from its source: the
+    /// driver's `run` writes its executable and scratch C beside the source (Q1016), which a program listing `.` would see.</summary>
+    private static string Empty(string name)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", "cwd", Path.ChangeExtension(name, null).Replace('/', '_'));
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    private static void AllSame(Func<string, string?> compare)
+    {
+        var failures = new ConcurrentBag<string>();
+        Parallel.ForEach(RunInputs(), new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, name =>
+        {
+            if (compare(name) is { } f) failures.Add(f);
+        });
+        Assert.True(failures.IsEmpty, string.Join("\n\n", failures.Order(StringComparer.Ordinal).Take(5)) + $"\n({failures.Count} cases differ)");
+    }
+
+    [Fact]
+    public void EmitCAsCliAppOnEveryRunInput()
+    {
+        SelfhostDriverHarness.Build();
+        AllSame(name =>
+        {
+            var copy = Isolated(name, "emit");
+            var mode = ModeArgs(copy);
+            var expected = Cs(Path.GetDirectoryName(copy)!, ["build", "--emit-c", .. mode, Path.GetFileName(copy)]);
+            copy = Isolated(name, "emit");
+            var actual = Self(Path.GetDirectoryName(copy)!, ["build", "--emit-c", .. mode, Path.GetFileName(copy)]);
+            if (!expected.Out.AsSpan().SequenceEqual(actual.Out)) return $"{name}: emitted C differs";
+            return Differs(name, expected, actual);
+        });
+    }
+
+    [Fact]
+    public void RunAsCliAppOnEveryRunInput()
+    {
+        SelfhostDriverHarness.Build();
+        AllSame(name =>
+        {
+            var copy = Isolated(name, "run");
+            var argsFile = Path.ChangeExtension(Path.Combine(Golden.CasesRoot, name), ".args");
+            string[] programArgs = File.Exists(argsFile) ? ["--", .. File.ReadAllLines(argsFile)] : [];
+            var mode = ModeArgs(copy);
+            var expected = Cs(Empty(name), ["run", .. mode, copy, .. programArgs]);
+            copy = Isolated(name, "run");
+            var actual = Self(Empty(name), ["run", .. mode, copy, .. programArgs]);
+            return Differs(name, expected, actual);
+        });
+    }
+
+    /// <summary>A fresh `tmp/t5/<side>/<name>/` holding `arithmetic.byn`, its path relative to the directory.</summary>
+    private static string Fresh(string side, string name)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", side, name);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        File.Copy(Path.Combine(Golden.CasesRoot, "run", "arithmetic.byn"), Path.Combine(dir, "arithmetic.byn"));
+        return dir;
+    }
+
+    private static void SameIn(string name, params string[] args)
+    {
+        var cs = Fresh("cs", name);
+        var self = Fresh("self", name);
+        var expected = Cs(cs, args);
+        var actual = Self(self, args);
+        Assert.Null(Differs(string.Join(' ', args), expected, actual));
+        foreach (var file in Directory.EnumerateFiles(cs))
+            Assert.True(File.Exists(Path.Combine(self, Path.GetFileName(file))), $"`{string.Join(' ', args)}`: the driver did not write {Path.GetFileName(file)}");
+    }
+
+    [Fact]
+    public void OutputNamesAsCliApp()
+    {
+        SameIn("default", "build", "arithmetic.byn");
+        SameIn("dot", "build", ".");
+        SameIn("named", "build", "-o", "prog", "arithmetic.byn");
+        SameIn("verbose", "build", "-v", "arithmetic.byn");
+        SameIn("json", "build", "--diagnostics", "json", "arithmetic.byn");
+        SameIn("debug", "build", "--mode", "fast", "--target", "host", "arithmetic.byn");
+        SameIn("run", "run", "arithmetic.byn");
+    }
+
+    private static void SameAsInProcess(params string[] args)
+    {
+        var expected = InProcess(args);
+        var actual = SelfhostDriverHarness.Run(args);
+        var label = string.Join(' ', args);
+        Assert.Equal(expected.Exit, actual.Exit);
+        SelfhostEmitterHarness.AssertSame($"stdout of `{label}`", Mask(expected.Out), Mask(actual.Out));
+        SelfhostEmitterHarness.AssertSame($"stderr of `{label}`", Mask(expected.Err), Mask(actual.Err));
+    }
+
+    [Fact]
+    public void FailuresAsCliApp()
+    {
+        var file = Path.Combine(Fresh("self", "failures"), "arithmetic.byn");
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", "self", "broken");
+        Directory.CreateDirectory(dir);
+        var broken = Path.Combine(dir, "broken.byn");
+        File.WriteAllText(broken, "void main() {\n    let x: i32 = \"no\"\n    print(y)\n}\n");
+        foreach (var command in new[] { "build", "run" })
+        {
+            SameAsInProcess(command);
+            SameAsInProcess(command, "--mode", "bogus", file);
+            SameAsInProcess(command, "--diagnostics", "yaml", file);
+            SameAsInProcess(command, file, file);
+            SameAsInProcess(command, "--bogus", file);
+            SameAsInProcess(command, Path.Combine(dir, "missing.byn"));
+            SameAsInProcess(command, broken);
+            SameAsInProcess(command, "--diagnostics", "json", broken);
+        }
+        SameAsInProcess("build", "--target", "bogus", file);
+        SameAsInProcess("build", "--emit-c", "--target", "bogus", file);
+        SameAsInProcess("run", "-o", "x", file);
+        SameAsInProcess("run", "-v", file);
+        SameAsInProcess("build", "--emit-c", "--package", Path.Combine(Golden.RepoRoot, "selfhost"), broken);
+    }
+
+    /// <summary>
+    /// `build --emit-c --mode debug --package selfhost selfhost/lexer` from the repo root: byte-identical C, its `#line` names
+    /// relative to `Path.fullPath("selfhost")` (CEmitter.cs `FilePath`). The same on `selfhost/driver` is blocked (Q1017).
+    /// </summary>
+    [Fact]
+    public void EmitsAPackageAsCliApp()
+    {
+        string[] args = ["build", "--emit-c", "--mode", "debug", "--package", "selfhost", "selfhost/lexer"];
+        var expected = Cs(Golden.RepoRoot, args);
+        var actual = Self(Golden.RepoRoot, args);
+        Assert.True(expected.Exit == actual.Exit, $"exit {expected.Exit} != {actual.Exit}\n{actual.Err}");
+        Assert.Equal(expected.Err, actual.Err);
+        Assert.True(expected.Out.AsSpan().SequenceEqual(actual.Out), "the driver's C of selfhost/lexer differs from the C#'s");
+        Assert.Contains("#line 27 \"lexer/diagnostics.byn\"", Text(expected.Out));
+    }
+
+    /// <summary>The C# `bayan build --package selfhost selfhost/driver` builds a driver that answers as the harness's driver.</summary>
+    [Fact]
+    public void TheCsBuildsTheDriver()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", "built");
+        Directory.CreateDirectory(dir);
+        var built = Path.Combine(dir, "bayan-driver");
+        var (exit, _, err) = InProcess("build", "--mode", "fast", "--package", Path.Combine(Golden.RepoRoot, "selfhost"), "-o", built, SelfhostDriverHarness.DriverDir);
+        Assert.True(exit == 0, err);
+        var arithmetic = Path.Combine(Golden.CasesRoot, "run", "arithmetic.byn");
+        foreach (var args in new[] { new[] { "version" }, ["help"], ["build", "--emit-c", arithmetic], ["check", arithmetic], ["build", "--mode", "bogus", arithmetic] })
+            Assert.Null(Differs(string.Join(' ', args), Process(SelfhostDriverHarness.Build(), null, dir, args), Process(built, null, dir, args)));
+    }
+}
