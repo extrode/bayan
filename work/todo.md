@@ -524,3 +524,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 012 T17 review LOW (T28): `bayan-rt.c` `byn_fs_file_exists` (Windows) falls back to `FindFirstFileW` only on `ERROR_SHARING_VIOLATION`; .NET `FillAttributeInfo` retries on more errors (e.g. `ERROR_ACCESS_DENIED` for delete-pending files). Check the .NET source, add a row.
 - 012 T17 review LOW (T28): Q980 and its progress-log line still say the Windows branch is "pending a wp1 run"; it ran at fdc9b40f, 28/28, symlink rows included.
 - 012 T17 review LOW: the 012-tasks T17 filter `SelfhostDriverT17Tests` matches no class (the checks are `StdFsTests`/`StdEnvTests`); preflight's filter check covers the brief side.
+||||||| 220d6741
+- [ ] `scripts/selfhost/preflight.sh` files check sees only files a branch changed: a test file the task needs but never edited (a coverage test it should have extended, the 012 T15 case with the T10/T2 tests) passes it unseen (found 2026-11-05 building preflight).

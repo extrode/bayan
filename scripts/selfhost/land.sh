@@ -12,6 +12,7 @@
 # report (tmp/guard-run/coverage/bayan-quality.json, written whenever the branch changed a selfhost .byn), after the merge the
 # tick commit raises the baseline's coverage and branches (update; a lower value never replaces an entry): a filtered per-task run
 # can only raise the recorded coverage, and the drop check waits for a full-suite measurement (work/todo.md).
+# Before all of it, the base checkout's preflight.sh must pass (its output: tmp/preflight-land-<t>.txt; not with --check-scope).
 # No mutation runs here (--mutate is dropped): the mutation scores come from the batch run (013 T28).
 set -eu
 CHECK=0; [ "${1:-}" = --check-scope ] && { CHECK=1; shift; }
@@ -23,6 +24,11 @@ IFS=$'\t' read -r _ DIR TASKS _ _ _ _ _ _ REVSUB LANDSUB TICKSUB TMPP <<< "$ROW"
 BASE=$(git rev-parse --abbrev-ref HEAD)
 SHA=$(git rev-parse "$BR")
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "LAND REFUSED: the base worktree has uncommitted changes"; exit 1; }
+# the base checkout's preflight first (stale cites, files outside the list, Question numbers, cross-cutting tests, the wp1 run)
+if [ $CHECK = 0 ]; then
+  mkdir -p tmp; BAYAN_BASE=$BASE bash "$PWD/scripts/selfhost/preflight.sh" "$SPEC" "$T" "$BR" > "tmp/preflight-land-$t.txt" 2>&1 && PX=0 || PX=$?
+  cat "tmp/preflight-land-$t.txt"; [ $PX = 0 ] || { echo "LAND REFUSED: preflight failed (tmp/preflight-land-$t.txt)"; exit 1; }
+fi
 PATH="/usr/bin:$PATH" python3 -I scripts/selfhost/wave-brief.py . "$T" --spec "$SPEC" > /dev/null
 # the base checkout's guard, by absolute path: a branch cannot run a guard it rewrote
 LINE=$(grep -m1 '^bash scripts/selfhost/guard.sh' "$TMPP$t/prompt.md") || {

@@ -2,7 +2,7 @@
 # land.sh on a fixture repo with a stub wave-brief.py and guard.sh, run by /bin/bash (3.2 on macOS): it refuses a last
 # commit that is not a lone `docs(010): T99 review (PASS` commit, a branch that changes scripts/selfhost/ or edits tests/quality-baseline.json, and a branch that
 # moves while it is checked, one with no merge base, and a prompt with no guard line; the fixture path holds & and ' (the guard must still run); it runs the base checkout's guard by absolute path, without --mutate/--seed,
-# and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left its coverage report
+# refuses before any merge when the base checkout's preflight.sh fails (and passes it the spec, task, branch and BAYAN_BASE), and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left its coverage report
 # (tmp/guard-run/coverage/bayan-quality.json, the only place the real guard writes one; no quality-*.json): a landing with
 # none leaves the baseline alone, one fills coverage and branches, one with a higher coverage raises it (both in the tick commit),
 # a lower filtered coverage lands and leaves the recorded value unchanged, and a malformed report is refused before the merge.
@@ -19,6 +19,8 @@ echo "$0" >> "$AUX/guard-ran.txt"; echo "$*" > "$AUX/guard-args.txt"
 [ -f "$AUX/move" ] && git branch -f feat-move "$(git commit-tree -p HEAD -m "test: unchecked" 'HEAD^{tree}')"
 echo GUARD PASS
 STUB
+# the stub preflight logs its arguments and the base it was given; with $AUX/preflight-fail it fails
+printf 'echo "$* BAYAN_BASE=$BAYAN_BASE" > "$AUX/preflight-args.txt"\n[ -f "$AUX/preflight-fail" ] && { echo "FAIL cites: stub"; exit 1; }\necho "ok cites"\n' > scripts/selfhost/preflight.sh
 printf '/tmp/\n' > .gitignore
 printf -- '- [ ] T99 fixture\n' > docs/specs/010-self-hosted-semantics/010-tasks.md
 mkdir tests; printf '{ "version": 1, "files": { "x.byn": { "mutation": 0.5, "coverage": null } } }\n' > tests/quality-baseline.json; cp tests/quality-baseline.json "$aux/baseline.json"
@@ -40,9 +42,10 @@ git switch -q --orphan feat-orphan; echo o > o.txt; git add -A; git commit -qm "
 code feat-ok; review FAIL; echo fix >> feat-ok.txt; git commit -qam "test: fix"; review PASS "docs(010): T99 review (PASS, round 2)"; git switch -q base
 chore=$(land feat-chore); extra=$(land feat-extra); guard=$(land feat-guard); orphan=$(land feat-orphan)
 noguard=$(NOGUARD=1 land feat-ok)
+touch $aux/preflight-fail; prehead=$(git rev-parse HEAD); pre=$(land feat-ok); prehead2=$(git rev-parse HEAD); rm $aux/preflight-fail
 touch $aux/move; moved=$(land feat-move); rm $aux/move; moved_in=$(git log --format=%s base | grep -c unchecked || true)
 rm -f $aux/guard-ran.txt; ok=$(land feat-ok); ran=$(cat $aux/guard-ran.txt 2>/dev/null || true); ticked=$(grep -c '^- \[x\] T99 ' docs/specs/010-self-hosted-semantics/010-tasks.md || true)
-gargs=$(cat $aux/guard-args.txt); cmp -s tests/quality-baseline.json $aux/baseline.json && noreport=1 || noreport=0
+gargs=$(cat $aux/guard-args.txt); pargs=$(cat $aux/preflight-args.txt); cmp -s tests/quality-baseline.json $aux/baseline.json && noreport=1 || noreport=0
 # further landings on top of the first (T99 unticked first, so each tick commit is not empty), the guard run leaving a coverage report
 next() { code "$1"; review; git switch -q base
   perl -i -pe 's/^- \[x\] T99 /- [ ] T99 /' docs/specs/010-self-hosted-semantics/010-tasks.md; git commit -qam "test: untick T99"; }
@@ -66,6 +69,8 @@ echo "$guard" | grep -q 'LAND REFUSED: feat-guard changes scripts/selfhost/' || 
 echo "$baseline" | grep -q 'LAND REFUSED: feat-baseline edits tests/quality-baseline.json; only land.sh and the batch mutation run write it' || fail "a branch that edits tests/quality-baseline.json was accepted" "$baseline"
 echo "$orphan" | grep -q 'LAND REFUSED: cannot diff feat-orphan' || fail "a branch with no merge base was not refused" "$orphan"
 echo "$noguard" | grep -q "LAND REFUSED: tmp/010-t99/prompt.md has no line starting 'bash scripts/selfhost/guard.sh'" || fail "a prompt with no guard line did not refuse with a message" "$noguard"
+echo "$pre" | grep -q '^FAIL cites: stub$' && echo "$pre" | grep -q '^LAND REFUSED: preflight failed' && [ "$prehead" = "$prehead2" ] || fail "a failing preflight did not refuse before the merge" "$pre"
+[ "$pargs" = "010 T99 feat-ok BAYAN_BASE=base" ] || fail "preflight ran with '$pargs', not the spec, task, branch and base" "$ok"
 echo "$moved" | grep -q 'LAND REFUSED: feat-move moved' || fail "a branch that moved during the guard was not refused" "$moved"
 [ "$moved_in" = 0 ] || fail "the commit added during the guard was merged unchecked" "$moved"
 echo "$ok" | grep -q '^LANDED T99$' || fail "a well-reviewed branch did not land under /bin/bash" "$ok"
