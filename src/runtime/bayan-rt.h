@@ -548,4 +548,7 @@ BYN_INT_TYPES(BYN_DEF_ARITH)
    False, where .NET returns null, when the variable is not set. */
 bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to);
 
+/* `Fs.fileExists`: .NET `File.Exists`; false for a directory, a missing entry, an empty path, a path with a NUL, and a path ending in a separator. */
+bool byn_fs_file_exists(byn_str path);
+
 #endif

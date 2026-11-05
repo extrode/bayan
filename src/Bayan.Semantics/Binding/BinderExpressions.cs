@@ -551,6 +551,7 @@ internal sealed partial class Binder
         if (name == "Path") return new BoundTypeRef(n, BuiltinType.Path);
         if (name == "Target") return new BoundTypeRef(n, BuiltinType.Target);
         if (name == "Env") return new BoundTypeRef(n, BuiltinType.Env);
+        if (name == "Fs") return new BoundTypeRef(n, BuiltinType.Fs);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -714,6 +715,10 @@ internal sealed partial class Binder
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Env } env }:
                 if (_c.Builtins.FindEnv(name) is { } envMember) return new BoundMethodGroup(m, null, envMember);
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, env.Name], help: Suggest(name, ["get"]) is { } nearEnv ? $"did you mean `{nearEnv}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Fs } fs }:
+                if (_c.Builtins.FindFs(name) is { } fsMember) return new BoundMethodGroup(m, null, fsMember);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, fs.Name], help: Suggest(name, ["fileExists"]) is { } nearFs ? $"did you mean `{nearFs}`?" : null);
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Target } targetType }:
             {
