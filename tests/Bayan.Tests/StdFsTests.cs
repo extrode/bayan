@@ -10,8 +10,8 @@ namespace Bayan.Tests;
 
 /// <summary>
 /// Q970 item 3: <c>Fs.fileExists</c> gives what .NET's <c>File.Exists</c> gives on the same OS, over a corpus of files, directories,
-/// symlinks (dangling and looping included), odd separators and a NUL, and needs <c>uses fs</c>. A symlink row is skipped where
-/// creating the link needs a privilege the test lacks (Windows without developer mode).
+/// symlinks (dangling and looping included), a path over 260 chars, odd separators and a NUL, and needs <c>uses fs</c>. Creating a symlink
+/// must succeed (Windows needs elevation or developer mode): a failure fails the test.
 /// </summary>
 public sealed class StdFsTests
 {
@@ -31,17 +31,17 @@ public sealed class StdFsTests
         return build.ExecutablePath!;
     }
 
-    private static bool TryLink(string link, string target, bool directory)
+    /// <summary>Creates a symlink; a failure fails the test and names the row (a Windows host without the privilege cannot run this test).</summary>
+    private static void Link(string link, string target, bool directory)
     {
         try
         {
             if (directory) Directory.CreateSymbolicLink(link, target);
             else File.CreateSymbolicLink(link, target);
-            return true;
         }
-        catch (Exception e) when (OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException)
+        catch (Exception e)
         {
-            return false;
+            Assert.Fail($"cannot create the symlink row {Path.GetFileName(link)} -> {target}: {e}");
         }
     }
 
@@ -58,11 +58,18 @@ public sealed class StdFsTests
             File.WriteAllText(Path.Combine(dir, "é ü 日本.txt"), "x");
             File.WriteAllText(Path.Combine(dir, "sub", "inner", "deep.txt"), "x");
             var names = new List<string> { "file.txt", "empty", "é ü 日本.txt", "sub", "sub/inner", "sub/inner/deep.txt", "missing", "sub/missing", "FILE.TXT" };
-            if (TryLink(Path.Combine(dir, "link-file"), "file.txt", directory: false)) names.AddRange(["link-file", "link-file/"]);
-            if (TryLink(Path.Combine(dir, "link-dir"), "sub", directory: true)) names.AddRange(["link-dir", "link-dir/inner/deep.txt", "link-dir/missing"]);
-            if (TryLink(Path.Combine(dir, "link-dangling"), "nowhere", directory: false)) names.Add("link-dangling");
-            if (TryLink(Path.Combine(dir, "link-loop"), "link-loop", directory: false)) names.Add("link-loop");
-            if (TryLink(Path.Combine(dir, "link-abs"), Path.Combine(dir, "file.txt"), directory: false)) names.Add("link-abs");
+            Link(Path.Combine(dir, "link-file"), "file.txt", directory: false);
+            Link(Path.Combine(dir, "link-dir"), "sub", directory: true);
+            Link(Path.Combine(dir, "link-dangling"), "nowhere", directory: false);
+            Link(Path.Combine(dir, "link-loop"), "link-loop", directory: false);
+            Link(Path.Combine(dir, "link-abs"), Path.Combine(dir, "file.txt"), directory: false);
+            names.AddRange(["link-file", "link-file/", "link-dir", "link-dir/inner/deep.txt", "link-dir/missing", "link-dangling", "link-loop", "link-abs"]);
+            // A full path of more than 260 chars (.NET prefixes it with \\?\ on Windows).
+            var longDir = dir;
+            while (longDir.Length < 300) longDir = Path.Combine(longDir, new string('l', 50));
+            Directory.CreateDirectory(longDir);
+            File.WriteAllText(Path.Combine(longDir, "long.txt"), "x");
+            names.AddRange([Path.GetRelativePath(dir, Path.Combine(longDir, "long.txt")), Path.GetRelativePath(dir, Path.Combine(longDir, "missing.txt")), Path.GetRelativePath(dir, longDir)]);
 
             var paths = new List<string>();
             foreach (var n in names) paths.Add(Path.Combine(dir, n.Replace('/', Path.DirectorySeparatorChar)));

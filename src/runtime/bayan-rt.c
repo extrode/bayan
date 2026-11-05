@@ -2891,7 +2891,29 @@ bool byn_fs_file_exists(byn_str path) {
     if (f.n > 0 && !byn_path_sep(f.p[f.n - 1])) {
 #ifdef _WIN32
         wchar_t* w = byn_path_wide_of(f.p, f.n);
+        size_t wn = wcslen(w);
+        /* As .NET `EnsureExtendedPrefixIfNeeded`: a full path of 260 or more chars gets `\\?\` (`\\?\UNC\` for `\\server\share`). */
+        if (wn >= 260 && !byn_path_extended((const uint8_t*)f.p, f.n) && !(wn >= 4 && w[0] == L'\\' && w[1] == L'\\' && w[2] == L'.' && w[3] == L'\\')) {
+            bool unc = wn >= 2 && w[0] == L'\\' && w[1] == L'\\';
+            const wchar_t* prefix = unc ? L"\\\\?\\UNC\\" : L"\\\\?\\";
+            size_t pn = wcslen(prefix);
+            wchar_t* x = (wchar_t*)malloc(sizeof(wchar_t) * (wn + pn + 1));
+            if (!x) byn_panic("out of memory", NULL, 0);
+            wcscpy(x, prefix);
+            wcscpy(x + pn, unc ? w + 2 : w);
+            free(w);
+            w = x;
+        }
         DWORD attrs = GetFileAttributesW(w);
+        /* As .NET `FillAttributeInfo`: a sharing violation falls back to the directory listing's attributes. */
+        if (attrs == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_SHARING_VIOLATION) {
+            WIN32_FIND_DATAW fd;
+            HANDLE h = FindFirstFileW(w, &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                attrs = fd.dwFileAttributes;
+                FindClose(h);
+            }
+        }
         found = attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
         free(w);
 #else
