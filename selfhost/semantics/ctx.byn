@@ -525,6 +525,9 @@ public struct Ctx {
     // ── T16 state
     // ── T17 state
     // ── T18 state
+    // ── 012 T18 state
+    /// C# `Options.Target`: the build target `Target.os`/`Target.arch` name; null for the compiling host.
+    public string? target = null
     // ── T19 state
     // ── T20 state
     // ── T21 state

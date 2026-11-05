@@ -98,6 +98,8 @@ public enum BuiltinFunction {
     pathCombine
     pathCombineSpan
     pathFullPath
+    envGet
+    fsFileExists
 }
 
 // ── Symbols ─────────────────────────────────────────────────────────────────────

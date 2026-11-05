@@ -1,0 +1,2 @@
+// `Target` has `os` and `arch`; a misspelt member gets the nearest one (BYN2003).
+print(Target.osx)

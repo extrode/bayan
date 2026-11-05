@@ -1,6 +1,6 @@
 # 011 K2 inventory: compiler extensions in the emitted C
 
-R4. Every hit of the token regex in `tests/Bayan.Tests/CInventoryTests.cs` is one row of the table below, and every row has a hit; the test fails on either gap. Scope: `src/runtime/bayan-rt.{h,c}` as C, `src/Bayan.Backend.C/CEmitter.cs` and `selfhost/emitter/cprint/*.byn` over their string literals only (interpolation holes removed; Q828). An `__attribute__((a, b))` list is one row per item. `alloca` and the other regex tokens without a row have no use. A site is a file and an anchor (Q1040): a quoted fragment that must match exactly one line of the file, the line of the hit; an anchor that matches no line or more than one is a test failure naming it, and a moved line is not.
+R4. Every hit of the token regex in `tests/Bayan.Tests/CInventoryTests.cs` is one row of the table below, and every row has a hit; the test fails on either gap. Scope: `src/runtime/bayan-rt.{h,c}` as C, `src/Bayan.Backend.C/CEmitter.cs` and `selfhost/emitter/cprint/*.byn` over their string literals only (interpolation holes removed; Q828). An `__attribute__((a, b))` list is one row per item. `alloca` and the other regex tokens without a row have no use. A site is a file and an anchor (Q1050): a quoted fragment that must match exactly one line of the file, the line of the hit; an anchor that matches no line or more than one is a test failure naming it, and a moved line is not.
 
 | Site | Token | Why it is needed |
 |---|---|---|

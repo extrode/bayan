@@ -1,6 +1,6 @@
 #!/bin/bash
 # coverage-gate.py's coverage-exempt markers: a marker whose Question cites a line of its file exempts its span's missed
-# lines and branches (`through `text`` a range to the one line holding text, Q1040), and the file gets one count line; a marker
+# lines and branches (`through `text`` a range to the one line holding text, Q1050), and the file gets one count line; a marker
 # whose Question cites no line of its file, an anchor matching no line or two, and a `through N` line number are FAIL items; an unknown line under a marker and a missed line outside every marker stay FAIL items;
 # a file absent from the work tree has no markers, so its missed line in a touched function stays a FAIL item.
 # coverage-blocked markers (second fixture): one naming an open sibling task exempts its span and gets its own count line; one
@@ -12,8 +12,8 @@ r="$root/tmp/coverage-gate-test"
 rm -rf "$r" && mkdir -p "$r/selfhost" "$r/docs" && cd "$r"
 git init -q -b fixture && git config user.email t@t && git config user.name t && git config core.hooksPath /dev/null
 printf 'void f() {\n    a()\n}\n' > selfhost/a.byn; git add -A; git commit -q -m base
-printf '\nvoid g() {\n    // coverage-exempt: Q901\n    dead()\n    // coverage-exempt: Q902 through `y()`\n    x()\n    y()\n    // coverage-exempt: Q903\n    z()\n    live()\n    // coverage-exempt: Q902 through `nope()`\n    w()\n    // coverage-exempt: Q902 through `v()`\n    v()\n    v()\n    // coverage-exempt: Q902 through 20\n    u()\n}\nvoid h() {\n    y()\n}\n' >> selfhost/a.byn
-printf '901. cites a.byn:7.\n902. cites a.byn:9-10.\n903. cites b.byn:3 only.\n' > docs/bayan-handoff.md
+printf '\nvoid g() {\n    // coverage-exempt: Q1001\n    dead()\n    // coverage-exempt: Q902 through `y()`\n    x()\n    y()\n    // coverage-exempt: Q903\n    z()\n    live()\n    // coverage-exempt: Q902 through `nope()`\n    w()\n    // coverage-exempt: Q902 through `v()`\n    v()\n    v()\n    // coverage-exempt: Q902 through 20\n    u()\n}\nvoid h() {\n    y()\n}\n' >> selfhost/a.byn
+printf '1001. cites a.byn:7.\n902. cites a.byn:9-10.\n903. cites b.byn:3 only.\n' > docs/bayan-handoff.md
 a=$r/selfhost/a.byn
 printf '{"version": 1, "kind": "coverage", "files": [{"path": "%s", "lines": {"covered": 1, "total": 7, "missed": [7, 10, 12, 13], "unknown": [9]}, "branches": {"covered": 0, "total": 1, "missed": [{"line": 7, "column": 5, "outcome": true}], "unknown": []}, "errorPaths": []}, {"path": "%s", "lines": {"covered": 0, "total": 1, "missed": [2], "unknown": []}, "branches": {"covered": 0, "total": 0, "missed": [], "unknown": []}, "errorPaths": []}]}\n' "$a" "$r/selfhost/gone.byn" > cov.json
 printf '{"version": 1, "files": {"%s": [{"span": [1, 3], "lines": [1, 1], "branches": [0, 0]}, {"span": [5, 21], "lines": [0, 6], "branches": [0, 1]}], "%s": [{"span": [1, 3], "lines": [0, 1], "branches": [0, 0]}]}}\n' "$a" "$r/selfhost/gone.byn" > fns.json

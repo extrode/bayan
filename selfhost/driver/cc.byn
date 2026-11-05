@@ -1,0 +1,248 @@
+// The C compiler interface of the self-hosted driver (spec 012 T3, plan D3, R5). Ports `Toolchain.cs` :83 `FindCompiler`,
+// :151 `FindOnPath`, :186-204 (the errors, flags and mode flags of `BuildCached`) and :276 `Compile`, `Targets.cs` (`All`, `IsKnown`,
+// `Triple`, `Host`, `ExecutableName`, :20-30), `HostTarget.cs` `Detect` and `CliApp.cs` :390 `ReportToolchain`. The scratch files go into `dir` and are named by absolute path (spec Q1, no cache).
+
+import lexer
+import semantics
+
+type CcDiag = semantics.Diag
+type CcRelated = semantics.Related
+type CcSpan = lexer.TextSpan
+type CcCtx = semantics.Ctx
+
+/// `NativeBuild` of Toolchain.cs:15 without the cache fields: `rejected` is the C compiler having refused the generated C (BYN4001).
+public struct NativeBuild {
+    public bool succeeded = false
+    public string errors = ""
+    public bool rejected = false
+}
+
+/// Targets.cs `All` (:20): the names of `Table` (:9), in its order.
+List<string> targetNames() {
+    var names = List<string>()
+    names.append("linux-x64")
+    names.append("linux-arm64")
+    names.append("macos-x64")
+    names.append("macos-arm64")
+    names.append("windows-x64")
+    names.append("windows-arm64")
+    names.append("wasm32")
+    return names
+}
+
+/// Targets.cs `IsKnown` (:22).
+bool targetIsKnown(string name) {
+    return targetTriple(name) is not null
+}
+
+/// Targets.cs `Triple` (:24): null for a name that is not in the table.
+string? targetTriple(string name) {
+    if name == "linux-x64" { return "x86_64-linux-musl" }
+    if name == "linux-arm64" { return "aarch64-linux-musl" }
+    if name == "macos-x64" { return "x86_64-macos" }
+    if name == "macos-arm64" { return "aarch64-macos" }
+    if name == "windows-x64" { return "x86_64-windows-gnu" }
+    if name == "windows-arm64" { return "aarch64-windows-gnu" }
+    if name == "wasm32" { return "wasm32-wasi" }
+    return null
+}
+
+/// Targets.cs `Host` (:27, which is `HostTarget.Detect`, HostTarget.cs:9-19) from the constants of `Target` (plan Q970 Item 1): the machine this runs on, null on one with no Bayan target.
+string? targetHost() uses alloc {
+    return targetHostFrom(Target.os, for: Target.arch)
+}
+
+/// The name `Target.os` and `Target.arch` spell (`wasm32` has no os-arch split; an empty os or arch is no Bayan target, `Host == null`, HostTarget.cs:18).
+string? targetHostFrom(string os, for string arch) uses alloc {
+    return os == "" || arch == "" ? null : arch == "wasm32" ? "wasm32" : $"{os}-{arch}"
+}
+
+/// Targets.cs `ExecutableName` (:30): `tally`, `tally.exe` or `tally.wasm`.
+string targetExecutableName(string name, for string target) {
+    if target.startsWith("windows-") { return $"{name}.exe" }
+    if target == "wasm32" { return $"{name}.wasm" }
+    return $"{name}"
+}
+
+/// Toolchain.cs:83 `FindCompiler` without `$BAYAN_CC` (spec Q1, Q976): `zig cc`, else `cc`, `clang` or `gcc`, each as the path `FindOnPath` found; empty (C#'s null) when none is found.
+List<string> ccFindCompiler() uses alloc, env, fs {
+    var found = List<string>()
+    if (ccFindOnPath("zig", for: Target.os) is { } zig) {
+        found.append(zig)
+        found.append("cc")
+        return found
+    }
+    for name in ["cc", "clang", "gcc"] {
+        if (ccFindOnPath(name, for: Target.os) is { } path) {
+            found.append(path)
+            return found
+        }
+    }
+    return found
+}
+
+/// Toolchain.cs:151 `FindOnPath`: `PATH` split on its separator, `name` plus each extension (`.exe`, `.cmd`, `.bat` on Windows, as :153, not PATHEXT; Q977) in each directory, the first file that exists. `os` is `Target.os`.
+string? ccFindOnPath(string name, for string os) uses alloc, env, fs {
+    var exts = List<string>()
+    if os == "windows" {
+        exts.append(".exe")
+        exts.append(".cmd")
+        exts.append(".bat")
+    } else {
+        exts.append("")
+    }
+    let path = Env.get("PATH") ?? ""
+    for dir in path.parts(by: os == "windows" ? ";" : ":") {
+        if dir.length == 0 { continue }
+        for ext in exts {
+            let candidate = Path.combine(dir, $"{name}{ext}")
+            if Fs.fileExists(candidate) { return candidate }
+        }
+    }
+    return null
+}
+
+/// The command as the C# prints it: `string.Join(" ", compiler)`.
+string ccJoin(in List<string> compiler) {
+    var joined = StrBuf()
+    for i in 0..compiler.length {
+        if i > 0 { joined.append(" ") }
+        joined.append(compiler[i])
+    }
+    return joined.finish()
+}
+
+/// The `Toolchain.cs:189-194` refusals of `BuildCached`, in its order; an empty string when the compiler can build for `target` (null: the host has no target and `--target` was not given).
+string ccRefusal(in List<string> compiler, for string? target) {
+    if compiler.length == 0 { return "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC" }
+    let cross = target != targetHost()
+    var known = false
+    if (target is { } t) { known = targetTriple(t) is not null }
+    if cross && !known {
+        var all = StrBuf()
+        let names = targetNames()
+        for i in 0..names.length {
+            if i > 0 { all.append(", ") }
+            all.append(names[i])
+        }
+        return $"unknown target `{target ?? ""}`; targets are {all.finish()}"
+    }
+    if cross && !(compiler.length > 1 && compiler[1] == "cc" && ccWithoutExtension(Path.fileName(compiler[0])) == "zig") {
+        return $"building for {target ?? ""} on this machine needs zig (https://ziglang.org); the C compiler is `{ccJoin(in compiler)}`"
+    }
+    return ""
+}
+
+/// `Path.GetFileNameWithoutExtension` of a file name (Toolchain.cs:192).
+string ccWithoutExtension(string fileName) {
+    let dot = fileName.lastPosition(".") ?? -1
+    return dot < 0 ? fileName : fileName[0..dot]
+}
+
+/// Toolchain.cs:196-204: the flags every build takes, then the mode's (`debug`, else `safe` or `fast`); `triple` is null for the host.
+List<string> ccFlags(string mode, for string? triple) {
+    var flags = List<string>()
+    if (triple is { } t) {
+        flags.append("-target")
+        flags.append(t)
+    }
+    flags.append("-std=c11")
+    flags.append("-fwrapv")
+    flags.append("-ffp-contract=off")
+    flags.append("-w")
+    if mode == "debug" {
+        flags.append("-O0")
+        flags.append("-g")
+        flags.append("-DBYN_DEBUG")
+    } else {
+        flags.append("-O2")
+        flags.append("-DBYN_NDEBUG")
+    }
+    return flags
+}
+
+/// Toolchain.cs:284-290: the arguments after the compiler's own (`compiler[1..]`), for scratch files in `dir`.
+List<string> ccArguments(in List<string> compiler, for string dir, to string output, by string mode, through string? target) {
+    var args = List<string>()
+    for i in 1..compiler.length { args.append(compiler[i]) }
+    var triple: string? = null
+    if (target is { } t) {
+        if t != targetHost() { triple = targetTriple(t) }
+    }
+    let flags = ccFlags(mode, for: triple)
+    for f in flags { args.append(f) }
+    // Toolchain.cs:288 runs in the work directory with `-I .` and relative names; `Io.run` has no working directory (Q1009), so these are absolute.
+    // Debug info names `main.c`, not the scratch directory.
+    args.append($"-ffile-prefix-map={dir}=.")
+    args.append("-I")
+    args.append(dir)
+    args.append(Path.combine(dir, "main.c"))
+    args.append(Path.combine(dir, "bayan-rt.c"))
+    args.append("-o")
+    args.append(output)
+    // `CommandLineToArgvW` (program arguments) is in shell32.
+    // Toolchain.cs:194: no target is the host; `Target.os` is `windows` exactly when the C#'s `OperatingSystem.IsWindows()` is.
+    args.append((target ?? Target.os).startsWith("windows") ? "-lshell32" : "-lm")
+    return args
+}
+
+interface ICCompiler {
+    /// Writes `source` and the runtime into `dir` and links `output`; `target` is the `--target` value, else `targetHost()` (Toolchain.cs:174).
+    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string? target) uses alloc, env, fs, process
+}
+
+/// The one implementation (plan D3): the `FindCompiler` order.
+struct ZigOrCc : ICCompiler {
+    /// Toolchain.cs:276 `Compile` with the checks of `BuildCached` :186-194 before it.
+    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string? target) {
+        let compiler = ccFindCompiler()
+        let resolved = target ?? targetHost()
+        let refusal = ccRefusal(in compiler, for: resolved)
+        if refusal != "" { return NativeBuild { errors: refusal } }
+        let args = ccArguments(in compiler, for: dir, to: output, by: mode, through: resolved)
+        // Toolchain.cs:280-283: the runtime and the generated C, where the compiler reads them.
+        var names = List<string>()
+        names.append("bayan-rt.h")
+        names.append("bayan-rt.c")
+        names.append("main.c")
+        var texts = List<string>()
+        texts.append(runtimeHeader)
+        texts.append(runtimeSource)
+        texts.append(source)
+        for i in 0..names.length {
+            Io.writeFile(Path.combine(dir, names[i]), texts[i].bytes) catch return NativeBuild { errors: $"cannot write the build output ({dir})" }
+        }
+        let r = Io.run(compiler[0], args.span) catch return NativeBuild { errors: $"cannot run the C compiler `{ccJoin(in compiler)}`" }
+        if r.exitCode != 0 || !t1FileExists(output) {
+            return NativeBuild { errors: $"C compiler failed (exit {r.exitCode}):\n{r.stdout}{r.stderr}", rejected: true }
+        }
+        return NativeBuild { succeeded: true }
+    }
+}
+
+/// CliApp.cs:390 `ReportToolchain` without `--diagnostics json` (refused, R3) and plain (no style, Q947): why the toolchain could not build.
+void ccReportToolchain(in NativeBuild result) uses alloc, console {
+    if !result.rejected {
+        Io.stderr.write($"bayan: {result.errors}\n")
+        return
+    }
+    var c = CcCtx {
+        files: List<semantics.SourceFile>(),
+        modules: List<semantics.Mod>(),
+        diagnostics: List<CcDiag>(),
+        bags: List<semantics.DiagBag>(),
+    }
+    // DiagnosticCodes.cs:330 BYN4001; without a location the renderer prints the head only.
+    let ice = CcDiag {
+        code: "BYN4001",
+        span: CcSpan { start: 0, length: 0 },
+        fixSpan: CcSpan { start: 0, length: 0 },
+        message: "internal compiler error: the C compiler rejected the generated C; this is a bug in the Bayan compiler",
+        help: result.errors,
+        related: List<CcRelated>(),
+    }
+    c.diagnostics.append(move ice)
+    var omitted: i64 = 0
+    Io.stderr.write(semantics.renderAll(in c, from: in c.diagnostics, by: true, until: 2147483647, to: ref omitted))
+    Io.stderr.write(result.errors.endsWith("\n") ? result.errors : $"{result.errors}\n")
+}

@@ -6,8 +6,8 @@
 # (git diff -U0; a deletion touches the lines on either side of it; a file new since <merge-base> is touched throughout).
 # Every line and branch of a touched function must be covered: each missed or unknown one is printed as a FAIL item
 # ("- …"), except a missed one under a `// coverage-exempt: Qnnn` marker: it exempts the next line (`… through `text``: the next
-# line to the one line holding text in the rest of the marker's function, an anchor, Q1040) when Question Qnnn of
-# docs/bayan-handoff.md cites a <file> line (any: its number is prose, Q1040), for code that is dead in the C# too (the Question cites the C# line). A marker whose
+# line to the one line holding text in the rest of the marker's function, an anchor, Q1050) when Question Qnnn of
+# docs/bayan-handoff.md cites a <file> line (any: its number is prose, Q1050), for code that is dead in the C# too (the Question cites the C# line). A marker whose
 # Question cites no line of its file, or whose anchor matches no line or several, is a FAIL item and exempts nothing; so is a
 # `through N` line number. An unknown line is never exempt.
 # `// coverage-blocked: Qnnn T<k> <fn>` (`… through `text`` as above; user decision 2026-11-04) exempts a missed line that only runs once
@@ -36,11 +36,11 @@ def changed(base, path):
     return lines
 
 
-BLOCKED = r'// coverage-blocked: Q(\d{3}) (T\d+) (\w+)(?: through `([^`]+)`)?'
+BLOCKED = r'// coverage-blocked: Q(\d{3,4}) (T\d+) (\w+)(?: through `([^`]+)`)?'
 
 
 def anchored(lines, i, text):
-    """The lines after marker line i, to the end of its function (a later line starting with `}`), holding text (Q1040): an end
+    """The lines after marker line i, to the end of its function (a later line starting with `}`), holding text (Q1050): an end
     of text that is a word character must not touch another one."""
     pat = ('(?<!\\w)' if re.match(r'\w', text[0]) else '') + re.escape(text) + ('(?!\\w)' if re.match(r'\w', text[-1]) else '')
     found = []
@@ -84,13 +84,13 @@ def exempt(path, handoff='docs/bayan-handoff.md', open_=None, task=None):
         return set(), set(), []
     questions = {}
     for q in (open(handoff, encoding='utf-8').read().split('\n') if os.path.exists(handoff) else []):
-        m = re.match(r'(\d{3})\. ', q)
+        m = re.match(r'(\d{3,4})\. ', q)
         if m: questions[m.group(1)] = q
     base, skip, blocked, bad = os.path.basename(path), set(), set(), []
     for i, text in enumerate(lines, 1):
         if re.search(r'// coverage-(exempt|blocked):.* through \d', text):
-            bad.append(f'coverage: {path}:{i} pins `through` to a line number; write `through `text`` with text from the last exempt line (Q1040)'); continue
-        m, into = re.search(r'// coverage-exempt: Q(\d{3})(?: through `([^`]+)`)?', text), skip
+            bad.append(f'coverage: {path}:{i} pins `through` to a line number; write `through `text`` with text from the last exempt line (Q1050)'); continue
+        m, into = re.search(r'// coverage-exempt: Q(\d{3,4})(?: through `([^`]+)`)?', text), skip
         if m:
             q, last = m.group(1), m.group(2)
         else:
@@ -110,7 +110,7 @@ def exempt(path, handoff='docs/bayan-handoff.md', open_=None, task=None):
         else:
             at = anchored(lines, i, last)
             if len(at) != 1:
-                bad.append(f'coverage: {path}:{i} exempts through anchor `{last}`, which matches {"lines " + ", ".join(map(str, at)) if at else "no line"} of the rest of its function; it must match exactly one (Q1040)'); continue
+                bad.append(f'coverage: {path}:{i} exempts through anchor `{last}`, which matches {"lines " + ", ".join(map(str, at)) if at else "no line"} of the rest of its function; it must match exactly one (Q1050)'); continue
             end = at[0]
         if not re.search(re.escape(base) + r':\d', questions.get(q, '')):
             bad.append(f'coverage: {path}:{i} exempts {i + 1}-{end} for Q{q}, but Q{q} in {handoff} cites no {base} line'); continue

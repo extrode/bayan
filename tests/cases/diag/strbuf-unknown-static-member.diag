@@ -1,0 +1,4 @@
+error BYN2003: `nope` is not a member of `StrBuf`
+
+  3 │     let x = StrBuf.nope
+    │                    ^^^^

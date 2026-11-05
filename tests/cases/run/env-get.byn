@@ -1,0 +1,7 @@
+// `Env.get` gives the value of a variable or `none`; `PATH` is set wherever the tests run and the other name is not.
+string show(string name) uses alloc, env {
+    if (Env.get(name) is { } value) { return $"{name} is set: {value.length > 0}" }
+    return $"{name} is not set"
+}
+print(show("PATH"))
+print(show("BAYAN_SURELY_NOT_SET_9f3a"))

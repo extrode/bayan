@@ -1,0 +1,6 @@
+error BYN3002: arena `arena` does not live as long as `home`, which borrows it
+
+  7 │             home = Env.get("HOME")
+    │                    ^^^^^^^^^^^^^^^ arena `arena` is freed at the end of its block
+    │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

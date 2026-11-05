@@ -122,6 +122,7 @@ public sealed class Builtins
         PathCombineSpan = Make("combine", BuiltinFunction.PathCombineSpan, PrimitiveType.String, ("paths", new SpanType(PrimitiveType.String, readOnly: true)));
         PathFullPath = Make("fullPath", BuiltinFunction.PathFullPath, PrimitiveType.String, ("path", PrimitiveType.String));
         EnvGet = Make("get", BuiltinFunction.EnvGet, new OptionalType(PrimitiveType.String), ("name", PrimitiveType.String));
+        FsFileExists = Make("fileExists", BuiltinFunction.FsFileExists, PrimitiveType.Bool, ("path", PrimitiveType.String));
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
         var iterationFile = new FileContext(Module, SyntaxTree.Parse(SourceText.FromString("<builtin>", IterationSource)));
@@ -283,6 +284,16 @@ public sealed class Builtins
     public FunctionSymbol? FindEnv(string name) => name switch
     {
         "get" => EnvGet,
+        _ => null,
+    };
+
+    /// <summary><c>bool Fs.fileExists(string path)</c> <c>uses fs</c>: as .NET <c>File.Exists</c> (false for a directory, a missing entry, an empty path and a path ending in a separator).</summary>
+    public FunctionSymbol FsFileExists { get; }
+
+    /// <summary>A static member of <c>Fs</c>, or null.</summary>
+    public FunctionSymbol? FindFs(string name) => name switch
+    {
+        "fileExists" => FsFileExists,
         _ => null,
     };
 

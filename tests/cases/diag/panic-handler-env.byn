@@ -1,0 +1,8 @@
+// `Env.get` allocates, so a panic handler cannot call it (BYN2612).
+void onCrash(Panic p) {
+    let home = Env.get("HOME")
+}
+
+void main() {
+    Panic.handler = onCrash
+}
