@@ -98,4 +98,102 @@ public sealed class LanguageServerWorkspaceTests : IDisposable
         ws.IndexFolder(_root);
         Assert.Equal(["a.byn"], Names(ws));
     }
+
+    [Fact]
+    public void LimitRecoversAfterRemoveAndSecondRootIsIndexed()
+    {
+        for (int i = 0; i < 4; i++) Touch($"a/f{i}.byn");
+        Touch("b/x.byn");
+        var ws = new Workspace(maxFiles: 3);
+        ws.IndexFolder(Path.Combine(_root, "a"));
+        Assert.True(ws.LimitReached);
+        foreach (var d in ws.Documents.ToList()) ws.Remove(d.Uri);
+        Assert.False(ws.LimitReached);
+        ws.IndexFolder(Path.Combine(_root, "b"));
+        Assert.Equal(["x.byn"], Names(ws));
+    }
+
+    [Fact]
+    public void CharCountTracksOpenApplyAndClose()
+    {
+        var a = Touch("a.byn", "0123456789");
+        var ws = new Workspace();
+        ws.IndexFolder(_root);
+        Assert.Equal(10, ws.CharCount);
+        var uri = new Uri(a).AbsoluteUri;
+        var doc = ws.Open(uri, new string('x', 50_000), 1);
+        Assert.Equal(50_000, ws.CharCount);
+        doc.Apply(0, 0, 0, 0, "abc");
+        Assert.Equal(50_003, ws.CharCount);
+        File.Delete(a);
+        ws.Close(uri);
+        Assert.Equal(0, ws.CharCount);
+        Assert.Empty(ws.Documents);
+    }
+
+    [Fact]
+    public void NestedRootUnderSkippedDirIsIndexed()
+    {
+        Touch("p/a.byn");
+        var inner = Touch("p/tmp/demo/b.byn");
+        var ws = new Workspace();
+        ws.IndexFolder(Path.Combine(_root, "p"));
+        ws.IndexFolder(Path.Combine(_root, "p", "tmp", "demo"));
+        Assert.Contains("b.byn", Names(ws));
+        Assert.False(ws.IsExcluded(inner));
+    }
+
+    [Fact]
+    public void CloseAppliesExclusionAndSizeRules()
+    {
+        Touch("src/a.byn");
+        var skipped = Touch(".worktrees/x/a.byn");
+        var big = Touch("src/big.byn", new string('x', 100));
+        var ws = new Workspace(maxFileBytes: 50);
+        ws.IndexFolder(_root);
+        var u1 = new Uri(skipped).AbsoluteUri;
+        var u2 = new Uri(big).AbsoluteUri;
+        ws.Open(u1, "f() {}\n", 1);
+        ws.Open(u2, "f() {}\n", 1);
+        ws.Close(u1);
+        ws.Close(u2);
+        Assert.Equal(["a.byn"], Names(ws));
+        Assert.Equal(7, ws.CharCount);
+    }
+
+    [Fact]
+    public void KnownFileGrownPastSizeLimitIsRemoved()
+    {
+        var a = Touch("src/a.byn", "x");
+        var ws = new Workspace(maxFileBytes: 50);
+        ws.IndexFolder(_root);
+        Assert.Single(ws.Documents);
+        File.WriteAllText(a, new string('x', 100));
+        ws.LoadFromDisk(a);
+        Assert.Empty(ws.Documents);
+        Assert.Equal(0, ws.CharCount);
+    }
+
+    [Fact]
+    public void KnownFileGrownPastCharBudgetIsRemoved()
+    {
+        var a = Touch("src/a.byn", "xxxx");
+        var ws = new Workspace(maxChars: 10);
+        ws.IndexFolder(_root);
+        File.WriteAllText(a, new string('x', 20));
+        ws.LoadFromDisk(a);
+        Assert.Empty(ws.Documents);
+    }
+
+    [Fact]
+    public void SymlinkedFileIsNotIndexed()
+    {
+        if (OperatingSystem.IsWindows()) return; // file symlinks need a privilege there
+        var real = Touch("real/a.byn");
+        Touch("src/b.byn");
+        File.CreateSymbolicLink(Path.Combine(_root, "src", "link.byn"), real);
+        var ws = new Workspace();
+        ws.IndexFolder(Path.Combine(_root, "src"));
+        Assert.Equal(["b.byn"], Names(ws));
+    }
 }

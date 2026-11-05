@@ -18,6 +18,9 @@ public sealed class Document
     /// <summary>Called after every analysis so the workspace can drop its symbol index.</summary>
     internal Action? Analyzed;
 
+    /// <summary>Called with the change in text length whenever the text is replaced or edited.</summary>
+    internal Action<int>? LengthChanged;
+
     public Document(string uri, string text, int version) { Uri = uri; Set(text, version); }
 
     public void Set(string text, int version)
@@ -30,16 +33,20 @@ public sealed class Document
     /// <summary>Replaces the text without analysing (full-sync change inside a batch).</summary>
     public void Replace(string text)
     {
+        int delta = text.Length - Text.Length;
         Text = text;
         LineStarts = ComputeLines(text);
+        LengthChanged?.Invoke(delta);
     }
 
     /// <summary>Applies one LSP incremental change (UTF-16 line/character range).</summary>
     public void Apply(int startLine, int startChar, int endLine, int endChar, string newText)
     {
         int a = Offset(startLine, startChar), b = Offset(endLine, endChar);
+        int before = Text.Length;
         Text = string.Concat(Text.AsSpan(0, a), newText, Text.AsSpan(b));
         LineStarts = ComputeLines(Text);
+        LengthChanged?.Invoke(Text.Length - before);
     }
 
     public void Analyze()
@@ -152,8 +159,11 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
     long _chars;
     bool _limitLogged;
 
-    /// <summary>True when the file budget is spent; further disk files are not indexed.</summary>
-    public bool LimitReached { get; private set; }
+    /// <summary>True while the file or character budget is spent; further disk files are not indexed.</summary>
+    public bool LimitReached => _docs.Count >= maxFiles || _chars >= maxChars;
+
+    /// <summary>Total length of the text of all documents.</summary>
+    public long CharCount => _chars;
 
     /// <summary>A directory the indexer never enters.</summary>
     public static bool IsSkippedDirectory(string name) => name.StartsWith('.') || SkippedDirs.Contains(name);
@@ -171,18 +181,14 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
             if (!fullPath.StartsWith(root, cmp) || fullPath.Length <= root.Length) continue;
             if (fullPath[root.Length] != Path.DirectorySeparatorChar && !Path.EndsInDirectorySeparator(root)) continue;
             var dirs = Path.GetDirectoryName(fullPath.AsSpan(root.Length)).Trim(Path.DirectorySeparatorChar).ToString();
-            if (dirs.Length == 0) return false;
-            foreach (var seg in dirs.Split(Path.DirectorySeparatorChar))
-                if (IsSkippedDirectory(seg)) return true;
-            return false;
+            if (dirs.Length == 0 || !dirs.Split(Path.DirectorySeparatorChar).Any(IsSkippedDirectory)) return false;
         }
         return true;
     }
 
-    bool OverBudget(int addChars)
+    bool OverBudget(int addChars, bool newFile = true)
     {
-        if (_docs.Count < maxFiles && _chars + addChars <= maxChars) return false;
-        LimitReached = true;
+        if ((!newFile || _docs.Count < maxFiles) && _chars + addChars <= maxChars) return false;
         if (!_limitLogged)
         {
             _limitLogged = true;
@@ -220,7 +226,8 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
     Document Add(string key, Document d)
     {
         d.Analyzed = Invalidate;
-        if (_docs.TryGetValue(key, out var old)) _chars -= old.Text.Length;
+        d.LengthChanged = n => _chars += n;
+        if (_docs.TryGetValue(key, out var old)) { _chars -= old.Text.Length; old.LengthChanged = null; }
         _chars += d.Text.Length;
         _docs[key] = d;
         Invalidate();
@@ -242,13 +249,14 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         var key = Key(uri);
         if (!_docs.TryGetValue(key, out var d)) return;
         d.IsOpen = false;
-        if (LocalPath(uri) is { } path && File.Exists(path))
-        {
-            try { d.Set(File.ReadAllText(path), 0); return; }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-        }
+        RemoveKey(key, d);
+        if (LocalPath(uri) is { } path) LoadFromDisk(path);
+    }
+
+    void RemoveKey(string key, Document d)
+    {
         _chars -= d.Text.Length;
+        d.LengthChanged = null;
         _docs.Remove(key);
         Invalidate();
     }
@@ -268,13 +276,21 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         string text;
         try
         {
-            if (new FileInfo(full).Length > maxFileBytes) return;
+            if (new FileInfo(full).Length > maxFileBytes)
+            {
+                if (known) RemoveKey(key, existing!);
+                return;
+            }
             text = File.ReadAllText(full);
         }
         catch (IOException) { return; }
         catch (UnauthorizedAccessException) { return; }
         if (existing is not null && existing.Text == text) return; // watcher echo of our own state
-        if (!known && OverBudget(text.Length)) return;
+        if (OverBudget(text.Length - (existing?.Text.Length ?? 0), !known))
+        {
+            if (known) RemoveKey(key, existing!);
+            return;
+        }
         Add(key, new Document(uri, text, 0));
     }
 
@@ -283,9 +299,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
     {
         var key = Key(uri);
         if (!_docs.TryGetValue(key, out var d) || d.IsOpen) return null;
-        _chars -= d.Text.Length;
-        _docs.Remove(key);
-        Invalidate();
+        RemoveKey(key, d);
         return d.Uri;
     }
 
@@ -307,19 +321,28 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
             {
                 foreach (var f in Directory.EnumerateFiles(dir, "*.byn"))
                 {
+                    if (IsReparsePoint(f)) continue;
                     LoadFromDisk(f);
                     if (LimitReached) return;
                 }
                 foreach (var sub in Directory.EnumerateDirectories(dir))
                 {
                     if (IsSkippedDirectory(Path.GetFileName(sub))) continue;
-                    if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0) continue;
+                    if (IsReparsePoint(sub)) continue;
                     stack.Push(sub);
                 }
             }
             catch (UnauthorizedAccessException) { }
             catch (IOException) { }
         }
+    }
+
+    /// <summary>True for a symbolic link or junction; an entry that cannot be inspected counts as one.</summary>
+    static bool IsReparsePoint(string path)
+    {
+        try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+        catch (IOException) { return true; }
+        catch (UnauthorizedAccessException) { return true; }
     }
 
     // ---- symbol index -------------------------------------------------------

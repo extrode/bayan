@@ -471,3 +471,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - parser: no `extern` form parses (BYN1016 on `extern void f(...)`, BYN1001 on spec §`extern c { … }`, docs/bayan-spec.md:2033), so BYN1066/BYN1067 examples cannot compile; spec gap, needs a Question before a fix (review e27c9208..c1dae2fc).
 - docs/diagnostics/BYN2789.md: Fix prose uses `box.items.take();` but `Box` has no `items` field, and ends with `;` (review e27c9208..c1dae2fc).
 - src/Bayan.Semantics Compilation.cs:1927: BYN2321 help says "meets `requires …`" for a function declared with `expects` (review e27c9208..c1dae2fc).
+- bayan-lsp: skipped dir names (bin, obj, dist, tmp, node_modules, dot-dirs) apply at any depth with no setting; real sources under such dirs are not indexed unless open. Add a configurable exclude (review 7d4c979d89e1..420e68f0, finding 4).
