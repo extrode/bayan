@@ -1,0 +1,44 @@
+// bench: parse "a,b,c\n" lines of decimal integers from a generated 4 MiB buffer, 8 passes.
+// Prints `<nanoseconds> <checksum>`.
+
+const target: i64 = 4194304
+const passes: i64 = 8
+
+var buf = List<u8>()
+var state: u64 = 777
+while buf.length < target {
+    for field in 0..3 {
+        state = state *% 6364136223846793005 +% 1442695040888963407
+        var v: u64 = (state >> 33) % 1000000
+        var digits = List<u8>()
+        if v == 0 { digits.append(48) }
+        while v > 0 {
+            digits.append(u8(48 + v % 10))
+            v = v / 10
+        }
+        var k = digits.length - 1
+        while k >= 0 {
+            buf.append(digits[k])
+            k -= 1
+        }
+        buf.append(field == 2 ? 10 : 44)
+    }
+}
+
+let n = buf.length
+let start = Io.monotonicNanos()
+var sum: u64 = 0
+for p in 0..passes {
+    var value: u64 = 0
+    for i in 0..n {
+        let c = buf[i]
+        if c >= 48 && c <= 57 {
+            value = value * 10 +% u64(c - 48)
+        } else {
+            sum = sum *% 31 +% value
+            value = 0
+        }
+    }
+}
+let elapsed = Io.monotonicNanos() - start
+print($"{elapsed} {sum}")

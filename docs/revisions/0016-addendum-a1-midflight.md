@@ -2,6 +2,8 @@
 
 Nov 1, 2026
 
+Erratum (2026-11-05): K2's example named the runtime header `bayan_rt.h`; the file in the tree is `src/runtime/bayan-rt.h` (addendum A2, `docs/revisions/a2-lessons-mid-flight.md`, Errata for A1).
+
 ## Ground rules
 
 Only items that change no language behavior and no emitted output may land while 010, 013 and the self-hosting steps run. Everything else waits for round 4, which is a separate document.
@@ -44,7 +46,7 @@ These steps are not drafted yet, so shaping them costs nothing now. Each constra
 **K2. Inventory the C the emitter depends on (011).** List every compiler builtin and extension the emitted C uses today, such as `__builtin_add_overflow`. Do not change output during parity. After 012, wrap each one in a macro in one runtime header, with a portable fallback:
 
 ```c
-// bayan_rt.h — the only place compiler-specific C appears
+// bayan-rt.h — the only place compiler-specific C appears
 #if defined(__GNUC__) || defined(__clang__)
   #define BY_ADD_OVF(a, b, r) __builtin_add_overflow(a, b, r)
   #define BY_COLD __attribute__((cold, noreturn))

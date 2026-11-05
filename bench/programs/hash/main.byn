@@ -1,0 +1,21 @@
+// bench: FNV-1a 64 over a generated 8 MiB buffer, 16 chained passes. Prints `<nanoseconds> <checksum>`.
+
+const size: i64 = 8388608
+const passes: i64 = 16
+
+var buf = List<u8>()
+var state: u64 = 12345
+for i in 0..size {
+    state = state *% 6364136223846793005 +% 1442695040888963407
+    buf.append(u8(state >> 56))
+}
+
+let start = Io.monotonicNanos()
+var h: u64 = 14695981039346656037
+for p in 0..passes {
+    for i in 0..size {
+        h = (h ^ u64(buf[i])) *% 1099511628211
+    }
+}
+let elapsed = Io.monotonicNanos() - start
+print($"{elapsed} {h}")
