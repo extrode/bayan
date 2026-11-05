@@ -471,3 +471,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - parser: no `extern` form parses (BYN1016 on `extern void f(...)`, BYN1001 on spec §`extern c { … }`, docs/bayan-spec.md:2033), so BYN1066/BYN1067 examples cannot compile; spec gap, needs a Question before a fix (review e27c9208..c1dae2fc).
 - docs/diagnostics/BYN2789.md: Fix prose uses `box.items.take();` but `Box` has no `items` field, and ends with `;` (review e27c9208..c1dae2fc).
 - src/Bayan.Semantics Compilation.cs:1927: BYN2321 help says "meets `requires …`" for a function declared with `expects` (review e27c9208..c1dae2fc).
+- src/Bayan.Backend.C/Toolchain.cs:220,305: a C compiler killed by `CompileTimeout` returns `Rejected: true`, so the CLI reports BYN4001 "internal compiler error: the C compiler rejected the generated C" for a timeout; a timeout needs its own outcome (leak audit 2026-11-06, fix/cli-memory-bounds).
