@@ -46,7 +46,7 @@ def owned_files(block):
     head = block[0]
     files = re.search(r'files: (.*?) — (?:covers|after|done when)', head).group(1).split(' — C#:')[0]  # 011 names the C# range after the files
     files = re.sub(r'\([^()]*(\([^()]*\)[^()]*)*\)', '', files)
-    return re.findall(r'`([^`]+\.(?:byn|cs|md|h|diag|txt|stdout|stderr|exitcode|sha256))`', files)  # golden expected files too (014 T6)
+    return re.findall(r'`([^`]+\.(?:byn|cs|md|c|h|diag|txt|stdout|stderr|exitcode|sha256))`', files)  # golden expected files too (014 T6)
 
 
 def plan_rows(byns):
