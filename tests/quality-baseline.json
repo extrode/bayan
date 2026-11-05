@@ -1,6 +1,11 @@
 {
   "version": 1,
   "files": {
+    "selfhost/driver/build.byn": {
+      "mutation": null,
+      "coverage": 0.96,
+      "branches": 0.9867
+    },
     "selfhost/driver/cc.byn": {
       "mutation": null,
       "coverage": 1.0,
