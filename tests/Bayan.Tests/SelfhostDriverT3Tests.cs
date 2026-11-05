@@ -233,10 +233,10 @@ public sealed class SelfhostDriverT3Tests
         var csArgs = new List<string> { "build", Hello, "-o", csOut, "--mode", mode };
         if (target != "") csArgs.AddRange(["--target", target]);
         var cs = Start(Cli, bin, csArgs, scratch);
-        var csArgv = File.Exists(argv) ? File.ReadAllText(argv) : "";
+        var csArgv = File.Exists(argv) ? File.ReadAllText(argv).ReplaceLineEndings("\n") : "";
         File.Delete(argv);
         var byn = Start(Probe(), bin, ["compile", scratch, "int main(void){return 0;}", output, mode, target], scratch);
-        var bynArgv = File.Exists(argv) ? File.ReadAllText(argv) : "";
+        var bynArgv = File.Exists(argv) ? File.ReadAllText(argv).ReplaceLineEndings("\n") : "";
         if (cs.Exit == 0) Assert.True(File.Exists(csOut));
         if (byn.Exit == 0) Assert.True(File.Exists(Path.Combine(scratch, output)));
         Assert.Equal(cs.Exit == 0, byn.Exit == 0);
@@ -366,7 +366,7 @@ public sealed class SelfhostDriverT3Tests
         var argv = Path.Combine(bin, "argv");
         File.Delete(argv);
         Assert.Equal(0, Start(Cli, bin, ["build", Hello, "-o", Path.Combine(scratch, "cs-out"), "--mode", mode], scratch).Exit);
-        var expected = Masked(File.ReadAllText(argv), scratch).Split('\n')[1..];
+        var expected = Masked(File.ReadAllText(argv).ReplaceLineEndings("\n"), scratch).Split('\n')[1..];
         var (exit, stdout, _) = Start(Probe(), bin, ["arguments", scratch, "program", mode], scratch);
         Assert.Equal(0, exit);
         SelfhostEmitterHarness.AssertSame($"arguments of {mode} without a target", string.Join("\n", expected), Masked(stdout, scratch));
@@ -562,7 +562,7 @@ public sealed class SelfhostDriverT3Tests
         Assert.False(File.Exists(Path.Combine(third, "argv")));
         var byn = Start(Probe(), path, ["compile", Fresh("path-byn"), "int main(void){return 0;}", "program", "safe", ""], Fresh("path-byn-cwd"));
         Assert.Equal(0, byn.Exit);
-        Assert.StartsWith("cc\n", File.ReadAllText(Path.Combine(second, "argv")));
+        Assert.StartsWith("cc\n", File.ReadAllText(Path.Combine(second, "argv")).ReplaceLineEndings("\n"));
         var found = Start(Probe(), path, ["findpath", OperatingSystem.IsWindows() ? "windows" : "linux", "cc"]);
         Assert.Equal(Path.Combine(second, Tool("cc")) + "\n", found.Out);
     }
