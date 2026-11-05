@@ -206,6 +206,11 @@
       "coverage": 0.8576,
       "branches": 0.7886
     },
+    "selfhost/semantics/json.byn": {
+      "mutation": null,
+      "coverage": 0.3636,
+      "branches": 0.4643
+    },
     "selfhost/semantics/ownership.byn": {
       "mutation": null,
       "coverage": 0.9429,
@@ -230,6 +235,11 @@
       "mutation": null,
       "coverage": 0.6651,
       "branches": 0.6406
+    },
+    "selfhost/semantics/typed.byn": {
+      "mutation": null,
+      "coverage": 0.087,
+      "branches": 0.0488
     },
     "selfhost/semantics/types.byn": {
       "mutation": null,
