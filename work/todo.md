@@ -540,3 +540,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - [ ] `"7".padded(to: 3, by: '0')` prints `700`: decide the pad side in the spec first; likely left-pad by default (site-ref-tools, 2026-11-05).
 - [ ] `i64.parse("-101", as: .binary)` rejects a leading sign when a radix is given (site-ref-tools, 2026-11-05).
 - [ ] `badDigit`: the compiler's payload is `i64`; spec §8 says `badDigit(Bytes at)`. Keep the spec; change the compiler (site-ref-tools, 2026-11-05).
+- LOW (012 T21 review) `selfhost/semantics/types.byn:134` `kindOf` returns `.alias` from `default:`, so any unknown handle (including an unset `-1`) reads as an alias; make it `case 25` and keep `.errorSet` as the default, with a T9 row for an unknown handle. Fix after 012 (A1).
+- LOW (012 T21 review) `tests/Bayan.Tests/SelfhostSemanticsT9Tests.cs:323`, `:433` compare alias-section diagnostics as `code start:length message`; the oracle bar is `code line:col message`. Fix with T6 or after 012.
+- LOW (012 T21 review) the T21 driver self-compile (`self.c` == `cs.c`, 188624 lines) is shown only by the untracked `tmp/t21-probe/`; T5/T6 make it a tracked check (L027).
