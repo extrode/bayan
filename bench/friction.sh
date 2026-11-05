@@ -19,6 +19,7 @@ esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root" || exit 1
+. bench/rid.sh
 T=${BENCH_TMP:-tmp/bench}
 results=${BENCH_RESULTS:-bench/results}
 src=${FRICTION_SRC:-selfhost}
@@ -27,9 +28,9 @@ W="$T/friction-$commit-$$"
 mkdir -p "$W" "$results"
 [ -d "$src" ] || { echo "bench/friction.sh: no such directory: $src" >&2; exit 1; }
 
-bayan=${BAYAN_BIN:-$T/publish/bayan}
-if [ ! -x "$bayan" ] && [ -z "${BAYAN_BIN:-}" ] && command -v dotnet >/dev/null 2>&1; then
-    dotnet publish src/Bayan.Cli -c Release -r osx-arm64 -o "$T/publish" >"$W/publish.log" 2>&1
+bayan=${BAYAN_BIN:-$T/publish/$(bench_exe "$(uname -s)")}
+if [ ! -x "$bayan" ] && [ -z "${BAYAN_BIN:-}" ] && command -v dotnet >/dev/null 2>&1 && rid=$(bench_rid "$(uname -s)" "$(uname -m)"); then
+    dotnet publish src/Bayan.Cli -c Release -r "$rid" -o "$T/publish" >"$W/publish.log" 2>&1
 fi
 [ -x "$bayan" ] || { echo "bench/friction.sh: no executable bayan at $bayan (set BAYAN_BIN, or run bench/run.sh first)" >&2; exit 1; }
 bayan=$(cd "$(dirname "$bayan")" && pwd)/$(basename "$bayan")
@@ -55,9 +56,16 @@ Package {
     },
 }
 PKG
-export BAYAN_CACHE="$PWD/$W/cache"
+case "$W" in /*|[A-Za-z]:*) export BAYAN_CACHE="$W/cache" ;; *) export BAYAN_CACHE="$PWD/$W/cache" ;; esac
 mkdir -p "$BAYAN_CACHE"
+# Not measured with the published bayan: a run is complete when check.log ends in a `◆ checked ...` line and
+# the exit status is below 2 (warnings may give a nonzero status below 2); anything else is a crash.
 "$bayan" check "$W/sh" --all >"$W/check.log" 2>&1
+status=$?
+if [ "$status" -ge 2 ] || ! grep -q '^◆ checked ' "$W/check.log"; then
+    echo "bench/friction.sh: bayan check did not complete (exit $status), see $W/check.log" >&2
+    exit 1
+fi
 codes=$(grep -o -E '^(warning|error|note|info) BYN50[0-9][0-9]' "$W/check.log" | sed 's/^[a-z]* //' | sort | uniq -c | awk '{ printf "%s%s=%s", sep, $2, $1; sep = " " }')
 total=$(grep -c -E '^(warning|error|note|info) BYN50[0-9][0-9]' "$W/check.log")
 
@@ -67,5 +75,5 @@ total=$(grep -c -E '^(warning|error|note|info) BYN50[0-9][0-9]' "$W/check.log")
     echo "@allow $(count '@allow\b')"
     echo "Unchecked_calls $(count '\.[A-Za-z0-9_]*Unchecked[[:space:]]*\(')"
     echo "@unformatted $(count '@unformatted\b')"
-    echo "BYN50xx_reported $total${codes:+ ($codes)}"
+    echo "BYN50xx_reported (selfhost compiler package) $total${codes:+ ($codes)}"
 } | tee "$results/$commit-friction.txt"
