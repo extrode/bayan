@@ -52,9 +52,9 @@ string? targetHost() uses alloc {
     return targetHostFrom(Target.os, for: Target.arch)
 }
 
-/// The name `Target.os` and `Target.arch` spell (`wasm32` has no os-arch split; an empty os is no Bayan target, `Host == null`).
+/// The name `Target.os` and `Target.arch` spell (`wasm32` has no os-arch split; an empty os or arch is no Bayan target, `Host == null`, HostTarget.cs:18).
 string? targetHostFrom(string os, for string arch) uses alloc {
-    return os == "" ? null : arch == "wasm32" ? "wasm32" : $"{os}-{arch}"
+    return os == "" || arch == "" ? null : arch == "wasm32" ? "wasm32" : $"{os}-{arch}"
 }
 
 /// Targets.cs `ExecutableName` (:30): `tally`, `tally.exe` or `tally.wasm`.

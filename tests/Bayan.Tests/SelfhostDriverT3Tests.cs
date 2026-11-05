@@ -536,6 +536,9 @@ public sealed class SelfhostDriverT3Tests
             Assert.Equal(name + "\n", stdout);
         }
         Assert.Equal("none\n", Start(Probe(), Fresh("bin-hostfrom"), ["hostfrom", "", ""]).Out);
+        Assert.Equal("none\n", Start(Probe(), Fresh("bin-hostfrom"), ["hostfrom", "linux", ""]).Out);
+        Assert.Equal("none\n", Start(Probe(), Fresh("bin-hostfrom"), ["hostfrom", "windows", ""]).Out);
+        Assert.Equal("none\n", Start(Probe(), Fresh("bin-hostfrom"), ["hostfrom", "", "x64"]).Out);
     }
 
     /// <summary>
