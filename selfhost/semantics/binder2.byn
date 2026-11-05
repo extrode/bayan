@@ -341,12 +341,12 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
             return bindAssert(ref b, through: ref c, for: in a.value)
         case .becomeStmt(let bcm):
             return bindBecome(ref b, through: ref c, for: in bcm.value)
-        // coverage-exempt: Q765 through 348
+        // coverage-exempt: Q765 through `BErrorStmt { span: err.value.span }`
         case .emptyStmt(let em):
             return addBlock(ref c, from: BBlock { span: em.value.span, statements: List<BStmt>() })
         case .errorStmt(let err):
             return addErrorStmt(ref c, from: BErrorStmt { span: err.value.span })
-        // coverage-exempt: Q765 through 353
+        // coverage-exempt: Q765 through `BErrorStmt { span: span }`
         default:
             let span = t15StmtSpan(in stmt)
             report(ref b, through: ref c, for: .unsupported, at: span, by: ("this statement", "", "", "", ""))

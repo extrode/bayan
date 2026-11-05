@@ -535,3 +535,8 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - [ ] preflight.sh: a files-list name ending in a brace list (`dir/{a,b}.{byn,diag}`) is not picked up; expand trailing `.{x,y}` extensions (T18, 2026-11-05).
 - [ ] land.sh: a merge conflict in `docs/bayan-handoff.md` (two tasks appending Questions/Progress lines) stops the land half-way; both sides are always additive, so resolve by keeping both, or have tasks append in separate files (T18, 2026-11-05).
 - [ ] wave-brief.py: a task whose files list names no `.cs` test gets the guard filter `<prefix><n>Tests`, a class that may not exist (T19: `SelfhostDriverT19Tests`, guard FAIL "matched no tests"); refuse or fall back to the done-when's named class. Fixed for T19 by listing the oracle test file (2026-11-05).
+## Compiler bugs and spec gaps from the site writers (user 2026-11-05: after 012, A1)
+- [ ] BYN4001 internal C error on a zero-length array `string[0] = []`; add a run golden (site-ref-tools, 2026-11-05).
+- [ ] `"7".padded(to: 3, by: '0')` prints `700`: decide the pad side in the spec first; likely left-pad by default (site-ref-tools, 2026-11-05).
+- [ ] `i64.parse("-101", as: .binary)` rejects a leading sign when a radix is given (site-ref-tools, 2026-11-05).
+- [ ] `badDigit`: the compiler's payload is `i64`; spec §8 says `badDigit(Bytes at)`. Keep the spec; change the compiler (site-ref-tools, 2026-11-05).

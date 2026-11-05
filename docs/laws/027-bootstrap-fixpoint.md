@@ -1,7 +1,7 @@
 ---
 id: L027
 title: Bootstrap fixpoint
-status: proposed
+status: enacted
 kind: property
 scope: selfhost/driver/**, selfhost/emitter/**, selfhost/semantics/**, bootstrap/bayan.c
 proof: (written by 012 T12 via /prove, after T9)

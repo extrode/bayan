@@ -5,11 +5,12 @@
 # holding its line). A function is touched when its span holds a line the work tree adds or changes against <merge-base>
 # (git diff -U0; a deletion touches the lines on either side of it; a file new since <merge-base> is touched throughout).
 # Every line and branch of a touched function must be covered: each missed or unknown one is printed as a FAIL item
-# ("- …"), except a missed one under a `// coverage-exempt: Qnnn` marker: it exempts the next line (`… through N`: the next
-# line to N) when Question Qnnn of docs/bayan-handoff.md cites <file>:L (or a range) inside that span, for code that is dead in
-# the C# too (the Question cites the C# line). A marker whose Question cites none of its span is a FAIL item and exempts nothing;
-# an unknown line is never exempt.
-# `// coverage-blocked: Qnnn T<k> <fn>` (`… through N` as above; user decision 2026-11-04) exempts a missed line that only runs once
+# ("- …"), except a missed one under a `// coverage-exempt: Qnnn` marker: it exempts the next line (`… through `text``: the next
+# line to the one line holding text in the rest of the marker's function, an anchor, Q1040) when Question Qnnn of
+# docs/bayan-handoff.md cites a <file> line (any: its number is prose, Q1040), for code that is dead in the C# too (the Question cites the C# line). A marker whose
+# Question cites no line of its file, or whose anchor matches no line or several, is a FAIL item and exempts nothing; so is a
+# `through N` line number. An unknown line is never exempt.
+# `// coverage-blocked: Qnnn T<k> <fn>` (`… through `text`` as above; user decision 2026-11-04) exempts a missed line that only runs once
 # sibling task T<k> ports its stub <fn> (not dead in the C#: the Question cites the line and the stub). It holds only while T<k> is
 # unticked in <tasks.md> and is not the task under guard (<T<n>>): every marker in <dir>'s .byn files naming the guarded task or a
 # ticked one is a FAIL item, so the stub's owner covers the lines and removes the marker before it lands, and integration sees none.
@@ -35,7 +36,18 @@ def changed(base, path):
     return lines
 
 
-BLOCKED = r'// coverage-blocked: Q(\d{3,4}) (T\d+) (\w+)(?: through (\d+))?'
+BLOCKED = r'// coverage-blocked: Q(\d{3,4}) (T\d+) (\w+)(?: through `([^`]+)`)?'
+
+
+def anchored(lines, i, text):
+    """The lines after marker line i, to the end of its function (a later line starting with `}`), holding text (Q1040): an end
+    of text that is a word character must not touch another one."""
+    pat = ('(?<!\\w)' if re.match(r'\w', text[0]) else '') + re.escape(text) + ('(?!\\w)' if re.match(r'\w', text[-1]) else '')
+    found = []
+    for n in range(i + 1, len(lines) + 1):
+        if re.search(pat, lines[n - 1]): found.append(n)
+        if lines[n - 1].startswith('}'): break
+    return found
 
 
 def open_tasks(tasks):
@@ -76,26 +88,33 @@ def exempt(path, handoff='docs/bayan-handoff.md', open_=None, task=None):
         if m: questions[m.group(1)] = q
     base, skip, blocked, bad = os.path.basename(path), set(), set(), []
     for i, text in enumerate(lines, 1):
-        m, into = re.search(r'// coverage-exempt: Q(\d{3,4})(?: through (\d+))?', text), skip
+        if re.search(r'// coverage-(exempt|blocked):.* through \d', text):
+            bad.append(f'coverage: {path}:{i} pins `through` to a line number; write `through `text`` with text from the last exempt line (Q1040)'); continue
+        m, into = re.search(r'// coverage-exempt: Q(\d{3,4})(?: through `([^`]+)`)?', text), skip
         if m:
             q, last = m.group(1), m.group(2)
         else:
             m, into = re.search(BLOCKED, text), blocked
             if not m:
                 if '// coverage-blocked:' in text:
-                    bad.append(f'coverage: {path}:{i} has a coverage-blocked marker not of the form `// coverage-blocked: Qnnn T<k> <fn>[ through N]`')
+                    bad.append(f'coverage: {path}:{i} has a coverage-blocked marker not of the form `// coverage-blocked: Qnnn T<k> <fn>[ through `text`]`')
                 continue
             q, t, fn, last = m.groups()
             if open_ is None:
                 bad.append(f'coverage: {path}:{i} is coverage-blocked on {t} {fn}, but the gate was given no tasks file'); continue
             if t == task or t not in open_: continue  # stale(): reported once per marker
-        last = int(last or i + 1)
-        if last <= i or last > len(lines):
-            bad.append(f'coverage: {path}:{i} exempts through {last}, which is not after the marker and inside the file'); continue
-        cited = [(int(a), int(b or a)) for a, b in re.findall(re.escape(base) + r':(\d+)(?:-(\d+))?', questions.get(q, ''))]
-        if not any(a <= last and b >= i + 1 for a, b in cited):
-            bad.append(f'coverage: {path}:{i} exempts {i + 1}-{last} for Q{q}, but Q{q} in {handoff} cites no {base} line in that span'); continue
-        into.update(range(i + 1, last + 1))
+        if last is None:
+            if i >= len(lines):
+                bad.append(f'coverage: {path}:{i} is a marker on the last line, with no line to exempt'); continue
+            end = i + 1
+        else:
+            at = anchored(lines, i, last)
+            if len(at) != 1:
+                bad.append(f'coverage: {path}:{i} exempts through anchor `{last}`, which matches {"lines " + ", ".join(map(str, at)) if at else "no line"} of the rest of its function; it must match exactly one (Q1040)'); continue
+            end = at[0]
+        if not re.search(re.escape(base) + r':\d', questions.get(q, '')):
+            bad.append(f'coverage: {path}:{i} exempts {i + 1}-{end} for Q{q}, but Q{q} in {handoff} cites no {base} line'); continue
+        into.update(range(i + 1, end + 1))
     return skip, blocked, bad
 
 
