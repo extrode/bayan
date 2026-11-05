@@ -1,36 +1,5 @@
 # Windows-only test failures expected until spec 014 (std Path module, handoff Q743) lands.
 # Measured on wp1, 2026-11-02, test/win-combined-1102 (83ed4a17), zig 0.17.0: 78 failed of 6051; the 2 not listed are fixed separately.
-# After 014 T7, measured on wp1, 2026-11-05, chore/worker-014-t7 (caf4a746): 32 failed, all listed here; the 83 names T7 fixed are removed (the whole 011 T12 Q816 and 011 T13 Q886 sections). The rest wait for 014 T8 (typed.byn, json.byn).
-Bayan.Tests.SelfhostSemanticsEquivalenceLawTests.BayanCheckEqualsTheCCheckerOnEveryCleanParse
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/constrained-by-argument.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/constrained-by-assignment.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/constrained-by-comparison.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/constrained-i64.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/function-types.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/function-values.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/lambda-lifted.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/lambda-narrowed-capture.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/lambda-rollback.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/pending-peers-accumulator.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/pending-peers-chain.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/pending-peers-unconstrained.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/rune.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/state-types.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/symbol-literals.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/symbol-text.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/symbol-type.byn")
-Bayan.Tests.SelfhostSemanticsParityTests.TypesParity(name: "typed/unconstrained-i32.byn")
-Bayan.Tests.SelfhostSemanticsTests.CheckBuildOptions
-Bayan.Tests.SelfhostSemanticsTests.CheckCleanFile
-Bayan.Tests.SelfhostSemanticsTests.CheckDiagnosticsFormats
-Bayan.Tests.SelfhostSemanticsTests.CheckGlobalOptions
-Bayan.Tests.SelfhostSemanticsTests.CheckNamesMainAndDirectory
-Bayan.Tests.SelfhostSemanticsTests.CheckScriptAlone
-Bayan.Tests.SelfhostSemanticsTests.ForTryTypes
-Bayan.Tests.SelfhostSemanticsTests.TypesAgree(name: "typed/function-types.byn")
-Bayan.Tests.SelfhostSemanticsTests.TypesAgree(name: "typed/lambda-narrowed-capture.byn")
-Bayan.Tests.SelfhostSemanticsTests.TypesAgree(name: "typed/rune.byn")
-Bayan.Tests.SelfhostSemanticsTests.TypesBindingKinds
-Bayan.Tests.SelfhostSemanticsTests.TypesIsCliJson
-Bayan.Tests.SelfhostSemanticsTests.TypesModuleOrder
+# After 014 T7, measured on wp1, 2026-11-05, chore/worker-014-t7 (caf4a746): 32 failed, all listed here; the 83 names T7 fixed are removed (the whole 011 T12 Q816 and 011 T13 Q886 sections). After 014 T8, measured on wp1, 2026-11-05, chore/worker-014-t8 (2b29189d): 7 failed, all listed here; the 25 path names T8 fixed are removed. The 7 left fail on something other than a path and wait for 014 T9.
+# After 014 T9, 2026-11-05: empty. The 7 left after T8 all failed on `Untimed` (SelfhostSemanticsTests.cs), whose `$` missed the `\r` of the C#'s Windows output (handoff Q990).
 Bayan.Tests.SelfhostEmitterSpeedTests.OneMegabyteLowerAndEmitWithinTenTimes
