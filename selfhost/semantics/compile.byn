@@ -101,6 +101,7 @@ public Ctx create(from move List<lexer.SourceText> entryFiles, at string package
     }
     var clock = Io.monotonicNanos()
     c.entryModule = loadModule(ref c, for: "main", at: packageRoot, from: move entryFiles, by: -1)
+    t11OrderModules(ref c)
     for f in copyIds(in c.modules[c.entryModule].files) { c.files[f].isEntry = true }
     c.parseTime = Io.monotonicNanos() - clock
     // Syntax errors stop here: binding a broken tree mostly reports their echoes.
@@ -216,6 +217,58 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
     }
     c.moduleOrder.append(module)
     return module
+}
+
+/// Compilation.cs:163-181 `LoadModule`: `Modules.Add(module)` (:180) runs after `ResolveImport` (:177), so `Modules`
+/// lists an imported module before its importer, and every pass over `Modules` (field defaults, Compilation.cs:1418-1423)
+/// sees a dependency first. `loadModule` numbers a module on append (:147), before its imports load, so once the entry
+/// module is in, `c.modules` is renumbered into `moduleOrder` (that post-order) and the ModIds held so far follow:
+/// `c.files[*].module`, `c.files[*].imports`, `c.modulesByDir`, `c.entryModule`. A `Mod` holds only its four loading
+/// fields here: `declare` builds the builtin module (`t9Create`) later, and symbols are declared later still.
+void t11OrderModules(ref Ctx c) {
+    var newId = List<ModId>()
+    for _ in 0..c.modules.length { newId.append(-1) }
+    for i in 0..c.moduleOrder.length { newId[c.moduleOrder[i]] = i }
+    var modules = List<Mod>()
+    var byDir = Map<string, ModId>()
+    for m in copyIds(in c.moduleOrder) {
+        modules.append(Mod { name: c.modules[m].name, files: copyIds(in c.modules[m].files), directory: c.modules[m].directory, cName: c.modules[m].cName })
+        byDir[c.modules[m].directory] = modules.length - 1
+    }
+    c.modules = move modules
+    c.modulesByDir = move byDir
+    c.entryModule = newId[c.entryModule]
+    for i in 0..c.moduleOrder.length { c.moduleOrder[i] = i }
+    for f in 0..c.files.length {
+        c.files[f].module = newId[c.files[f].module]
+        // `imports` is keyed by the name each `import` uses (resolveImport:236); a repeated name was reported, not stored.
+        var seen = Map<string, bool>()
+        for m in 0..c.files[f].unit.members.length {
+            switch c.files[f].unit.members[m] {
+                case .importDecl(let node):
+                    let alias = t11Text(in c, from: f, at: node.value.alias ?? node.value.path[node.value.path.length - 1])
+                    if seen.contains(alias) || !c.files[f].imports.contains(alias) { continue }
+                    seen[alias] = true
+                    c.files[f].imports[alias] = newId[c.files[f].imports[alias]]
+                    // Post-order: an import was appended to `moduleOrder` before its importer (a cycle is reported, not stored).
+                    assert c.files[f].imports[alias] < c.files[f].module
+                default:
+                    continue
+            }
+        }
+    }
+    // Every held ModId names the remapped module it came from (Q1034): a file belongs to the module listing it, a
+    // directory maps to the module loaded from it, and the entry module is the one `create` loaded at the package root.
+    var listed = 0
+    for m in 0..c.modules.length {
+        assert c.modulesByDir[c.modules[m].directory] == m
+        for f in copyIds(in c.modules[m].files) { assert c.files[f].module == m }
+        listed += c.modules[m].files.length
+    }
+    assert listed == c.files.length
+    assert c.modulesByDir.length == c.modules.length
+    assert c.modules[c.entryModule].name == "main"
+    assert c.modules[c.entryModule].directory == c.packageRoot
 }
 
 // ── Compilation.cs:146 ResolveImport ────────────────────────────────────────────

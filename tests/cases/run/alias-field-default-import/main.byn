@@ -1,0 +1,13 @@
+import sub
+
+// `LTree {}` in a field default needs `sub.L`'s own defaults, bound first because `sub` precedes its importer.
+public type LTree = sub.L
+
+struct Holder {
+    LTree inner = LTree {}
+}
+
+void main() {
+    let h = Holder {}
+    print($"{h.inner.a}")
+}

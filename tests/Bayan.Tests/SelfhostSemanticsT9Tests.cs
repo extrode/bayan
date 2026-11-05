@@ -136,6 +136,23 @@ public sealed class SelfhostSemanticsT9Tests
 
     private static readonly string[] ErrorSets = ["IoError", "Utf8Error", "ValidationError", "ParseError"];
 
+    /// <summary>
+    /// T21 (Q1017): programs compiled by both checkers, each alone with <c>Root</c> (under the repo) as package root:
+    /// the module order, the diagnostics, the error and struct-literal nodes, and the display name of <c>TypeName</c>
+    /// when it is an unexpanded alias in the entry module's types (the C# <c>AliasPlaceholder</c>, <c>TypeKind.alias</c>).
+    /// </summary>
+    private static readonly (string Label, string Root, string Source, string TypeName)[] AliasCases =
+    [
+        ("static-call", "tmp/t21-alias", "struct L {\n    i64 a\n    static L make(i64 a) => L { a: a }\n}\ntype M = L\nvoid main() {\n    let m = M.make(2)\n    print($\"{m.a}\")\n}\n", "M"),
+        ("field-default-import", "tests/cases/run/alias-field-default-import", File.ReadAllText(Path.Combine(Golden.CasesRoot, "run", "alias-field-default-import", "main.byn")), "LTree"),
+        // Not a call: the C# `BindCall` drops an error callee for a fresh `BoundErrorExpr` (BinderCalls.cs:92-94), which
+        // `Descendants` never sees, while the selfhost arena keeps both.
+        ("unknown-member", "tmp/t21-alias", "struct L {\n    i64 a\n}\ntype M = L\nvoid main() {\n    let m = M.nope\n}\n", "M"),
+        ("struct-itself", "tmp/t21-alias", "struct L {\n    i64 a\n    static L make(i64 a) => L { a: a }\n}\nvoid main() {\n    let m = L.make(2)\n    print($\"{m.a}\")\n}\n", "L"),
+    ];
+
+    private static string BayanString(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
+
     private static readonly Lazy<Dictionary<string, List<string>>> Output = new(() => SelfhostSemanticsHarness.RunSections(MainSource()));
 
     /// <summary>The internal <c>BuiltinMembers</c>, reached by reflection.</summary>
@@ -286,6 +303,28 @@ public sealed class SelfhostSemanticsT9Tests
                     }
                 """);
         }
+        s.AppendLine("    print(\"== alias\")");
+        foreach (var (label, root, source, typeName) in AliasCases)
+        {
+            s.AppendLine($$"""
+                    {
+                        var files = List<lexer.SourceText>()
+                        var bytes = List<u8>()
+                        for ch in "{{BayanString(source)}}".bytes { bytes.append(ch) }
+                        files.append(lexer.SourceText.create("main.byn", from: move bytes))
+                        var compiled = create(from: move files, at: "{{BayanString(Path.Combine(Golden.RepoRoot, root))}}", by: in CompilationOptions { includeTests: false })
+                        var sb = StrBuf()
+                        sb.append("{{label}} modules=")
+                        for m in compiled.moduleOrder { sb.append($"{compiled.modules[m].name}/") }
+                        let entry = compiled.entryModule
+                        let aliased = compiled.modules[entry].types.contains("{{typeName}}") && kindOf(compiled.modules[entry].types["{{typeName}}"]) == .alias
+                        let shown = aliased ? typeDisplay(ref compiled, by: compiled.modules[entry].types["{{typeName}}"]) : "-"
+                        sb.append($" diagnostics={compiled.diagnostics.length} errors={compiled.bErrorExprs.length} structs={compiled.bStructLiterals.length} alias={shown}")
+                        print(sb.finish())
+                        for d in compiled.diagnostics { print($"  {d.code} {sp(d.span)} {d.message}") }
+                    }
+                """);
+        }
         s.AppendLine("    print(\"== names\")");
         foreach (var n in NameTypes)
             s.AppendLine($"    namesLine(ref c, for: \"{n}\", at: t{Array.FindIndex(Types, t => t.Label == n)})");
@@ -373,6 +412,28 @@ public sealed class SelfhostSemanticsT9Tests
             expected.Add($"{TargetLabel(target)} diagnostics={compilation.Diagnostics.Count} host={host} literals={literals}");
         }
         SelfhostSemanticsHarness.AssertSection(Output.Value, "target", expected);
+    }
+
+    /// <summary>
+    /// T21: a static call and a field default through a type alias bind without an error node, as the C#
+    /// (Q1017); the module order is the C# <c>Modules</c> order (Compilation.cs:180, an import before its importer).
+    /// </summary>
+    [Fact]
+    public void AliasesBindAsTheCSharp()
+    {
+        var expected = new List<string>();
+        foreach (var (label, root, source, typeName) in AliasCases)
+        {
+            var compilation = Compilation.Create([SourceText.FromString("main.byn", source)], Path.Combine(Golden.RepoRoot, root), new CompilationOptions());
+            var modules = string.Concat(compilation.Modules.Select(m => m.Name + "/"));
+            var nodes = compilation.Modules.SelectMany(m => m.AllFunctions).Where(f => f.Body is not null)
+                .SelectMany(f => Bayan.Semantics.Binding.BoundTree.Descendants(f.Body!)).ToList();
+            var aliased = compilation.EntryModule.Types.TryGetValue(typeName, out var t) && t.GetType().Name == "AliasPlaceholder" ? t.DisplayName : "-";
+            expected.Add($"{label} modules={modules} diagnostics={compilation.Diagnostics.Count} errors={nodes.OfType<Bayan.Semantics.Binding.BoundErrorExpr>().Count()} " +
+                $"structs={nodes.OfType<Bayan.Semantics.Binding.BoundStructLiteral>().Count()} alias={aliased}");
+            foreach (var d in compilation.Diagnostics.Items) expected.Add($"  {d.Code} {d.Span.Start}:{d.Span.Length} {d.Message}");
+        }
+        SelfhostSemanticsHarness.AssertSection(Output.Value, "alias", expected);
     }
 
     [Fact]

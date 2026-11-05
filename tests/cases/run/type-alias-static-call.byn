@@ -1,0 +1,9 @@
+struct L {
+    i64 a
+    static L make(i64 a) => L { a: a }
+}
+type M = L
+void main() {
+    let m = M.make(2)
+    print($"{m.a}")
+}
