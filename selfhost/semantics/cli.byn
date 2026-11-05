@@ -28,6 +28,8 @@ public struct T26Options {
     public bool json = false
     public bool all = false
     public bool spans = false
+    /// `--target` of `build` and `run` (012 T5, CliApp.cs:284 `Target: o.Target`); `check` and `types` leave it null.
+    public string? target = null
 }
 
 /// A reported diagnostic as `Failed` reads it: its sort key (path, start), code and severity.
@@ -132,7 +134,7 @@ public Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26
         }
         var capabilities: List<string>? = null
         if (manifest.capabilities is { } caps) { capabilities = copyStrings(in caps) }
-        let options = CompilationOptions { includeTests: includeTests, library: manifest.kind == .lib, capabilities: move capabilities, packageName: manifest.name }
+        let options = CompilationOptions { includeTests: includeTests, library: manifest.kind == .lib, capabilities: move capabilities, packageName: manifest.name, target: o.target }
         var c = fromProject(root, for: entry, by: in options)
         c.manifest = move manifest
         t26Report(in o, by: in symbols, for: ref c, to: ref reported)

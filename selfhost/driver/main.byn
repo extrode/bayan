@@ -199,15 +199,21 @@ i32 run(ReadOnlySpan<string> args, through ref DCtx d) {
             return typesCommand(in kept, by: in d)
         case "check":
             return checkCommand(in kept, by: in d)
-        // stub: T5 build, run (the R3 refusal until the task lands)
-        case "build" or "run":
-            return refuse(command)
+        case "build":
+            return buildCommand(in kept, by: in d)
+        case "run":
+            return runProgram(in t2Rest(kept), by: in d)
         case "doctor" or "format" or "audit" or "features" or "explain" or "test" or "mutate" or "new" or "dist" or "cache" or "clean" or "init":
             return refuse(command)
         default:
             // `#!/usr/bin/env bayan` runs `bayan script.byn [args]` (CliApp.cs:97).
-            // stub: T5 RunProgram
-            if command.endsWith(".byn") && t1FileExists(command) { return refuse("run") }
+            if command.endsWith(".byn") && t1FileExists(command) {
+                var script = List<string>()
+                script.append(command)
+                script.append("--")
+                for a in t2Rest(kept) { script.append(a) }
+                return runProgram(in script, by: in d)
+            }
             Io.stderr.write($"bayan: unknown command `{command}`\n")
             if command == "fmt" { Io.stderr.write("the formatter is `bayan format`\n") }
             Io.stderr.write($"{usageText}\n")
