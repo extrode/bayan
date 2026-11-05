@@ -79,7 +79,7 @@ Numbering assumes spec 014 takes L026 (its `L0xx` `Path` agrees with .NET); 012 
 
 **L027 Bootstrap fixpoint.** For the driver's sources and each of `safe` and `debug`, the C the C# compiler emits, the C stage 1 emits and the C stage 2 emits are byte-identical, and contain no absolute path and no timestamp, all stages built on the same host. Cross-host byte identity for the same `--target` is a tracked future strengthening, not part of L027. Kind: property over the build; check `dotnet test -v q --filter "Law=L027"`.
 
-**L028 Driver equivalence.** For every case of the R10 corpus and the R2 usage corpus, stage 2's stdout, stderr and exit code equal `CliApp.Run`'s with elapsed seconds masked; the comparison runs with stderr not a terminal and `CI` set. Kind: property; check `dotnet test -v q --filter "Law=L028"`, honouring `BAYAN_LAW_TIER` (unset = seeded subset, `full` = whole corpus) as L018/L023 do.
+**L028 Driver equivalence.** For every case of the R10 corpus and the R2 usage corpus, stage 2's stdout, stderr and exit code equal `CliApp.Run`'s with elapsed time masked (before comparing, every match of the regex `[0-9]+\.[0-9]{2}s` — the `build.seconds` and `test.seconds` messages, `CliApp.cs` `Seconds` — becomes `<t>s`, and every JSON `"durationMs": <number>` value — `TestReport.cs` — becomes `"durationMs": 0`; nothing else is masked); the comparison runs with stderr not a terminal and `CI` set. Kind: property; check `dotnet test -v q --filter "Law=L028"`, honouring `BAYAN_LAW_TIER` (unset = seeded subset, `full` = whole corpus) as L018/L023 do.
 
 ## Decisions
 
