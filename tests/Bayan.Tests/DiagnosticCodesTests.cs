@@ -107,13 +107,13 @@ public sealed class DiagnosticCodesTests
     private static readonly HashSet<string> StructuralExamples =
     [
         "BYN0001", "BYN0005", "BYN0015", "BYN0016", "BYN2005", "BYN2010", "BYN2015",
-        "BYN3100", "BYN3101", "BYN3102", "BYN3103", "BYN3104", "BYN4001", "BYN6004",
+        "BYN3100", "BYN3101", "BYN3102", "BYN3103", "BYN3104", "BYN3213", "BYN3215", "BYN3217", "BYN4001", "BYN6004",
     ];
 
     // Error codes an example may report besides its own ("doc/extra"), each with the reason.
     private static readonly Dictionary<string, string> AllowedExtras = new()
     {
-        ["BYN1066/BYN1016"] = "the parser rejects `extern` on a function, so the pointer-spelling example cannot be valid otherwise",
+        ["BYN1066/BYN1016"] = "no `extern` form parses yet (BYN1016; logged in work/todo.md), so the pointer-spelling example cannot be valid otherwise",
         ["BYN5004/BYN5006"] = "BYN5004 is reported with BYN5006 for each parameter besides the object",
         ["BYN5006/BYN5004"] = "BYN5006 is reported with BYN5004 for the same function",
     };
@@ -154,8 +154,26 @@ public sealed class DiagnosticCodesTests
         {
             if (StructuralExamples.Contains(code) || !File.Exists(Path.Combine(DocsDir, code + ".md"))) continue;
             var source = BlockAfter(Path.Combine(DocsDir, code + ".md"), "**Example");
-            if (source is not null && Compile(code, source).Any(d => d.Code == code))
+            if (source is null) failures.Add($"{code}: the doc has no Bayan example block; add it to StructuralExamples");
+            else if (Compile(code, source).Any(d => d.Code == code))
                 failures.Add($"{code}: the example now reports its own code; remove the skip entry");
+        }
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    [Fact]
+    public void AllowedExtrasNameLiveDocsAndStillNeedThem()
+    {
+        var failures = new List<string>();
+        foreach (var key in AllowedExtras.Keys)
+        {
+            var (code, extra) = (key[..7], key[8..]);
+            var file = Path.Combine(DocsDir, code + ".md");
+            if (!File.Exists(file)) { failures.Add($"{key}: names no doc; remove the entry"); continue; }
+            if (UncompilableExamples.ContainsKey(code)) { failures.Add($"{key}: the doc is in the skip list; remove the entry"); continue; }
+            var source = BlockAfter(file, "**Example");
+            if (source is null || !Compile(code, source).Any(d => d.Code == extra))
+                failures.Add($"{key}: the example no longer reports {extra}; remove the entry");
         }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
@@ -197,10 +215,14 @@ public sealed class DiagnosticCodesTests
     }
 
     [Fact]
-    public void FunctionPreconditionDocsSayExpectsAndExample612AgreesWithItsFix()
+    public void PreconditionDocsNameRequiresAndExpectsAndExample612AgreesWithItsFix()
     {
         foreach (var code in new[] { "BYN2320", "BYN2321" })
-            Assert.DoesNotContain("requires", File.ReadAllText(Path.Combine(DocsDir, code + ".md")));
+        {
+            var text = File.ReadAllText(Path.Combine(DocsDir, code + ".md"));
+            Assert.Contains("requires", text);
+            Assert.Contains("expects", text);
+        }
         var example = BlockAfter(Path.Combine(DocsDir, "BYN2612.md"), "**Example")!;
         var fix = BlockAfter(Path.Combine(DocsDir, "BYN2612.md"), "**Fix")!;
         Assert.Contains("db.name", fix);
