@@ -69,7 +69,7 @@ fi
   [ -n "$rc" ] && [[ $parent == $rc* ]] \
     || { echo "LAND REFUSED: $REVIEW reviews ${rc:-no commit}, not $parent, the commit under the review; re-review after the last change"; exit 1; }
   grep -q '^Verdict: PASS' "$REVIEW" || { echo "LAND REFUSED: $REVIEW does not say 'Verdict: PASS'"; exit 1; }
-  if grep -E '^\| *[0-9]+ *\| *HIGH *\|' "$REVIEW" | grep -vqE '\| *(fixed|resolved: Q[0-9]{3}) *\|? *$'; then
+  if grep -E '^\| *[0-9]+ *\| *HIGH *\|' "$REVIEW" | grep -vqE '\| *(fixed|resolved: Q[0-9]{3,4}) *\|? *$'; then
     echo "LAND REFUSED: $REVIEW lists a HIGH finding that is neither fixed nor resolved by a Question"; exit 1; fi
   "${GUARD[@]}" | tail -25 | tee "../guard-land-$t.txt"
   grep -q '^GUARD PASS' "../guard-land-$t.txt" || { echo "LAND REFUSED: guard failed"; exit 1; }
