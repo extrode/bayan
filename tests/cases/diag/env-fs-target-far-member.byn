@@ -1,0 +1,6 @@
+// A member far from every name gets no `did you mean` help on `Env`, `Fs` or `Target` (BYN2003).
+void main() {
+    print(Env.zzzzzzzz("HOME") ?? "")
+    let found = Fs.zzzzzzzz("a.txt")
+    print(Target.zzzzzzzz)
+}

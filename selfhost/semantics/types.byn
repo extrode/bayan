@@ -93,6 +93,8 @@ public enum BuiltinKind {
     symbol
     path
     target
+    env
+    fs
 }
 
 // ── Handles ─────────────────────────────────────────────────────────────────────
@@ -174,6 +176,8 @@ public BuiltinKind builtinKindOf(i64 i) {
         case 9: return .formatSpec
         case 10: return .symbol
         case 12: return .target
+        case 13: return .env
+        case 14: return .fs
         default: return .path
     }
 }
@@ -602,6 +606,8 @@ string builtinName(BuiltinKind k) {
         case .formatSpec: return "FormatSpec"
         case .symbol: return "Symbol"
         case .target: return "Target"
+        case .env: return "Env"
+        case .fs: return "Fs"
         default: return "Path"
     }
 }

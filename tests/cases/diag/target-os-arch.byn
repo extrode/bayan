@@ -1,0 +1,6 @@
+// `Target.os` and `Target.arch` are strings (spec 012 Q970), so they can be printed and compared.
+void main() {
+    print(Target.os)
+    print(Target.arch)
+    let same = Target.os == Target.arch
+}

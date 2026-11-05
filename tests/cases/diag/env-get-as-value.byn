@@ -1,0 +1,5 @@
+// `Env.get` is a function, not a value: naming it without a call gets a diagnostic, and `Fs.fileExists` likewise.
+void main() {
+    let read = Env.get
+    let exists = Fs.fileExists
+}

@@ -1,0 +1,12 @@
+// `Env.get` reads the environment and allocates its result, so a public function calling it declares `env` and `alloc` (BYN6002).
+public string? undeclaredHome() {
+    return Env.get("HOME")
+}
+
+public string? declaredHome() uses env, alloc {
+    return Env.get("HOME")
+}
+
+void main() {
+    print($"{undeclaredHome() ?? "-"} {declaredHome() ?? "-"}")
+}
