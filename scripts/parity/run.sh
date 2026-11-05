@@ -70,6 +70,8 @@ for c in "${cases[@]}"; do
   # Scratch paths differ per checkout: the work and repo paths read as $WORK and $ROOT.
   # Literal match, and only a whole path: a root of /w must not rewrite /wave-brief.
   for f in stdout stderr; do W="$work" R="$root" perl -pi -e 's/\Q$ENV{W}\E(?![\w.-])/\$WORK/g; s/\Q$ENV{R}\E(?![\w.-])/\$ROOT/g' "$got/$f"; done
+  # Python 3.11+ adds traceback caret lines (`  ^^^^`, `~~~^^`) that older Pythons do not print: drop them.
+  perl -ni -e 'print unless /^\s*[~^]+\s*$/' "$got/stderr"
   if [ $record = 1 ]; then
     rm -rf "$case_dir/expected"; mkdir -p "$case_dir/expected"
     cp "$got/exit" "$got/stdout" "$got/stderr" "$case_dir/expected/"; cp -R "$got/files" "$case_dir/expected/files"

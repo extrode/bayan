@@ -30,6 +30,11 @@ printf '#!/bin/sh\necho "$PWD/a ${PWD}b"\n' > "$t/impl.sh"
 bash "$root/scripts/parity/run.sh" mutation-exempt --impl "bash $t/impl.sh" spans > /dev/null || true
 got=$(cat "$root/tmp/parity/mutation-exempt/spans/got/stdout")
 [ "$got" = "\$WORK/a \$ROOT/tmp/parity/mutation-exempt/spans/workb" ] || fail "path rewrite went past a path boundary: $got"
+# Traceback caret lines (Python 3.11+ only) are dropped from stderr; other stderr lines stay.
+printf '#!/bin/sh\nprintf "  x = 1\\n      ^^^^^\\n   ~~~^^\\nE: ^ not alone\\n" >&2\n' > "$t/impl.sh"
+bash "$root/scripts/parity/run.sh" mutation-exempt --impl "bash $t/impl.sh" spans > /dev/null || true
+got=$(cat "$root/tmp/parity/mutation-exempt/spans/got/stderr")
+[ "$got" = "$(printf '  x = 1\nE: ^ not alone')" ] || fail "caret lines not dropped from stderr: $got"
 # A case or tool name that leaves its directory is refused before anything is removed.
 out=$(bash "$root/scripts/parity/run.sh" mutation-exempt ..) && fail "case .. passed"
 grep -q 'bad case name' <<< "$out" || fail "case .. was not refused: $out"
