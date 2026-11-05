@@ -22,6 +22,18 @@ public sealed class SelfhostDriverT3Tests
                 Io.stdout.write($"{targetTriple(args[1]) ?? "null"} {targetExecutableName("tally", for: args[1])} {targetIsKnown(args[1])}\n")
                 return 0
             }
+            if args[0] == "host" {
+                Io.stdout.write($"{targetHost() ?? "none"}\n")
+                return 0
+            }
+            if args[0] == "hostfrom" {
+                Io.stdout.write($"{targetHostFrom(args[1], for: args[2]) ?? "none"}\n")
+                return 0
+            }
+            if args[0] == "findpath" {
+                Io.stdout.write($"{ccFindOnPath(args[2], for: args[1]) ?? "none"}\n")
+                return 0
+            }
             if args[0] == "refusal" {
                 var compiler = List<string>()
                 for i in 2..args.length { compiler.append(args[i]) }
@@ -54,9 +66,10 @@ public sealed class SelfhostDriverT3Tests
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
     }
 
-    private static (int Exit, string Out, string Err) Start(string program, string path, IEnumerable<string> args)
+    private static (int Exit, string Out, string Err) Start(string program, string path, IEnumerable<string> args, string? workDir = null)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        if (workDir is not null) psi.WorkingDirectory = workDir;
         psi.Environment["PATH"] = path;
         psi.Environment["BAYAN_CACHE"] = Path.Combine(Golden.RepoRoot, "tmp", "t3", "cache-" + Guid.NewGuid().ToString("N"));
         psi.Environment.Remove("BAYAN_CC");
@@ -132,7 +145,6 @@ public sealed class SelfhostDriverT3Tests
         {
             if (lines[i].StartsWith("-ffile-prefix-map=", StringComparison.Ordinal)) lines[i] = "-ffile-prefix-map=<dir>=.";
             else if (i > 0 && lines[i - 1] == "-I") lines[i] = "<dir>";
-            else if (i > 0 && lines[i - 1] == "-o") lines[i] = Path.GetFileName(lines[i]);
             else if (lines[i] == Path.Combine(scratch, "main.c")) lines[i] = "main.c";
             else if (lines[i] == Path.Combine(scratch, "bayan-rt.c")) lines[i] = "bayan-rt.c";
         }
@@ -143,22 +155,22 @@ public sealed class SelfhostDriverT3Tests
     private static ((int Exit, string Err) Cs, (int Exit, string Err) Byn, string CsArgv, string BynArgv) Both(string bin, string mode, string target, string name)
     {
         var scratch = Fresh(name);
-        var output = Path.Combine(scratch, Targets.ExecutableName("program", target == "" ? "linux" : target));
+        // The C# compiles `-o program` in its work directory; the port gets the same name and runs in the scratch directory.
+        var output = Targets.ExecutableName("program", target == "" ? Targets.Host ?? "" : target);
         var csOut = Path.Combine(scratch, "cs-out");
         var argv = Path.Combine(bin, "argv");
         File.Delete(argv);
         var csArgs = new List<string> { "build", Hello, "-o", csOut, "--mode", mode };
         if (target != "") csArgs.AddRange(["--target", target]);
-        var cs = Start(Cli, bin, csArgs);
+        var cs = Start(Cli, bin, csArgs, scratch);
         var csArgv = File.Exists(argv) ? File.ReadAllText(argv) : "";
         File.Delete(argv);
-        var byn = Start(Probe(), bin, ["compile", scratch, "int main(void){return 0;}", output, mode, target]);
+        var byn = Start(Probe(), bin, ["compile", scratch, "int main(void){return 0;}", output, mode, target], scratch);
         var bynArgv = File.Exists(argv) ? File.ReadAllText(argv) : "";
         if (cs.Exit == 0) Assert.True(File.Exists(csOut));
-        if (byn.Exit == 0) Assert.True(File.Exists(output));
+        if (byn.Exit == 0) Assert.True(File.Exists(Path.Combine(scratch, output)));
         Assert.Equal(cs.Exit == 0, byn.Exit == 0);
-        // The C# names the compiler by the path `FindOnPath` found; `Io.run` searches `PATH` itself, so the driver names it as probed.
-        return ((cs.Exit, cs.Err.Replace(bin + "/", "")), (byn.Exit, byn.Err), Masked(csArgv, scratch), Masked(bynArgv, scratch));
+        return ((cs.Exit, cs.Err), (byn.Exit, byn.Err), Masked(csArgv, scratch), Masked(bynArgv, scratch));
     }
 
     public static TheoryData<string, string> Matrix()
@@ -167,7 +179,7 @@ public sealed class SelfhostDriverT3Tests
         foreach (var mode in new[] { "debug", "safe", "fast" })
         {
             data.Add(mode, "");
-            foreach (var target in Targets.All.Where(t => t != Targets.Host)) data.Add(mode, target);
+            foreach (var target in Targets.All) data.Add(mode, target);
         }
         return data;
     }
@@ -282,10 +294,7 @@ public sealed class SelfhostDriverT3Tests
         SelfhostEmitterHarness.AssertSame("stderr of a rejected build", r.Cs.Err, r.Byn.Err);
     }
 
-    /// <summary>
-    /// The C# finds a non-executable <c>cc</c> (<c>File.Exists</c>) and fails to start it; the driver finds a program by starting it,
-    /// so the same message needs a <c>cc</c> that starts once (the probe) and is gone for the build (Q954). The OS message is cut.
-    /// </summary>
+    /// <summary>A <c>cc</c> that exists and cannot be started: the C# <c>Win32Exception</c> text (Toolchain.cs:215-217) without the OS message.</summary>
     [Fact]
     public void ACompilerThatCannotBeStartedIsReportedAsToolchain()
     {
@@ -294,12 +303,10 @@ public sealed class SelfhostDriverT3Tests
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Path.Combine(plain, "cc"), UnixFileMode.UserRead | UnixFileMode.UserWrite);
         var cs = Start(Cli, plain, ["build", Hello, "-o", Path.Combine(Fresh("no-exec"), "cs-out")]);
         Assert.Equal(4, cs.Exit);
-        var expected = cs.Err.Replace(plain + "/", "");
-        Assert.StartsWith("bayan: cannot run the C compiler `cc`: ", expected);
-        var vanishing = Bin("bin-vanishing", "/bin/rm -- \"$0\"\nexit 0\n", "cc");
-        var (exit, _, err) = Start(Probe(), vanishing, ["compile", Fresh("vanishing"), "int main(void){return 0;}", "program", "safe", ""]);
+        Assert.StartsWith($"bayan: cannot run the C compiler `{Path.Combine(plain, "cc")}`: ", cs.Err);
+        var (exit, _, err) = Start(Probe(), plain, ["compile", Fresh("no-exec-byn"), "int main(void){return 0;}", "program", "safe", ""]);
         Assert.Equal(4, exit);
-        Assert.Equal(expected[..(expected.IndexOf("`:", StringComparison.Ordinal) + 1)] + "\n", err);
+        Assert.Equal(cs.Err[..(cs.Err.IndexOf("`:", StringComparison.Ordinal) + 1)] + "\n", err);
     }
 
     [Fact]
@@ -384,17 +391,89 @@ public sealed class SelfhostDriverT3Tests
         Assert.Equal("\n", stdout);
     }
 
-    /// <summary>Q954: <c>targetHost()</c> is a stub returning <c>""</c>, so the driver treats the host's own name as a cross build; the C# builds it with plain <c>cc</c>. Fails when the stub is ported.</summary>
+    /// <summary>The host's own name is no cross build: plain <c>cc</c>, no <c>-target</c> (Toolchain.cs:184).</summary>
     [Fact]
-    public void TheHostNameIsACrossBuildWhileTargetHostIsAStub()
+    public void TheHostNameBuildsWithPlainCc()
     {
         if (Targets.Host is not { } host) { Assert.Fail("this machine has no Bayan target, so the host-name case cannot run"); return; }
         var bin = Bin("bin-host-name", Recording, "cc");
-        var scratch = Fresh("host-name");
-        var cs = Start(Cli, bin, ["build", Hello, "-o", Path.Combine(scratch, "cs-out"), "--target", host]);
+        var r = Both(bin, "safe", host, "host-name");
+        Assert.Equal(0, r.Cs.Exit);
+        Assert.DoesNotContain("-target", r.CsArgv);
+        SelfhostEmitterHarness.AssertSame("argv of the host name", r.CsArgv, r.BynArgv);
+    }
+
+    [Fact]
+    public void TargetHostAsTargetsHost()
+    {
+        var (exit, stdout, _) = Start(Probe(), Fresh("bin-host"), ["host"]);
+        Assert.Equal(0, exit);
+        Assert.Equal((Targets.Host ?? "none") + "\n", stdout);
+    }
+
+    /// <summary>Every name of the table is what its <c>Target.os</c> and <c>Target.arch</c> spell; no os is no host.</summary>
+    [Fact]
+    public void TargetHostFromIsTheTableName()
+    {
+        foreach (var name in Targets.All)
+        {
+            var parts = name == "wasm32" ? new[] { "wasi", "wasm32" } : name.Split('-');
+            var (exit, stdout, _) = Start(Probe(), Fresh("bin-hostfrom"), ["hostfrom", parts[0], parts[1]]);
+            Assert.Equal(0, exit);
+            Assert.Equal(name + "\n", stdout);
+        }
+        Assert.Equal("none\n", Start(Probe(), Fresh("bin-hostfrom"), ["hostfrom", "", ""]).Out);
+    }
+
+    /// <summary>
+    /// <c>FindOnPath</c> as the C#, seen through the compiler it picks: a directory called <c>cc</c> and an empty entry come first
+    /// and are skipped, and the first directory holding the file wins.
+    /// </summary>
+    [Fact]
+    public void FindOnPathSkipsDirectoriesAndEmptyEntriesAsToolchain()
+    {
+        var root = Fresh("bin-path");
+        var first = Path.Combine(root, "first");
+        Directory.CreateDirectory(Path.Combine(first, "cc"));
+        var second = Path.Combine(root, "second");
+        Directory.CreateDirectory(second);
+        Script(Path.Combine(second, "cc"), Recording);
+        var third = Path.Combine(root, "third");
+        Directory.CreateDirectory(third);
+        Script(Path.Combine(third, "cc"), Recording);
+        var path = string.Join(Path.PathSeparator, first, "", second, third);
+        var csScratch = Fresh("path-cs");
+        var cs = Start(Cli, path, ["build", Hello, "-o", Path.Combine(csScratch, "out")], csScratch);
         Assert.Equal(0, cs.Exit);
-        var (exit, _, err) = Start(Probe(), bin, ["compile", scratch, "int main(void){return 0;}", Path.Combine(scratch, "out"), "safe", host]);
-        Assert.Equal(4, exit);
-        Assert.StartsWith($"bayan: building for {host} on this machine needs zig", err);
+        Assert.True(File.Exists(Path.Combine(second, "argv")));
+        Assert.False(File.Exists(Path.Combine(third, "argv")));
+        var byn = Start(Probe(), path, ["compile", Fresh("path-byn"), "int main(void){return 0;}", "program", "safe", ""], Fresh("path-byn-cwd"));
+        Assert.Equal(0, byn.Exit);
+        Assert.StartsWith("cc\n", File.ReadAllText(Path.Combine(second, "argv")));
+        var found = Start(Probe(), path, ["findpath", OperatingSystem.IsWindows() ? "windows" : "linux", "cc"]);
+        Assert.Equal(Path.Combine(second, "cc") + "\n", found.Out);
+    }
+
+    /// <summary>
+    /// The Windows lookup: <c>;</c> separates the directories and the extensions are <c>.exe</c>, <c>.cmd</c>, <c>.bat</c> in that order
+    /// (Toolchain.cs:153). No C# path reaches this on this machine's OS, so the expected paths are typed.
+    /// </summary>
+    [Fact]
+    public void FindOnPathOnWindowsTriesTheExtensions()
+    {
+        // no-oracle: Q1008 the C# reads OperatingSystem.IsWindows(), false here
+        var root = Fresh("bin-path-windows");
+        var a = Path.Combine(root, "a");
+        var b = Path.Combine(root, "b");
+        Directory.CreateDirectory(a);
+        Directory.CreateDirectory(b);
+        File.WriteAllText(Path.Combine(a, "tool.bat"), "");
+        File.WriteAllText(Path.Combine(a, "tool.cmd"), "");
+        File.WriteAllText(Path.Combine(b, "tool.exe"), "");
+        var path = $"{b};{a};";
+        Assert.Equal(Path.Combine(b, "tool.exe") + "\n", Start(Probe(), path, ["findpath", "windows", "tool"]).Out);
+        Assert.Equal(Path.Combine(a, "tool.cmd") + "\n", Start(Probe(), a + ";" + b, ["findpath", "windows", "tool"]).Out);
+        Assert.Equal("none\n", Start(Probe(), path, ["findpath", "windows", "missing"]).Out);
+        Assert.Equal("none\n", Start(Probe(), path, ["findpath", "linux", "tool"]).Out);
     }
 }

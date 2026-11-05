@@ -47,10 +47,14 @@ string? targetTriple(string name) {
     return null
 }
 
-/// Targets.cs:29 `Host` (`DetectHost` :31-41): the machine this runs on, null on one with no Bayan target.
-// stub: T3 Targets.Host (blocked: Q954)
-string? targetHost() {
-    return ""
+/// Targets.cs:29 `Host` (`DetectHost` :31-41) from the constants of `Target` (plan Q970 Item 1): the machine this runs on, null on one with no Bayan target.
+string? targetHost() uses alloc {
+    return targetHostFrom(Target.os, for: Target.arch)
+}
+
+/// The name `Target.os` and `Target.arch` spell (`wasm32` has no os-arch split; an empty os is no Bayan target, `Host == null`).
+string? targetHostFrom(string os, for string arch) uses alloc {
+    return os == "" ? null : arch == "wasm32" ? "wasm32" : $"{os}-{arch}"
 }
 
 /// Targets.cs:44 `ExecutableName`: `tally`, `tally.exe` or `tally.wasm`.
@@ -60,35 +64,42 @@ string targetExecutableName(string name, for string target) {
     return $"{name}"
 }
 
-/// Toolchain.cs:83 `FindCompiler` without `$BAYAN_CC` (spec Q1): `zig cc`, else `cc`, `clang` or `gcc`; empty (C#'s null) when none is found.
-/// The names are not paths: `PATH` cannot be read (Q954).
-List<string> ccFindCompiler() uses alloc, process {
+/// Toolchain.cs:83 `FindCompiler` without `$BAYAN_CC` (spec Q1, Q976): `zig cc`, else `cc`, `clang` or `gcc`, each as the path `FindOnPath` found; empty (C#'s null) when none is found.
+List<string> ccFindCompiler() uses alloc, env, fs {
     var found = List<string>()
-    if ccOnPath("zig", through: "version") {
-        found.append("zig")
+    if (ccFindOnPath("zig", for: Target.os) is { } zig) {
+        found.append(zig)
         found.append("cc")
         return found
     }
-    if ccOnPath("cc", through: "--version") {
-        found.append("cc")
-        return found
-    }
-    if ccOnPath("clang", through: "--version") {
-        found.append("clang")
-        return found
-    }
-    if ccOnPath("gcc", through: "--version") {
-        found.append("gcc")
-        return found
+    for name in ["cc", "clang", "gcc"] {
+        if (ccFindOnPath(name, for: Target.os) is { } path) {
+            found.append(path)
+            return found
+        }
     }
     return found
 }
 
-/// Toolchain.cs:151 `FindOnPath`: `PATH` cannot be read (Q954), so `Io.run` searches it and the program is found by starting it with `probe`.
-bool ccOnPath(string name, through string probe) uses alloc, process {
-    let args: string[1] = [probe]
-    let _ = Io.run(name, args.span) catch return false
-    return true
+/// Toolchain.cs:151 `FindOnPath`: `PATH` split on its separator, `name` plus each extension (`.exe`, `.cmd`, `.bat` on Windows, as :153, not PATHEXT; Q977) in each directory, the first file that exists. `os` is `Target.os`.
+string? ccFindOnPath(string name, for string os) uses alloc, env, fs {
+    var exts = List<string>()
+    if os == "windows" {
+        exts.append(".exe")
+        exts.append(".cmd")
+        exts.append(".bat")
+    } else {
+        exts.append("")
+    }
+    let path = Env.get("PATH") ?? ""
+    for dir in path.parts(by: os == "windows" ? ";" : ":") {
+        if dir.length == 0 { continue }
+        for ext in exts {
+            let candidate = Path.combine(dir, $"{name}{ext}")
+            if Fs.fileExists(candidate) { return candidate }
+        }
+    }
+    return null
 }
 
 /// The command as the C# prints it: `string.Join(" ", compiler)`.
@@ -171,7 +182,7 @@ List<string> ccArguments(in List<string> compiler, for string dir, to string out
 
 interface ICCompiler {
     /// Writes `source` and the runtime into `dir` and links `output`; `target` is the `--target` value, else `targetHost()` (Toolchain.cs:174).
-    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string target) uses alloc, fs, process
+    NativeBuild compile(ref this, string dir, from string source, to string output, by string mode, for string target) uses alloc, env, fs, process
 }
 
 /// The one implementation (plan D3): the `FindCompiler` order.
