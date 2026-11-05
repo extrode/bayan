@@ -76,9 +76,9 @@ check "latest in use is unchanged" "$(cat "$d/macos-arm64/latest/bayan")" "$prev
 check "latest in use keeps its BUILD-INFO" "$(grep '^version ' "$d/macos-arm64/latest/BUILD-INFO")" "$prevv"
 check "latest in use leaves no staging or lock" "$(ls -A "$d/macos-arm64" | grep -c '^\.')" 0
 
-run --rid osx-arm64 --label .latest-next >/dev/null 2>&1; check "label starting with . refused" "$?" 1
+err=$(run --rid osx-arm64 --label .latest-next 2>&1); check "label starting with . refused" "$err" "dist: bad version label '.latest-next'"
 run --rid osx-arm64 --label "1.0 x" >/dev/null 2>&1; check "label with a space refused" "$?" 1
-PATH="$t/bin:$PATH" bash "$root/scripts/dist.sh" --dist "" --rid osx-arm64 --label 1.0.0 >/dev/null 2>&1; check "empty --dist refused" "$?" 1
+err=$(PATH="$t/bin:$PATH" bash "$root/scripts/dist.sh" --dist "" --rid osx-arm64 --label 1.0.0 2>&1); check "empty --dist refused" "$err" "dist: --dist needs a directory"
 
 # .dirty counts untracked files under src/: a scratch repo holding just the script and Toolchain.cs
 g="$t/repo"; mkdir -p "$g/scripts" "$g/src/Bayan.Backend.C"
