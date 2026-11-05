@@ -544,4 +544,8 @@ static inline uint32_t byn_to_char_u(uint64_t v, const char* file, int line) {
 
 BYN_INT_TYPES(BYN_DEF_ARITH)
 
+/* `Env.get`: .NET `Environment.GetEnvironmentVariable`, the value copied into `*out` as .NET decodes it: each lone invalid byte, and each well-formed sequence cut short, as one U+FFFD.
+   False, where .NET returns null, when the variable is not set. */
+bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to);
+
 #endif
