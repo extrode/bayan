@@ -1,6 +1,6 @@
 #!/bin/bash
 # coverage-gate.py's coverage-exempt markers: a marker whose Question cites a line of its file exempts its span's missed
-# lines and branches (`through `text`` a range to the one line holding text, Q1050), and the file gets one count line; a marker
+# lines and branches (`through `text`` a range to the one line holding text, Q1040), and the file gets one count line; a marker
 # whose Question cites no line of its file, an anchor matching no line or two, and a `through N` line number are FAIL items; an unknown line under a marker and a missed line outside every marker stay FAIL items;
 # a file absent from the work tree has no markers, so its missed line in a touched function stays a FAIL item.
 # coverage-blocked markers (second fixture): one naming an open sibling task exempts its span and gets its own count line; one

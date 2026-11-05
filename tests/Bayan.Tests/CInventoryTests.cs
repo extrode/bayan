@@ -78,7 +78,7 @@ public sealed partial class CInventoryTests
     }
 
     /// <summary>
-    /// The 1-based lines of <paramref name="text"/> holding <paramref name="fragment"/> (Q1050). An end of the fragment that is a
+    /// The 1-based lines of <paramref name="text"/> holding <paramref name="fragment"/> (Q1040). An end of the fragment that is a
     /// letter, digit or <c>_</c> must not touch another one, so <c>byn_env_get</c> does not match <c>byn_env_get_all</c>.
     /// </summary>
     public static List<int> AnchorLines(string text, string fragment)
