@@ -18,6 +18,7 @@ esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root" || exit 1
+. bench/rid.sh
 T=${BENCH_TMP:-tmp/bench}
 results=${BENCH_RESULTS:-bench/results}
 commit=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
@@ -26,16 +27,10 @@ mkdir -p "$W" "$results"
 
 bayan=${BAYAN_BIN:-}
 if [ -z "$bayan" ]; then
-    case "$(uname -s)-$(uname -m)" in
-        Darwin-arm64) rid=osx-arm64 ;;
-        Darwin-x86_64) rid=osx-x64 ;;
-        Linux-x86_64) rid=linux-x64 ;;
-        Linux-aarch64) rid=linux-arm64 ;;
-        *) echo "bench/baseline.sh: no runtime identifier for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
-    esac
+    rid=$(bench_rid "$(uname -s)" "$(uname -m)") || { echo "bench/baseline.sh: no runtime identifier for $(uname -s)-$(uname -m)" >&2; exit 1; }
     command -v dotnet >/dev/null 2>&1 || { echo "bench/baseline.sh: dotnet not found (needed to publish bayan)" >&2; exit 1; }
     dotnet publish src/Bayan.Cli -c Release -r "$rid" -o "$W/publish" >"$W/publish.log" 2>&1 || { echo "bench/baseline.sh: publish failed, see $W/publish.log" >&2; exit 1; }
-    bayan="$W/publish/bayan"
+    bayan="$W/publish/$(bench_exe "$(uname -s)")"
 fi
 [ -x "$bayan" ] || { echo "bench/baseline.sh: no executable bayan at $bayan" >&2; exit 1; }
 bayan=$(cd "$(dirname "$bayan")" && pwd)/$(basename "$bayan")
@@ -67,7 +62,7 @@ Package {
 }
 PKG
 
-export BAYAN_CACHE="$PWD/$W/cache"
+case "$W" in /*|[A-Za-z]:*) export BAYAN_CACHE="$W/cache" ;; *) export BAYAN_CACHE="$PWD/$W/cache" ;; esac
 mkdir -p "$BAYAN_CACHE"
 clean=$(secs "$W/clean.log" "$bayan" build "$W/sh" -o "$W/sem") || { echo "bench/baseline.sh: clean build failed, see $W/clean.log" >&2; exit 1; }
 printf '\ni32 benchTouch() {\n    return 0\n}\n' >> "$W/sh/src/app/bigint.byn"

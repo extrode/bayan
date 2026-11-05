@@ -18,11 +18,14 @@ esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root" || exit 1
+. bench/rid.sh
 runs=${BENCH_RUNS:-5}
-case "$runs" in ''|*[!0-9]*|0) echo "bench/run.sh: BENCH_RUNS must be a positive integer" >&2; exit 2 ;; esac
+case "$runs" in ''|*[!0-9]*) echo "bench/run.sh: BENCH_RUNS must be a positive integer" >&2; exit 2 ;; esac
+runs=$((10#$runs))
+[ "$runs" -gt 0 ] || { echo "bench/run.sh: BENCH_RUNS must be a positive integer" >&2; exit 2; }
 T=${BENCH_TMP:-tmp/bench}
 results=${BENCH_RESULTS:-bench/results}
-bayan=${BAYAN_BIN:-$T/publish/bayan}
+bayan=${BAYAN_BIN:-$T/publish/$(bench_exe "$(uname -s)")}
 commit=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
 mkdir -p "$T/bin" "$T/res" "$results"
 export BAYAN_CACHE="$T/cache-run-$$"
@@ -30,10 +33,14 @@ export BAYAN_CACHE="$T/cache-run-$$"
 # --- Bayan toolchain ---
 bayan_note=""
 if [ ! -x "$bayan" ]; then
-    if command -v dotnet >/dev/null 2>&1; then
-        dotnet publish src/Bayan.Cli -c Release -r osx-arm64 -o "$T/publish" >"$T/publish.log" 2>&1
+    if [ -n "${BAYAN_BIN:-}" ]; then
+        bayan_note="n/a (no bayan at $bayan)"
+    else
+        if rid=$(bench_rid "$(uname -s)" "$(uname -m)") && command -v dotnet >/dev/null 2>&1; then
+            dotnet publish src/Bayan.Cli -c Release -r "$rid" -o "$T/publish" >"$T/publish.log" 2>&1
+        fi
+        [ -x "$bayan" ] || bayan_note="n/a (no bayan: dotnet publish failed or dotnet missing)"
     fi
-    [ -x "$bayan" ] || bayan_note="n/a (no bayan: dotnet publish failed or dotnet missing)"
 fi
 
 # note <bench> <lang> <text>: the cell's explanation; res/<bench>.<lang> holds "<median ns> <checksum>" when it ran.
@@ -45,13 +52,20 @@ measure() {
     local i out ns sum first="" nss=""
     for ((i = 0; i < runs; i++)); do
         out=$("$@" 2>/dev/null) || { note "$bench" "$lang" "n/a (run failed)"; return; }
+        out=${out%$'\r'}
         ns=${out%% *}
         sum=${out#* }
         [ "$out" = "$ns" ] && sum=-
+        case "$ns" in ''|*[!0-9]*) note "$bench" "$lang" "n/a (bad output)"; return ;; esac
         if [ -z "$first" ]; then first=$sum; elif [ "$first" != "$sum" ]; then note "$bench" "$lang" "n/a (checksum varies between runs)"; return; fi
         nss="$nss$ns"$'\n'
     done
-    echo "$(printf '%s' "$nss" | sort -n | sed -n "$(( (runs + 1) / 2 ))p") $first" > "$T/res/$bench.$lang"
+    # median: the middle value, or the integer mean of the two middle values for an even count
+    local sorted lo hi
+    sorted=$(printf '%s' "$nss" | sort -n)
+    lo=$(echo "$sorted" | sed -n "$(( (runs + 1) / 2 ))p")
+    hi=$(echo "$sorted" | sed -n "$(( runs / 2 + 1 ))p")
+    echo "$(( (10#$lo + 10#$hi) / 2 )) $first" > "$T/res/$bench.$lang"
     rm -f "$T/res/$bench.$lang.note"
 }
 
@@ -73,7 +87,7 @@ for b in hash parse; do
     else note $b rust "n/a (build failed)"; fi
     # Zig
     if ! command -v zig >/dev/null 2>&1; then note $b zig "n/a (no zig)"
-    elif zig build-exe "bench/programs/zig/$b.zig" -O ReleaseFast --cache-dir "$T/zig-cache" --global-cache-dir "$T/zig-global" -femit-bin="$T/bin/zig-$b" 2>"$T/bin/zig-$b.log"; then measure $b zig "$T/bin/zig-$b"
+    elif zig build-exe -lc "bench/programs/zig/$b.zig" -O ReleaseFast --cache-dir "$T/zig-cache" --global-cache-dir "$T/zig-global" -femit-bin="$T/bin/zig-$b" 2>"$T/bin/zig-$b.log"; then measure $b zig "$T/bin/zig-$b"
     else note $b zig "n/a (build failed)"; fi
 done
 
