@@ -164,7 +164,8 @@ public sealed class Document
 /// <paramref name="maxChars"/> characters of disk text. Open buffers are always held.
 /// The character budget counts the text of every document, open or not, by its length. A closed
 /// document retains about 10 bytes per character (2 for the text, the rest for line starts and
-/// non-local symbols; measured on symbol-dense code), so the default budget bounds closed
+/// non-local symbols; measured 10.00 over 8,388,744 characters of symbol-dense code, 10.07 in
+/// another run), so the default budget bounds closed
 /// documents near 2.5 GiB. Open buffers also keep tokens and diagnostics.
 /// </remarks>
 public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long maxChars = Workspace.DefaultMaxChars, long maxFileBytes = Workspace.DefaultMaxFileBytes, int maxDirs = Workspace.DefaultMaxDirs)

@@ -10,7 +10,7 @@
 
 - `bayan-lsp` no longer indexes every `.byn` under the workspace: hidden directories (`.git`, `.worktrees`, `.bayan-staging-*`), `tmp`, build output and symbolic links are skipped, the server ignores file watcher events for the same paths, and disk indexing stops at 20,000 files, 256 Mi characters or 4 MiB per file. A repo with 2.3 million `.byn` copies drove it past 200 GB; it now peaks at 81 MB. Removing files frees room under the index limits for files indexed later, a second root can still be indexed, the character total stays exact across edits, nested roots and closed buffers follow the same exclusion and size rules, and symbolic-linked files are skipped.
 - `bayan-lsp` memory and robustness limits:
-  - Closed and disk documents keep only their text, line starts and top-level symbols (about 10 bytes per character); tokens, locals, outline and diagnostics are recomputed when a request needs them.
+  - Closed and disk documents keep only their text, line starts and top-level symbols (about 10 bytes per character: measured 10.00 over 8,388,744 characters of symbol-dense code, 10.07 in another run); tokens, locals, outline and diagnostics are recomputed when a request needs them.
   - Deeply nested string interpolation (over 256 levels) and long receiver chains no longer overflow the stack.
   - Deleting or renaming a folder removes its documents from the index; a created folder is indexed with the usual rules.
   - The symbol index is released on every change instead of holding replaced documents until the next request.
