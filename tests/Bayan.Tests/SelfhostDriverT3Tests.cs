@@ -367,7 +367,7 @@ public sealed class SelfhostDriverT3Tests
         File.Delete(argv);
         Assert.Equal(0, Start(Cli, bin, ["build", Hello, "-o", Path.Combine(scratch, "cs-out"), "--mode", mode], scratch).Exit);
         var expected = Masked(File.ReadAllText(argv).ReplaceLineEndings("\n"), scratch).Split('\n')[1..];
-        var (exit, stdout, _) = Start(Probe(), bin, ["arguments", scratch, "program", mode], scratch);
+        var (exit, stdout, _) = Start(Probe(), bin, ["arguments", scratch, Targets.ExecutableName("program", Targets.Host ?? ""), mode], scratch);
         Assert.Equal(0, exit);
         SelfhostEmitterHarness.AssertSame($"arguments of {mode} without a target", string.Join("\n", expected), Masked(stdout, scratch));
     }
