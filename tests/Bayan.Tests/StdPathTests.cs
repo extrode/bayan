@@ -19,10 +19,10 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class StdPathTests
 {
-    private static readonly string[] Atoms =
+    internal static readonly string[] Atoms =
         ["a", "b", "B", "abc", "ABC", "x y", "é", ".", "..", "...", "", "C:", "c:", "C:x", "file.txt", ".hidden", "~", "UNC", "?", "server", "share"];
 
-    private static readonly string[] Shapes =
+    internal static readonly string[] Shapes =
     [
         "", " ", "/", "//", "\\", "\\\\", "a", "/a", "a/", "/a/", "a/b", "a//b", "./a", "../a", ".", "..", "a/.", "a/..", "/a/b/",
         "C:", "C:\\", "C:/", "C:x", "C:\\x", "C:/x\\y", "c:\\X\\", "1:\\x", "\\x", "/x\\y", "\\\\server\\share", "\\\\server\\share\\",
@@ -30,7 +30,7 @@ public sealed class StdPathTests
         "a\\b", "a b/c d", "/é/ü", "file.txt", "/dir.d/", "a/b.c.d",
     ];
 
-    private static List<string> Corpus(int seed, int count)
+    internal static List<string> Corpus(int seed, int count)
     {
         var random = new Random(seed);
         var seps = new[] { "/", "\\", "//", "\\\\", "/\\" };
@@ -51,7 +51,7 @@ public sealed class StdPathTests
         return list;
     }
 
-    private static List<(string From, string To)> Pairs(int seed, int count)
+    internal static List<(string From, string To)> Pairs(int seed, int count)
     {
         var random = new Random(seed);
         var paths = Corpus(seed, count);
@@ -83,7 +83,7 @@ public sealed class StdPathTests
         return pairs;
     }
 
-    private static string Literal(string s)
+    internal static string Literal(string s)
     {
         var sb = new StringBuilder("\"");
         foreach (var ch in s)
@@ -91,13 +91,13 @@ public sealed class StdPathTests
         return sb.Append('"').ToString();
     }
 
-    private static string? Relative(string from, string to)
+    internal static string? Relative(string from, string to)
     {
         try { return Path.GetRelativePath(from, to); }
         catch (ArgumentException) { return null; }
     }
 
-    private static string? FullPath(string path)
+    internal static string? FullPath(string path)
     {
         try { return Path.GetFullPath(path); }
         catch (ArgumentException) { return null; }
