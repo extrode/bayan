@@ -112,7 +112,7 @@ public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses allo
             lowerProvide(ref c, through: ref l, for: s)
         case .becomeStmt:
             lowerBecome(ref c, through: ref l, for: s)
-        // coverage-exempt: Q769 through 117
+        // coverage-exempt: Q769 through `cannot lower {semantics.boundKind(s)}`
         default:
             panic($"cannot lower {semantics.boundKind(s)}")
     }
@@ -167,7 +167,7 @@ void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
         }
     } else if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall
         && (c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet
-        // coverage-exempt: Q780 through 172
+        // coverage-exempt: Q780 through `arguments.length > 0 {`
         || c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapSlot)
         && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].arguments.length > 0 {
         let k = i64(target & 0xFFFFFFFF)
@@ -219,7 +219,7 @@ void lowerReturn(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
     if result != -1 {
         value = lowerExpr(ref c, through: ref l, for: result)
         if isNeverExpr(value) { return }
-        // coverage-exempt: Q777 through 225
+        // coverage-exempt: Q777 through `value = -1`
         if semantics.isVoid(t2Type(in c, through: in l, for: value)) || isVoidExpr(value) {
             emitEffect(ref c, through: ref l, for: value)
             value = -1
