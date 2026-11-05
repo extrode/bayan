@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Bayan.Backend.C;
 using Bayan.Cli;
 
 namespace Bayan.Tests;
@@ -244,19 +245,30 @@ public sealed class SelfhostDriverT5Tests
     }
 
     /// <summary>
-    /// `build --emit-c --mode debug --package selfhost selfhost/lexer` from the repo root: byte-identical C, its `#line` names
-    /// relative to `Path.fullPath("selfhost")` (CEmitter.cs `FilePath`). The same on `selfhost/driver` is blocked (Q1017).
+    /// `build --emit-c --mode debug --package selfhost selfhost/<dir>` from the repo root, for `lexer` and the driver itself:
+    /// same exit and stderr, byte-identical C, and every `#line` name in the C#'s C relative to `Path.fullPath("selfhost")`
+    /// (CEmitter.cs `FilePath`, 388-395) and naming a file of the package, `<dir>/` among them; `main.c` is the generated-code reset.
     /// </summary>
     [Fact]
     public void EmitsAPackageAsCliApp()
     {
-        string[] args = ["build", "--emit-c", "--mode", "debug", "--package", "selfhost", "selfhost/lexer"];
-        var expected = Cs(Golden.RepoRoot, args);
-        var actual = Self(Golden.RepoRoot, args);
-        Assert.True(expected.Exit == actual.Exit, $"exit {expected.Exit} != {actual.Exit}\n{actual.Err}");
-        Assert.Equal(expected.Err, actual.Err);
-        Assert.True(expected.Out.AsSpan().SequenceEqual(actual.Out), "the driver's C of selfhost/lexer differs from the C#'s");
-        Assert.Contains("#line 27 \"lexer/diagnostics.byn\"", Text(expected.Out));
+        var root = Path.GetFullPath(Path.Combine(Golden.RepoRoot, "selfhost"));
+        foreach (var dir in new[] { "lexer", "driver" })
+        {
+            string[] args = ["build", "--emit-c", "--mode", "debug", "--package", "selfhost", $"selfhost/{dir}"];
+            var expected = Cs(Golden.RepoRoot, args);
+            var actual = Self(Golden.RepoRoot, args);
+            Assert.True(expected.Exit == actual.Exit, $"{dir}: exit {expected.Exit} != {actual.Exit}\n{actual.Err}");
+            Assert.Equal(expected.Err, actual.Err);
+            Assert.True(expected.Out.AsSpan().SequenceEqual(actual.Out), $"the driver's C of selfhost/{dir} differs from the C#'s");
+            var names = Regex.Matches(Text(expected.Out), "^#line \\d+ \"([^\"]+)\"$", RegexOptions.Multiline).Select(m => m.Groups[1].Value).Where(n => n != CEmitter.GeneratedFile).Distinct().ToList();
+            Assert.Contains(names, n => n.StartsWith($"{dir}/", StringComparison.Ordinal));
+            foreach (var name in names)
+            {
+                Assert.False(Path.IsPathRooted(name), $"{dir}: rooted #line name {name}");
+                Assert.True(File.Exists(Path.Combine(root, name)), $"{dir}: #line name {name} is not relative to {root}");
+            }
+        }
     }
 
     /// <summary>The C# `bayan build --package selfhost selfhost/driver` builds a driver that answers as the harness's driver.</summary>
