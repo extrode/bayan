@@ -204,8 +204,9 @@ public sealed class SelfhostPathT7Tests
     {
         var root = Path.GetPathRoot(Base)!;
         Assert.Null(Path.GetDirectoryName(root));
-        var (exit, stdout, _) = SelfhostParserTests.Run(SelfhostSemanticsHarness.Build(MainSource), "dirpanic", root, "");
+        var (exit, stdout, stderr) = SelfhostParserTests.Run(SelfhostSemanticsHarness.Build(MainSource), "dirpanic", root, "");
         Assert.NotEqual(0, exit);
         Assert.DoesNotContain("dirpanic", stdout);
+        Assert.Contains("t11DirectoryName: no directory name", stderr);
     }
 }
