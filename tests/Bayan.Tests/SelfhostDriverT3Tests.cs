@@ -95,7 +95,10 @@ public sealed class SelfhostDriverT3Tests
         return path!;
     }
 
-    private static string Cli => Path.Combine(Golden.RepoRoot, "src", "Bayan.Cli", "bin", "Debug", "net10.0", OperatingSystem.IsWindows() ? "bayan.exe" : "bayan");
+    private static string Configuration =>
+        Path.GetFileName(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory)))!;
+
+    private static string Cli => Path.Combine(Golden.RepoRoot, "src", "Bayan.Cli", "bin", Configuration, "net10.0", OperatingSystem.IsWindows() ? "bayan.exe" : "bayan");
 
     /// <summary>The file name <c>FindOnPath</c> finds for <paramref name="name"/> on this OS (Toolchain.cs:153: <c>.exe</c> first on Windows).</summary>
     private static string Tool(string name) => OperatingSystem.IsWindows() ? name + ".exe" : name;
