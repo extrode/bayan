@@ -1,0 +1,253 @@
+using Bayan.Backend.C;
+using Bayan.Cli;
+
+namespace Bayan.Tests;
+
+/// <summary>Bounds on what the CLI keeps in memory and on disk (fix/cli-memory-bounds); these change environment variables, so they run alone.</summary>
+[Collection(nameof(ToolchainEnvironment))]
+public sealed class CliMemoryBoundsTests
+{
+    private static (int Exit, string Out, string Err) Run(params string[] args)
+    {
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var exit = CliApp.Run(args, stdout, stderr);
+        return (exit, stdout.ToString().ReplaceLineEndings("\n"), stderr.ToString().ReplaceLineEndings("\n"));
+    }
+
+    private static string Fresh(string name)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-memory-bounds", name);
+        TestDirs.Delete(dir);
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>A stream of <paramref name="length"/> bytes that never exists in memory.</summary>
+    private sealed class Endless(long length) : Stream
+    {
+        private long _left = length;
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var n = (int)Math.Min(count, _left);
+            Array.Fill(buffer, (byte)'x', offset, n);
+            _left -= n;
+            return n;
+        }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    // ── M1 ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task M1_CaptureKeepsTheFirstAndLastBytesAndCountsTheRest()
+    {
+        var text = await BoundedCapture.ReadAsync(new Endless(50_000_000));
+        Assert.True(text.Length < 2 * BoundedCapture.Keep + 100, text.Length.ToString());
+        Assert.Contains($"\n… {50_000_000 - 2 * BoundedCapture.Keep} bytes elided …\n", text);
+    }
+
+    [Fact]
+    public async Task M1_CaptureUnderTheCapIsUnchanged()
+    {
+        var bytes = new byte[2 * BoundedCapture.Keep];
+        Array.Fill(bytes, (byte)'y');
+        Assert.Equal(new string('y', bytes.Length), await BoundedCapture.ReadAsync(new MemoryStream(bytes)));
+    }
+
+    [Fact]
+    public void M1_ALoudTestReportsTheElidedBytes()
+    {
+        var file = Path.Combine(Fresh("loud"), "main.byn");
+        File.WriteAllText(file,
+            "void main() {\n}\n\ntest \"loud\" {\n    var i = 0\n    while i < 3000 {\n" +
+            "        print(\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\")\n" +
+            "        i += 1\n    }\n    assert(false)\n}\n");
+        var (exit, stdout, _) = Run("test", file);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.Matches(@"… \d+ bytes elided …", stdout);
+    }
+
+    // ── M2 ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task M2_DiscardedOutputIsDrainedWithoutBuffering()
+    {
+        var before = GC.GetTotalAllocatedBytes(precise: true);
+        await Bayan.Testing.MutationRunner.Drain(new Endless(400_000_000));
+        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+        Assert.True(allocated < 100_000_000, allocated.ToString());
+    }
+
+    // ── M3 ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void M3_FormatSkipsScratchDirectoriesAndOutwardLinks()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Fresh("format");
+        const string Unformatted = "let a = true\nunless !a { print(\"y\") }\n";
+        var fixture = Path.Combine(root, "fixture");
+        var outside = Path.Combine(root, "outside");
+        foreach (var file in new[] { ".worktrees/x/a.byn", "tmp/b.byn", "src/ok.byn" }.Select(f => Path.Combine(fixture, f)).Append(Path.Combine(outside, "c.byn")))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, Unformatted);
+        }
+        Directory.CreateSymbolicLink(Path.Combine(fixture, "link"), outside);
+        var (exit, stdout, stderr) = Run("format", "--check", fixture);
+        var output = stdout + stderr;
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Contains("ok.byn", output);
+        Assert.DoesNotContain("a.byn", output);
+        Assert.DoesNotContain("b.byn", output);
+        Assert.DoesNotContain("c.byn", output);
+    }
+
+    // ── M4 ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void M4_InputsHashDoesNotFollowLinks()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Fresh("dist");
+        Directory.CreateDirectory(Path.Combine(root, "src"));
+        File.WriteAllText(Path.Combine(root, "package.byn"), "p\n");
+        File.WriteAllText(Path.Combine(root, "src", "main.byn"), "m\n");
+        var plain = Dist.InputsHash(root);
+        Directory.CreateSymbolicLink(Path.Combine(root, "src", "loop"), "..");
+        Assert.Equal(plain, Dist.InputsHash(root));
+    }
+
+    private static void WithEnv(string name, string? value, Action body)
+    {
+        var saved = Environment.GetEnvironmentVariable(name);
+        Environment.SetEnvironmentVariable(name, value);
+        try
+        {
+            body();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(name, saved);
+        }
+    }
+
+    // ── M5 ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void M5_TheProgramCacheIsTrimmedLeastRecentlyUsedFirst()
+    {
+        var root = Fresh("evict");
+        WithEnv("BAYAN_CACHE", root, () =>
+        {
+            var programs = Path.Combine(Toolchain.CacheData, "programs");
+            var scripts = Path.Combine(Toolchain.CacheData, "scripts");
+            Directory.CreateDirectory(scripts);
+            for (var i = 0; i < 6; i++)
+            {
+                var entry = Path.Combine(programs, "k" + i);
+                Directory.CreateDirectory(entry);
+                File.WriteAllText(Path.Combine(entry, "program"), "x");
+                Directory.SetLastWriteTimeUtc(entry, DateTime.UtcNow.AddHours(-10 + i));
+            }
+            File.WriteAllText(Path.Combine(scripts, "old"), "k0\n");
+            File.WriteAllText(Path.Combine(scripts, "new"), "k5\n");
+            Toolchain.Evict("k0", long.MaxValue, 3, TimeSpan.FromMinutes(10));
+            var left = Directory.GetDirectories(programs).Select(d => Path.GetFileName(d)!).Order().ToArray();
+            // k0 is the one just built, so it stays; the two newest stay; the oldest others go.
+            Assert.Equal(["k0", "k4", "k5"], left);
+            Assert.True(File.Exists(Path.Combine(scripts, "old")));
+            Toolchain.Evict("k5", long.MaxValue, 1, TimeSpan.FromMinutes(10));
+            Assert.Equal(["k5"], Directory.GetDirectories(programs).Select(d => Path.GetFileName(d)!).ToArray());
+            Assert.False(File.Exists(Path.Combine(scripts, "old")));
+            Assert.True(File.Exists(Path.Combine(scripts, "new")));
+        });
+    }
+
+    [Fact]
+    public void M5_AnEntryUsedJustNowIsNotEvicted()
+    {
+        var root = Fresh("evict-busy");
+        WithEnv("BAYAN_CACHE", root, () =>
+        {
+            var programs = Path.Combine(Toolchain.CacheData, "programs");
+            foreach (var key in new[] { "a", "b", "c" }) Directory.CreateDirectory(Path.Combine(programs, key));
+            Toolchain.Evict("a", long.MaxValue, 1, TimeSpan.FromMinutes(10));
+            Assert.Equal(3, Directory.GetDirectories(programs).Length);
+        });
+    }
+
+    [Fact]
+    public void M5_ABuildTrimsTheCacheToTheCap()
+    {
+        var root = Fresh("evict-build");
+        WithEnv("BAYAN_CACHE", root, () => WithEnv("BAYAN_CACHE_MAX_MB", "1", () =>
+        {
+            var programs = Path.Combine(Toolchain.CacheData, "programs");
+            for (var i = 0; i < 3; i++)
+            {
+                var entry = Path.Combine(programs, "old" + i);
+                Directory.CreateDirectory(entry);
+                File.WriteAllBytes(Path.Combine(entry, "program"), new byte[600_000]);
+                Directory.SetLastWriteTimeUtc(entry, DateTime.UtcNow.AddHours(-3 + i));
+            }
+            var build = Toolchain.Build("int main(void) { return 0; }\n", BuildMode.Safe);
+            Assert.True(build.Succeeded, build.Errors);
+            var left = Directory.GetDirectories(programs).Select(d => Path.GetFileName(d)!).ToArray();
+            Assert.Contains(build.Key!, left);
+            Assert.DoesNotContain("old0", left);
+            Assert.DoesNotContain("old1", left);
+        }));
+    }
+
+    // ── M6 ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void M6_StaleTemporaryDirectoriesAreSweptAndFreshOnesKept()
+    {
+        var root = Fresh("sweep");
+        WithEnv("BAYAN_CACHE", Path.Combine(root, "cache"), () =>
+        {
+            var temp = Path.Combine(root, "tmp");
+            var staging = Path.Combine(Toolchain.CacheData, "tmp");
+            var stale = new[] { Path.Combine(temp, "bayan-coverage-old"), Path.Combine(temp, "bayan-mutate-old"), Path.Combine(temp, "bayan-asan-old"), Path.Combine(staging, "key-old") };
+            var fresh = new[] { Path.Combine(temp, "bayan-coverage-new"), Path.Combine(staging, "key-new") };
+            foreach (var dir in stale.Concat(fresh)) Directory.CreateDirectory(dir);
+            foreach (var dir in stale) Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow.AddHours(-2));
+            Toolchain.SweepStale(temp, TimeSpan.FromHours(1));
+            Assert.All(stale, d => Assert.False(Directory.Exists(d), d));
+            Assert.All(fresh, d => Assert.True(Directory.Exists(d), d));
+        });
+    }
+
+    // ── M7 ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void M7_AHungCCompilerIsKilledAndTheBuildFails()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Fresh("cc-timeout");
+        var cc = Path.Combine(root, "slowcc");
+        File.WriteAllText(cc, "#!/bin/sh\nsleep 1000\n");
+        File.SetUnixFileMode(cc, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        WithEnv("BAYAN_CACHE", Path.Combine(root, "cache"), () =>
+            WithEnv("BAYAN_CC", cc, () =>
+                WithEnv("BAYAN_CC_TIMEOUT_S", "2", () =>
+                {
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    var build = Toolchain.Build("int main(void) { return 0; }\n", BuildMode.Safe);
+                    Assert.False(build.Succeeded);
+                    Assert.Contains("timed out after 2 s", build.Errors);
+                    Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), clock.Elapsed.ToString());
+                })));
+    }
+}

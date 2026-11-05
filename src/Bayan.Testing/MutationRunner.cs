@@ -143,6 +143,9 @@ public static class MutationRunner
         return Exec(psi, limit);
     }
 
+    /// <summary>Reads a stream to its end, keeping nothing: a mutant's output is discarded, however much it prints.</summary>
+    internal static Task Drain(Stream stream) => stream.CopyToAsync(Stream.Null);
+
     private static Outcome Exec(ProcessStartInfo psi, TimeSpan limit)
     {
         psi.RedirectStandardOutput = true;
@@ -150,8 +153,8 @@ public static class MutationRunner
         psi.UseShellExecute = false;
         var clock = Stopwatch.StartNew();
         using var p = Process.Start(psi)!;
-        _ = p.StandardOutput.ReadToEndAsync();
-        _ = p.StandardError.ReadToEndAsync();
+        _ = Drain(p.StandardOutput.BaseStream);
+        _ = Drain(p.StandardError.BaseStream);
         if (!p.WaitForExit(limit))
         {
             p.Kill(entireProcessTree: true);

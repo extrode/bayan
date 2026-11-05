@@ -9,6 +9,7 @@
 ### Fixed
 
 - `bayan-lsp` no longer indexes every `.byn` under the workspace: hidden directories (`.git`, `.worktrees`, `.bayan-staging-*`), `tmp`, build output and symbolic links are skipped, the file watcher ignores the same paths, and disk indexing stops at 20,000 files, 256 Mi characters or 4 MiB per file. A repo with 2.3 million `.byn` copies drove it past 200 GB; it now peaks at 81 MB.
+- The CLI no longer grows without bound: `bayan test` keeps only the first and last 64 KiB of a test's output (M1); a mutant's discarded output is not buffered (M2); `bayan format` skips dot-directories, `tmp`, `node_modules`, `bin`, `obj`, `dist` and links leaving the directory (M3); `bayan dist` does not follow links when hashing inputs (M4); the program cache is trimmed to 2 GiB and 4000 entries, least recently used first, `BAYAN_CACHE_MAX_MB` overrides (M5); temporary directories older than an hour are swept before a build (M6); a C compiler run is killed after 10 minutes, `BAYAN_CC_TIMEOUT_S` overrides (M7).
 
 ## [0.1.0] - 2026-11-02
 
