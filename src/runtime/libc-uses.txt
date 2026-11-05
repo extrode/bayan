@@ -22,6 +22,7 @@ QueryPerformanceCounter
 QueryPerformanceFrequency
 ReadFile
 SetHandleInformation
+SetLastError
 WaitForSingleObject
 WideCharToMultiByte
 _create_locale
@@ -53,6 +54,7 @@ getcwd
 getenv
 getpid
 longjmp
+lstat
 malloc
 memchr
 memcmp
@@ -72,6 +74,7 @@ readdir
 realloc
 setjmp
 snprintf
+stat
 strcmp
 strlen
 strtod
