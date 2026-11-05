@@ -15,7 +15,7 @@ internal static class TestSetup
 
     /// <summary>The prefixes of the temp directories this project creates.</summary>
     internal static readonly string[] TempPrefixes =
-        ["bayan-t8-", "bayan-l012-", "bayan-l013-", "bayan-l014-", "bayan-l015-", "bayan-golden-", "bayan-lsp-ws-", "bayan-standalone-", "bayan-scaffold-"];
+        ["bayan-t8-", "bayan-l012-", "bayan-l013-", "bayan-l014-", "bayan-l015-", "bayan-golden-", "bayan-lsp-ws-", "bayan-standalone-", "bayan-scaffold-", "bayan-sweep-test-"];
 
     /// <summary>Deletes the directories of <paramref name="tempRoot"/> that start with a <see cref="TempPrefixes"/> prefix and were last written more than <paramref name="age"/> ago. Best effort: errors are ignored.</summary>
     internal static void SweepStaleTempDirs(string tempRoot, TimeSpan age)
