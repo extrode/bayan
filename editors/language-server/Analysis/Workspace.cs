@@ -130,13 +130,66 @@ public sealed class Document
 }
 
 /// <summary>All documents of the workspace: open buffers plus `.byn` files on disk.</summary>
-public sealed class Workspace
+/// <remarks>
+/// Disk files are bounded: hidden directories (`.git`, `.worktrees`, `.bayan-staging-*`), `tmp`
+/// and build output are never walked, and indexing stops at <paramref name="maxFiles"/> files or
+/// <paramref name="maxChars"/> characters of disk text. Open buffers are always held.
+/// </remarks>
+public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long maxChars = Workspace.DefaultMaxChars, long maxFileBytes = Workspace.DefaultMaxFileBytes)
 {
+    public const int DefaultMaxFiles = 20_000;
+    public const long DefaultMaxChars = 256L * 1024 * 1024;
+    public const long DefaultMaxFileBytes = 4L * 1024 * 1024;
+
     // Windows and macOS file systems are case-insensitive by default; Linux is not.
     static readonly StringComparer PathComparer =
         OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
+    static readonly HashSet<string> SkippedDirs = new(StringComparer.OrdinalIgnoreCase) { "node_modules", "bin", "obj", "dist", "tmp" };
+
     readonly Dictionary<string, Document> _docs = new(PathComparer);
+    readonly List<string> _roots = [];
+    long _chars;
+    bool _limitLogged;
+
+    /// <summary>True when the file budget is spent; further disk files are not indexed.</summary>
+    public bool LimitReached { get; private set; }
+
+    /// <summary>A directory the indexer never enters.</summary>
+    public static bool IsSkippedDirectory(string name) => name.StartsWith('.') || SkippedDirs.Contains(name);
+
+    /// <summary>
+    /// True when <paramref name="fullPath"/> lies outside every indexed root, or under a skipped
+    /// directory of one. With no root indexed, nothing is excluded.
+    /// </summary>
+    public bool IsExcluded(string fullPath)
+    {
+        if (_roots.Count == 0) return false;
+        var cmp = PathComparer == StringComparer.Ordinal ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        foreach (var root in _roots)
+        {
+            if (!fullPath.StartsWith(root, cmp) || fullPath.Length <= root.Length) continue;
+            if (fullPath[root.Length] != Path.DirectorySeparatorChar && !Path.EndsInDirectorySeparator(root)) continue;
+            var dirs = Path.GetDirectoryName(fullPath.AsSpan(root.Length)).Trim(Path.DirectorySeparatorChar).ToString();
+            if (dirs.Length == 0) return false;
+            foreach (var seg in dirs.Split(Path.DirectorySeparatorChar))
+                if (IsSkippedDirectory(seg)) return true;
+            return false;
+        }
+        return true;
+    }
+
+    bool OverBudget(int addChars)
+    {
+        if (_docs.Count < maxFiles && _chars + addChars <= maxChars) return false;
+        LimitReached = true;
+        if (!_limitLogged)
+        {
+            _limitLogged = true;
+            Console.Error.WriteLine($"bayan-lsp: index limit reached ({_docs.Count} files, {_chars} chars); further .byn files on disk are not indexed");
+        }
+        return true;
+    }
     readonly Dictionary<string, string> _keyCache = new(StringComparer.Ordinal); // uri as sent → key
 
     public IEnumerable<Document> Documents => _docs.Values;
@@ -167,6 +220,8 @@ public sealed class Workspace
     Document Add(string key, Document d)
     {
         d.Analyzed = Invalidate;
+        if (_docs.TryGetValue(key, out var old)) _chars -= old.Text.Length;
+        _chars += d.Text.Length;
         _docs[key] = d;
         Invalidate();
         return d;
@@ -193,21 +248,33 @@ public sealed class Workspace
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
+        _chars -= d.Text.Length;
         _docs.Remove(key);
         Invalidate();
     }
 
+    /// <summary>
+    /// Indexes or re-reads one file on disk. A file not yet indexed is skipped when it is excluded
+    /// (<see cref="IsExcluded"/>), larger than the per-file limit, or over the workspace budget.
+    /// </summary>
     public void LoadFromDisk(string path)
     {
         var full = Path.GetFullPath(path);
         var uri = new Uri(full).AbsoluteUri;
         var key = Key(uri);
-        if (_docs.TryGetValue(key, out var existing) && existing.IsOpen) return;
+        bool known = _docs.TryGetValue(key, out var existing);
+        if (known && existing!.IsOpen) return;
+        if (!known && IsExcluded(full)) return;
         string text;
-        try { text = File.ReadAllText(full); }
+        try
+        {
+            if (new FileInfo(full).Length > maxFileBytes) return;
+            text = File.ReadAllText(full);
+        }
         catch (IOException) { return; }
         catch (UnauthorizedAccessException) { return; }
         if (existing is not null && existing.Text == text) return; // watcher echo of our own state
+        if (!known && OverBudget(text.Length)) return;
         Add(key, new Document(uri, text, 0));
     }
 
@@ -216,27 +283,42 @@ public sealed class Workspace
     {
         var key = Key(uri);
         if (!_docs.TryGetValue(key, out var d) || d.IsOpen) return null;
+        _chars -= d.Text.Length;
         _docs.Remove(key);
         Invalidate();
         return d.Uri;
     }
 
+    /// <summary>
+    /// Indexes the `.byn` files under <paramref name="root"/>. Skipped directories and symbolic
+    /// links are not entered; the walk stops once the budget is spent.
+    /// </summary>
     public void IndexFolder(string root)
     {
         if (!Directory.Exists(root)) return;
-        var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".git", "node_modules", "bin", "obj", "dist", ".bayan" };
+        root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        if (!_roots.Contains(root, PathComparer)) _roots.Add(root);
         var stack = new Stack<string>();
         stack.Push(root);
-        while (stack.Count > 0)
+        while (stack.Count > 0 && !LimitReached)
         {
             var dir = stack.Pop();
             try
             {
-                foreach (var f in Directory.EnumerateFiles(dir, "*.byn")) LoadFromDisk(f);
+                foreach (var f in Directory.EnumerateFiles(dir, "*.byn"))
+                {
+                    LoadFromDisk(f);
+                    if (LimitReached) return;
+                }
                 foreach (var sub in Directory.EnumerateDirectories(dir))
-                    if (!skip.Contains(Path.GetFileName(sub))) stack.Push(sub);
+                {
+                    if (IsSkippedDirectory(Path.GetFileName(sub))) continue;
+                    if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0) continue;
+                    stack.Push(sub);
+                }
             }
             catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
         }
     }
 
