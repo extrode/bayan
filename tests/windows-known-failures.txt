@@ -1,6 +1,6 @@
 # Windows-only test failures expected until spec 014 (std Path module, handoff Q743) lands.
 # Measured on wp1, 2026-11-02, test/win-combined-1102 (83ed4a17), zig 0.17.0: 78 failed of 6051; the 2 not listed are fixed separately.
-# After 014 T7, measured on wp1, 2026-11-05, chore/worker-014-t7 (caf4a746): 32 failed, all listed here; the 83 names T7 fixed are removed (the whole 011 T12 Q816 and 011 T13 Q886 sections). The rest wait for 014 T8 (typed.byn, json.byn).
+# After 014 T7, measured on wp1, 2026-11-05, chore/worker-014-t7 (caf4a746): 32 failed, all listed here; the 83 names T7 fixed are removed (the whole 011 T12 Q816 and 011 T13 Q886 sections). After 014 T8, measured on wp1, 2026-11-05, chore/worker-014-t8 (2b29189d): 7 failed, all listed here; the 25 path names T8 fixed are removed. The 7 left fail on something other than a path and wait for 014 T9.
 Bayan.Tests.SelfhostSemanticsTests.CheckBuildOptions
 Bayan.Tests.SelfhostSemanticsTests.CheckCleanFile
 Bayan.Tests.SelfhostSemanticsTests.CheckDiagnosticsFormats
