@@ -282,7 +282,7 @@ BExpr lowerExprNode(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
 /// `e.GetType().Name` for the expressions `lowerExprNode` cannot lower.
 string t4TypeName(BExpr e) {
     if ltree.isLowered(e) {
-        // coverage-exempt: Q774 through 300
+        // coverage-exempt: Q774 through `default: return $"{ltree.lKindOf(e)}"`
         switch ltree.lKindOf(e) {
             case .optionalHas: return "LOptionalHas"
             case .optionalValue: return "LOptionalValue"
@@ -302,7 +302,7 @@ string t4TypeName(BExpr e) {
     }
     switch semantics.boundKind(e) {
         case .spread: return "BoundSpread"
-        // coverage-exempt: Q774 through 312
+        // coverage-exempt: Q774 through `default: return $"{semantics.boundKind(e)}"`
         case .errorExpr: return "BoundErrorExpr"
         case .typeRef: return "BoundTypeRef"
         case .moduleRef: return "BoundModuleRef"
@@ -347,7 +347,7 @@ BExpr lowerConditional(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
     let whenTrue = captureExpr(ref c, through: ref l, for: c.bConditionals[i].whenTrue, lvalue: false, to: ref preTrue)
     var preFalse = List<BStmt>()
     let whenFalse = captureExpr(ref c, through: ref l, for: c.bConditionals[i].whenFalse, lvalue: false, to: ref preFalse)
-    // coverage-exempt: Q774 through 353
+    // coverage-exempt: Q774 through `return t4Keep(ref c, from: e, to: semantics.addConditional(`
     if preTrue.length == 0 && preFalse.length == 0 && !isNeverExpr(whenTrue) && !isNeverExpr(whenFalse)
         && !semantics.isNever(t2Type(in c, through: in l, for: whenTrue)) && !semantics.isNever(t2Type(in c, through: in l, for: whenFalse)) {
         return t4Keep(ref c, from: e, to: semantics.addConditional(ref c, from: BConditional { span: span, condition: condition, whenTrue: whenTrue, whenFalse: whenFalse, type: type }))

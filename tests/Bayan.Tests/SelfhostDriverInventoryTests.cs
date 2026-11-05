@@ -24,7 +24,7 @@ public sealed partial class SelfhostDriverT8Tests
     [GeneratedRegex(@"(?<![.>\w])(?<name>[A-Za-z_]\w*)\s*\(")]
     private static partial Regex Call();
 
-    [GeneratedRegex(@"^\| (?<site>[^ |]+:\d+) \| `(?<token>[^`]+)` \| (?<why>.+) \|$")]
+    [GeneratedRegex(@"^\| (?<file>[^ |`]+) `(?<anchor>[^`]+)` \| `(?<token>[^`]+)` \| (?<why>.+) \|$")]
     private static partial Regex Row();
 
     [GeneratedRegex(@"^- `(?<name>\w+)`")]
