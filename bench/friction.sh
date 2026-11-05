@@ -32,6 +32,9 @@ bayan=${BAYAN_BIN:-$T/publish/$(bench_exe "$(uname -s)")}
 if [ ! -x "$bayan" ] && [ -z "${BAYAN_BIN:-}" ] && command -v dotnet >/dev/null 2>&1 && rid=$(bench_rid "$(uname -s)" "$(uname -m)"); then
     dotnet publish src/Bayan.Cli -c Release -r "$rid" -o "$T/publish" >"$W/publish.log" 2>&1
 fi
+if [ ! -x "$bayan" ] && [ -z "${BAYAN_BIN:-}" ] && ! bench_rid "$(uname -s)" "$(uname -m)" >/dev/null; then
+    echo "bench/friction.sh: no runtime identifier for $(uname -s)-$(uname -m); set BAYAN_BIN" >&2; exit 1
+fi
 [ -x "$bayan" ] || { echo "bench/friction.sh: no executable bayan at $bayan (set BAYAN_BIN, or run bench/run.sh first)" >&2; exit 1; }
 bayan=$(cd "$(dirname "$bayan")" && pwd)/$(basename "$bayan")
 
@@ -58,14 +61,19 @@ Package {
 PKG
 case "$W" in /*|[A-Za-z]:*) export BAYAN_CACHE="$W/cache" ;; *) export BAYAN_CACHE="$PWD/$W/cache" ;; esac
 mkdir -p "$BAYAN_CACHE"
-# Not measured with the published bayan: a run is complete when check.log ends in a `◆ checked ...` line and
-# the exit status is below 2 (warnings may give a nonzero status below 2); anything else is a crash.
-"$bayan" check "$W/sh" --all >"$W/check.log" 2>&1
+# Plain ASCII output whatever the terminal (TerminalStyle: NO_COLOR, TERM=dumb), so the lines below match on any host.
+# bayan check (CliApp.Check) exits 0 with a `* checked <name> in <t>s` summary, or 1 after error diagnostics with an
+# `x build failed: <n> error(s), ...` line (CliApp.Failed); anything else is a crash or a refused invocation.
+NO_COLOR=1 FORCE_COLOR= TERM=dumb "$bayan" check "$W/sh" --all >"$W/check.log" 2>&1
 status=$?
-if [ "$status" -ge 2 ] || ! grep -q '^◆ checked ' "$W/check.log"; then
+case "$status" in
+    0) grep -q "^\* checked " "$W/check.log" ;;
+    1) grep -q "^x build failed: [0-9][0-9]* error" "$W/check.log" ;;
+    *) false ;;
+esac || {
     echo "bench/friction.sh: bayan check did not complete (exit $status), see $W/check.log" >&2
     exit 1
-fi
+}
 codes=$(grep -o -E '^(warning|error|note|info) BYN50[0-9][0-9]' "$W/check.log" | sed 's/^[a-z]* //' | sort | uniq -c | awk '{ printf "%s%s=%s", sep, $2, $1; sep = " " }')
 total=$(grep -c -E '^(warning|error|note|info) BYN50[0-9][0-9]' "$W/check.log")
 

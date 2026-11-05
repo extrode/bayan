@@ -36,10 +36,12 @@ if [ ! -x "$bayan" ]; then
     if [ -n "${BAYAN_BIN:-}" ]; then
         bayan_note="n/a (no bayan at $bayan)"
     else
-        if rid=$(bench_rid "$(uname -s)" "$(uname -m)") && command -v dotnet >/dev/null 2>&1; then
+        if ! rid=$(bench_rid "$(uname -s)" "$(uname -m)"); then
+            bayan_note="n/a (no runtime identifier for $(uname -s)-$(uname -m); set BAYAN_BIN)"
+        elif command -v dotnet >/dev/null 2>&1; then
             dotnet publish src/Bayan.Cli -c Release -r "$rid" -o "$T/publish" >"$T/publish.log" 2>&1
         fi
-        [ -x "$bayan" ] || bayan_note="n/a (no bayan: dotnet publish failed or dotnet missing)"
+        [ -x "$bayan" ] || [ -n "$bayan_note" ] || bayan_note="n/a (no bayan: dotnet publish failed or dotnet missing)"
     fi
 fi
 

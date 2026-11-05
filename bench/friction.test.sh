@@ -24,14 +24,24 @@ unsafe void f() {}
 SRC
 printf '#!/bin/sh\nexit 0\n' > "$d/silent"
 printf '#!/bin/sh\necho boom >&2\nexit 134\n' > "$d/crash"
-printf '#!/bin/sh\necho "warning BYN5014: x"\necho "◆ checked bench-selfhost in 0.1s"\nexit 2\n' > "$d/exit2"
-chmod +x "$d/silent" "$d/crash" "$d/exit2"
-for s in silent crash exit2; do
+printf '#!/bin/sh\necho "warning BYN5014: x"\necho "* checked bench-selfhost in 0.1s"\nexit 2\n' > "$d/exit2"
+printf '#!/bin/sh\necho "error BYN5001: x"\nexit 1\n' > "$d/exit1-no-summary"
+# The real CLI prints `◆ checked` unless NO_COLOR and TERM=dumb ask for plain ASCII; this stub does the same.
+printf '#!/bin/sh\nif [ "$NO_COLOR" = 1 ] && [ "$TERM" = dumb ] && [ -z "$FORCE_COLOR" ]; then echo "* checked bench-selfhost in 0.1s"; else echo "\\033[32m◆ checked bench-selfhost in 0.1s"; fi\nexit 0\n' > "$d/styled"
+chmod +x "$d/silent" "$d/crash" "$d/exit2" "$d/exit1-no-summary" "$d/styled"
+for s in silent crash exit2 exit1-no-summary; do
     BAYAN_BIN="$d/$s" BENCH_TMP="$d/t" BENCH_RESULTS="$d/results" FRICTION_SRC="$d/src" bash bench/friction.sh >/dev/null 2>"$d/err"
     check "stub '$s' is rejected" "$?" 1
     check "stub '$s' message names check.log" "$(grep -c 'check\.log' "$d/err")" 1
 done
-printf '#!/bin/sh\necho "warning BYN5014: x"\necho "◆ checked bench-selfhost in 0.1s"\nexit 0\n' > "$d/bayan"
+FORCE_COLOR=1 TERM=xterm-256color BAYAN_BIN="$d/styled" BENCH_TMP="$d/t" BENCH_RESULTS="$d/results-styled" FRICTION_SRC="$d/src" bash bench/friction.sh >/dev/null 2>&1
+check "colour and Unicode in the caller's environment are switched off for bayan" "$?" 0
+printf '#!/bin/sh\necho "error BYN5001: x"\necho "warning BYN5014: y"\necho\necho "x build failed: 1 error, 1 warning"\nexit 1\n' > "$d/errors"
+chmod +x "$d/errors"
+BAYAN_BIN="$d/errors" BENCH_TMP="$d/t" BENCH_RESULTS="$d/results-errors" FRICTION_SRC="$d/src" bash bench/friction.sh >/dev/null 2>&1
+check "check with error diagnostics exits 0" "$?" 0
+check "error diagnostics are counted" "$(grep '^BYN50xx_reported ' "$d"/results-errors/*-friction.txt)" "BYN50xx_reported (selfhost compiler package) 2 (BYN5001=1 BYN5014=1)"
+printf '#!/bin/sh\necho "warning BYN5014: x"\necho "* checked bench-selfhost in 0.1s"\nexit 0\n' > "$d/bayan"
 chmod +x "$d/bayan"
 out=$(BAYAN_BIN="$d/bayan" BENCH_TMP="$d/t" BENCH_RESULTS="$d/results" FRICTION_SRC="$d/src" bash bench/friction.sh 2>&1)
 check "run with a stub bayan exits 0" "$?" 0
@@ -48,6 +58,7 @@ touch "$d/marker"; sleep 1
 BAYAN_BIN="$d/bayan" BENCH_TMP="$PWD/$d/abs" BENCH_RESULTS="$d/results" FRICTION_SRC="$d/src" bash bench/friction.sh >/dev/null 2>&1
 check "absolute BENCH_TMP exits 0" "$?" 0
 check "cache under the absolute BENCH_TMP" "$(ls -d "$d"/abs/friction-*/cache 2>/dev/null | wc -l | tr -d ' ')" 1
-check "nothing changed in the repo outside tmp/" "$(find . -path ./tmp -prune -o -path ./.git -prune -o -newer "$d/marker" -print | wc -l | tr -d ' ')" 0
+top=${PWD#/}; top=${top%%/*}
+check "no new top-level '$top' from a doubled path" "$(find . -maxdepth 1 -name "$top" -newer "$d/marker" -print | wc -l | tr -d ' ')" 0
 check "nothing created at the doubled path" "$([ -e "$PWD$PWD/$d" ] && echo yes || echo no)" no
 exit $fail
