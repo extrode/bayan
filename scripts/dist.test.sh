@@ -61,4 +61,34 @@ run --bogus >/dev/null 2>&1; check "unknown argument refused" "$?" 1
 
 lbl=$(FAKE_BUILD=4 run 2>/dev/null); check "host build exits 0" "$?" 0
 check "default label is CompilerVersion(+commit)(.dirty)" "$(echo "$lbl" | grep -cE '/[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+\+[0-9a-f]{12})?(\.dirty)?/bayan(\.exe)?$')" 1
+prev="$(cat "$d/macos-arm64/latest/bayan")" prevv="$(grep '^version ' "$d/macos-arm64/latest/BUILD-INFO")"
+mkdir "$d/macos-arm64/.lock"
+FAKE_BUILD=5 run --rid osx-arm64 --label 3.0.0 >/dev/null 2>&1; check "held lock exits 1" "$?" 1
+check "held lock leaves latest" "$(cat "$d/macos-arm64/latest/bayan")" "$prev"
+check "held lock makes no version dir" "$([ -e "$d/macos-arm64/3.0.0" ] && echo y || echo n)" n
+rmdir "$d/macos-arm64/.lock"
+
+# a mv that cannot move latest aside, as Windows refuses for a folder holding a running bayan.exe
+mkdir -p "$t/nomv"
+printf '#!/usr/bin/env bash\ncase "$1" in */latest) exit 1 ;; esac\nexec /bin/mv "$@"\n' > "$t/nomv/mv"; chmod +x "$t/nomv/mv"
+PATH="$t/nomv:$PATH" FAKE_BUILD=6 run --rid osx-arm64 --label 3.1.0 >/dev/null 2>&1; check "latest in use exits 1" "$?" 1
+check "latest in use is unchanged" "$(cat "$d/macos-arm64/latest/bayan")" "$prev"
+check "latest in use keeps its BUILD-INFO" "$(grep '^version ' "$d/macos-arm64/latest/BUILD-INFO")" "$prevv"
+check "latest in use leaves no staging or lock" "$(ls -A "$d/macos-arm64" | grep -c '^\.')" 0
+
+run --rid osx-arm64 --label .latest-next >/dev/null 2>&1; check "label starting with . refused" "$?" 1
+run --rid osx-arm64 --label "1.0 x" >/dev/null 2>&1; check "label with a space refused" "$?" 1
+PATH="$t/bin:$PATH" bash "$root/scripts/dist.sh" --dist "" --rid osx-arm64 --label 1.0.0 >/dev/null 2>&1; check "empty --dist refused" "$?" 1
+
+# .dirty counts untracked files under src/: a scratch repo holding just the script and Toolchain.cs
+g="$t/repo"; mkdir -p "$g/scripts" "$g/src/Bayan.Backend.C"
+cp "$root/scripts/dist.sh" "$g/scripts/"; cp "$root/src/Bayan.Backend.C/Toolchain.cs" "$g/src/Bayan.Backend.C/"
+git -C "$g" init -q -b scratch && git -C "$g" add -A && git -C "$g" -c core.hooksPath=/dev/null commit -qm "test: fixture"
+grun() { PATH="$t/bin:$PATH" bash "$g/scripts/dist.sh" --dist "$t/gdist" --rid osx-arm64 2>/dev/null; }
+check "clean scratch repo has no .dirty" "$(grun | grep -c '\.dirty/')" 0
+touch "$g/notes.txt"
+check "untracked file outside src/ is not dirty" "$(grun | grep -c '\.dirty/')" 0
+touch "$g/src/New.cs"
+check "untracked file under src/ is dirty" "$(grun | grep -c '\.dirty/')" 1
+
 exit $fail
