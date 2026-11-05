@@ -304,6 +304,10 @@ public sealed class SelfhostDriverT5Tests
         File.WriteAllText(Path.Combine(empty, "f.byn"), "#");
         SameAsInProcess("build", "--emit-c", Path.Combine(empty, "e.byn"));
         SameAsInProcess("build", "--emit-c", Path.Combine(empty, "f.byn"));
+        var hash = Path.Combine(root, "hash");
+        Directory.CreateDirectory(hash);
+        File.WriteAllText(Path.Combine(hash, "h.byn"), "#x\nvoid main() {\n}\n");
+        SameAsInProcess("build", "--emit-c", Path.Combine(hash, "h.byn"));
     }
 
     /// <summary>A project made by the C# `bayan new` under `tmp/t5/<side>/project/`, its directory.</summary>
@@ -335,6 +339,12 @@ public sealed class SelfhostDriverT5Tests
             foreach (var file in Directory.EnumerateFiles(cs, "*", SearchOption.AllDirectories))
                 Assert.True(File.Exists(Path.Combine(self, Path.GetRelativePath(cs, file))), $"`{string.Join(' ', args)}`: the driver did not write {Path.GetRelativePath(cs, file)}");
         }
+        // A rebuild after a source edit: `out/.../c/main.c` exists and differs, so `WriteIfChanged` rewrites it.
+        foreach (var side in new[] { cs, self })
+            File.WriteAllText(Path.Combine(side, "src", "app", "main.byn"), "void main() {\n    print(\"edited\")\n}\n");
+        Assert.Null(Differs("build after edit", Cs(cs, "build"), Self(self, "build")));
+        Assert.Equal(File.ReadAllText(Path.Combine(cs, "out", "safe", CliApp.HostTarget, "c", "main.c")), File.ReadAllText(Path.Combine(self, "out", "safe", CliApp.HostTarget, "c", "main.c")));
+        Assert.Null(Differs("run after edit", Cs(cs, "run"), Self(self, "run")));
         var csLib = Project("cs", "kit", lib: true);
         var selfLib = Project("self", "kit", lib: true);
         foreach (var args in new[] { new[] { "build" }, ["run"] })

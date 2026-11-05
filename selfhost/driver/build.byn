@@ -143,6 +143,7 @@ bool t5HasErrors(in semantics.Ctx c) {
 }
 
 /// The `*.byn` files of `dir` in ordinal order, without the `*.test.byn` ones (Compilation.cs:155 `ModuleFiles`, `includeTests: false`).
+/// `Io.listDir` already returns the names in byte order (`bayan-rt.c` sorts them with `qsort` and `byn_str_order`).
 List<string> t5ModuleFiles(string dir) uses alloc, fs {
     var files = List<string>()
     // coverage-exempt: Q1018 reached only if the directory goes away between `t5DirectoryExists` and this read (a race no test can stage)
@@ -151,28 +152,7 @@ List<string> t5ModuleFiles(string dir) uses alloc, fs {
         let f = Path.combine(dir, name)
         if name.endsWith(".byn") && !name.endsWith(".test.byn") && t1FileExists(f) { files.append(f) }
     }
-    for i in 1..files.length {
-        var j = i
-        while j > 0 && t5OrdinalLess(files[j], by: files[j - 1]) {
-            let t = files[j]
-            files[j] = files[j - 1]
-            files[j - 1] = t
-            j -= 1
-        }
-    }
     return files
-}
-
-/// `StringComparer.Ordinal`: `a` sorts before `b` byte by byte.
-bool t5OrdinalLess(string a, by string b) {
-    let x = a.bytes
-    let y = b.bytes
-    let n = x.length < y.length ? x.length : y.length
-    for i in 0..n {
-        if x[i] < y[i] { return true }
-        if x[i] > y[i] { return false }
-    }
-    return x.length < y.length
 }
 
 /// CliApp.cs:259 `Compile`: the `--package <root>` branch, else `semantics/cli.byn` `t26Compile` (the project, script and
