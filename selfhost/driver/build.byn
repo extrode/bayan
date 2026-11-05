@@ -255,8 +255,7 @@ i32 buildCommand(in List<string> kept, by in DCtx d) uses alloc, clock, console,
     }
     let native = Io.monotonicNanos()
     let staging = t5Staging(Path.directoryName(Path.fullPath(output)) ?? "") ?? return exitToolchain
-    var cc = ZigOrCc {}
-    let result = cc.compile(staging, from: source, to: output, by: o.mode, for: o.target)
+    let result = t5Link(staging, from: source, to: output, by: o.mode, for: o.target, at: target)
     t5Discard(staging)
     let nativeTime = Io.monotonicNanos() - native
     unless result.succeeded {
@@ -275,6 +274,23 @@ i32 buildCommand(in List<string> kept, by in DCtx d) uses alloc, clock, console,
     let dot = semantics.t26Symbols(d.styleOut.ascii).dot
     print($"{dot} built {semantics.programName(ref compiled, for: o.path)} ({o.mode}, {target}) in {semantics.t26Seconds(Io.monotonicNanos() - clock)}")
     return exitOk
+}
+
+/// Toolchain.cs:219-222 `ReplaceFile(output, temp => File.Copy(exe, temp))`: the C# links `program` in its work directory and
+/// copies only the executable to `output`, so a link by-product (the `.pdb` beside a Windows executable) goes with the work
+/// directory. On a Windows target (`resolved`, as Toolchain.cs:194) the driver links `program.exe` in `staging` and copies its
+/// bytes to `output`; elsewhere it links `output` straight, as `Io.writeFile` cannot set the executable bit (Q1018 (j)).
+NativeBuild t5Link(string staging, from string source, to string output, by string mode, for string? target, at string resolved) uses alloc, env, fs, process {
+    var cc = ZigOrCc {}
+    unless resolved.startsWith("windows-") { return cc.compile(staging, from: source, to: output, by: mode, for: target) }
+    let link = Path.combine(staging, targetExecutableName("program", for: resolved))
+    let result = cc.compile(staging, from: source, to: link, by: mode, for: target)
+    unless result.succeeded { return result }
+    // coverage-exempt: Q1018 (j) `link` was just linked in `staging`, which only `t5Discard` removes
+    let bytes = Io.readFile(link) catch return NativeBuild { errors: $"cannot write the build output or cache ({output})" }
+    // Toolchain.cs:178: a failing `ReplaceFile`.
+    Io.writeFile(output, bytes.span) catch return NativeBuild { errors: $"cannot write the build output or cache ({output})" }
+    return result
 }
 
 /// Toolchain.cs:278-279 (`Directory.CreateDirectory(work)`): a fresh staging directory in `near` for the scratch files, never
@@ -365,18 +381,20 @@ i32 runProgram(in List<string> args, by in DCtx d) uses alloc, clock, console, e
     let host = t5HostTarget()
     var output = ""
     var staging = ""
+    var result = NativeBuild {}
     if (t5PrepareOut(in compiled, by: o.mode, for: host, from: source) is { } dir) {
         output = Path.combine(dir, targetExecutableName(semantics.programName(ref compiled, for: o.path), for: host))
         staging = t5Staging(dir) ?? return exitToolchain
+        result = t5Link(staging, from: source, to: output, by: o.mode, for: null, at: host)
     } else {
         // `output: null` (CliApp.cs:561-564): the C# links `program` in its staging directory (Toolchain.cs:192, :286-290)
         // and starts it from its cache; the driver starts it from the staging directory, beside the program.
         // coverage-exempt: Q1018 (j) the `return` when `t5Staging` cannot make the directory (it has reported)
         staging = t5Staging(t5RunDir(o.path)) ?? return exitToolchain
         output = Path.combine(staging, targetExecutableName("program", for: host))
+        var cc = ZigOrCc {}
+        result = cc.compile(staging, from: source, to: output, by: o.mode, for: null)
     }
-    var cc = ZigOrCc {}
-    let result = cc.compile(staging, from: source, to: output, by: o.mode, for: null)
     unless result.succeeded {
         t5Discard(staging)
         t5ReportToolchain(result, by: o.json, for: symbols)

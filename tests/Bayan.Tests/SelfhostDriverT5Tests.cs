@@ -29,7 +29,7 @@ public sealed class SelfhostDriverT5Tests
         return (exit, stdout.ToString().ReplaceLineEndings("\n"), stderr.ToString().ReplaceLineEndings("\n"));
     }
 
-    private static (int Exit, byte[] Out, string Err) Process(string program, string[]? prefix, string cwd, string[] args, string? path = null)
+    private static (int Exit, byte[] Out, string Err) Process(string program, string[]? prefix, string cwd, string[] args, string? path = null, string? cache = null)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = cwd };
         if (path is not null)
@@ -37,6 +37,7 @@ public sealed class SelfhostDriverT5Tests
             psi.Environment["PATH"] = path;
             psi.Environment.Remove("BAYAN_CC");
         }
+        if (cache is not null) psi.Environment["BAYAN_CACHE"] = cache;
         foreach (var a in prefix ?? []) psi.ArgumentList.Add(a);
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = System.Diagnostics.Process.Start(psi)!;
@@ -487,6 +488,60 @@ public sealed class SelfhostDriverT5Tests
                     File.SetUnixFileMode(Path.Combine(dir, target), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
         }
+    }
+
+    /// <summary>
+    /// A Windows target's link by-product: a `zig` on `PATH` that writes its `-o` file and a `.pdb` beside it, as the Windows
+    /// linker does. The C# links `program.exe` in its work directory and copies only the executable (Toolchain.cs:222), so the
+    /// output's directory holds what it held plus the output, and a user's `<name>.pdb` there keeps its bytes. The C# gets a
+    /// fresh `BAYAN_CACHE`, so the fake executable never enters the user's cache.
+    /// </summary>
+    [Fact]
+    public void LeavesNoLinkByProductAsCliApp()
+    {
+        if (OperatingSystem.IsWindows()) return; // a `/bin/sh` script stands for zig
+        var bin = Path.Combine(Golden.RepoRoot, "tmp", "t5", "pdb-bin");
+        Directory.CreateDirectory(bin);
+        var fake = Path.Combine(bin, "zig");
+        File.WriteAllText(fake, "#!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = -o ]; then out=$2; fi\n  shift\ndone\nprintf 'exe\\n' > \"$out\" || exit 1\nprintf 'pdb\\n' > \"${out%.exe}.pdb\"\n");
+        File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var empty = Path.Combine(Golden.RepoRoot, "tmp", "t5", "empty-path");
+        Directory.CreateDirectory(empty);
+        var cache = Path.Combine(Golden.RepoRoot, "tmp", "t5", "pdb-cache");
+        (int, byte[], string) Both(string side, string cwd, string[] args, string path) => side == "cs"
+            ? Process("dotnet", [typeof(CliApp).Assembly.Location], cwd, args, path, cache)
+            : Process(SelfhostDriverHarness.Build(), null, cwd, args, path);
+        foreach (var (args, path, user) in new[]
+        {
+            (new[] { "build", "--target", "windows-x64", "arithmetic.byn" }, bin, false),
+            (["build", "--target", "windows-x64", "arithmetic.byn"], bin, true),
+            (["build", "--target", "windows-x64", "-o", "prog", "arithmetic.byn"], bin, false),
+            (["build", "--target", "windows-x64", "-o", "sub", "arithmetic.byn"], bin, false),
+            (["build", "--target", "windows-x64", "arithmetic.byn"], empty, false),
+        })
+        {
+            var label = string.Join(' ', args) + (user ? " with the user's arithmetic.pdb" : "") + (path == empty ? " with no compiler" : "");
+            if (Directory.Exists(cache)) Directory.Delete(cache, recursive: true);
+            var cs = Fresh("cs", "pdb");
+            var self = Fresh("self", "pdb");
+            foreach (var dir in new[] { cs, self })
+            {
+                Directory.CreateDirectory(Path.Combine(dir, "sub"));
+                if (user) File.WriteAllText(Path.Combine(dir, "arithmetic.pdb"), "the user's pdb\n");
+            }
+            var expected = Both("cs", cs, args, path);
+            var actual = Both("self", self, args, path);
+            if (expected.Item1 == 0) Assert.Null(Differs(label, expected, actual));
+            else SameFailure(label, expected, actual);
+            Assert.Equal(Entries(cs), Entries(self));
+            Assert.Equal(Entries(Path.Combine(cs, "sub")), Entries(Path.Combine(self, "sub")));
+            if (user) Assert.Equal("the user's pdb\n", File.ReadAllText(Path.Combine(self, "arithmetic.pdb")));
+        }
+        var csProject = Project("cs", "pdb", lib: false);
+        var selfProject = Project("self", "pdb", lib: false);
+        if (Directory.Exists(cache)) Directory.Delete(cache, recursive: true);
+        Assert.Null(Differs("build --target windows-x64 in a project", Both("cs", csProject, ["build", "--target", "windows-x64"], bin), Both("self", selfProject, ["build", "--target", "windows-x64"], bin)));
+        Assert.Equal(Tree(csProject), Tree(selfProject));
     }
 
     /// <summary>No C compiler on an empty `PATH` (and no `BAYAN_CC`): `build` and `run` report it as the C# and exit 4, as plain text under `--diagnostics json` too (CliApp.cs:405-409).</summary>
