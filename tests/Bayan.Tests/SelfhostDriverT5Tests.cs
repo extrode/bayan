@@ -102,7 +102,8 @@ public sealed class SelfhostDriverT5Tests
     }
 
     /// <summary>A fresh empty working directory for a `run` case (as RunTests.cs runs each case), apart from its source: the
-    /// driver's `run` writes its executable and scratch C beside the source (Q1016), which a program listing `.` would see.</summary>
+    /// driver's `run` stages its executable and scratch C in a directory beside the source (Q1042), which a program listing
+    /// its source's directory would see while it runs.</summary>
     private static string Empty(string name)
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", "cwd", Path.ChangeExtension(name, null).Replace('/', '_'));
@@ -171,8 +172,54 @@ public sealed class SelfhostDriverT5Tests
         var expected = Cs(cs, args);
         var actual = Self(self, args);
         Assert.Null(Differs(string.Join(' ', args), expected, actual));
-        foreach (var file in Directory.EnumerateFiles(cs))
-            Assert.True(File.Exists(Path.Combine(self, Path.GetFileName(file))), $"`{string.Join(' ', args)}`: the driver did not write {Path.GetFileName(file)}");
+        Assert.Equal(Entries(cs), Entries(self));
+    }
+
+    /// <summary>The names in `dir`, files and directories, in ordinal order.</summary>
+    private static List<string> Entries(string dir) =>
+        [.. Directory.EnumerateFileSystemEntries(dir).Select(e => Path.GetFileName(e)!).Order(StringComparer.Ordinal)];
+
+    /// <summary>
+    /// The build's scratch work runs in a staging directory beside the output (Toolchain.cs `Compile`, Q1042 (a)), removed
+    /// afterwards (plan D4): a user's `main.c`, `bayan-rt.h` and `bayan-rt.c` beside the output keep their bytes, and after
+    /// `build` and `run` the directory holds what the C#'s does.
+    /// </summary>
+    [Fact]
+    public void LeavesTheOutputDirectoryAsCliApp()
+    {
+        foreach (var args in new[] { new[] { "build", "arithmetic.byn" }, ["build", "-o", "prog", "arithmetic.byn"], ["run", "arithmetic.byn"] })
+        {
+            var label = string.Join(' ', args);
+            var cs = Fresh("cs", "user-files");
+            var self = Fresh("self", "user-files");
+            foreach (var dir in new[] { cs, self })
+                foreach (var name in new[] { "main.c", "bayan-rt.h", "bayan-rt.c" })
+                    File.WriteAllText(Path.Combine(dir, name), $"// the user's {name}\n");
+            Assert.Null(Differs(label, Cs(cs, args), Self(self, args)));
+            foreach (var name in new[] { "main.c", "bayan-rt.h", "bayan-rt.c" })
+                Assert.True(File.ReadAllBytes(Path.Combine(cs, name)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(self, name))), $"`{label}`: the driver changed the user's {name}");
+            Assert.Equal(Entries(cs), Entries(self));
+        }
+    }
+
+    /// <summary>`run` on a source with no extension: the C# links in its cache (CliApp.cs:561-564), the driver in its staging
+    /// directory, so the source keeps its bytes.</summary>
+    [Fact]
+    public void RunsAnExtensionlessSourceAsCliApp()
+    {
+        var sides = new List<string>();
+        foreach (var side in new[] { "cs", "self" })
+        {
+            var dir = Path.Combine(Golden.RepoRoot, "tmp", "t5", side, "extensionless");
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            Directory.CreateDirectory(dir);
+            File.Copy(Path.Combine(Golden.CasesRoot, "run", "arithmetic.byn"), Path.Combine(dir, "tool"));
+            sides.Add(dir);
+        }
+        var before = File.ReadAllBytes(Path.Combine(sides[1], "tool"));
+        Assert.Null(Differs("run tool", Cs(sides[0], "run", "tool"), Self(sides[1], "run", "tool")));
+        Assert.True(before.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(sides[1], "tool"))), "`run tool` wrote over the source");
+        Assert.Equal(Entries(sides[0]), Entries(sides[1]));
     }
 
     [Fact]
@@ -386,7 +433,7 @@ public sealed class SelfhostDriverT5Tests
     }
 
     /// <summary>A C compiler that rejects the C (a `cc` on `PATH` that fails): BYN4001 as the C# `ReportToolchain` (CliApp.cs:403-419),
-    /// in text and as `--diagnostics json` (:411-415), for `build` and `run`.</summary>
+    /// in text and as `--diagnostics json` (:411-415), for `build` and `run`; nothing is left beside the source.</summary>
     [Fact]
     public void RejectedCAsCliApp()
     {
@@ -398,10 +445,14 @@ public sealed class SelfhostDriverT5Tests
         File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         foreach (var args in new[] { new[] { "build", "--diagnostics", "json", "arithmetic.byn" }, ["run", "--diagnostics", "json", "arithmetic.byn"], ["build", "arithmetic.byn"] })
         {
-            var expected = Process("dotnet", [typeof(CliApp).Assembly.Location], Fresh("cs", "rejected"), args, bin);
+            var cs = Fresh("cs", "rejected");
+            var self = Fresh("self", "rejected");
+            var expected = Process("dotnet", [typeof(CliApp).Assembly.Location], cs, args, bin);
             Assert.Equal(CliApp.ExitToolchain, expected.Exit);
             Assert.Contains("BYN4001", expected.Err);
-            Assert.Null(Differs(string.Join(' ', args), expected, Process(SelfhostDriverHarness.Build(), null, Fresh("self", "rejected"), args, bin)));
+            Assert.Null(Differs(string.Join(' ', args), expected, Process(SelfhostDriverHarness.Build(), null, self, args, bin)));
+            // A failed link leaves no staging directory either (plan D4).
+            Assert.Equal(Entries(cs), Entries(self));
         }
     }
 

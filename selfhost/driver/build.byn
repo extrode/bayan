@@ -1,7 +1,8 @@
 // The commands `build` (with `--emit-c`) and `run` of the self-hosted driver (spec 012 T5). Ports `CliApp.cs` :151
 // `ParseBuildOptions`, :259 `Compile` (its `--package` branch; the rest is `semantics/cli.byn` `t26Compile`), :409 `EmitC`,
 // :422 `PrepareOut`, :434 `WriteIfChanged`, :458 `Build`, :505 `Phase`, :544 `RunProgram` and :573 `Start`. The C compiler
-// is `cc.byn`'s `ZigOrCc`; there is no build cache (R6), so the scratch files go beside the output (spec Q1).
+// is `cc.byn`'s `ZigOrCc`; there is no build cache (R6): the scratch files go into a staging directory beside the output, made
+// and removed per build as `Toolchain.Compile` does (Q1042 (a), plan D4).
 
 import lexer
 import semantics
@@ -250,8 +251,11 @@ i32 buildCommand(in List<string> kept, by in DCtx d) uses alloc, clock, console,
         output = targetExecutableName(semantics.programName(ref compiled, for: o.path), for: target)
     }
     let native = Io.monotonicNanos()
+    // coverage-exempt: Q1018 (j) the `return` when `t5Staging` cannot make the directory (it has reported)
+    let staging = t5Staging(Path.directoryName(Path.fullPath(output)) ?? "") ?? return exitToolchain
     var cc = ZigOrCc {}
-    let result = cc.compile(t5ScratchDir(output), from: source, to: output, by: o.mode, for: o.target)
+    let result = cc.compile(staging, from: source, to: output, by: o.mode, for: o.target)
+    t5Discard(staging)
     let nativeTime = Io.monotonicNanos() - native
     unless result.succeeded {
         t5ReportToolchain(result, by: o.json, for: symbols)
@@ -271,8 +275,38 @@ i32 buildCommand(in List<string> kept, by in DCtx d) uses alloc, clock, console,
     return exitOk
 }
 
-/// Where the scratch files of a link to `output` go (spec Q1): the output's directory.
-string t5ScratchDir(string output) uses alloc => Path.directoryName(Path.fullPath(output)) ?? ""
+/// Toolchain.cs:278-279 (`Directory.CreateDirectory(work)`): a fresh staging directory in `near` for the scratch files, never
+/// `near` itself; a name that exists as a file or directory is skipped. The C# names it `<key>-<guid>` under its cache, which the
+/// driver has not (R6); the suffix here is the clock. Null after reporting when it cannot be made (Toolchain.cs:178, Q1018 (j)).
+string? t5Staging(string near) uses alloc, clock, console, fs {
+    var dir = Path.combine(near, $".bayan-staging-{Io.monotonicNanos()}")
+    // coverage-exempt: Q1018 through `dir = Path.combine` (j) a name taken by a file or directory (the C# name has a GUID)
+    while t1FileExists(dir) || t5DirectoryExists(dir) {
+        dir = Path.combine(near, $".bayan-staging-{Io.monotonicNanos()}")
+    }
+    // coverage-exempt: Q1018 through `return null` (j) a directory that cannot be written; the C# builds in its cache and fails later, in `ReplaceFile`
+    Io.createDirectory(dir) catch {
+        Io.stderr.write($"bayan: cannot write the build output ({dir})\n")
+        return null
+    }
+    return dir
+}
+
+/// Toolchain.cs:295-296 and :309-329 (`Discard`): every file in the staging directory `dir` is removed, then `dir` (plan D4).
+/// A failure is ignored, as `Discard` ignores an `IOException`.
+void t5Discard(string dir) uses alloc, fs {
+    // coverage-exempt: Q1018 (j) `dir` was made by `t5Staging` and only this function removes it
+    let names = Io.listDir(dir) catch return
+    for name in names { t5Remove(Path.combine(dir, name)) }
+    // coverage-exempt: Q1018 (j) the C compiler left a directory in `dir`, or `dir` went away (the C# `Discard` ignores it)
+    Io.removeDirectory(dir) catch return
+}
+
+/// `File.Delete`, its failure ignored (`Discard`).
+void t5Remove(string path) uses fs {
+    // coverage-exempt: Q1018 (j) a file in the staging directory that cannot be removed (the C# `Discard` ignores it)
+    Io.remove(path) catch return
+}
 
 /// CliApp.cs:403 `ReportToolchain`: its `--diagnostics json` branch (:411-415), BYN4001 as one `DiagnosticJson.Render` line;
 /// the plain text is cc.byn `ccReportToolchain`.
@@ -322,26 +356,34 @@ i32 runProgram(in List<string> args, by in DCtx d) uses alloc, clock, console, e
     let source = t5EmitC(ref compiled, by: o.mode)
     let host = t5HostTarget()
     var output = ""
+    var staging = ""
     if (t5PrepareOut(in compiled, by: o.mode, for: host, from: source) is { } dir) {
         output = Path.combine(dir, targetExecutableName(semantics.programName(ref compiled, for: o.path), for: host))
+        // coverage-exempt: Q1018 (j) the `return` when `t5Staging` cannot make the directory (it has reported)
+        staging = t5Staging(dir) ?? return exitToolchain
     } else {
-        output = t5RunOutput(o.path, for: semantics.programName(ref compiled, for: o.path))
+        // `output: null` (CliApp.cs:561-564): the C# links `program` in its staging directory (Toolchain.cs:192, :286-290)
+        // and starts it from its cache; the driver starts it from the staging directory, beside the program.
+        // coverage-exempt: Q1018 (j) the `return` when `t5Staging` cannot make the directory (it has reported)
+        staging = t5Staging(t5RunDir(o.path)) ?? return exitToolchain
+        output = Path.combine(staging, targetExecutableName("program", for: host))
     }
     var cc = ZigOrCc {}
-    let result = cc.compile(t5ScratchDir(output), from: source, to: output, by: o.mode, for: null)
+    let result = cc.compile(staging, from: source, to: output, by: o.mode, for: null)
     unless result.succeeded {
+        t5Discard(staging)
         t5ReportToolchain(result, by: o.json, for: symbols)
         return exitToolchain
     }
-    return t5Start(output, by: in o.programArgs)
+    let exit = t5Start(output, by: in o.programArgs)
+    t5Discard(staging)
+    return exit
 }
 
-/// The executable `run` builds outside a project. The C# builds into its cache (`output: null`, Toolchain.cs:217), which the
-/// driver has not (R6): it is `<name>` beside the program, in the directory of `path` (the directory itself for one).
-string t5RunOutput(string path, for string name) uses alloc, fs {
+/// The directory `run` stages in outside a project: the directory of `path`, or `path` itself for a directory.
+string t5RunDir(string path) uses alloc, fs {
     let full = Path.fullPath(path)
-    let dir = t5DirectoryExists(full) ? full : Path.directoryName(full) ?? ""
-    return Path.combine(dir, targetExecutableName(name, for: t5HostTarget()))
+    return t5DirectoryExists(full) ? full : Path.directoryName(full) ?? ""
 }
 
 /// CliApp.cs:573 `Start`: runs `executable` with `programArgs`; `Io.run` captures its output, written stdout then stderr
