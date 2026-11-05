@@ -259,7 +259,7 @@ internal static class EffectAnalysis
     {
         BuiltinFunction.Print or BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin => ["console"],
         BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir => ["fs", "alloc"],
-        BuiltinFunction.IoWriteFile or BuiltinFunction.FsFileExists => ["fs"],
+        BuiltinFunction.IoWriteFile or BuiltinFunction.IoRemove or BuiltinFunction.IoCreateDirectory or BuiltinFunction.IoRemoveDirectory or BuiltinFunction.FsFileExists => ["fs"],
         BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch => ["process", "alloc"],
         BuiltinFunction.IoMonotonicNanos => ["clock"],
         BuiltinFunction.EnvGet => ["env", "alloc"],

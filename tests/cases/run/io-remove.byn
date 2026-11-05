@@ -1,0 +1,15 @@
+// `Io.remove` deletes a file, is a no-op on a missing name and fails on a directory.
+void main() fails IoError uses fs {
+    let data: u8[1] = [0x41]
+    try Io.writeFile("io-remove.tmp", data.span)
+    print($"before: {Fs.fileExists("io-remove.tmp")}")
+    try Io.remove("io-remove.tmp")
+    print($"after: {Fs.fileExists("io-remove.tmp")}")
+    try Io.remove("io-remove.tmp")
+    print("missing: ok")
+    Io.remove(".") catch {
+        print("directory: failed")
+        return
+    }
+    print("directory: removed")
+}

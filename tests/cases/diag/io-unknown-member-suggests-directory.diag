@@ -1,0 +1,6 @@
+error BYN2003: `removeDirector` is not a member of `Io`
+
+  3 │     try Io.removeDirector(p)
+    │            ^^^^^^^^^^^^^^
+    │
+  help: did you mean `removeDirectory`?
