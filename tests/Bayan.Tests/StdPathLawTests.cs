@@ -51,6 +51,7 @@ public sealed class StdPathLawTests
         {
             var source = new StringBuilder();
             var expected = new List<string>();
+            var throwing = new Dictionary<string, string>();
             var shown = new List<string>();
             void Add(string call, string show, string result)
             {
@@ -65,10 +66,14 @@ public sealed class StdPathLawTests
                 Add($"Path.fileName({L(p)})", $"fileName({L(p)})", Path.GetFileName(p));
                 Add($"Path.directoryName({L(p)}) ?? \"<null>\"", $"directoryName({L(p)})", Path.GetDirectoryName(p) ?? "<null>");
                 if (StdPathTests.FullPath(p) is { } full) Add($"Path.fullPath({L(p)})", $"fullPath({L(p)})", full);
+                else throwing.TryAdd($"Path.fullPath({L(p)})", "Path.fullPath");
             }
             foreach (var (from, to) in StdPathTests.Pairs(seed + 1000, count))
+            {
                 if (StdPathTests.Relative(from, to) is { } r)
                     Add($"Path.relative(from: {L(from)}, to: {L(to)})", $"relative({L(from)}, {L(to)})", r);
+                else throwing.TryAdd($"Path.relative(from: {L(from)}, to: {L(to)})", "Path.relative");
+            }
             foreach (var (a, b) in StdPathTests.Pairs(seed + 2000, count / 2))
                 Add($"$\"[{{Path.combine({L(a)}, {L(b)})}}]\"", $"combine({L(a)}, {L(b)})", $"[{Path.Combine(a, b)}]");
             var spanRandom = new Random(seed + 3000);
@@ -82,10 +87,24 @@ public sealed class StdPathLawTests
             var (exit, stdout, stderr) = await BuildAndRun($"seed{seed}", source.ToString());
             Assert.True(exit == 0, $"seed {seed}: exit {exit}\n{stderr}");
             var actual = stdout.Split('\n');
-            Assert.True(actual.Length == expected.Count + 1, $"seed {seed}: {actual.Length - 1} lines, expected {expected.Count}");
-            for (var i = 0; i < expected.Count; i++)
+            var common = Math.Min(expected.Count, actual.Length - 1);
+            for (var i = 0; i < common; i++)
                 Assert.True(expected[i] == actual[i], $"seed {seed}: {shown[i]}\n.NET: [{expected[i]}]\nBayan: [{actual[i]}]");
+            Assert.True(actual.Length - 1 == expected.Count,
+                $"seed {seed}: {actual.Length - 1} lines, expected {expected.Count}; first unmatched: {(common < expected.Count ? $"{shown[common]}\n.NET: [{expected[common]}]\nBayan: missing" : $"extra Bayan line [{actual[common]}]")}");
+
+            // Every distinct corpus input on which .NET throws (at most 20 per seed) is its own program, which must panic naming the function.
+            var n = 0;
+            foreach (var (call, function) in throwing.Take(20))
+                await AssertPanics($"seed{seed}-throw{n++}", call, function);
         }
+    }
+
+    private static async Task AssertPanics(string name, string call, string function)
+    {
+        var (exit, stdout, stderr) = await BuildAndRun(name, $"print({call})\n");
+        Assert.True(exit != 0 && stderr.Contains($"panic: {function}:", StringComparison.Ordinal),
+            $"{call}: .NET throws, Bayan exits {exit} with [{stdout}] [{stderr}]");
     }
 
     /// <summary>Where .NET throws <c>ArgumentException</c>, the Bayan program exits nonzero with a panic naming the function.</summary>
@@ -103,8 +122,7 @@ public sealed class StdPathLawTests
         foreach (var (name, call, throws) in cases)
         {
             Assert.True(throws, $"{call}: .NET does not throw ArgumentException");
-            var (exit, stdout, stderr) = await BuildAndRun(name, $"print({call})\n");
-            Assert.True(exit != 0 && stderr.Contains("panic:", StringComparison.Ordinal), $"{call}: .NET throws, Bayan exits {exit} with [{stdout}] [{stderr}]");
+            await AssertPanics(name, call, call.StartsWith("Path.fullPath", StringComparison.Ordinal) ? "Path.fullPath" : "Path.relative");
         }
     }
 }
