@@ -74,6 +74,14 @@ fi
   "${GUARD[@]}" | tail -25 | tee "../guard-land-$t.txt"
   grep -q '^GUARD PASS' "../guard-land-$t.txt" || { echo "LAND REFUSED: guard failed"; exit 1; }
 )
+# bootstrap/ follows the compiler (012 T6, user 2026-11-05): a change under selfhost/ or src/runtime/ regenerates
+# bootstrap/bayan.c and the runtime copies in the checked worktree before the merge; the tick commit carries them
+REGEN=0
+if [ -n "$(git diff --name-only "$BASE...$SHA" -- selfhost/ src/runtime/)" ]; then
+  REGEN=1; mkdir -p tmp
+  ( cd "$WT" && BAYAN_UPDATE=1 nice dotnet test -v q --filter FullyQualifiedName~BootstrapTests ) > "tmp/land-$t-bootstrap.txt" 2>&1 \
+    || { tail -20 "tmp/land-$t-bootstrap.txt"; echo "LAND REFUSED: BAYAN_UPDATE=1 BootstrapTests failed (tmp/land-$t-bootstrap.txt)"; exit 1; }
+fi
 
 COVREPORT=$WT/tmp/guard-run/coverage/bayan-quality.json
 # the update after the merge must not fail half-way (merge done, tick uncommitted): try it on a copy first
@@ -85,5 +93,6 @@ fi
 [ "$(git rev-parse "$BR")" = "$SHA" ] || { echo "LAND REFUSED: $BR moved from $SHA while it was checked; land again"; exit 1; }
 git merge --no-ff -m "$LANDSUB $T" "$SHA"
 perl -i -pe "s/^- \[ \] $T /- [x] $T /" "$DIR/$TASKS"
+[ $REGEN = 0 ] || { cp "$WT/bootstrap/bayan.c" "$WT/bootstrap/bayan-rt.h" "$WT/bootstrap/bayan-rt.c" bootstrap/; git add bootstrap/; }
 [ ! -f "$COVREPORT" ] || python3 -I "$(dirname "$0")/quality-baseline.py" update tests/quality-baseline.json "$WT" "$COVREPORT"
 git commit -qam "$TICKSUB $T" && echo "LANDED $T"
