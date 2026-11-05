@@ -521,3 +521,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - [ ] `scripts/selfhost/wave-brief.test.sh:84` (014 T6 golden-files check) fails on feat/012: `wave-brief.py` has no `BRIEF` text for spec 014 (never had, also on feat/014), so the test stops there with "no brief text for spec 014" (found 2026-11-05 fixing the .c extraction).
 - 012 T16 review LOW (T28): Q979 cites the Windows grow loop as `bayan-rt.c:2843-2860`; the loop runs to `:2861`.
 - 012 T16 review LOW (T28): Q979's `byn_env_decode` summary omits the third rule (a lead plus an out-of-range continuation is one U+FFFD, `bayan-rt.c:2825-2826`).
+- [ ] `scripts/selfhost/preflight.sh` files check sees only files a branch changed: a test file the task needs but never edited (a coverage test it should have extended, the 012 T15 case with the T10/T2 tests) passes it unseen (found 2026-11-05 building preflight).

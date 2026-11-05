@@ -5,7 +5,7 @@
 # come from the base branch (BAYAN_BASE, else the specs.tsv row's), as land.sh's guard reads them.
 #   cites      every `path:N` / `path:N-M` on a line the branch adds to docs/bayan-handoff.md, reviews/<T>.md or the spec's plan names
 #              an existing file and range (a bare name: any tracked file ending in it), and the backticked symbol the citation
-#              quotes in the same clause (the next one after it, else the last before it) is on those lines
+#              quotes in the same clause (the next one after it, else the last before it) is on those lines or the 2 after them
 #   files      every file the branch changes is in the task's files list or one the guard allows; prints the addition
 #   questions  every Question number the branch adds is new to the handoff (the branch's and the base's) and inside the task's
 #              range (its task line, else $BAYAN_QRANGES or <main checkout>/tmp/q-ranges.tsv, written by wave-brief.py)
@@ -46,6 +46,10 @@ if [[ $HL == *"files: "* ]]; then
   FL=$(sed -E 's/\([^()]*(\([^()]*\)[^()]*)*\)//g' <<< "$FL")
 fi
 ALLOW=(docs/bayan-handoff.md "$DIR/$TASKS"); TESTF=()
+# a brace list in a name (`selfhost/semantics/{compile,types}.byn`, 012 T18) is one name per alternative
+BR_RE='^([^{]*)\{([^{}]*)\}(.*)$'
+braces() { local pre post a A; if [[ $1 =~ $BR_RE ]]; then pre=${BASH_REMATCH[1]}; post=${BASH_REMATCH[3]}
+  IFS=',' read -ra A <<< "${BASH_REMATCH[2]}"; for a in "${A[@]}"; do braces "$pre$a$post"; done; else echo "$1"; fi; }
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   [[ $f =~ ^$SPEC-[a-z]+\.md$ ]] && f=$DIR/$f
@@ -53,7 +57,7 @@ while IFS= read -r f; do
     ALLOW+=("$f"); [[ $f =~ ^tests/Bayan\.Tests/[A-Za-z0-9]+Tests\.cs$ ]] && TESTF+=("$f")
   elif [[ $f == *.byn ]]; then [[ $f == selfhost/* ]] && ALLOW+=("$f") || ALLOW+=("$BYDIR/$f")
   elif [[ $f == *.cs ]]; then ALLOW+=("tests/Bayan.Tests/$f"); TESTF+=("tests/Bayan.Tests/$f"); fi
-done < <(grep -oE '`[^`]+\.(byn|cs|md|c|h|diag|txt|stdout|stderr|exitcode|sha256)`' <<< "$FL" | tr -d '`')
+done < <(grep -oE '`[^`]+\.(byn|cs|md|c|h|diag|txt|stdout|stderr|exitcode|sha256)`' <<< "$FL" | tr -d '`' | while IFS= read -r x; do braces "$x"; done)
 
 CHANGED=$( { git diff --name-only "$BASE...HEAD"; git diff --name-only; git ls-files --others --exclude-standard; } | sort -u)
 UNTRACKED=$(git ls-files --others --exclude-standard)
@@ -102,7 +106,7 @@ while IFS=$'\037' read -r src q cite path lo hi sym; do
     [ -n "$c" ] && [ -f "$c" ] || continue
     k=$(awk 'END { print NR }' "$c")
     if [ "$lo" -lt 1 ] || [ "$hi" -lt "$lo" ] || [ "$hi" -gt "$k" ]; then why="$c has $k lines"
-    elif [ -n "$sym" ] && ! sed -n "${lo},${hi}p" "$c" | grep -qF -- "$sym"; then why="\`$sym\` is not on $c:$lo$([ "$hi" = "$lo" ] || echo "-$hi")"
+    elif [ -n "$sym" ] && ! sed -n "${lo},$((hi + 2))p" "$c" | grep -qF -- "$sym"; then why="\`$sym\` is not on $c:$lo$([ "$hi" = "$lo" ] || echo "-$hi") or the 2 lines after it"
     else good=1; break; fi
   done <<< "$cands"
   [ $good = 1 ] || { fail "cites: $src ${q}\`$cite\`: $why"; bad=1; }

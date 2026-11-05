@@ -2,7 +2,7 @@
 # independent reviewer that must pass a task before scripts/selfhost/land.sh merges it. The reviewer is a fresh agent that
 # did not write the code: it gets the task, the C# it ports, the files, and the bar; never the writer's summary.
 # The spec is a row of specs.tsv (without --spec, 010).
-import os, re, sys
+import os, re, subprocess, sys
 args = sys.argv[1:]
 SPEC = '010'
 if '--spec' in args:
@@ -17,6 +17,10 @@ HEAD, *TABLE = [l.split('\t') for l in open(os.path.join(os.path.dirname(os.path
 row = dict(zip(HEAD, next(r for r in TABLE if r[0] == SPEC)))
 wt = os.path.abspath(args[0]); spec = os.path.join(wt, row['dir'])
 tasks = open(os.path.join(spec, row['tasks']), encoding='utf-8').read().split('\n')
+# the Question ranges wave-brief.py assigned: $BAYAN_QRANGES, else tmp/q-ranges.tsv of the main checkout (as preflight.sh reads them)
+common = subprocess.run(['git', '-C', wt, 'rev-parse', '--path-format=absolute', '--git-common-dir'], capture_output=True).stdout.decode().strip()
+QRANGES = os.environ.get('BAYAN_QRANGES') or os.path.join(os.path.dirname(common) if common else wt, 'tmp', 'q-ranges.tsv')
+qrows = [l.split('\t') for l in open(QRANGES, encoding='utf-8').read().splitlines()[1:]] if os.path.exists(QRANGES) else []
 api_path = os.path.join(spec, row['api']); api = open(api_path, encoding='utf-8').read().split('\n') if os.path.exists(api_path) else []
 for t in args[1:]:
     block, on = [], False
@@ -51,10 +55,11 @@ for t in args[1:]:
         if SPEC == '011' and t == 'T13': filt += '|FullyQualifiedName~SelfhostEmitter'  # integration: every emitter class (Q886)
     shared = '`ctx.byn`' if SPEC == '010' else ' and '.join('`'+c+'`' for c in row['shared'].split(','))
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
-    q = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))
+    q = re.search(r'Q(\d{3,4})–Q(\d{3,4})', ' '.join(block))
+    q = (q.group(1), q.group(2)) if q else next((r[2:4] for r in qrows if r[:2] == [SPEC, t]), None)  # else the range wave-brief.py assigned
     s = f"""You are the independent reviewer for task {t} of spec {SPEC} ({BRIEF[SPEC]['desc']}). You did not write this code. Your job is to find where the port is not the C#. Do not edit any file except the review file below; do not run git commands that change state.
 
-Read: `AGENTS.md`, `scripts/selfhost/bayan-cheatsheet.md`, the task below, the C# it names (whole methods), the port {', '.join('`'+b+'`' for b in byns)}, the tests {', '.join('`'+x+'`' for x in tests)}, and Questions {('Q'+q.group(1)+'–Q'+q.group(2)) if q else 'for this task'} in `docs/bayan-handoff.md`.
+Read: `AGENTS.md`, `scripts/selfhost/bayan-cheatsheet.md`, the task below, the C# it names (whole methods), the port {', '.join('`'+b+'`' for b in byns)}, the tests {', '.join('`'+x+'`' for x in tests)}, and Questions {('Q'+q[0]+'–Q'+q[1]) if q else 'for this task'} in `docs/bayan-handoff.md`.
 
 ## Task (verbatim)
 {chr(10).join(block)}

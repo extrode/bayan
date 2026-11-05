@@ -46,7 +46,18 @@ def owned_files(block):
     head = block[0]
     files = re.search(r'files: (.*?) — (?:covers|after|done when)', head).group(1).split(' — C#:')[0]  # 011 names the C# range after the files
     files = re.sub(r'\([^()]*(\([^()]*\)[^()]*)*\)', '', files)
-    return re.findall(r'`([^`]+\.(?:byn|cs|md|c|h|diag|txt|stdout|stderr|exitcode|sha256))`', files)  # golden expected files too (014 T6)
+    names = re.findall(r'`([^`]+\.(?:byn|cs|md|c|h|diag|txt|stdout|stderr|exitcode|sha256))`', files)  # golden expected files too (014 T6)
+    return [x for n in names for x in braces(n)]
+
+
+def braces(n):  # `selfhost/semantics/{compile,types}.byn` (012 T18) is one name per alternative
+    m = re.match(r'([^{]*)\{([^{}]*)\}(.*)$', n)
+    return [x for a in m.group(2).split(',') for x in braces(m.group(1) + a + m.group(3))] if m else [n]
+
+
+def declared(f):  # the test classes tests/Bayan.Tests/<f> declares (SelfhostDriverInventoryTests.cs holds SelfhostDriverT8Tests); a file not written yet: its name
+    p = os.path.join(wt, 'tests/Bayan.Tests', f)
+    return (re.findall(r'\bclass\s+(\w+Tests)\b', open(p, encoding='utf-8').read()) if os.path.exists(p) else []) or [os.path.basename(f)[:-3]]
 
 
 def plan_rows(byns):
@@ -131,7 +142,7 @@ for t in args[1:]:
     if SPEC == '010' and not law and not tests and not byns: filt = 'FullyQualifiedName~SelfhostSemanticsApiTests'
     # 011: every test class the task owns gates it (a task with a law page and tests too, T14), and T21 also counts the SelfhostSemantics* tests (Q867, Q870)
     if SPEC != '010' and (tests or not law):
-        filt = '|'.join(f'FullyQualifiedName~{c[:-3]}' for c in tests) or filt
+        filt = '|'.join(f'FullyQualifiedName~{c}' for c in dict.fromkeys(c for f in tests for c in declared(f))) or filt
         if SPEC == '011' and t == 'T21': filt += '|FullyQualifiedName~SelfhostSemantics'
         if SPEC == '011' and t == 'T13': filt += '|FullyQualifiedName~SelfhostEmitter'  # integration: every emitter class (Q886)
     sharedx = ' and '.join('`'+c+'`' for c in SHARED)

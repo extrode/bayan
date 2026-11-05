@@ -91,16 +91,20 @@ here=$PWD; q=$here/tmp/wave-brief-q; rm -rf "$q"; mkdir -p "$q/docs/specs/012-se
   printf -- '- [ ] T90 a — files: `x.byn` — covers: R1\n' > docs/specs/011-self-hosted-emitter/011-tasks.md
   : > docs/specs/012-self-hosted-bootstrap/012-plan.md
   for n in 91 92 93 94 95; do printf -- '- [ ] T%s t — files: `selfhost/driver/t%s.byn` — covers: R1\n' $n $n; done > docs/specs/012-self-hosted-bootstrap/012-tasks.md
-  printf -- '- [ ] T96 t — files: `t.byn` — covers: R1 — Questions Q1100–Q1104\n- [x] T97 t — files: `t.byn` — covers: R1\n' >> docs/specs/012-self-hosted-bootstrap/012-tasks.md
+  printf -- '- [ ] T96 t — files: `t.byn` — covers: R1 — Questions Q1100–Q1104\n- [x] T97 t — files: `t.byn` — covers: R1\n- [x] T98 t — files: `selfhost/semantics/{compile,types}.byn`, `x.byn` — covers: R1\n' >> docs/specs/012-self-hosted-bootstrap/012-tasks.md
   git add -A; git commit -qm "test: base"; git switch -q -c other; printf '1012. c\n' >> docs/bayan-handoff.md; git commit -qam "test: other"; git switch -q base )
 export BAYAN_QRANGES=$q/tmp/q-ranges.tsv
 python3 -I scripts/selfhost/wave-brief.py "$q" T96 --spec 012 > /dev/null
 grep -q 'Questions Q1100–Q1104 only' "$q/tmp/012-t96/prompt.md" || { echo "FAIL: a range in the task line is not the brief's"; exit 1; }
 [ ! -f "$BAYAN_QRANGES" ] || { echo "FAIL: a range in the task line was recorded"; exit 1; }
+python3 -I scripts/selfhost/review-brief.py "$q" T96 --spec 012 > /dev/null
+grep -q 'and Questions Q1100–Q1104 in' "$q/tmp/012-t96/review.md" || { echo "FAIL: the review brief does not read a 4-digit range"; exit 1; }
 python3 -I scripts/selfhost/wave-brief.py "$q" T91 --spec 012 > /dev/null
 grep -q 'Questions Q1105–Q1109 only' "$q/tmp/012-t91/prompt.md" || { echo "FAIL: the range is not the block after the highest Question, branch or tasks range"; grep -o 'Questions Q[^ ]* only' "$q/tmp/012-t91/prompt.md"; exit 1; }
 python3 -I scripts/selfhost/wave-brief.py "$q" T91 --spec 012 > /dev/null
 [ "$(grep -c '^012	T91	1105	1109$' "$BAYAN_QRANGES")" = 1 ] && grep -q 'Questions Q1105–Q1109 only' "$q/tmp/012-t91/prompt.md" || { echo "FAIL: a second brief does not reuse the recorded range"; cat "$BAYAN_QRANGES"; exit 1; }
+python3 -I scripts/selfhost/review-brief.py "$q" T91 --spec 012 > /dev/null
+grep -q 'and Questions Q1105–Q1109 in' "$q/tmp/012-t91/review.md" || { echo "FAIL: the review brief does not read the range from q-ranges.tsv"; exit 1; }
 perl -i -pe 's/ — Questions Q1100–Q1104//' "$q/docs/specs/012-self-hosted-bootstrap/012-tasks.md"
 python3 -I scripts/selfhost/wave-brief.py "$q" T92 --spec 012 > /dev/null
 grep -q 'Questions Q1110–Q1114 only' "$q/tmp/012-t92/prompt.md" || { echo "FAIL: a range already recorded is not skipped"; exit 1; }
@@ -113,6 +117,9 @@ python3 -I scripts/selfhost/wave-brief.py "$q" T97 --spec 012 > /dev/null
 grep -q 'Questions in your range only' "$q/tmp/012-t97/prompt.md" && ! grep -q 'T97' "$BAYAN_QRANGES" || { echo "FAIL: a ticked task got a range"; exit 1; }
 grep -qF 'bash scripts/selfhost/preflight.sh 012 T91 "$(git rev-parse --abbrev-ref HEAD)"' "$q/tmp/012-t91/prompt.md" || { echo "FAIL: the 012 brief does not tell the writer to run preflight.sh"; exit 1; }
 grep -q 'preflight.sh' tmp/010-t10/prompt.md && { echo "FAIL: the 010 brief names preflight.sh"; exit 1; }
+# a brace list in a files list (012 T18) is one name per alternative in the guard's --allow (which splits on commas)
+python3 -I scripts/selfhost/wave-brief.py "$q" T98 --spec 012 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' "$q/tmp/012-t98/prompt.md" | grep -q -- "--allow 'selfhost/semantics/compile.byn,selfhost/semantics/types.byn,selfhost/driver/x.byn," || { echo "FAIL: a brace list is not expanded in --allow"; grep '^bash scripts/selfhost/guard.sh' "$q/tmp/012-t98/prompt.md"; exit 1; }
 rm -rf "$q"
 # 012 T17 names its test files with their directory: its review runs those classes, not SelfhostDriverT17Tests (no such class);
 # a file declaring another class (SelfhostDriverInventoryTests.cs holds SelfhostDriverT8Tests) is gated by that class
@@ -120,6 +127,8 @@ python3 -I scripts/selfhost/review-brief.py . T17 --spec 012 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostDriverRuntimeTests|FullyQualifiedName~StdEnvTests|FullyQualifiedName~StdFsTests"`' tmp/012-t17/review.md || { echo "FAIL: the 012 T17 review filter is not its files' classes"; grep -o 'filter "[^"]*"' tmp/012-t17/review.md; exit 1; }
 python3 -I scripts/selfhost/review-brief.py . T8 --spec 012 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostDriverT8Tests' tmp/012-t8/review.md || { echo "FAIL: the review filter is the file name, not the class it declares"; grep -o 'filter "[^"]*"' tmp/012-t8/review.md; exit 1; }
+python3 -I scripts/selfhost/wave-brief.py . T8 --spec 012 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/012-t8/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostDriverT8Tests'" || { echo "FAIL: the guard filter is the file name, not the class it declares"; grep '^bash scripts/selfhost/guard.sh' tmp/012-t8/prompt.md; exit 1; }
 rm -f "$here/tmp/wave-brief-q-ranges.tsv"
 # golden expected files named in a task line (014 T6) are in its guard --allow
 python3 -I scripts/selfhost/wave-brief.py . T6 --spec 014 > /dev/null
