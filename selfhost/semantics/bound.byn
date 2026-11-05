@@ -545,7 +545,7 @@ i64 syntaxNode(ref Ctx c, from in parser.Expr e) uses alloc {
         case .patternExpr(let x):
             return syntaxLeaf(ref c, as: .patternExpr, at: x.value.span)
         case .errorExpr(let x):
-            // coverage-exempt: Q853 through 551
+            // coverage-exempt: Q853 through `return -1`
             return syntaxLeaf(ref c, as: .errorExpr, at: x.value.span)
         case .none:
             return -1
