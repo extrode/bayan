@@ -118,7 +118,8 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
         case .literal:
             let value = c.bLiterals[i].value
             return constant(ref cc, from: ref c, for: value, as: c.bLiterals[i].type)
-        case .hostTarget: // coverage-blocked: Q978 emitExpr
+        case .hostTarget:
+            // coverage-blocked: Q978 T18 emitExpr
             return c.bHostTargets[i].isOs ? "BYN_HOST_OS" : "BYN_HOST_ARCH"
         case .symbolLiteral:
             return symbolLiteral(ref cc, for: c.bSymbolLiterals[i].text)
