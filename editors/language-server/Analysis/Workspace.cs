@@ -192,7 +192,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         if (!_limitLogged)
         {
             _limitLogged = true;
-            Console.Error.WriteLine($"bayan-lsp: index limit reached ({_docs.Count} files, {_chars} chars); a .byn file that does not fit was not indexed");
+            Console.Error.WriteLine($"bayan-lsp: a .byn file does not fit the index budget ({_docs.Count} files, {_chars} chars) and was not indexed; a folder walk in progress stops there, so its later files are skipped");
         }
         return true;
     }

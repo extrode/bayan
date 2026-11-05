@@ -209,8 +209,15 @@ public sealed class LanguageServerWorkspaceTests : IDisposable
         File.WriteAllText(order[2], "c");
         File.WriteAllText(order[3], "d");
         var ws = new Workspace(maxChars: 10);
-        ws.IndexFolder(_root);
+        var original = Console.Error;
+        var log = new StringWriter();
+        Console.SetError(log);
+        try { ws.IndexFolder(_root); }
+        finally { Console.SetError(original); }
         Assert.Equal([Path.GetFileName(order[0])], Names(ws));
+        Assert.Contains("does not fit the index budget", log.ToString());
+        Assert.Contains("later files are skipped", log.ToString());
+        Assert.DoesNotContain("limit reached", log.ToString());
     }
 
     [Fact]
