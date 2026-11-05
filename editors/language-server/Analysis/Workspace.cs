@@ -192,7 +192,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         if (!_limitLogged)
         {
             _limitLogged = true;
-            Console.Error.WriteLine($"bayan-lsp: index limit reached ({_docs.Count} files, {_chars} chars); further .byn files on disk are not indexed");
+            Console.Error.WriteLine($"bayan-lsp: a .byn file does not fit the index budget ({_docs.Count} files, {_chars} chars) and was not indexed; a folder walk in progress stops there, so its later files are skipped");
         }
         return true;
     }
@@ -249,8 +249,8 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         var key = Key(uri);
         if (!_docs.TryGetValue(key, out var d)) return;
         d.IsOpen = false;
-        RemoveKey(key, d);
-        if (LocalPath(uri) is { } path) LoadFromDisk(path);
+        if (LocalPath(uri) is not { } path || !File.Exists(path) || IsExcluded(Path.GetFullPath(path)) || IsReparsePoint(path)) RemoveKey(key, d);
+        else LoadFromDisk(path, uri); // a failed read keeps the previous document
     }
 
     void RemoveKey(string key, Document d)
@@ -263,35 +263,39 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
 
     /// <summary>
     /// Indexes or re-reads one file on disk. A file not yet indexed is skipped when it is excluded
-    /// (<see cref="IsExcluded"/>), larger than the per-file limit, or over the workspace budget.
+    /// (<see cref="IsExcluded"/>), a symbolic link, larger than the per-file limit, or over the
+    /// workspace budget. <paramref name="clientUri"/> is the URI the new document keeps.
+    /// Returns true when the file was rejected for the budget.
     /// </summary>
-    public void LoadFromDisk(string path)
+    public bool LoadFromDisk(string path, string? clientUri = null)
     {
         var full = Path.GetFullPath(path);
-        var uri = new Uri(full).AbsoluteUri;
+        var uri = clientUri ?? new Uri(full).AbsoluteUri;
         var key = Key(uri);
         bool known = _docs.TryGetValue(key, out var existing);
-        if (known && existing!.IsOpen) return;
-        if (!known && IsExcluded(full)) return;
+        if (known && existing!.IsOpen) return false;
+        if (!known && (IsExcluded(full) || IsReparsePoint(full))) return false;
         string text;
         try
         {
             if (new FileInfo(full).Length > maxFileBytes)
             {
                 if (known) RemoveKey(key, existing!);
-                return;
+                return false;
             }
             text = File.ReadAllText(full);
         }
-        catch (IOException) { return; }
-        catch (UnauthorizedAccessException) { return; }
-        if (existing is not null && existing.Text == text) return; // watcher echo of our own state
-        if (OverBudget(text.Length - (existing?.Text.Length ?? 0), !known))
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+        if (existing is not null && existing.Text == text) return false; // watcher echo of our own state
+        int delta = text.Length - (existing?.Text.Length ?? 0);
+        if ((!known || delta > 0) && OverBudget(delta, !known))
         {
             if (known) RemoveKey(key, existing!);
-            return;
+            return true;
         }
         Add(key, new Document(uri, text, 0));
+        return false;
     }
 
     /// <summary>Removes a deleted file. Returns the URI of the removed document, if any.</summary>
@@ -322,8 +326,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
                 foreach (var f in Directory.EnumerateFiles(dir, "*.byn"))
                 {
                     if (IsReparsePoint(f)) continue;
-                    LoadFromDisk(f);
-                    if (LimitReached) return;
+                    if (LoadFromDisk(f) || LimitReached) return;
                 }
                 foreach (var sub in Directory.EnumerateDirectories(dir))
                 {
