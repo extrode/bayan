@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Bayan.Backend.C;
 using Bayan.Cli;
 using Bayan.Semantics;
+using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Text;
 
 namespace Bayan.Tests;
@@ -76,18 +77,10 @@ public sealed class TargetTests
     }
 
     [Fact]
-    public void ANullHostSplitsToEmptyStrings()
-    {
-        Assert.Equal(("", ""), HostTarget.Split(null));
-        Assert.Equal(("linux", "x64"), HostTarget.Split("linux-x64"));
-    }
-
-    [Fact]
     public void AnUnknownMemberIsADiagnostic()
     {
         var c = Compilation.Create([new SourceText("main.byn", System.Text.Encoding.UTF8.GetBytes("print(Target.name)\n"))], Dir("unknown"));
-        var d = Assert.Single(c.Diagnostics.Items);
-        Assert.Equal("BYN2003", d.Code);
+        Assert.Equal("error BYN2003: `name` is not a member of `Target`\n  --> main.byn:1:14\n\n  1 │ print(Target.name)\n    │              ^^^^\n", DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true).ReplaceLineEndings("\n"));
     }
 
     [Fact]

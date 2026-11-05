@@ -18,10 +18,9 @@ public static class HostTarget
         return os is null || arch is null ? null : os + "-" + arch;
     }
 
-    /// <summary>The <c>Target.os</c> and <c>Target.arch</c> of <paramref name="target"/>; <c>wasm32</c> is <c>wasi</c>/<c>wasm32</c>, a null target is <c>""</c>/<c>""</c>.</summary>
-    public static (string Os, string Arch) Split(string? target)
+    /// <summary>The <c>Target.os</c> and <c>Target.arch</c> of <paramref name="target"/>; <c>wasm32</c> is <c>wasi</c>/<c>wasm32</c>.</summary>
+    public static (string Os, string Arch) Split(string target)
     {
-        if (target is null) return ("", "");
         if (target == "wasm32") return ("wasi", "wasm32");
         var dash = target.IndexOf('-');
         return dash < 0 ? ("", "") : (target[..dash], target[(dash + 1)..]);

@@ -31,7 +31,7 @@ public sealed class MutantSchemataTests
         var input = Path.Combine(Golden.CasesRoot, name);
         var tests = name.EndsWith(".test.byn", StringComparison.Ordinal);
         var c = Compilation.Create([Golden.Load(input)], Path.GetDirectoryName(input)!,
-            tests ? new CompilationOptions(IncludeTests: true, Library: true, Target: "linux-x64") : new CompilationOptions(Target: "linux-x64"));
+            tests ? new CompilationOptions(IncludeTests: true, Library: true) : new CompilationOptions());
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
         return c;
     }
