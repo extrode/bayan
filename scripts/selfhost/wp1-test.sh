@@ -3,6 +3,7 @@
 #   bash scripts/selfhost/wp1-test.sh chore/worker-012-t17 'FullyQualifiedName~StdFsTests|FullyQualifiedName~CInventoryTests'
 # Bundles <branch> into tmp/wp1/<short sha>.bundle, copies it to wp1:/C:/home/code/extrode.com/bayan/tmp/ (scp), and over ssh
 # clones it there into tmp/<short sha> (replacing the one an earlier run made) and runs `dotnet test tests/Bayan.Tests -c Release -p:NuGetAudit=false -v q --filter <filter>`.
+# The remote checks the clone's HEAD is the sha resolved here, else exit 4 (the branch moved before the bundle was made).
 # Writes tmp/wp1/<sha>.out: branch, sha, filter and the remote command, then the run's output, then `exit <code>`.
 # Exits with the run's code, or 1 when the run matched no tests.
 set -u
@@ -17,7 +18,7 @@ git bundle create "tmp/wp1/$S.bundle" "$BR" > /dev/null 2>&1 || { echo "wp1-test
 # replaces tmp/<short sha> only when tmp/<short sha>.wp1-test, written before the clone, says this script made it; else exit 3
 CMD="Set-Location '$R'; if (Test-Path '$S') { if (-not (Test-Path '$S.wp1-test')) { Write-Output 'wp1-test: $R/$S exists and wp1-test.sh did not create it'; exit 3 }; Remove-Item -Recurse -Force '$S' }; \
 New-Item -ItemType File -Force '$S.wp1-test' | Out-Null; git clone -q -b $BR $S.bundle $S; if (\$LASTEXITCODE) { exit \$LASTEXITCODE }; \
-Set-Location '$S'; dotnet test tests/Bayan.Tests -c Release -p:NuGetAudit=false -v q --filter '$FILT'; exit \$LASTEXITCODE"
+Set-Location '$S'; if ((git rev-parse HEAD) -ne '$SHA') { Write-Output 'wp1-test: $BR moved after $SHA was resolved; the clone is not $SHA'; exit 4 }; dotnet test tests/Bayan.Tests -c Release -p:NuGetAudit=false -v q --filter '$FILT'; exit \$LASTEXITCODE"
 printf 'branch: %s\nsha: %s\nfilter: %s\ncommand: ssh wp1 "%s"\n' "$BR" "$SHA" "$FILT" "$CMD" > "$OUT"
 scp -q "tmp/wp1/$S.bundle" "wp1:/$R/" >> "$OUT" 2>&1; rc=$?
 [ $rc = 0 ] && { ssh wp1 "$CMD" >> "$OUT" 2>&1; rc=$?; }

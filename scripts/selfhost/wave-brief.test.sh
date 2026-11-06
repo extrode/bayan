@@ -54,7 +54,7 @@ grep '^bash scripts/selfhost/guard.sh' tmp/011-t13/prompt.md | grep -q -- "|Full
 grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests' " || { echo "FAIL: a task with law pages and tests is not gated by every test class"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md; exit 1; }
 # a task naming its test file only as tests/Bayan.Tests/X.cs (012 T4) is gated by that class, not by <prefix><n>Tests (Q945)
 python3 -I scripts/selfhost/wave-brief.py . T4 --spec 012 > /dev/null
-grep '^bash scripts/selfhost/guard.sh' tmp/012-T4/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostDriverRuntimeTests' " || { echo "FAIL: a test file named with its directory does not gate the task"; exit 1; }
+grep '^bash scripts/selfhost/guard.sh' tmp/012-t4/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostDriverRuntimeTests' " || { echo "FAIL: a test file named with its directory does not gate the task"; exit 1; }
 python3 -I scripts/selfhost/review-brief.py . T14 --spec 011 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests"`' tmp/011-t14/review.md || { echo "FAIL: the T14 review does not run every test class"; exit 1; }
 # a 011 law-enact task line without covers: (T17) still yields its law's proof as the guard filter.
@@ -135,6 +135,6 @@ grep '^bash scripts/selfhost/guard.sh' tmp/012-t8/prompt.md | grep -q -- "--filt
 rm -f "$here/tmp/wave-brief-q-ranges.tsv"
 # golden expected files named in a task line (014 T6) are in its guard --allow
 python3 -I scripts/selfhost/wave-brief.py . T6 --spec 014 > /dev/null
-grep '^bash scripts/selfhost/guard.sh' tmp/014-T6/prompt.md | grep -q 'tests/cases/run/path-full-path-empty.exitcode,.*tests/cases/emit/run-c.sha256' || { echo "FAIL: golden expected files are not in the guard --allow"; exit 1; }
+grep '^bash scripts/selfhost/guard.sh' tmp/014-t6/prompt.md | grep -q 'tests/cases/run/path-full-path-empty.exitcode,.*tests/cases/emit/run-c.sha256' || { echo "FAIL: golden expected files are not in the guard --allow"; exit 1; }
 bash -n scripts/selfhost/guard.sh
 echo PASS
