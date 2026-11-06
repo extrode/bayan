@@ -140,7 +140,7 @@ When a type has a value that can never occur, `T?` uses it as "null" instead of 
 | Type | `T?` today (tag + value) | With the null niche |
 | --- | --- | --- |
 | `string`, `Span<T>` (pointer + length) | 24 bytes (16 + tag, padded) | 16 bytes: null pointer means none |
-| `Box<T>` / pointer | 16 bytes | 8 bytes |
+| `Owned<T>` / pointer | 16 bytes | 8 bytes |
 | `i64` | 16 bytes | 16 bytes (no spare value) |
 
 The same applies to `Result` when the error set fits a value's spare bits. The byte figures assume a 64-bit target and the layouts named; confirm against the real layouts.
