@@ -27,7 +27,7 @@ string t10LoweredName(ltree.LKind k) uses alloc {
 /// T10 (private): the C# class name of a bound node of kind `k`, `e.GetType().Name` at CEmitter.cs:1722.
 string t10BoundName(semantics.BoundKind k) uses alloc {
     let names = [
-        "BoundLiteral", "BoundSymbolLiteral", "BoundDefault", "BoundLocal", "BoundThis", "BoundField", "BoundTupleElement",
+        "BoundLiteral", "BoundSymbolLiteral", "BoundHostTarget", "BoundDefault", "BoundLocal", "BoundThis", "BoundField", "BoundTupleElement",
         "BoundCall", "BoundBuiltinCall", "BoundUnary", "BoundBinary", "BoundConversion", "BoundTryFrom", "BoundConditional",
         "BoundCoalesce", "BoundStructLiteral", "BoundWith", "BoundTuple", "BoundCollection", "BoundSpread", "BoundIndex",
         "BoundSlice", "BoundRange", "BoundIs", "BoundSwitchExpr", "BoundInterpolated", "BoundMove", "BoundTry", "BoundCatch",
@@ -118,6 +118,9 @@ public string emitExpr(ref CCtx cc, for ref CFunc f, from ref Ctx c, through in 
         case .literal:
             let value = c.bLiterals[i].value
             return constant(ref cc, from: ref c, for: value, as: c.bLiterals[i].type)
+        case .hostTarget:
+            // coverage-blocked: Q978 T18 emitExpr
+            return c.bHostTargets[i].isOs ? "BYN_HOST_OS" : "BYN_HOST_ARCH"
         case .symbolLiteral:
             return symbolLiteral(ref cc, for: c.bSymbolLiterals[i].text)
         case .defaultValue:
@@ -322,6 +325,12 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
                 as: "{\n    return byn_io_write_file(path, bytes.ptr, bytes.len);\n}\n")
             let path = emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])
             return $"{name}({path}, {emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[1])})"
+        case .ioRemove:
+            return $"byn_io_remove({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .ioCreateDirectory:
+            return $"byn_io_create_directory({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .ioRemoveDirectory:
+            return $"byn_io_remove_directory({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
         case .ioListDir:
             let list = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
             let name = helper(ref cc, for: "bynh_io_list_dir", from: $"static uint32_t bynh_io_list_dir(byn_str path, {list}* out)",
@@ -402,6 +411,13 @@ public string call(ref CCtx cc, for ref CFunc f, from ref Ctx c, through ltree.L
             return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
         case .pathFullPath:
             return $"byn_path_full_path({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])}, byn_context, {loc(in c, by: in f, at: c.bCalls[n].span)})"
+        case .envGet:
+            let opt = cType(ref cc, from: ref c, for: c.functions[fn].returnType)
+            let name = helper(ref cc, for: "bynh_env_get", from: $"static {opt} bynh_env_get(byn_str name)",
+                as: $"{{\n    {opt} r = {{0}};\n    r.has = byn_env_get(name, &r.value, byn_context);\n    return r;\n}}\n")
+            return $"{name}({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
+        case .fsFileExists:
+            return $"byn_fs_file_exists({emitExpr(ref cc, for: ref f, from: ref c, through: in t, at: c.bCalls[n].arguments[0])})"
         case .hexEncode:
             let span = cType(ref cc, from: ref c, for: c.locals[c.functions[fn].parameters[0]].type)
             let name = helper(ref cc, for: "bynh_hex_encode", from: $"static byn_str bynh_hex_encode({span} bytes)",

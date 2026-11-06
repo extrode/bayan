@@ -19,11 +19,11 @@ string buildFailed(string mark, by i64 errors, as i64 warnings) {
 string buildExplain(string code) => $"  explain: bayan explain {code}"
 
 /// Messages.cs:133 `CheckSummary`: `{0} checked {1} in {2}`; `seconds` is `Messages.Seconds` (`{0}s`).
-string checkSummary(string mark, for string program, by string seconds) => $"{mark} checked {program} in {seconds}"
+public string checkSummary(string mark, for string program, by string seconds) uses alloc => $"{mark} checked {program} in {seconds}"
 
 /// CliApp.cs:535 `ProgramName`: a project's short name, else the file's (a `main.byn` is named after its
 /// directory) or the directory's.
-string programName(ref Ctx c, for string path) {
+public string programName(ref Ctx c, for string path) uses alloc, fs {
     if (c.manifest is { } m) { return t10ShortName(in m) }
     let full = t11FullPath(path)
     var name = t11DirectoryExists(full) ? t26FileName(t26TrimEndSlash(full)) : t26FileNameWithoutExtension(full)

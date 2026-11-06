@@ -1,0 +1,8 @@
+// `Fs.fileExists` is true for a file and false for a directory or a missing name.
+void main() fails IoError uses fs {
+    let data: u8[1] = [0x41]
+    try Io.writeFile("fs-file-exists.tmp", data.span)
+    print($"file: {Fs.fileExists("fs-file-exists.tmp")}")
+    print($"directory: {Fs.fileExists(".")}")
+    print($"missing: {Fs.fileExists("fs-file-exists-missing.tmp")}")
+}

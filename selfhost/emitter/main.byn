@@ -34,7 +34,7 @@ i32 usage() {
 }
 
 /// CliApp.cs:409 `EmitC` on a compiled program.
-string t12Emit(ref semantics.Ctx c, by string mode) {
+public string t12Emit(ref semantics.Ctx c, by string mode) uses alloc {
     var l = LCtx {}
     let program = lower(ref c, to: ref l)
     return cprint.emit(ref c, from: in l.tree, through: in program, by: mode == "debug")

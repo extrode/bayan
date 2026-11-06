@@ -8,7 +8,7 @@
 const typedDumpVersion: i64 = 1
 
 /// TypedDump.cs:17 `ToJson`.
-string typedDump(ref Ctx c) {
+public string typedDump(ref Ctx c) uses alloc {
     var sb = StrBuf()
     sb.append("{\n")
     sb.append($"  \"version\": {typedDumpVersion},\n")

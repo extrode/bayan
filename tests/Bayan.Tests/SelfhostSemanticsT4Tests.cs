@@ -157,6 +157,7 @@ public sealed class SelfhostSemanticsT4Tests
         ("literal", () => new BoundLiteral(null!, PrimitiveType.I8, new ConstantValue((Int128)1)),
             "addLiteral(ref c, from: BLiteral { span: $SP, type: prim(.i8), value: Constant { kind: .integer } })"),
         ("symbolLiteral", () => new BoundSymbolLiteral(null!, "s"), "addSymbolLiteral(ref c, from: BSymbolLiteral { span: $SP, text: \"s\" })"),
+        ("hostTarget", () => new BoundHostTarget(null!, true), "addHostTarget(ref c, from: BHostTarget { span: $SP, isOs: true })"),
         ("default", () => new BoundDefault(null!, PrimitiveType.U16), "addDefault(ref c, from: BDefault { span: $SP, type: prim(.u16) })"),
         ("local", () => new BoundLocal(null!, La), "addLocal(ref c, from: BLocal { span: $SP, local: 0 })"),
         ("this", () => new BoundThis(null!, PrimitiveType.U32), "addThis(ref c, from: BThis { span: $SP, type: prim(.u32) })"),

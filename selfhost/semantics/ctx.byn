@@ -358,6 +358,7 @@ public struct Ctx {
     // ── Bound arenas (T4): one per node struct of bound.byn, in `BoundKind` order ──
     public List<BLiteral> bLiterals = List<BLiteral>()
     public List<BSymbolLiteral> bSymbolLiterals = List<BSymbolLiteral>()
+    public List<BHostTarget> bHostTargets = List<BHostTarget>()
     public List<BDefault> bDefaults = List<BDefault>()
     public List<BLocal> bLocals = List<BLocal>()
     public List<BThis> bThises = List<BThis>()
@@ -524,6 +525,9 @@ public struct Ctx {
     // ── T16 state
     // ── T17 state
     // ── T18 state
+    // ── 012 T18 state
+    /// C# `Options.Target`: the build target `Target.os`/`Target.arch` name; null for the compiling host.
+    public string? target = null
     // ── T19 state
     // ── T20 state
     // ── T21 state

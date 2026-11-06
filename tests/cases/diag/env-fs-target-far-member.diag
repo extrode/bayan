@@ -1,0 +1,14 @@
+error BYN2003: `zzzzzzzz` is not a member of `Env`
+
+  3 │     print(Env.zzzzzzzz("HOME") ?? "")
+    │               ^^^^^^^^
+
+error BYN2003: `zzzzzzzz` is not a member of `Fs`
+
+  4 │     let found = Fs.zzzzzzzz("a.txt")
+    │                    ^^^^^^^^
+
+error BYN2003: `zzzzzzzz` is not a member of `Target`
+
+  5 │     print(Target.zzzzzzzz)
+    │                  ^^^^^^^^

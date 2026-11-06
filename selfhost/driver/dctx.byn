@@ -1,0 +1,34 @@
+// Shared state of the driver (spec 012 D6): one `// ── Tn state` section per task, inside `DCtx`.
+
+/// One stream's style as `TerminalStyle.Decide` (TerminalStyle.cs:13) gives it. The palette is `Ansi16` whenever `color` (the
+/// truecolor palettes need `COLORTERM`, which has no builtin, Q919); `ascii` is `Symbols.Ascii`. Declared before `DCtx` on the
+/// base: a field default naming a struct declared later crashes the C# lowerer (Q920).
+struct DStyle {
+    bool color = false
+    bool ascii = false
+    i64 width = 100
+}
+
+/// Everything the driver reads and writes for one run. Each task adds its fields in its own `// ── Tn state` section.
+public struct DCtx {
+    // ── T1 state
+    /// `--ascii` of `TakeGlobalOptions` (CliApp.cs:315), as given.
+    bool ascii = false
+    /// `--color` of `TakeGlobalOptions`, as given: auto, always or never.
+    string color = "auto"
+    /// `s_styleOut` of `Run` (CliApp.cs:29), decided from `color` and `ascii`.
+    DStyle styleOut = DStyle {}
+    /// `s_styleErr` of `Run` (CliApp.cs:30).
+    DStyle styleErr = DStyle {}
+    /// `s_stderrTty` of `Run` (CliApp.cs:31).
+    bool stderrTty = false
+    // ── T3 state
+    // T3 keeps no state: `Targets.Host` is recomputed from `Target` (cc.byn `targetHost`).
+    // ── T5 state
+    // T5 keeps no state: `build` and `run` read their options per call (build.byn `T5Options`), and `HostTarget` is cc.byn `targetHost`.
+}
+
+/// The state of a run before any option is read. On the base so the coverage report has an entry for this file (Q920).
+DCtx newDCtx() {
+    return DCtx {}
+}

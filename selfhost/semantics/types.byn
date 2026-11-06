@@ -47,6 +47,9 @@ public enum TypeKind {
     enumType
     unionType
     errorSet
+    /// The C# `AliasPlaceholder` (Compilation.cs:1986): a `type` alias or `union error` composition in a module's `types`
+    /// before it is expanded; neither a struct nor an error set (`typeresolve.byn` `t8AliasKind`).
+    alias
 }
 
 /// The C# `PrimitiveKind`; `never` is a keyword, so `Never` is `neverKind`.
@@ -92,6 +95,9 @@ public enum BuiltinKind {
     formatSpec
     symbol
     path
+    target
+    env
+    fs
 }
 
 // ── Handles ─────────────────────────────────────────────────────────────────────
@@ -124,7 +130,8 @@ public TypeKind kindOf(Type t) {
         case 21: return .interfaceType
         case 22: return .enumType
         case 23: return .unionType
-        default: return .errorSet
+        case 24: return .errorSet
+        default: return .alias
     }
 }
 
@@ -172,6 +179,9 @@ public BuiltinKind builtinKindOf(i64 i) {
         case 8: return .panic
         case 9: return .formatSpec
         case 10: return .symbol
+        case 12: return .target
+        case 13: return .env
+        case 14: return .fs
         default: return .path
     }
 }
@@ -599,6 +609,9 @@ string builtinName(BuiltinKind k) {
         case .panic: return "Panic"
         case .formatSpec: return "FormatSpec"
         case .symbol: return "Symbol"
+        case .target: return "Target"
+        case .env: return "Env"
+        case .fs: return "Fs"
         default: return "Path"
     }
 }
@@ -735,6 +748,7 @@ public string typeDisplay(ref Ctx c, by Type t) uses alloc {
         case .enumType: return enumDisplayName(ref c, by: typeIndex(t))
         case .unionType: return unionDisplayName(ref c, by: typeIndex(t))
         case .errorSet: return errorSetDisplayName(ref c, by: typeIndex(t))
+        case .alias: return c.aliases[typeIndex(t)].name
     }
 }
 

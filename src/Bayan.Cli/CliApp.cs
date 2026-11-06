@@ -146,14 +146,14 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null, string? Package = null);
 
     internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
         bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false, coverage = false;
-        string? baseRef = null, run = null;
+        string? baseRef = null, run = null, package = null;
         var only = new List<string>();
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
@@ -224,6 +224,9 @@ public static class CliApp
                 case "-v" or "--verbose" when allowVerbose:
                     verbose = true;
                     break;
+                case "--package" when i + 1 < args.Length:
+                    package = args[++i];
+                    break;
                 default:
                     if (path is not null || args[i].StartsWith('-'))
                     {
@@ -245,7 +248,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run, package);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -278,11 +281,21 @@ public static class CliApp
                 return null;
             }
             c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib,
-                Capabilities: manifest.Capabilities, PackageName: manifest.Name));
+                Capabilities: manifest.Capabilities, PackageName: manifest.Name, Target: o.Target));
+        }
+        else if (o.Package is { } package)
+        {
+            // `--package <root>` (spec 012 Q2): the directory's files (a file alone) are the entry module and imports resolve
+            // under `<root>`, as `Compilation.Create` with `packageRoot` does for the selfhost harnesses.
+            var full = Path.GetFullPath(o.Path);
+            var files = Directory.Exists(full)
+                ? Directory.EnumerateFiles(full, "*.byn").Where(f => includeTests || !f.EndsWith(".test.byn", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToArray()
+                : [full];
+            c = Compilation.Create([.. files.Select(f => SourceText.FromFile(f))], Path.GetFullPath(package), new CompilationOptions(includeTests, Target: o.Target));
         }
         else
         {
-            c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests), wholeDirectory: !IsScript(o.Path));
+            c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests, Target: o.Target), wholeDirectory: !IsScript(o.Path));
         }
         progress.Done();
         Report(o, c.Diagnostics.Items, stderr);

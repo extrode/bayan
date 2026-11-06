@@ -1,0 +1,6 @@
+error BYN2003: `gett` is not a member of `Env`
+
+  2 │ print(Env.gett("HOME") ?? "")
+    │           ^^^^
+    │
+  help: did you mean `get`?

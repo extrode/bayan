@@ -74,6 +74,9 @@ public enum BuiltinFunction {
     ioReadFile
     ioReadText
     ioWriteFile
+    ioRemove
+    ioCreateDirectory
+    ioRemoveDirectory
     ioListDir
     ioRun
     ioRunBatch
@@ -98,6 +101,8 @@ public enum BuiltinFunction {
     pathCombine
     pathCombineSpan
     pathFullPath
+    envGet
+    fsFileExists
 }
 
 // ── Symbols ─────────────────────────────────────────────────────────────────────

@@ -253,7 +253,7 @@ bool isTrivial(in Ctx c, through in LCtx l, for BExpr e) {
                 unless isTrivial(in c, through: in l, for: p) { return false }
             }
             return true
-        case .literal or .symbolLiteral or .defaultValue or .local or .thisRef or .enumMember or .enumValues or .staticArray: return true
+        case .literal or .symbolLiteral or .hostTarget or .defaultValue or .local or .thisRef or .enumMember or .enumValues or .staticArray: return true
         case .field: return isTrivial(in c, through: in l, for: c.bFields[i].receiver)
         case .tupleElement: return isTrivial(in c, through: in l, for: c.bTupleElements[i].receiver)
         case .moveExpr: return isTrivial(in c, through: in l, for: c.bMoves[i].operand)

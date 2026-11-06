@@ -175,7 +175,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             if bKind == .io {
                 let member = findIo(ref c, for: name)
                 if member == -1 {
-                    let near = suggest(name, by: in ["readFile", "readText", "writeFile", "listDir", "run", "runBatch", "monotonicNanos", "stdout", "stderr", "stdin"])
+                    let near = suggest(name, by: in ["readFile", "readText", "writeFile", "remove", "createDirectory", "removeDirectory", "listDir", "run", "runBatch", "monotonicNanos", "stdout", "stderr", "stdin"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
                     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
                     return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
@@ -225,6 +225,40 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                     return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
                 }
                 return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() }), at: syntax)
+            }
+            if bKind == .env {
+                let member = findEnv(ref c, for: name)
+                if member == -1 {
+                    let near = suggest(name, by: in ["get"])
+                    let help = near is { } ? $"did you mean `{near}`?" : ""
+                    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
+                }
+                return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() }), at: syntax)
+            }
+            if bKind == .fs {
+                let member = findFs(ref c, for: name)
+                if member == -1 {
+                    let near = suggest(name, by: in ["fileExists"])
+                    let help = near is { } ? $"did you mean `{near}`?" : ""
+                    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
+                    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
+                }
+                return recordSyntaxNode(ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() }), at: syntax)
+            }
+            if bKind == .target {
+                if name == "os" || name == "arch" {
+                    if (c.target is { } buildTarget) {
+                        let split = hostTargetSplit(buildTarget)
+                        let text = Constant { kind: .text, text: name == "os" ? split.os : split.arch }
+                        return recordSyntaxNode(ref c, for: literal(ref c, at: m.span, as: prim(.string), by: text), at: syntax)
+                    }
+                    return recordSyntaxNode(ref c, for: addHostTarget(ref c, from: BHostTarget { span: m.span, isOs: name == "os" }), at: syntax)
+                }
+                let near = suggest(name, by: in ["os", "arch"])
+                let help = near is { } ? $"did you mean `{near}`?" : ""
+                report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: m.span }), at: syntax)
             }
         }
         if isString(refType) {

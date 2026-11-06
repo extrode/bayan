@@ -30,7 +30,7 @@ i32 unreadable(string path) {
 }
 
 /// Lexes `path` and appends its dump (`json`: the JSON form) to `sb`; returns whether any diagnostic is an error.
-bool dumpFile(string path, from move List<u8> bytes, by Keywords keywords, to ref StrBuf sb, bool json) {
+public bool dumpFile(string path, from move List<u8> bytes, by Keywords keywords, to ref StrBuf sb, bool json) uses alloc {
     var result = lex(SourceText.create(path, from: move bytes), by: keywords)
     if json {
         dumpJson(ref result, to: ref sb)

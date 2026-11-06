@@ -1,0 +1,3482 @@
+/* Bayan runtime implementation. See bayan-rt.h. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE /* strtod_l, strtof_l */
+#endif
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L /* clock_gettime under -std=c11 */
+#endif
+/* The ownership checker is compiled unless the build says otherwise: the toolchain passes -DBYN_NDEBUG for safe and
+ * fast builds, so they carry no checker, while a debug program's C still links against a runtime compiled by hand
+ * without flags. */
+#if !defined(BYN_DEBUG) && !defined(BYN_NDEBUG)
+#define BYN_DEBUG
+#endif
+#include "bayan-rt.h"
+
+#include <errno.h>
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+#ifdef __APPLE__
+#include <xlocale.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <dirent.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <spawn.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+extern char** environ;
+#endif
+
+/* Windows text mode would turn each \n written to stdout or stderr into \r\n. Every path that writes either stream
+ * calls this first (byn_stdout_flush precedes all the others), so the switch happens once, before the first byte. */
+static void byn_stdio_binary(void) {
+#ifdef _WIN32
+    static bool done;
+    if (done) return;
+    done = true;
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+#endif
+}
+
+/* ── Panics ──────────────────────────────────────────────────────────────── */
+
+/* The panic in progress: its message (copied, since it may live in the panicking frame the handlers jump over) and
+ * location. A second panic while it is set comes from a handler or `Panic.onPanic`, and aborts at once with both. */
+static _Thread_local bool byn_panicking;
+static _Thread_local char byn_panic_text[1024];
+static _Thread_local byn_panic_info byn_panic_now;
+static _Thread_local const char* byn_panic_file;
+static _Thread_local int byn_panic_line;
+_Thread_local byn_panic_handler* byn_panic_handlers;
+void (*byn_on_panic)(byn_panic_info);
+void (*byn_cov_flush)(void);
+
+static void byn_cov_flush_once(void) {
+    void (*flush)(void) = byn_cov_flush;
+    byn_cov_flush = NULL;
+    if (flush) flush();
+}
+
+static void byn_panic_print(const char* prefix, const uint8_t* msg, size_t len, const char* file, int line) {
+    byn_stdio_binary();
+    fputs(prefix, stderr);
+    fwrite(msg, 1, len, stderr);
+    if (file) fprintf(stderr, "\n  at %s:%d\n", file, line);
+    else fputc('\n', stderr);
+}
+
+static BYN_NORETURN void byn_panic_raise(const uint8_t* msg, size_t len, const char* file, int line) {
+    byn_stdout_flush();
+    if (byn_panicking) {
+        byn_panic_print("panic: ", byn_panic_now.message.ptr, (size_t)byn_panic_now.message.len, byn_panic_file, byn_panic_line);
+        byn_panic_print("panic in a panic handler: ", msg, len, file, line);
+        fflush(stderr);
+        byn_cov_flush_once();
+        abort();
+    }
+    byn_panicking = true;
+    if (len > sizeof byn_panic_text) {
+        // Cut at a code-point boundary: while the first byte dropped is a continuation byte, drop one more.
+        len = sizeof byn_panic_text;
+        while (len > 0 && (msg[len] & 0xC0) == 0x80) len--;
+    }
+    memcpy(byn_panic_text, msg, len);
+    byn_panic_now.message = (byn_str){(const uint8_t*)byn_panic_text, (int64_t)len};
+    byn_panic_file = file;
+    byn_panic_line = line;
+    byn_panic_resume();
+}
+
+byn_panic_info byn_panic_current(void) { return byn_panic_now; }
+
+void byn_panic_resume(void) {
+#ifndef __wasi__
+    byn_panic_handler* h = byn_panic_handlers;
+    if (h) {
+        byn_panic_handlers = h->prev;
+        longjmp(h->jump, 1);
+    }
+#endif
+    void (*hook)(byn_panic_info) = byn_on_panic;
+    byn_on_panic = NULL;
+    if (hook) hook(byn_panic_now);
+    byn_stdout_flush();
+    byn_panic_print("panic: ", byn_panic_now.message.ptr, (size_t)byn_panic_now.message.len, byn_panic_file, byn_panic_line);
+    fflush(stderr);
+    byn_cov_flush_once();
+    abort();
+}
+
+void byn_panic(const char* msg, const char* file, int line) {
+    byn_panic_raise((const uint8_t*)msg, strlen(msg), file, line);
+}
+
+void byn_panic_str(byn_str msg, const char* file, int line) {
+    byn_panic_raise(msg.ptr, (size_t)msg.len, file, line);
+}
+
+void byn_todo_str(byn_str msg, const char* file, int line) {
+    byn_stdout_flush();
+    fputs("pending: ", stderr);
+    fwrite(msg.ptr, 1, (size_t)msg.len, stderr);
+    if (file) fprintf(stderr, "\n  at %s:%d\n", file, line);
+    else fputc('\n', stderr);
+    fflush(stderr);
+    exit(4);
+}
+
+void byn_unreachable(const char* file, int line) {
+    byn_panic("reached code the compiler proved unreachable", file, line);
+}
+
+/* ── Ownership checker ───────────────────────────────────────────────────── */
+
+#ifdef BYN_DEBUG
+/* Owned storage by address: an open-addressed table with linear probing; a free slot has NULL storage. */
+typedef struct byn_own_rec {
+    const void* storage;
+    const void* place;
+    const char* type;
+    const char* file;
+    int line;
+} byn_own_rec;
+
+static byn_own_rec* byn_own_table;
+static size_t byn_own_cap;
+static size_t byn_own_count;
+
+static size_t byn_own_home(const void* storage) {
+    return (size_t)(((uint64_t)(uintptr_t)storage * UINT64_C(0x9E3779B97F4A7C15)) >> 20) & (byn_own_cap - 1);
+}
+
+static byn_own_rec* byn_own_find(const void* storage) {
+    if (byn_own_cap == 0) return NULL;
+    for (size_t s = byn_own_home(storage);; s = (s + 1) & (byn_own_cap - 1)) {
+        if (byn_own_table[s].storage == storage) return &byn_own_table[s];
+        if (!byn_own_table[s].storage) return NULL;
+    }
+}
+
+static byn_own_rec* byn_own_insert(const void* storage) {
+    byn_own_rec* r = byn_own_find(storage);
+    if (r) return r;
+    if ((byn_own_count + 1) * 2 > byn_own_cap) {
+        byn_own_rec* old = byn_own_table;
+        size_t n = byn_own_cap;
+        byn_own_cap = n ? n * 2 : 1024;
+        byn_own_table = (byn_own_rec*)calloc(byn_own_cap, sizeof *byn_own_table);
+        if (!byn_own_table) byn_panic("out of memory", NULL, 0);
+        for (size_t i = 0; i < n; i++) {
+            if (!old[i].storage) continue;
+            size_t s = byn_own_home(old[i].storage);
+            while (byn_own_table[s].storage) s = (s + 1) & (byn_own_cap - 1);
+            byn_own_table[s] = old[i];
+        }
+        free(old);
+    }
+    size_t s = byn_own_home(storage);
+    while (byn_own_table[s].storage) s = (s + 1) & (byn_own_cap - 1);
+    byn_own_table[s].storage = storage;
+    byn_own_table[s].place = NULL;
+    byn_own_count++;
+    return &byn_own_table[s];
+}
+
+/* Backward-shift deletion: later entries of the probe run move into the hole. */
+static void byn_own_remove(byn_own_rec* r) {
+    size_t mask = byn_own_cap - 1;
+    size_t i = (size_t)(r - byn_own_table);
+    for (size_t j = (i + 1) & mask; byn_own_table[j].storage; j = (j + 1) & mask) {
+        size_t home = byn_own_home(byn_own_table[j].storage);
+        if (((j - home) & mask) >= ((j - i) & mask)) {
+            byn_own_table[i] = byn_own_table[j];
+            i = j;
+        }
+    }
+    memset(&byn_own_table[i], 0, sizeof byn_own_table[i]);
+    byn_own_count--;
+}
+
+void byn_own_claim(const void* storage, const void* place, const char* type, const char* file, int line) {
+    if (!storage) return;
+    byn_own_rec* r = byn_own_insert(storage);
+    if (r->place == place) return;
+    if (r->place) {
+        char msg[512];
+        int n = snprintf(msg, sizeof msg, "second owner of %s: owned since %s:%d", type, r->file, r->line);
+        byn_panic_raise((const uint8_t*)msg, n < 0 ? 0 : (size_t)n < sizeof msg ? (size_t)n : sizeof msg - 1, file, line);
+    }
+    r->place = place;
+    r->type = type;
+    r->file = file;
+    r->line = line;
+}
+
+void byn_own_release(const void* storage) {
+    byn_own_rec* r = storage ? byn_own_find(storage) : NULL;
+    if (r) byn_own_remove(r);
+}
+
+void byn_own_drop(const void* storage, const void* place) {
+    byn_own_rec* r = storage ? byn_own_find(storage) : NULL;
+    if (r && r->place == place) byn_own_remove(r);
+}
+
+void byn_own_read(const byn_own_slot* slot, const char* type, const char* file, int line) {
+    if (BYN_UNLIKELY(slot->line != 0)) {
+        char msg[512];
+        int n = snprintf(msg, sizeof msg, "use of moved %s: moved at %s:%d", type, slot->file, slot->line);
+        byn_panic_raise((const uint8_t*)msg, n < 0 ? 0 : (size_t)n < sizeof msg ? (size_t)n : sizeof msg - 1, file, line);
+    }
+}
+
+void byn_own_rekey(const void* from, const void* to) {
+    if (from == to) return;
+    /* Nothing stale may stay at the new address; released first, as its backward shift can move `from`. */
+    byn_own_release(to);
+    byn_own_rec* r = from ? byn_own_find(from) : NULL;
+    if (!r) return;
+    byn_own_rec moved = *r;
+    byn_own_remove(r);
+    moved.storage = to;
+    *byn_own_insert(to) = moved;
+}
+
+void byn_own_forget(const void* lo, const void* hi) {
+    for (size_t i = 0; i < byn_own_cap; i++)
+        while (byn_own_table[i].storage && (const uint8_t*)byn_own_table[i].storage >= (const uint8_t*)lo
+               && (const uint8_t*)byn_own_table[i].storage < (const uint8_t*)hi)
+            byn_own_remove(&byn_own_table[i]);
+}
+#endif
+
+/* ── Output ──────────────────────────────────────────────────────────────── */
+
+static uint8_t byn_out_buf[1 << 14];
+static int64_t byn_out_len;
+
+static void byn_out(const uint8_t* p, int64_t n) {
+    if (byn_out_len + n > (int64_t)sizeof byn_out_buf) {
+        byn_stdout_flush();
+        if (n > (int64_t)sizeof byn_out_buf) {
+            fwrite(p, 1, (size_t)n, stdout);
+            return;
+        }
+    }
+    memcpy(byn_out_buf + byn_out_len, p, (size_t)n);
+    byn_out_len += n;
+}
+
+void byn_stdout_flush(void) {
+    byn_stdio_binary();
+    if (byn_out_len > 0) fwrite(byn_out_buf, 1, (size_t)byn_out_len, stdout);
+    byn_out_len = 0;
+    fflush(stdout);
+}
+
+static void byn_err(const uint8_t* p, int64_t n) {
+    byn_stdout_flush();
+    fwrite(p, 1, (size_t)n, stderr);
+}
+
+void byn_print(byn_builtin_Stream stream, byn_str s) {
+    if (stream == 1) {
+        byn_err(s.ptr, s.len);
+        byn_err((const uint8_t*)"\n", 1);
+        fflush(stderr);
+        return;
+    }
+    byn_out(s.ptr, s.len);
+    byn_out((const uint8_t*)"\n", 1);
+}
+
+void byn_report_error(byn_str summary) {
+    byn_stdout_flush();
+    fputs("error: ", stderr);
+    fwrite(summary.ptr, 1, (size_t)summary.len, stderr);
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
+void byn_log(byn_builtin_LogLevel level, byn_str text) {
+    static const char* const names[] = {"debug: ", "info: ", "warn: ", "error: "};
+    byn_stdout_flush();
+    fputs(names[level & 3], stderr);
+    for (int64_t i = 0; i < text.len; i++) {
+        uint8_t b = text.ptr[i];
+        if (b == '\n') fputs("\\n", stderr);
+        else if (b == '\\') fputs("\\\\", stderr);
+        else if (b == '\r') fputs("\\r", stderr);
+        else if (b == '\t') fputs("\\t", stderr);
+        else if (b < 0x20 || b == 0x7F) fprintf(stderr, "\\u{%X}", b);
+        else fputc(b, stderr);
+    }
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
+void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
+    while (n > 0) {
+        int64_t room = w->cap - w->len;
+        if (room >= n) {
+            memcpy(w->buf + w->len, p, (size_t)n);
+            w->len += n;
+            return;
+        }
+        switch (w->mode) {
+        case BYN_WRITE_STDOUT:
+            byn_out(w->buf, w->len);
+            w->len = 0;
+            if (n > w->cap) {
+                byn_out(p, n);
+                return;
+            }
+            break;
+        case BYN_WRITE_STDERR:
+            byn_err(w->buf, w->len);
+            w->len = 0;
+            if (n > w->cap) {
+                byn_err(p, n);
+                return;
+            }
+            break;
+        case BYN_WRITE_TRUNCATE:
+            memcpy(w->buf + w->len, p, (size_t)room);
+            w->len = w->cap;
+            return;
+        case BYN_WRITE_STRICT:
+            byn_panic("StrBuf is full", w->file, w->line);
+        case BYN_WRITE_GROW: {
+            int64_t grown = w->cap < 16 ? 16 : w->cap * 2;
+            if (grown < w->len + n) grown = w->len + n;
+            /* A fresh block, not a resize: text already taken with asString() keeps pointing at the old one.
+             * The checker relies on this (Q745): append after finish() or view is allowed (tests/native/strbuf-grow.c). */
+            uint8_t* p = (uint8_t*)w->alloc->resize(w->alloc, NULL, 0, grown);
+            if (w->len > 0) memcpy(p, w->buf, (size_t)w->len);
+#ifdef BYN_DEBUG
+            byn_own_rekey(w->buf, p);
+#endif
+            w->buf = p;
+            w->cap = grown;
+            break;
+        }
+        }
+    }
+}
+
+void byn_w_println(byn_writer* w) {
+    if (w->mode == BYN_WRITE_STDERR) {
+        byn_err(w->buf, w->len);
+        byn_err((const uint8_t*)"\n", 1);
+        fflush(stderr);
+    } else {
+        byn_out(w->buf, w->len);
+        byn_out((const uint8_t*)"\n", 1);
+    }
+    w->len = 0;
+}
+
+void byn_w_str(byn_writer* w, byn_str s) { byn_w_bytes(w, s.ptr, s.len); }
+
+void byn_w_u64(byn_writer* w, uint64_t v) {
+    uint8_t digits[20];
+    int n = 0;
+    do {
+        digits[19 - n++] = (uint8_t)('0' + v % 10);
+        v /= 10;
+    } while (v != 0);
+    byn_w_bytes(w, digits + 20 - n, n);
+}
+
+void byn_w_i64(byn_writer* w, int64_t v) {
+    if (v < 0) {
+        byn_w_bytes(w, (const uint8_t*)"-", 1);
+        byn_w_u64(w, (uint64_t)0 - (uint64_t)v);
+    } else {
+        byn_w_u64(w, (uint64_t)v);
+    }
+}
+
+/* Shortest text that reads back as the same value: fixed notation for 1e-5 <= |v| < 1e15
+ * (.NET's thresholds), otherwise d.ddde<exp> with a lowercase `e`, no `+` and no leading
+ * zeros, so the text is a valid Bayan literal and valid JSON. nan, inf, -inf, -0. */
+static void byn_w_float(byn_writer* w, double v, int max_digits, bool single) {
+    char sci[40], out[64];
+    if (v != v) {
+        byn_w_bytes(w, (const uint8_t*)"nan", 3);
+        return;
+    }
+    if (v == 1.0 / 0.0 || v == -1.0 / 0.0) {
+        if (v < 0) byn_w_bytes(w, (const uint8_t*)"-", 1);
+        byn_w_bytes(w, (const uint8_t*)"inf", 3);
+        return;
+    }
+    if (v == 0) {
+        if (1.0 / v < 0) byn_w_bytes(w, (const uint8_t*)"-", 1);
+        byn_w_bytes(w, (const uint8_t*)"0", 1);
+        return;
+    }
+    for (int p = 1; p <= max_digits; p++) {
+        snprintf(sci, sizeof sci, "%.*e", p - 1, v);
+        double back = strtod(sci, NULL);
+        if (single ? (float)back == (float)v : back == v) break;
+    }
+    /* sci is [-]d[.ddd]e[+-]xx: collect the digits and the exponent. */
+    char digits[24];
+    int n = 0, i = 0, len = 0;
+    bool negative = sci[0] == '-';
+    if (negative) i++;
+    for (; sci[i] && sci[i] != 'e'; i++)
+        if (sci[i] != '.') digits[n++] = sci[i];
+    int exp = atoi(sci + i + 1);
+    while (n > 1 && digits[n - 1] == '0') n--;
+    if (negative) out[len++] = '-';
+    if (exp >= 15 || exp < -5) {
+        out[len++] = digits[0];
+        if (n > 1) {
+            out[len++] = '.';
+            for (int k = 1; k < n; k++) out[len++] = digits[k];
+        }
+        len += snprintf(out + len, sizeof out - (size_t)len, "e%d", exp);
+    } else if (exp < 0) {
+        out[len++] = '0';
+        out[len++] = '.';
+        for (int k = 0; k < -exp - 1; k++) out[len++] = '0';
+        for (int k = 0; k < n; k++) out[len++] = digits[k];
+    } else {
+        for (int k = 0; k <= exp || k < n; k++) {
+            if (k == exp + 1) out[len++] = '.';
+            out[len++] = k < n ? digits[k] : '0';
+        }
+    }
+    byn_w_bytes(w, (const uint8_t*)out, len);
+}
+
+void byn_w_f64(byn_writer* w, double v) { byn_w_float(w, v, 17, false); }
+void byn_w_f32(byn_writer* w, float v) { byn_w_float(w, v, 9, true); }
+
+void byn_w_bool(byn_writer* w, bool v) {
+    if (v) byn_w_bytes(w, (const uint8_t*)"true", 4);
+    else byn_w_bytes(w, (const uint8_t*)"false", 5);
+}
+
+void byn_w_char(byn_writer* w, uint32_t c) {
+    uint8_t b[4];
+    int n;
+    if (c < 0x80) { b[0] = (uint8_t)c; n = 1; }
+    else if (c < 0x800) { b[0] = (uint8_t)(0xC0 | c >> 6); b[1] = (uint8_t)(0x80 | (c & 0x3F)); n = 2; }
+    else if (c < 0x10000) {
+        b[0] = (uint8_t)(0xE0 | c >> 12); b[1] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[2] = (uint8_t)(0x80 | (c & 0x3F)); n = 3;
+    } else {
+        b[0] = (uint8_t)(0xF0 | c >> 18); b[1] = (uint8_t)(0x80 | (c >> 12 & 0x3F));
+        b[2] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[3] = (uint8_t)(0x80 | (c & 0x3F)); n = 4;
+    }
+    byn_w_bytes(w, b, n);
+}
+
+/* ── Strings ─────────────────────────────────────────────────────────────── */
+
+bool byn_str_eq(byn_str a, byn_str b) {
+    return a.len == b.len && (a.len == 0 || memcmp(a.ptr, b.ptr, (size_t)a.len) == 0);
+}
+
+int byn_str_cmp(byn_str a, byn_str b) {
+    int64_t n = a.len < b.len ? a.len : b.len;
+    int c = n == 0 ? 0 : memcmp(a.ptr, b.ptr, (size_t)n);
+    if (c != 0) return c < 0 ? -1 : 1;
+    return a.len < b.len ? -1 : a.len > b.len ? 1 : 0;
+}
+
+bool byn_str_starts_with(byn_str s, byn_str prefix) {
+    return prefix.len <= s.len && (prefix.len == 0 || memcmp(s.ptr, prefix.ptr, (size_t)prefix.len) == 0);
+}
+
+bool byn_str_ends_with(byn_str s, byn_str suffix) {
+    return suffix.len <= s.len && (suffix.len == 0 || memcmp(s.ptr + s.len - suffix.len, suffix.ptr, (size_t)suffix.len) == 0);
+}
+
+bool byn_str_contains(byn_str s, byn_str text) {
+    if (text.len == 0) return true;
+    for (int64_t i = 0; i + text.len <= s.len; i++)
+        if (memcmp(s.ptr + i, text.ptr, (size_t)text.len) == 0) return true;
+    return false;
+}
+
+int64_t byn_str_rune_count(byn_str s) {
+    int64_t n = 0;
+    for (int64_t i = 0; i < s.len; i++)
+        if ((s.ptr[i] & 0xC0) != 0x80) n++;
+    return n;
+}
+
+bool byn_str_is_ascii(byn_str s) {
+    for (int64_t i = 0; i < s.len; i++)
+        if (s.ptr[i] >= 0x80) return false;
+    return true;
+}
+
+uint32_t byn_str_next(byn_str s, int64_t* pos) {
+    const uint8_t* p = s.ptr + *pos;
+    uint32_t c = p[0];
+    int n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+    if (n == 2) c = (c & 0x1F) << 6 | (p[1] & 0x3F);
+    else if (n == 3) c = (c & 0x0F) << 12 | (uint32_t)(p[1] & 0x3F) << 6 | (p[2] & 0x3F);
+    else if (n == 4) c = (c & 0x07) << 18 | (uint32_t)(p[1] & 0x3F) << 12 | (uint32_t)(p[2] & 0x3F) << 6 | (p[3] & 0x3F);
+    *pos += n;
+    return c;
+}
+
+static bool byn_is_boundary(byn_str s, int64_t i) {
+    return i == 0 || i == s.len || (s.ptr[i] & 0xC0) != 0x80;
+}
+
+byn_str byn_str_slice(byn_str s, int64_t start, int64_t end, const char* file, int line) {
+    byn_slice_check(start, end, s.len, file, line);
+    if (!byn_is_boundary(s, start) || !byn_is_boundary(s, end)) byn_panic("string slice splits a code point", file, line);
+    return (byn_str){s.ptr + start, end - start};
+}
+
+static int64_t byn_find(byn_str s, byn_str x, int64_t from) {
+    for (int64_t i = from; i + x.len <= s.len; i++)
+        if (x.len == 0 || memcmp(s.ptr + i, x.ptr, (size_t)x.len) == 0) return i;
+    return -1;
+}
+
+int64_t byn_str_position(byn_str s, byn_str x, int64_t from, const char* file, int line) {
+    byn_slice_check(from, s.len, s.len, file, line);
+    return byn_find(s, x, from);
+}
+
+int64_t byn_str_last_position(byn_str s, byn_str x) {
+    for (int64_t i = s.len - x.len; i >= 0; i--)
+        if (x.len == 0 || memcmp(s.ptr + i, x.ptr, (size_t)x.len) == 0) return i;
+    return -1;
+}
+
+int64_t byn_str_count(byn_str s, byn_str x) {
+    if (x.len == 0) return 0;
+    int64_t n = 0;
+    for (int64_t i = byn_find(s, x, 0); i >= 0; i = byn_find(s, x, i + x.len)) n++;
+    return n;
+}
+
+static bool byn_is_space(uint8_t c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+byn_str byn_str_trimmed(byn_str s, int32_t edge) {
+    int64_t a = 0, b = s.len;
+    if (edge != 1) while (a < b && byn_is_space(s.ptr[a])) a++;
+    if (edge != 0) while (b > a && byn_is_space(s.ptr[b - 1])) b--;
+    return (byn_str){s.ptr + a, b - a};
+}
+
+static bool byn_rune_in(uint32_t c, const uint32_t* runes, int64_t n) {
+    for (int64_t i = 0; i < n; i++)
+        if (runes[i] == c) return true;
+    return false;
+}
+
+byn_str byn_str_trimmed_by(byn_str s, const uint32_t* runes, int64_t n) {
+    int64_t a = 0, b = s.len;
+    while (a < b) {
+        int64_t next = a;
+        if (!byn_rune_in(byn_str_next(s, &next), runes, n)) break;
+        a = next;
+    }
+    while (b > a) {
+        int64_t start = b - 1;
+        while (start > a && (s.ptr[start] & 0xC0) == 0x80) start--;
+        int64_t p = start;
+        if (!byn_rune_in(byn_str_next(s, &p), runes, n)) break;
+        b = start;
+    }
+    return (byn_str){s.ptr + a, b - a};
+}
+
+bool byn_str_eq_caseless(byn_str a, byn_str b) {
+    if (a.len != b.len) return false;
+    for (int64_t i = 0; i < a.len; i++) {
+        uint8_t x = a.ptr[i], y = b.ptr[i];
+        if (x >= 'A' && x <= 'Z') x += 32;
+        if (y >= 'A' && y <= 'Z') y += 32;
+        if (x != y) return false;
+    }
+    return true;
+}
+
+byn_str byn_str_replaced(byn_str s, byn_str x, byn_str y, byn_alloc* to, const char* file, int line) {
+    if (x.len == 0) byn_panic("replaced with an empty string to find", file, line);
+    int64_t len = s.len + byn_str_count(s, x) * (y.len - x.len);
+    if (len == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    int64_t o = 0, i = 0;
+    for (int64_t at = byn_find(s, x, 0); at >= 0; i = at + x.len, at = byn_find(s, x, i)) {
+        memcpy(out + o, s.ptr + i, (size_t)(at - i));
+        o += at - i;
+        if (y.len > 0) memcpy(out + o, y.ptr, (size_t)y.len);
+        o += y.len;
+    }
+    if (s.len > i) memcpy(out + o, s.ptr + i, (size_t)(s.len - i));
+    return (byn_str){out, len};
+}
+
+byn_str byn_str_repeated(byn_str s, int64_t n, byn_alloc* to, const char* file, int line) {
+    if (n < 0) byn_panic("repeated a negative number of times", file, line);
+    if (n == 0 || s.len == 0) return (byn_str){NULL, 0};
+    if (s.len > INT64_MAX / n) byn_panic("repeated text is too long", file, line);
+    uint8_t* out = to->resize(to, NULL, 0, s.len * n);
+    for (int64_t i = 0; i < n; i++) memcpy(out + i * s.len, s.ptr, (size_t)s.len);
+    return (byn_str){out, s.len * n};
+}
+
+byn_str byn_str_joined(const byn_str* xs, int64_t n, byn_str sep, byn_alloc* to) {
+    int64_t len = n > 0 ? (n - 1) * sep.len : 0;
+    for (int64_t i = 0; i < n; i++) len += xs[i].len;
+    if (len == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    int64_t o = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0 && sep.len > 0) memcpy(out + o, sep.ptr, (size_t)sep.len), o += sep.len;
+        if (xs[i].len > 0) memcpy(out + o, xs[i].ptr, (size_t)xs[i].len), o += xs[i].len;
+    }
+    return (byn_str){out, len};
+}
+
+byn_str byn_str_take_runes(byn_str s, int64_t n, const char* file, int line) {
+    if (n < 0) byn_panic("take with a negative count", file, line);
+    int64_t pos = 0;
+    while (n-- > 0 && pos < s.len) byn_str_next(s, &pos);
+    return (byn_str){s.ptr, pos};
+}
+
+byn_str byn_str_skip_runes(byn_str s, int64_t n, const char* file, int line) {
+    byn_str head = byn_str_take_runes(s, n, file, line);
+    return (byn_str){s.ptr + head.len, s.len - head.len};
+}
+
+byn_str byn_str_take_last_runes(byn_str s, int64_t n, const char* file, int line) {
+    if (n < 0) byn_panic("takeLast with a negative count", file, line);
+    int64_t pos = s.len;
+    while (n-- > 0 && pos > 0) {
+        pos--;
+        while (pos > 0 && (s.ptr[pos] & 0xC0) == 0x80) pos--;
+    }
+    return (byn_str){s.ptr + pos, s.len - pos};
+}
+
+/* c as UTF-8 into b; the byte count. */
+static int byn_utf8_put(uint8_t b[4], uint32_t c) {
+    if (c < 0x80) { b[0] = (uint8_t)c; return 1; }
+    if (c < 0x800) { b[0] = (uint8_t)(0xC0 | c >> 6); b[1] = (uint8_t)(0x80 | (c & 0x3F)); return 2; }
+    if (c < 0x10000) {
+        b[0] = (uint8_t)(0xE0 | c >> 12); b[1] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[2] = (uint8_t)(0x80 | (c & 0x3F));
+        return 3;
+    }
+    b[0] = (uint8_t)(0xF0 | c >> 18); b[1] = (uint8_t)(0x80 | (c >> 12 & 0x3F));
+    b[2] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[3] = (uint8_t)(0x80 | (c & 0x3F));
+    return 4;
+}
+
+/* BEGIN generated by scripts/unicode/gen-lowercase.py from UnicodeData.txt 16.0.0; do not edit. */
+/* Simple lowercase (field 13) and uppercase (field 12) mappings, sorted by code point; U+0130 and U+0131 map to
+ * themselves, as in .NET's invariant casing. */
+static const uint32_t byn_lower_map[][2] = {
+    {0x41, 0x61}, {0x42, 0x62}, {0x43, 0x63}, {0x44, 0x64}, {0x45, 0x65}, {0x46, 0x66},
+    {0x47, 0x67}, {0x48, 0x68}, {0x49, 0x69}, {0x4A, 0x6A}, {0x4B, 0x6B}, {0x4C, 0x6C},
+    {0x4D, 0x6D}, {0x4E, 0x6E}, {0x4F, 0x6F}, {0x50, 0x70}, {0x51, 0x71}, {0x52, 0x72},
+    {0x53, 0x73}, {0x54, 0x74}, {0x55, 0x75}, {0x56, 0x76}, {0x57, 0x77}, {0x58, 0x78},
+    {0x59, 0x79}, {0x5A, 0x7A}, {0xC0, 0xE0}, {0xC1, 0xE1}, {0xC2, 0xE2}, {0xC3, 0xE3},
+    {0xC4, 0xE4}, {0xC5, 0xE5}, {0xC6, 0xE6}, {0xC7, 0xE7}, {0xC8, 0xE8}, {0xC9, 0xE9},
+    {0xCA, 0xEA}, {0xCB, 0xEB}, {0xCC, 0xEC}, {0xCD, 0xED}, {0xCE, 0xEE}, {0xCF, 0xEF},
+    {0xD0, 0xF0}, {0xD1, 0xF1}, {0xD2, 0xF2}, {0xD3, 0xF3}, {0xD4, 0xF4}, {0xD5, 0xF5},
+    {0xD6, 0xF6}, {0xD8, 0xF8}, {0xD9, 0xF9}, {0xDA, 0xFA}, {0xDB, 0xFB}, {0xDC, 0xFC},
+    {0xDD, 0xFD}, {0xDE, 0xFE}, {0x100, 0x101}, {0x102, 0x103}, {0x104, 0x105}, {0x106, 0x107},
+    {0x108, 0x109}, {0x10A, 0x10B}, {0x10C, 0x10D}, {0x10E, 0x10F}, {0x110, 0x111}, {0x112, 0x113},
+    {0x114, 0x115}, {0x116, 0x117}, {0x118, 0x119}, {0x11A, 0x11B}, {0x11C, 0x11D}, {0x11E, 0x11F},
+    {0x120, 0x121}, {0x122, 0x123}, {0x124, 0x125}, {0x126, 0x127}, {0x128, 0x129}, {0x12A, 0x12B},
+    {0x12C, 0x12D}, {0x12E, 0x12F}, {0x132, 0x133}, {0x134, 0x135}, {0x136, 0x137}, {0x139, 0x13A},
+    {0x13B, 0x13C}, {0x13D, 0x13E}, {0x13F, 0x140}, {0x141, 0x142}, {0x143, 0x144}, {0x145, 0x146},
+    {0x147, 0x148}, {0x14A, 0x14B}, {0x14C, 0x14D}, {0x14E, 0x14F}, {0x150, 0x151}, {0x152, 0x153},
+    {0x154, 0x155}, {0x156, 0x157}, {0x158, 0x159}, {0x15A, 0x15B}, {0x15C, 0x15D}, {0x15E, 0x15F},
+    {0x160, 0x161}, {0x162, 0x163}, {0x164, 0x165}, {0x166, 0x167}, {0x168, 0x169}, {0x16A, 0x16B},
+    {0x16C, 0x16D}, {0x16E, 0x16F}, {0x170, 0x171}, {0x172, 0x173}, {0x174, 0x175}, {0x176, 0x177},
+    {0x178, 0xFF}, {0x179, 0x17A}, {0x17B, 0x17C}, {0x17D, 0x17E}, {0x181, 0x253}, {0x182, 0x183},
+    {0x184, 0x185}, {0x186, 0x254}, {0x187, 0x188}, {0x189, 0x256}, {0x18A, 0x257}, {0x18B, 0x18C},
+    {0x18E, 0x1DD}, {0x18F, 0x259}, {0x190, 0x25B}, {0x191, 0x192}, {0x193, 0x260}, {0x194, 0x263},
+    {0x196, 0x269}, {0x197, 0x268}, {0x198, 0x199}, {0x19C, 0x26F}, {0x19D, 0x272}, {0x19F, 0x275},
+    {0x1A0, 0x1A1}, {0x1A2, 0x1A3}, {0x1A4, 0x1A5}, {0x1A6, 0x280}, {0x1A7, 0x1A8}, {0x1A9, 0x283},
+    {0x1AC, 0x1AD}, {0x1AE, 0x288}, {0x1AF, 0x1B0}, {0x1B1, 0x28A}, {0x1B2, 0x28B}, {0x1B3, 0x1B4},
+    {0x1B5, 0x1B6}, {0x1B7, 0x292}, {0x1B8, 0x1B9}, {0x1BC, 0x1BD}, {0x1C4, 0x1C6}, {0x1C5, 0x1C6},
+    {0x1C7, 0x1C9}, {0x1C8, 0x1C9}, {0x1CA, 0x1CC}, {0x1CB, 0x1CC}, {0x1CD, 0x1CE}, {0x1CF, 0x1D0},
+    {0x1D1, 0x1D2}, {0x1D3, 0x1D4}, {0x1D5, 0x1D6}, {0x1D7, 0x1D8}, {0x1D9, 0x1DA}, {0x1DB, 0x1DC},
+    {0x1DE, 0x1DF}, {0x1E0, 0x1E1}, {0x1E2, 0x1E3}, {0x1E4, 0x1E5}, {0x1E6, 0x1E7}, {0x1E8, 0x1E9},
+    {0x1EA, 0x1EB}, {0x1EC, 0x1ED}, {0x1EE, 0x1EF}, {0x1F1, 0x1F3}, {0x1F2, 0x1F3}, {0x1F4, 0x1F5},
+    {0x1F6, 0x195}, {0x1F7, 0x1BF}, {0x1F8, 0x1F9}, {0x1FA, 0x1FB}, {0x1FC, 0x1FD}, {0x1FE, 0x1FF},
+    {0x200, 0x201}, {0x202, 0x203}, {0x204, 0x205}, {0x206, 0x207}, {0x208, 0x209}, {0x20A, 0x20B},
+    {0x20C, 0x20D}, {0x20E, 0x20F}, {0x210, 0x211}, {0x212, 0x213}, {0x214, 0x215}, {0x216, 0x217},
+    {0x218, 0x219}, {0x21A, 0x21B}, {0x21C, 0x21D}, {0x21E, 0x21F}, {0x220, 0x19E}, {0x222, 0x223},
+    {0x224, 0x225}, {0x226, 0x227}, {0x228, 0x229}, {0x22A, 0x22B}, {0x22C, 0x22D}, {0x22E, 0x22F},
+    {0x230, 0x231}, {0x232, 0x233}, {0x23A, 0x2C65}, {0x23B, 0x23C}, {0x23D, 0x19A}, {0x23E, 0x2C66},
+    {0x241, 0x242}, {0x243, 0x180}, {0x244, 0x289}, {0x245, 0x28C}, {0x246, 0x247}, {0x248, 0x249},
+    {0x24A, 0x24B}, {0x24C, 0x24D}, {0x24E, 0x24F}, {0x370, 0x371}, {0x372, 0x373}, {0x376, 0x377},
+    {0x37F, 0x3F3}, {0x386, 0x3AC}, {0x388, 0x3AD}, {0x389, 0x3AE}, {0x38A, 0x3AF}, {0x38C, 0x3CC},
+    {0x38E, 0x3CD}, {0x38F, 0x3CE}, {0x391, 0x3B1}, {0x392, 0x3B2}, {0x393, 0x3B3}, {0x394, 0x3B4},
+    {0x395, 0x3B5}, {0x396, 0x3B6}, {0x397, 0x3B7}, {0x398, 0x3B8}, {0x399, 0x3B9}, {0x39A, 0x3BA},
+    {0x39B, 0x3BB}, {0x39C, 0x3BC}, {0x39D, 0x3BD}, {0x39E, 0x3BE}, {0x39F, 0x3BF}, {0x3A0, 0x3C0},
+    {0x3A1, 0x3C1}, {0x3A3, 0x3C3}, {0x3A4, 0x3C4}, {0x3A5, 0x3C5}, {0x3A6, 0x3C6}, {0x3A7, 0x3C7},
+    {0x3A8, 0x3C8}, {0x3A9, 0x3C9}, {0x3AA, 0x3CA}, {0x3AB, 0x3CB}, {0x3CF, 0x3D7}, {0x3D8, 0x3D9},
+    {0x3DA, 0x3DB}, {0x3DC, 0x3DD}, {0x3DE, 0x3DF}, {0x3E0, 0x3E1}, {0x3E2, 0x3E3}, {0x3E4, 0x3E5},
+    {0x3E6, 0x3E7}, {0x3E8, 0x3E9}, {0x3EA, 0x3EB}, {0x3EC, 0x3ED}, {0x3EE, 0x3EF}, {0x3F4, 0x3B8},
+    {0x3F7, 0x3F8}, {0x3F9, 0x3F2}, {0x3FA, 0x3FB}, {0x3FD, 0x37B}, {0x3FE, 0x37C}, {0x3FF, 0x37D},
+    {0x400, 0x450}, {0x401, 0x451}, {0x402, 0x452}, {0x403, 0x453}, {0x404, 0x454}, {0x405, 0x455},
+    {0x406, 0x456}, {0x407, 0x457}, {0x408, 0x458}, {0x409, 0x459}, {0x40A, 0x45A}, {0x40B, 0x45B},
+    {0x40C, 0x45C}, {0x40D, 0x45D}, {0x40E, 0x45E}, {0x40F, 0x45F}, {0x410, 0x430}, {0x411, 0x431},
+    {0x412, 0x432}, {0x413, 0x433}, {0x414, 0x434}, {0x415, 0x435}, {0x416, 0x436}, {0x417, 0x437},
+    {0x418, 0x438}, {0x419, 0x439}, {0x41A, 0x43A}, {0x41B, 0x43B}, {0x41C, 0x43C}, {0x41D, 0x43D},
+    {0x41E, 0x43E}, {0x41F, 0x43F}, {0x420, 0x440}, {0x421, 0x441}, {0x422, 0x442}, {0x423, 0x443},
+    {0x424, 0x444}, {0x425, 0x445}, {0x426, 0x446}, {0x427, 0x447}, {0x428, 0x448}, {0x429, 0x449},
+    {0x42A, 0x44A}, {0x42B, 0x44B}, {0x42C, 0x44C}, {0x42D, 0x44D}, {0x42E, 0x44E}, {0x42F, 0x44F},
+    {0x460, 0x461}, {0x462, 0x463}, {0x464, 0x465}, {0x466, 0x467}, {0x468, 0x469}, {0x46A, 0x46B},
+    {0x46C, 0x46D}, {0x46E, 0x46F}, {0x470, 0x471}, {0x472, 0x473}, {0x474, 0x475}, {0x476, 0x477},
+    {0x478, 0x479}, {0x47A, 0x47B}, {0x47C, 0x47D}, {0x47E, 0x47F}, {0x480, 0x481}, {0x48A, 0x48B},
+    {0x48C, 0x48D}, {0x48E, 0x48F}, {0x490, 0x491}, {0x492, 0x493}, {0x494, 0x495}, {0x496, 0x497},
+    {0x498, 0x499}, {0x49A, 0x49B}, {0x49C, 0x49D}, {0x49E, 0x49F}, {0x4A0, 0x4A1}, {0x4A2, 0x4A3},
+    {0x4A4, 0x4A5}, {0x4A6, 0x4A7}, {0x4A8, 0x4A9}, {0x4AA, 0x4AB}, {0x4AC, 0x4AD}, {0x4AE, 0x4AF},
+    {0x4B0, 0x4B1}, {0x4B2, 0x4B3}, {0x4B4, 0x4B5}, {0x4B6, 0x4B7}, {0x4B8, 0x4B9}, {0x4BA, 0x4BB},
+    {0x4BC, 0x4BD}, {0x4BE, 0x4BF}, {0x4C0, 0x4CF}, {0x4C1, 0x4C2}, {0x4C3, 0x4C4}, {0x4C5, 0x4C6},
+    {0x4C7, 0x4C8}, {0x4C9, 0x4CA}, {0x4CB, 0x4CC}, {0x4CD, 0x4CE}, {0x4D0, 0x4D1}, {0x4D2, 0x4D3},
+    {0x4D4, 0x4D5}, {0x4D6, 0x4D7}, {0x4D8, 0x4D9}, {0x4DA, 0x4DB}, {0x4DC, 0x4DD}, {0x4DE, 0x4DF},
+    {0x4E0, 0x4E1}, {0x4E2, 0x4E3}, {0x4E4, 0x4E5}, {0x4E6, 0x4E7}, {0x4E8, 0x4E9}, {0x4EA, 0x4EB},
+    {0x4EC, 0x4ED}, {0x4EE, 0x4EF}, {0x4F0, 0x4F1}, {0x4F2, 0x4F3}, {0x4F4, 0x4F5}, {0x4F6, 0x4F7},
+    {0x4F8, 0x4F9}, {0x4FA, 0x4FB}, {0x4FC, 0x4FD}, {0x4FE, 0x4FF}, {0x500, 0x501}, {0x502, 0x503},
+    {0x504, 0x505}, {0x506, 0x507}, {0x508, 0x509}, {0x50A, 0x50B}, {0x50C, 0x50D}, {0x50E, 0x50F},
+    {0x510, 0x511}, {0x512, 0x513}, {0x514, 0x515}, {0x516, 0x517}, {0x518, 0x519}, {0x51A, 0x51B},
+    {0x51C, 0x51D}, {0x51E, 0x51F}, {0x520, 0x521}, {0x522, 0x523}, {0x524, 0x525}, {0x526, 0x527},
+    {0x528, 0x529}, {0x52A, 0x52B}, {0x52C, 0x52D}, {0x52E, 0x52F}, {0x531, 0x561}, {0x532, 0x562},
+    {0x533, 0x563}, {0x534, 0x564}, {0x535, 0x565}, {0x536, 0x566}, {0x537, 0x567}, {0x538, 0x568},
+    {0x539, 0x569}, {0x53A, 0x56A}, {0x53B, 0x56B}, {0x53C, 0x56C}, {0x53D, 0x56D}, {0x53E, 0x56E},
+    {0x53F, 0x56F}, {0x540, 0x570}, {0x541, 0x571}, {0x542, 0x572}, {0x543, 0x573}, {0x544, 0x574},
+    {0x545, 0x575}, {0x546, 0x576}, {0x547, 0x577}, {0x548, 0x578}, {0x549, 0x579}, {0x54A, 0x57A},
+    {0x54B, 0x57B}, {0x54C, 0x57C}, {0x54D, 0x57D}, {0x54E, 0x57E}, {0x54F, 0x57F}, {0x550, 0x580},
+    {0x551, 0x581}, {0x552, 0x582}, {0x553, 0x583}, {0x554, 0x584}, {0x555, 0x585}, {0x556, 0x586},
+    {0x10A0, 0x2D00}, {0x10A1, 0x2D01}, {0x10A2, 0x2D02}, {0x10A3, 0x2D03}, {0x10A4, 0x2D04}, {0x10A5, 0x2D05},
+    {0x10A6, 0x2D06}, {0x10A7, 0x2D07}, {0x10A8, 0x2D08}, {0x10A9, 0x2D09}, {0x10AA, 0x2D0A}, {0x10AB, 0x2D0B},
+    {0x10AC, 0x2D0C}, {0x10AD, 0x2D0D}, {0x10AE, 0x2D0E}, {0x10AF, 0x2D0F}, {0x10B0, 0x2D10}, {0x10B1, 0x2D11},
+    {0x10B2, 0x2D12}, {0x10B3, 0x2D13}, {0x10B4, 0x2D14}, {0x10B5, 0x2D15}, {0x10B6, 0x2D16}, {0x10B7, 0x2D17},
+    {0x10B8, 0x2D18}, {0x10B9, 0x2D19}, {0x10BA, 0x2D1A}, {0x10BB, 0x2D1B}, {0x10BC, 0x2D1C}, {0x10BD, 0x2D1D},
+    {0x10BE, 0x2D1E}, {0x10BF, 0x2D1F}, {0x10C0, 0x2D20}, {0x10C1, 0x2D21}, {0x10C2, 0x2D22}, {0x10C3, 0x2D23},
+    {0x10C4, 0x2D24}, {0x10C5, 0x2D25}, {0x10C7, 0x2D27}, {0x10CD, 0x2D2D}, {0x13A0, 0xAB70}, {0x13A1, 0xAB71},
+    {0x13A2, 0xAB72}, {0x13A3, 0xAB73}, {0x13A4, 0xAB74}, {0x13A5, 0xAB75}, {0x13A6, 0xAB76}, {0x13A7, 0xAB77},
+    {0x13A8, 0xAB78}, {0x13A9, 0xAB79}, {0x13AA, 0xAB7A}, {0x13AB, 0xAB7B}, {0x13AC, 0xAB7C}, {0x13AD, 0xAB7D},
+    {0x13AE, 0xAB7E}, {0x13AF, 0xAB7F}, {0x13B0, 0xAB80}, {0x13B1, 0xAB81}, {0x13B2, 0xAB82}, {0x13B3, 0xAB83},
+    {0x13B4, 0xAB84}, {0x13B5, 0xAB85}, {0x13B6, 0xAB86}, {0x13B7, 0xAB87}, {0x13B8, 0xAB88}, {0x13B9, 0xAB89},
+    {0x13BA, 0xAB8A}, {0x13BB, 0xAB8B}, {0x13BC, 0xAB8C}, {0x13BD, 0xAB8D}, {0x13BE, 0xAB8E}, {0x13BF, 0xAB8F},
+    {0x13C0, 0xAB90}, {0x13C1, 0xAB91}, {0x13C2, 0xAB92}, {0x13C3, 0xAB93}, {0x13C4, 0xAB94}, {0x13C5, 0xAB95},
+    {0x13C6, 0xAB96}, {0x13C7, 0xAB97}, {0x13C8, 0xAB98}, {0x13C9, 0xAB99}, {0x13CA, 0xAB9A}, {0x13CB, 0xAB9B},
+    {0x13CC, 0xAB9C}, {0x13CD, 0xAB9D}, {0x13CE, 0xAB9E}, {0x13CF, 0xAB9F}, {0x13D0, 0xABA0}, {0x13D1, 0xABA1},
+    {0x13D2, 0xABA2}, {0x13D3, 0xABA3}, {0x13D4, 0xABA4}, {0x13D5, 0xABA5}, {0x13D6, 0xABA6}, {0x13D7, 0xABA7},
+    {0x13D8, 0xABA8}, {0x13D9, 0xABA9}, {0x13DA, 0xABAA}, {0x13DB, 0xABAB}, {0x13DC, 0xABAC}, {0x13DD, 0xABAD},
+    {0x13DE, 0xABAE}, {0x13DF, 0xABAF}, {0x13E0, 0xABB0}, {0x13E1, 0xABB1}, {0x13E2, 0xABB2}, {0x13E3, 0xABB3},
+    {0x13E4, 0xABB4}, {0x13E5, 0xABB5}, {0x13E6, 0xABB6}, {0x13E7, 0xABB7}, {0x13E8, 0xABB8}, {0x13E9, 0xABB9},
+    {0x13EA, 0xABBA}, {0x13EB, 0xABBB}, {0x13EC, 0xABBC}, {0x13ED, 0xABBD}, {0x13EE, 0xABBE}, {0x13EF, 0xABBF},
+    {0x13F0, 0x13F8}, {0x13F1, 0x13F9}, {0x13F2, 0x13FA}, {0x13F3, 0x13FB}, {0x13F4, 0x13FC}, {0x13F5, 0x13FD},
+    {0x1C89, 0x1C8A}, {0x1C90, 0x10D0}, {0x1C91, 0x10D1}, {0x1C92, 0x10D2}, {0x1C93, 0x10D3}, {0x1C94, 0x10D4},
+    {0x1C95, 0x10D5}, {0x1C96, 0x10D6}, {0x1C97, 0x10D7}, {0x1C98, 0x10D8}, {0x1C99, 0x10D9}, {0x1C9A, 0x10DA},
+    {0x1C9B, 0x10DB}, {0x1C9C, 0x10DC}, {0x1C9D, 0x10DD}, {0x1C9E, 0x10DE}, {0x1C9F, 0x10DF}, {0x1CA0, 0x10E0},
+    {0x1CA1, 0x10E1}, {0x1CA2, 0x10E2}, {0x1CA3, 0x10E3}, {0x1CA4, 0x10E4}, {0x1CA5, 0x10E5}, {0x1CA6, 0x10E6},
+    {0x1CA7, 0x10E7}, {0x1CA8, 0x10E8}, {0x1CA9, 0x10E9}, {0x1CAA, 0x10EA}, {0x1CAB, 0x10EB}, {0x1CAC, 0x10EC},
+    {0x1CAD, 0x10ED}, {0x1CAE, 0x10EE}, {0x1CAF, 0x10EF}, {0x1CB0, 0x10F0}, {0x1CB1, 0x10F1}, {0x1CB2, 0x10F2},
+    {0x1CB3, 0x10F3}, {0x1CB4, 0x10F4}, {0x1CB5, 0x10F5}, {0x1CB6, 0x10F6}, {0x1CB7, 0x10F7}, {0x1CB8, 0x10F8},
+    {0x1CB9, 0x10F9}, {0x1CBA, 0x10FA}, {0x1CBD, 0x10FD}, {0x1CBE, 0x10FE}, {0x1CBF, 0x10FF}, {0x1E00, 0x1E01},
+    {0x1E02, 0x1E03}, {0x1E04, 0x1E05}, {0x1E06, 0x1E07}, {0x1E08, 0x1E09}, {0x1E0A, 0x1E0B}, {0x1E0C, 0x1E0D},
+    {0x1E0E, 0x1E0F}, {0x1E10, 0x1E11}, {0x1E12, 0x1E13}, {0x1E14, 0x1E15}, {0x1E16, 0x1E17}, {0x1E18, 0x1E19},
+    {0x1E1A, 0x1E1B}, {0x1E1C, 0x1E1D}, {0x1E1E, 0x1E1F}, {0x1E20, 0x1E21}, {0x1E22, 0x1E23}, {0x1E24, 0x1E25},
+    {0x1E26, 0x1E27}, {0x1E28, 0x1E29}, {0x1E2A, 0x1E2B}, {0x1E2C, 0x1E2D}, {0x1E2E, 0x1E2F}, {0x1E30, 0x1E31},
+    {0x1E32, 0x1E33}, {0x1E34, 0x1E35}, {0x1E36, 0x1E37}, {0x1E38, 0x1E39}, {0x1E3A, 0x1E3B}, {0x1E3C, 0x1E3D},
+    {0x1E3E, 0x1E3F}, {0x1E40, 0x1E41}, {0x1E42, 0x1E43}, {0x1E44, 0x1E45}, {0x1E46, 0x1E47}, {0x1E48, 0x1E49},
+    {0x1E4A, 0x1E4B}, {0x1E4C, 0x1E4D}, {0x1E4E, 0x1E4F}, {0x1E50, 0x1E51}, {0x1E52, 0x1E53}, {0x1E54, 0x1E55},
+    {0x1E56, 0x1E57}, {0x1E58, 0x1E59}, {0x1E5A, 0x1E5B}, {0x1E5C, 0x1E5D}, {0x1E5E, 0x1E5F}, {0x1E60, 0x1E61},
+    {0x1E62, 0x1E63}, {0x1E64, 0x1E65}, {0x1E66, 0x1E67}, {0x1E68, 0x1E69}, {0x1E6A, 0x1E6B}, {0x1E6C, 0x1E6D},
+    {0x1E6E, 0x1E6F}, {0x1E70, 0x1E71}, {0x1E72, 0x1E73}, {0x1E74, 0x1E75}, {0x1E76, 0x1E77}, {0x1E78, 0x1E79},
+    {0x1E7A, 0x1E7B}, {0x1E7C, 0x1E7D}, {0x1E7E, 0x1E7F}, {0x1E80, 0x1E81}, {0x1E82, 0x1E83}, {0x1E84, 0x1E85},
+    {0x1E86, 0x1E87}, {0x1E88, 0x1E89}, {0x1E8A, 0x1E8B}, {0x1E8C, 0x1E8D}, {0x1E8E, 0x1E8F}, {0x1E90, 0x1E91},
+    {0x1E92, 0x1E93}, {0x1E94, 0x1E95}, {0x1E9E, 0xDF}, {0x1EA0, 0x1EA1}, {0x1EA2, 0x1EA3}, {0x1EA4, 0x1EA5},
+    {0x1EA6, 0x1EA7}, {0x1EA8, 0x1EA9}, {0x1EAA, 0x1EAB}, {0x1EAC, 0x1EAD}, {0x1EAE, 0x1EAF}, {0x1EB0, 0x1EB1},
+    {0x1EB2, 0x1EB3}, {0x1EB4, 0x1EB5}, {0x1EB6, 0x1EB7}, {0x1EB8, 0x1EB9}, {0x1EBA, 0x1EBB}, {0x1EBC, 0x1EBD},
+    {0x1EBE, 0x1EBF}, {0x1EC0, 0x1EC1}, {0x1EC2, 0x1EC3}, {0x1EC4, 0x1EC5}, {0x1EC6, 0x1EC7}, {0x1EC8, 0x1EC9},
+    {0x1ECA, 0x1ECB}, {0x1ECC, 0x1ECD}, {0x1ECE, 0x1ECF}, {0x1ED0, 0x1ED1}, {0x1ED2, 0x1ED3}, {0x1ED4, 0x1ED5},
+    {0x1ED6, 0x1ED7}, {0x1ED8, 0x1ED9}, {0x1EDA, 0x1EDB}, {0x1EDC, 0x1EDD}, {0x1EDE, 0x1EDF}, {0x1EE0, 0x1EE1},
+    {0x1EE2, 0x1EE3}, {0x1EE4, 0x1EE5}, {0x1EE6, 0x1EE7}, {0x1EE8, 0x1EE9}, {0x1EEA, 0x1EEB}, {0x1EEC, 0x1EED},
+    {0x1EEE, 0x1EEF}, {0x1EF0, 0x1EF1}, {0x1EF2, 0x1EF3}, {0x1EF4, 0x1EF5}, {0x1EF6, 0x1EF7}, {0x1EF8, 0x1EF9},
+    {0x1EFA, 0x1EFB}, {0x1EFC, 0x1EFD}, {0x1EFE, 0x1EFF}, {0x1F08, 0x1F00}, {0x1F09, 0x1F01}, {0x1F0A, 0x1F02},
+    {0x1F0B, 0x1F03}, {0x1F0C, 0x1F04}, {0x1F0D, 0x1F05}, {0x1F0E, 0x1F06}, {0x1F0F, 0x1F07}, {0x1F18, 0x1F10},
+    {0x1F19, 0x1F11}, {0x1F1A, 0x1F12}, {0x1F1B, 0x1F13}, {0x1F1C, 0x1F14}, {0x1F1D, 0x1F15}, {0x1F28, 0x1F20},
+    {0x1F29, 0x1F21}, {0x1F2A, 0x1F22}, {0x1F2B, 0x1F23}, {0x1F2C, 0x1F24}, {0x1F2D, 0x1F25}, {0x1F2E, 0x1F26},
+    {0x1F2F, 0x1F27}, {0x1F38, 0x1F30}, {0x1F39, 0x1F31}, {0x1F3A, 0x1F32}, {0x1F3B, 0x1F33}, {0x1F3C, 0x1F34},
+    {0x1F3D, 0x1F35}, {0x1F3E, 0x1F36}, {0x1F3F, 0x1F37}, {0x1F48, 0x1F40}, {0x1F49, 0x1F41}, {0x1F4A, 0x1F42},
+    {0x1F4B, 0x1F43}, {0x1F4C, 0x1F44}, {0x1F4D, 0x1F45}, {0x1F59, 0x1F51}, {0x1F5B, 0x1F53}, {0x1F5D, 0x1F55},
+    {0x1F5F, 0x1F57}, {0x1F68, 0x1F60}, {0x1F69, 0x1F61}, {0x1F6A, 0x1F62}, {0x1F6B, 0x1F63}, {0x1F6C, 0x1F64},
+    {0x1F6D, 0x1F65}, {0x1F6E, 0x1F66}, {0x1F6F, 0x1F67}, {0x1F88, 0x1F80}, {0x1F89, 0x1F81}, {0x1F8A, 0x1F82},
+    {0x1F8B, 0x1F83}, {0x1F8C, 0x1F84}, {0x1F8D, 0x1F85}, {0x1F8E, 0x1F86}, {0x1F8F, 0x1F87}, {0x1F98, 0x1F90},
+    {0x1F99, 0x1F91}, {0x1F9A, 0x1F92}, {0x1F9B, 0x1F93}, {0x1F9C, 0x1F94}, {0x1F9D, 0x1F95}, {0x1F9E, 0x1F96},
+    {0x1F9F, 0x1F97}, {0x1FA8, 0x1FA0}, {0x1FA9, 0x1FA1}, {0x1FAA, 0x1FA2}, {0x1FAB, 0x1FA3}, {0x1FAC, 0x1FA4},
+    {0x1FAD, 0x1FA5}, {0x1FAE, 0x1FA6}, {0x1FAF, 0x1FA7}, {0x1FB8, 0x1FB0}, {0x1FB9, 0x1FB1}, {0x1FBA, 0x1F70},
+    {0x1FBB, 0x1F71}, {0x1FBC, 0x1FB3}, {0x1FC8, 0x1F72}, {0x1FC9, 0x1F73}, {0x1FCA, 0x1F74}, {0x1FCB, 0x1F75},
+    {0x1FCC, 0x1FC3}, {0x1FD8, 0x1FD0}, {0x1FD9, 0x1FD1}, {0x1FDA, 0x1F76}, {0x1FDB, 0x1F77}, {0x1FE8, 0x1FE0},
+    {0x1FE9, 0x1FE1}, {0x1FEA, 0x1F7A}, {0x1FEB, 0x1F7B}, {0x1FEC, 0x1FE5}, {0x1FF8, 0x1F78}, {0x1FF9, 0x1F79},
+    {0x1FFA, 0x1F7C}, {0x1FFB, 0x1F7D}, {0x1FFC, 0x1FF3}, {0x2126, 0x3C9}, {0x212A, 0x6B}, {0x212B, 0xE5},
+    {0x2132, 0x214E}, {0x2160, 0x2170}, {0x2161, 0x2171}, {0x2162, 0x2172}, {0x2163, 0x2173}, {0x2164, 0x2174},
+    {0x2165, 0x2175}, {0x2166, 0x2176}, {0x2167, 0x2177}, {0x2168, 0x2178}, {0x2169, 0x2179}, {0x216A, 0x217A},
+    {0x216B, 0x217B}, {0x216C, 0x217C}, {0x216D, 0x217D}, {0x216E, 0x217E}, {0x216F, 0x217F}, {0x2183, 0x2184},
+    {0x24B6, 0x24D0}, {0x24B7, 0x24D1}, {0x24B8, 0x24D2}, {0x24B9, 0x24D3}, {0x24BA, 0x24D4}, {0x24BB, 0x24D5},
+    {0x24BC, 0x24D6}, {0x24BD, 0x24D7}, {0x24BE, 0x24D8}, {0x24BF, 0x24D9}, {0x24C0, 0x24DA}, {0x24C1, 0x24DB},
+    {0x24C2, 0x24DC}, {0x24C3, 0x24DD}, {0x24C4, 0x24DE}, {0x24C5, 0x24DF}, {0x24C6, 0x24E0}, {0x24C7, 0x24E1},
+    {0x24C8, 0x24E2}, {0x24C9, 0x24E3}, {0x24CA, 0x24E4}, {0x24CB, 0x24E5}, {0x24CC, 0x24E6}, {0x24CD, 0x24E7},
+    {0x24CE, 0x24E8}, {0x24CF, 0x24E9}, {0x2C00, 0x2C30}, {0x2C01, 0x2C31}, {0x2C02, 0x2C32}, {0x2C03, 0x2C33},
+    {0x2C04, 0x2C34}, {0x2C05, 0x2C35}, {0x2C06, 0x2C36}, {0x2C07, 0x2C37}, {0x2C08, 0x2C38}, {0x2C09, 0x2C39},
+    {0x2C0A, 0x2C3A}, {0x2C0B, 0x2C3B}, {0x2C0C, 0x2C3C}, {0x2C0D, 0x2C3D}, {0x2C0E, 0x2C3E}, {0x2C0F, 0x2C3F},
+    {0x2C10, 0x2C40}, {0x2C11, 0x2C41}, {0x2C12, 0x2C42}, {0x2C13, 0x2C43}, {0x2C14, 0x2C44}, {0x2C15, 0x2C45},
+    {0x2C16, 0x2C46}, {0x2C17, 0x2C47}, {0x2C18, 0x2C48}, {0x2C19, 0x2C49}, {0x2C1A, 0x2C4A}, {0x2C1B, 0x2C4B},
+    {0x2C1C, 0x2C4C}, {0x2C1D, 0x2C4D}, {0x2C1E, 0x2C4E}, {0x2C1F, 0x2C4F}, {0x2C20, 0x2C50}, {0x2C21, 0x2C51},
+    {0x2C22, 0x2C52}, {0x2C23, 0x2C53}, {0x2C24, 0x2C54}, {0x2C25, 0x2C55}, {0x2C26, 0x2C56}, {0x2C27, 0x2C57},
+    {0x2C28, 0x2C58}, {0x2C29, 0x2C59}, {0x2C2A, 0x2C5A}, {0x2C2B, 0x2C5B}, {0x2C2C, 0x2C5C}, {0x2C2D, 0x2C5D},
+    {0x2C2E, 0x2C5E}, {0x2C2F, 0x2C5F}, {0x2C60, 0x2C61}, {0x2C62, 0x26B}, {0x2C63, 0x1D7D}, {0x2C64, 0x27D},
+    {0x2C67, 0x2C68}, {0x2C69, 0x2C6A}, {0x2C6B, 0x2C6C}, {0x2C6D, 0x251}, {0x2C6E, 0x271}, {0x2C6F, 0x250},
+    {0x2C70, 0x252}, {0x2C72, 0x2C73}, {0x2C75, 0x2C76}, {0x2C7E, 0x23F}, {0x2C7F, 0x240}, {0x2C80, 0x2C81},
+    {0x2C82, 0x2C83}, {0x2C84, 0x2C85}, {0x2C86, 0x2C87}, {0x2C88, 0x2C89}, {0x2C8A, 0x2C8B}, {0x2C8C, 0x2C8D},
+    {0x2C8E, 0x2C8F}, {0x2C90, 0x2C91}, {0x2C92, 0x2C93}, {0x2C94, 0x2C95}, {0x2C96, 0x2C97}, {0x2C98, 0x2C99},
+    {0x2C9A, 0x2C9B}, {0x2C9C, 0x2C9D}, {0x2C9E, 0x2C9F}, {0x2CA0, 0x2CA1}, {0x2CA2, 0x2CA3}, {0x2CA4, 0x2CA5},
+    {0x2CA6, 0x2CA7}, {0x2CA8, 0x2CA9}, {0x2CAA, 0x2CAB}, {0x2CAC, 0x2CAD}, {0x2CAE, 0x2CAF}, {0x2CB0, 0x2CB1},
+    {0x2CB2, 0x2CB3}, {0x2CB4, 0x2CB5}, {0x2CB6, 0x2CB7}, {0x2CB8, 0x2CB9}, {0x2CBA, 0x2CBB}, {0x2CBC, 0x2CBD},
+    {0x2CBE, 0x2CBF}, {0x2CC0, 0x2CC1}, {0x2CC2, 0x2CC3}, {0x2CC4, 0x2CC5}, {0x2CC6, 0x2CC7}, {0x2CC8, 0x2CC9},
+    {0x2CCA, 0x2CCB}, {0x2CCC, 0x2CCD}, {0x2CCE, 0x2CCF}, {0x2CD0, 0x2CD1}, {0x2CD2, 0x2CD3}, {0x2CD4, 0x2CD5},
+    {0x2CD6, 0x2CD7}, {0x2CD8, 0x2CD9}, {0x2CDA, 0x2CDB}, {0x2CDC, 0x2CDD}, {0x2CDE, 0x2CDF}, {0x2CE0, 0x2CE1},
+    {0x2CE2, 0x2CE3}, {0x2CEB, 0x2CEC}, {0x2CED, 0x2CEE}, {0x2CF2, 0x2CF3}, {0xA640, 0xA641}, {0xA642, 0xA643},
+    {0xA644, 0xA645}, {0xA646, 0xA647}, {0xA648, 0xA649}, {0xA64A, 0xA64B}, {0xA64C, 0xA64D}, {0xA64E, 0xA64F},
+    {0xA650, 0xA651}, {0xA652, 0xA653}, {0xA654, 0xA655}, {0xA656, 0xA657}, {0xA658, 0xA659}, {0xA65A, 0xA65B},
+    {0xA65C, 0xA65D}, {0xA65E, 0xA65F}, {0xA660, 0xA661}, {0xA662, 0xA663}, {0xA664, 0xA665}, {0xA666, 0xA667},
+    {0xA668, 0xA669}, {0xA66A, 0xA66B}, {0xA66C, 0xA66D}, {0xA680, 0xA681}, {0xA682, 0xA683}, {0xA684, 0xA685},
+    {0xA686, 0xA687}, {0xA688, 0xA689}, {0xA68A, 0xA68B}, {0xA68C, 0xA68D}, {0xA68E, 0xA68F}, {0xA690, 0xA691},
+    {0xA692, 0xA693}, {0xA694, 0xA695}, {0xA696, 0xA697}, {0xA698, 0xA699}, {0xA69A, 0xA69B}, {0xA722, 0xA723},
+    {0xA724, 0xA725}, {0xA726, 0xA727}, {0xA728, 0xA729}, {0xA72A, 0xA72B}, {0xA72C, 0xA72D}, {0xA72E, 0xA72F},
+    {0xA732, 0xA733}, {0xA734, 0xA735}, {0xA736, 0xA737}, {0xA738, 0xA739}, {0xA73A, 0xA73B}, {0xA73C, 0xA73D},
+    {0xA73E, 0xA73F}, {0xA740, 0xA741}, {0xA742, 0xA743}, {0xA744, 0xA745}, {0xA746, 0xA747}, {0xA748, 0xA749},
+    {0xA74A, 0xA74B}, {0xA74C, 0xA74D}, {0xA74E, 0xA74F}, {0xA750, 0xA751}, {0xA752, 0xA753}, {0xA754, 0xA755},
+    {0xA756, 0xA757}, {0xA758, 0xA759}, {0xA75A, 0xA75B}, {0xA75C, 0xA75D}, {0xA75E, 0xA75F}, {0xA760, 0xA761},
+    {0xA762, 0xA763}, {0xA764, 0xA765}, {0xA766, 0xA767}, {0xA768, 0xA769}, {0xA76A, 0xA76B}, {0xA76C, 0xA76D},
+    {0xA76E, 0xA76F}, {0xA779, 0xA77A}, {0xA77B, 0xA77C}, {0xA77D, 0x1D79}, {0xA77E, 0xA77F}, {0xA780, 0xA781},
+    {0xA782, 0xA783}, {0xA784, 0xA785}, {0xA786, 0xA787}, {0xA78B, 0xA78C}, {0xA78D, 0x265}, {0xA790, 0xA791},
+    {0xA792, 0xA793}, {0xA796, 0xA797}, {0xA798, 0xA799}, {0xA79A, 0xA79B}, {0xA79C, 0xA79D}, {0xA79E, 0xA79F},
+    {0xA7A0, 0xA7A1}, {0xA7A2, 0xA7A3}, {0xA7A4, 0xA7A5}, {0xA7A6, 0xA7A7}, {0xA7A8, 0xA7A9}, {0xA7AA, 0x266},
+    {0xA7AB, 0x25C}, {0xA7AC, 0x261}, {0xA7AD, 0x26C}, {0xA7AE, 0x26A}, {0xA7B0, 0x29E}, {0xA7B1, 0x287},
+    {0xA7B2, 0x29D}, {0xA7B3, 0xAB53}, {0xA7B4, 0xA7B5}, {0xA7B6, 0xA7B7}, {0xA7B8, 0xA7B9}, {0xA7BA, 0xA7BB},
+    {0xA7BC, 0xA7BD}, {0xA7BE, 0xA7BF}, {0xA7C0, 0xA7C1}, {0xA7C2, 0xA7C3}, {0xA7C4, 0xA794}, {0xA7C5, 0x282},
+    {0xA7C6, 0x1D8E}, {0xA7C7, 0xA7C8}, {0xA7C9, 0xA7CA}, {0xA7CB, 0x264}, {0xA7CC, 0xA7CD}, {0xA7D0, 0xA7D1},
+    {0xA7D6, 0xA7D7}, {0xA7D8, 0xA7D9}, {0xA7DA, 0xA7DB}, {0xA7DC, 0x19B}, {0xA7F5, 0xA7F6}, {0xFF21, 0xFF41},
+    {0xFF22, 0xFF42}, {0xFF23, 0xFF43}, {0xFF24, 0xFF44}, {0xFF25, 0xFF45}, {0xFF26, 0xFF46}, {0xFF27, 0xFF47},
+    {0xFF28, 0xFF48}, {0xFF29, 0xFF49}, {0xFF2A, 0xFF4A}, {0xFF2B, 0xFF4B}, {0xFF2C, 0xFF4C}, {0xFF2D, 0xFF4D},
+    {0xFF2E, 0xFF4E}, {0xFF2F, 0xFF4F}, {0xFF30, 0xFF50}, {0xFF31, 0xFF51}, {0xFF32, 0xFF52}, {0xFF33, 0xFF53},
+    {0xFF34, 0xFF54}, {0xFF35, 0xFF55}, {0xFF36, 0xFF56}, {0xFF37, 0xFF57}, {0xFF38, 0xFF58}, {0xFF39, 0xFF59},
+    {0xFF3A, 0xFF5A}, {0x10400, 0x10428}, {0x10401, 0x10429}, {0x10402, 0x1042A}, {0x10403, 0x1042B}, {0x10404, 0x1042C},
+    {0x10405, 0x1042D}, {0x10406, 0x1042E}, {0x10407, 0x1042F}, {0x10408, 0x10430}, {0x10409, 0x10431}, {0x1040A, 0x10432},
+    {0x1040B, 0x10433}, {0x1040C, 0x10434}, {0x1040D, 0x10435}, {0x1040E, 0x10436}, {0x1040F, 0x10437}, {0x10410, 0x10438},
+    {0x10411, 0x10439}, {0x10412, 0x1043A}, {0x10413, 0x1043B}, {0x10414, 0x1043C}, {0x10415, 0x1043D}, {0x10416, 0x1043E},
+    {0x10417, 0x1043F}, {0x10418, 0x10440}, {0x10419, 0x10441}, {0x1041A, 0x10442}, {0x1041B, 0x10443}, {0x1041C, 0x10444},
+    {0x1041D, 0x10445}, {0x1041E, 0x10446}, {0x1041F, 0x10447}, {0x10420, 0x10448}, {0x10421, 0x10449}, {0x10422, 0x1044A},
+    {0x10423, 0x1044B}, {0x10424, 0x1044C}, {0x10425, 0x1044D}, {0x10426, 0x1044E}, {0x10427, 0x1044F}, {0x104B0, 0x104D8},
+    {0x104B1, 0x104D9}, {0x104B2, 0x104DA}, {0x104B3, 0x104DB}, {0x104B4, 0x104DC}, {0x104B5, 0x104DD}, {0x104B6, 0x104DE},
+    {0x104B7, 0x104DF}, {0x104B8, 0x104E0}, {0x104B9, 0x104E1}, {0x104BA, 0x104E2}, {0x104BB, 0x104E3}, {0x104BC, 0x104E4},
+    {0x104BD, 0x104E5}, {0x104BE, 0x104E6}, {0x104BF, 0x104E7}, {0x104C0, 0x104E8}, {0x104C1, 0x104E9}, {0x104C2, 0x104EA},
+    {0x104C3, 0x104EB}, {0x104C4, 0x104EC}, {0x104C5, 0x104ED}, {0x104C6, 0x104EE}, {0x104C7, 0x104EF}, {0x104C8, 0x104F0},
+    {0x104C9, 0x104F1}, {0x104CA, 0x104F2}, {0x104CB, 0x104F3}, {0x104CC, 0x104F4}, {0x104CD, 0x104F5}, {0x104CE, 0x104F6},
+    {0x104CF, 0x104F7}, {0x104D0, 0x104F8}, {0x104D1, 0x104F9}, {0x104D2, 0x104FA}, {0x104D3, 0x104FB}, {0x10570, 0x10597},
+    {0x10571, 0x10598}, {0x10572, 0x10599}, {0x10573, 0x1059A}, {0x10574, 0x1059B}, {0x10575, 0x1059C}, {0x10576, 0x1059D},
+    {0x10577, 0x1059E}, {0x10578, 0x1059F}, {0x10579, 0x105A0}, {0x1057A, 0x105A1}, {0x1057C, 0x105A3}, {0x1057D, 0x105A4},
+    {0x1057E, 0x105A5}, {0x1057F, 0x105A6}, {0x10580, 0x105A7}, {0x10581, 0x105A8}, {0x10582, 0x105A9}, {0x10583, 0x105AA},
+    {0x10584, 0x105AB}, {0x10585, 0x105AC}, {0x10586, 0x105AD}, {0x10587, 0x105AE}, {0x10588, 0x105AF}, {0x10589, 0x105B0},
+    {0x1058A, 0x105B1}, {0x1058C, 0x105B3}, {0x1058D, 0x105B4}, {0x1058E, 0x105B5}, {0x1058F, 0x105B6}, {0x10590, 0x105B7},
+    {0x10591, 0x105B8}, {0x10592, 0x105B9}, {0x10594, 0x105BB}, {0x10595, 0x105BC}, {0x10C80, 0x10CC0}, {0x10C81, 0x10CC1},
+    {0x10C82, 0x10CC2}, {0x10C83, 0x10CC3}, {0x10C84, 0x10CC4}, {0x10C85, 0x10CC5}, {0x10C86, 0x10CC6}, {0x10C87, 0x10CC7},
+    {0x10C88, 0x10CC8}, {0x10C89, 0x10CC9}, {0x10C8A, 0x10CCA}, {0x10C8B, 0x10CCB}, {0x10C8C, 0x10CCC}, {0x10C8D, 0x10CCD},
+    {0x10C8E, 0x10CCE}, {0x10C8F, 0x10CCF}, {0x10C90, 0x10CD0}, {0x10C91, 0x10CD1}, {0x10C92, 0x10CD2}, {0x10C93, 0x10CD3},
+    {0x10C94, 0x10CD4}, {0x10C95, 0x10CD5}, {0x10C96, 0x10CD6}, {0x10C97, 0x10CD7}, {0x10C98, 0x10CD8}, {0x10C99, 0x10CD9},
+    {0x10C9A, 0x10CDA}, {0x10C9B, 0x10CDB}, {0x10C9C, 0x10CDC}, {0x10C9D, 0x10CDD}, {0x10C9E, 0x10CDE}, {0x10C9F, 0x10CDF},
+    {0x10CA0, 0x10CE0}, {0x10CA1, 0x10CE1}, {0x10CA2, 0x10CE2}, {0x10CA3, 0x10CE3}, {0x10CA4, 0x10CE4}, {0x10CA5, 0x10CE5},
+    {0x10CA6, 0x10CE6}, {0x10CA7, 0x10CE7}, {0x10CA8, 0x10CE8}, {0x10CA9, 0x10CE9}, {0x10CAA, 0x10CEA}, {0x10CAB, 0x10CEB},
+    {0x10CAC, 0x10CEC}, {0x10CAD, 0x10CED}, {0x10CAE, 0x10CEE}, {0x10CAF, 0x10CEF}, {0x10CB0, 0x10CF0}, {0x10CB1, 0x10CF1},
+    {0x10CB2, 0x10CF2}, {0x10D50, 0x10D70}, {0x10D51, 0x10D71}, {0x10D52, 0x10D72}, {0x10D53, 0x10D73}, {0x10D54, 0x10D74},
+    {0x10D55, 0x10D75}, {0x10D56, 0x10D76}, {0x10D57, 0x10D77}, {0x10D58, 0x10D78}, {0x10D59, 0x10D79}, {0x10D5A, 0x10D7A},
+    {0x10D5B, 0x10D7B}, {0x10D5C, 0x10D7C}, {0x10D5D, 0x10D7D}, {0x10D5E, 0x10D7E}, {0x10D5F, 0x10D7F}, {0x10D60, 0x10D80},
+    {0x10D61, 0x10D81}, {0x10D62, 0x10D82}, {0x10D63, 0x10D83}, {0x10D64, 0x10D84}, {0x10D65, 0x10D85}, {0x118A0, 0x118C0},
+    {0x118A1, 0x118C1}, {0x118A2, 0x118C2}, {0x118A3, 0x118C3}, {0x118A4, 0x118C4}, {0x118A5, 0x118C5}, {0x118A6, 0x118C6},
+    {0x118A7, 0x118C7}, {0x118A8, 0x118C8}, {0x118A9, 0x118C9}, {0x118AA, 0x118CA}, {0x118AB, 0x118CB}, {0x118AC, 0x118CC},
+    {0x118AD, 0x118CD}, {0x118AE, 0x118CE}, {0x118AF, 0x118CF}, {0x118B0, 0x118D0}, {0x118B1, 0x118D1}, {0x118B2, 0x118D2},
+    {0x118B3, 0x118D3}, {0x118B4, 0x118D4}, {0x118B5, 0x118D5}, {0x118B6, 0x118D6}, {0x118B7, 0x118D7}, {0x118B8, 0x118D8},
+    {0x118B9, 0x118D9}, {0x118BA, 0x118DA}, {0x118BB, 0x118DB}, {0x118BC, 0x118DC}, {0x118BD, 0x118DD}, {0x118BE, 0x118DE},
+    {0x118BF, 0x118DF}, {0x16E40, 0x16E60}, {0x16E41, 0x16E61}, {0x16E42, 0x16E62}, {0x16E43, 0x16E63}, {0x16E44, 0x16E64},
+    {0x16E45, 0x16E65}, {0x16E46, 0x16E66}, {0x16E47, 0x16E67}, {0x16E48, 0x16E68}, {0x16E49, 0x16E69}, {0x16E4A, 0x16E6A},
+    {0x16E4B, 0x16E6B}, {0x16E4C, 0x16E6C}, {0x16E4D, 0x16E6D}, {0x16E4E, 0x16E6E}, {0x16E4F, 0x16E6F}, {0x16E50, 0x16E70},
+    {0x16E51, 0x16E71}, {0x16E52, 0x16E72}, {0x16E53, 0x16E73}, {0x16E54, 0x16E74}, {0x16E55, 0x16E75}, {0x16E56, 0x16E76},
+    {0x16E57, 0x16E77}, {0x16E58, 0x16E78}, {0x16E59, 0x16E79}, {0x16E5A, 0x16E7A}, {0x16E5B, 0x16E7B}, {0x16E5C, 0x16E7C},
+    {0x16E5D, 0x16E7D}, {0x16E5E, 0x16E7E}, {0x16E5F, 0x16E7F}, {0x1E900, 0x1E922}, {0x1E901, 0x1E923}, {0x1E902, 0x1E924},
+    {0x1E903, 0x1E925}, {0x1E904, 0x1E926}, {0x1E905, 0x1E927}, {0x1E906, 0x1E928}, {0x1E907, 0x1E929}, {0x1E908, 0x1E92A},
+    {0x1E909, 0x1E92B}, {0x1E90A, 0x1E92C}, {0x1E90B, 0x1E92D}, {0x1E90C, 0x1E92E}, {0x1E90D, 0x1E92F}, {0x1E90E, 0x1E930},
+    {0x1E90F, 0x1E931}, {0x1E910, 0x1E932}, {0x1E911, 0x1E933}, {0x1E912, 0x1E934}, {0x1E913, 0x1E935}, {0x1E914, 0x1E936},
+    {0x1E915, 0x1E937}, {0x1E916, 0x1E938}, {0x1E917, 0x1E939}, {0x1E918, 0x1E93A}, {0x1E919, 0x1E93B}, {0x1E91A, 0x1E93C},
+    {0x1E91B, 0x1E93D}, {0x1E91C, 0x1E93E}, {0x1E91D, 0x1E93F}, {0x1E91E, 0x1E940}, {0x1E91F, 0x1E941}, {0x1E920, 0x1E942},
+    {0x1E921, 0x1E943},
+};
+static const uint32_t byn_upper_map[][2] = {
+    {0x61, 0x41}, {0x62, 0x42}, {0x63, 0x43}, {0x64, 0x44}, {0x65, 0x45}, {0x66, 0x46},
+    {0x67, 0x47}, {0x68, 0x48}, {0x69, 0x49}, {0x6A, 0x4A}, {0x6B, 0x4B}, {0x6C, 0x4C},
+    {0x6D, 0x4D}, {0x6E, 0x4E}, {0x6F, 0x4F}, {0x70, 0x50}, {0x71, 0x51}, {0x72, 0x52},
+    {0x73, 0x53}, {0x74, 0x54}, {0x75, 0x55}, {0x76, 0x56}, {0x77, 0x57}, {0x78, 0x58},
+    {0x79, 0x59}, {0x7A, 0x5A}, {0xB5, 0x39C}, {0xE0, 0xC0}, {0xE1, 0xC1}, {0xE2, 0xC2},
+    {0xE3, 0xC3}, {0xE4, 0xC4}, {0xE5, 0xC5}, {0xE6, 0xC6}, {0xE7, 0xC7}, {0xE8, 0xC8},
+    {0xE9, 0xC9}, {0xEA, 0xCA}, {0xEB, 0xCB}, {0xEC, 0xCC}, {0xED, 0xCD}, {0xEE, 0xCE},
+    {0xEF, 0xCF}, {0xF0, 0xD0}, {0xF1, 0xD1}, {0xF2, 0xD2}, {0xF3, 0xD3}, {0xF4, 0xD4},
+    {0xF5, 0xD5}, {0xF6, 0xD6}, {0xF8, 0xD8}, {0xF9, 0xD9}, {0xFA, 0xDA}, {0xFB, 0xDB},
+    {0xFC, 0xDC}, {0xFD, 0xDD}, {0xFE, 0xDE}, {0xFF, 0x178}, {0x101, 0x100}, {0x103, 0x102},
+    {0x105, 0x104}, {0x107, 0x106}, {0x109, 0x108}, {0x10B, 0x10A}, {0x10D, 0x10C}, {0x10F, 0x10E},
+    {0x111, 0x110}, {0x113, 0x112}, {0x115, 0x114}, {0x117, 0x116}, {0x119, 0x118}, {0x11B, 0x11A},
+    {0x11D, 0x11C}, {0x11F, 0x11E}, {0x121, 0x120}, {0x123, 0x122}, {0x125, 0x124}, {0x127, 0x126},
+    {0x129, 0x128}, {0x12B, 0x12A}, {0x12D, 0x12C}, {0x12F, 0x12E}, {0x133, 0x132}, {0x135, 0x134},
+    {0x137, 0x136}, {0x13A, 0x139}, {0x13C, 0x13B}, {0x13E, 0x13D}, {0x140, 0x13F}, {0x142, 0x141},
+    {0x144, 0x143}, {0x146, 0x145}, {0x148, 0x147}, {0x14B, 0x14A}, {0x14D, 0x14C}, {0x14F, 0x14E},
+    {0x151, 0x150}, {0x153, 0x152}, {0x155, 0x154}, {0x157, 0x156}, {0x159, 0x158}, {0x15B, 0x15A},
+    {0x15D, 0x15C}, {0x15F, 0x15E}, {0x161, 0x160}, {0x163, 0x162}, {0x165, 0x164}, {0x167, 0x166},
+    {0x169, 0x168}, {0x16B, 0x16A}, {0x16D, 0x16C}, {0x16F, 0x16E}, {0x171, 0x170}, {0x173, 0x172},
+    {0x175, 0x174}, {0x177, 0x176}, {0x17A, 0x179}, {0x17C, 0x17B}, {0x17E, 0x17D}, {0x17F, 0x53},
+    {0x180, 0x243}, {0x183, 0x182}, {0x185, 0x184}, {0x188, 0x187}, {0x18C, 0x18B}, {0x192, 0x191},
+    {0x195, 0x1F6}, {0x199, 0x198}, {0x19A, 0x23D}, {0x19B, 0xA7DC}, {0x19E, 0x220}, {0x1A1, 0x1A0},
+    {0x1A3, 0x1A2}, {0x1A5, 0x1A4}, {0x1A8, 0x1A7}, {0x1AD, 0x1AC}, {0x1B0, 0x1AF}, {0x1B4, 0x1B3},
+    {0x1B6, 0x1B5}, {0x1B9, 0x1B8}, {0x1BD, 0x1BC}, {0x1BF, 0x1F7}, {0x1C5, 0x1C4}, {0x1C6, 0x1C4},
+    {0x1C8, 0x1C7}, {0x1C9, 0x1C7}, {0x1CB, 0x1CA}, {0x1CC, 0x1CA}, {0x1CE, 0x1CD}, {0x1D0, 0x1CF},
+    {0x1D2, 0x1D1}, {0x1D4, 0x1D3}, {0x1D6, 0x1D5}, {0x1D8, 0x1D7}, {0x1DA, 0x1D9}, {0x1DC, 0x1DB},
+    {0x1DD, 0x18E}, {0x1DF, 0x1DE}, {0x1E1, 0x1E0}, {0x1E3, 0x1E2}, {0x1E5, 0x1E4}, {0x1E7, 0x1E6},
+    {0x1E9, 0x1E8}, {0x1EB, 0x1EA}, {0x1ED, 0x1EC}, {0x1EF, 0x1EE}, {0x1F2, 0x1F1}, {0x1F3, 0x1F1},
+    {0x1F5, 0x1F4}, {0x1F9, 0x1F8}, {0x1FB, 0x1FA}, {0x1FD, 0x1FC}, {0x1FF, 0x1FE}, {0x201, 0x200},
+    {0x203, 0x202}, {0x205, 0x204}, {0x207, 0x206}, {0x209, 0x208}, {0x20B, 0x20A}, {0x20D, 0x20C},
+    {0x20F, 0x20E}, {0x211, 0x210}, {0x213, 0x212}, {0x215, 0x214}, {0x217, 0x216}, {0x219, 0x218},
+    {0x21B, 0x21A}, {0x21D, 0x21C}, {0x21F, 0x21E}, {0x223, 0x222}, {0x225, 0x224}, {0x227, 0x226},
+    {0x229, 0x228}, {0x22B, 0x22A}, {0x22D, 0x22C}, {0x22F, 0x22E}, {0x231, 0x230}, {0x233, 0x232},
+    {0x23C, 0x23B}, {0x23F, 0x2C7E}, {0x240, 0x2C7F}, {0x242, 0x241}, {0x247, 0x246}, {0x249, 0x248},
+    {0x24B, 0x24A}, {0x24D, 0x24C}, {0x24F, 0x24E}, {0x250, 0x2C6F}, {0x251, 0x2C6D}, {0x252, 0x2C70},
+    {0x253, 0x181}, {0x254, 0x186}, {0x256, 0x189}, {0x257, 0x18A}, {0x259, 0x18F}, {0x25B, 0x190},
+    {0x25C, 0xA7AB}, {0x260, 0x193}, {0x261, 0xA7AC}, {0x263, 0x194}, {0x264, 0xA7CB}, {0x265, 0xA78D},
+    {0x266, 0xA7AA}, {0x268, 0x197}, {0x269, 0x196}, {0x26A, 0xA7AE}, {0x26B, 0x2C62}, {0x26C, 0xA7AD},
+    {0x26F, 0x19C}, {0x271, 0x2C6E}, {0x272, 0x19D}, {0x275, 0x19F}, {0x27D, 0x2C64}, {0x280, 0x1A6},
+    {0x282, 0xA7C5}, {0x283, 0x1A9}, {0x287, 0xA7B1}, {0x288, 0x1AE}, {0x289, 0x244}, {0x28A, 0x1B1},
+    {0x28B, 0x1B2}, {0x28C, 0x245}, {0x292, 0x1B7}, {0x29D, 0xA7B2}, {0x29E, 0xA7B0}, {0x345, 0x399},
+    {0x371, 0x370}, {0x373, 0x372}, {0x377, 0x376}, {0x37B, 0x3FD}, {0x37C, 0x3FE}, {0x37D, 0x3FF},
+    {0x3AC, 0x386}, {0x3AD, 0x388}, {0x3AE, 0x389}, {0x3AF, 0x38A}, {0x3B1, 0x391}, {0x3B2, 0x392},
+    {0x3B3, 0x393}, {0x3B4, 0x394}, {0x3B5, 0x395}, {0x3B6, 0x396}, {0x3B7, 0x397}, {0x3B8, 0x398},
+    {0x3B9, 0x399}, {0x3BA, 0x39A}, {0x3BB, 0x39B}, {0x3BC, 0x39C}, {0x3BD, 0x39D}, {0x3BE, 0x39E},
+    {0x3BF, 0x39F}, {0x3C0, 0x3A0}, {0x3C1, 0x3A1}, {0x3C2, 0x3A3}, {0x3C3, 0x3A3}, {0x3C4, 0x3A4},
+    {0x3C5, 0x3A5}, {0x3C6, 0x3A6}, {0x3C7, 0x3A7}, {0x3C8, 0x3A8}, {0x3C9, 0x3A9}, {0x3CA, 0x3AA},
+    {0x3CB, 0x3AB}, {0x3CC, 0x38C}, {0x3CD, 0x38E}, {0x3CE, 0x38F}, {0x3D0, 0x392}, {0x3D1, 0x398},
+    {0x3D5, 0x3A6}, {0x3D6, 0x3A0}, {0x3D7, 0x3CF}, {0x3D9, 0x3D8}, {0x3DB, 0x3DA}, {0x3DD, 0x3DC},
+    {0x3DF, 0x3DE}, {0x3E1, 0x3E0}, {0x3E3, 0x3E2}, {0x3E5, 0x3E4}, {0x3E7, 0x3E6}, {0x3E9, 0x3E8},
+    {0x3EB, 0x3EA}, {0x3ED, 0x3EC}, {0x3EF, 0x3EE}, {0x3F0, 0x39A}, {0x3F1, 0x3A1}, {0x3F2, 0x3F9},
+    {0x3F3, 0x37F}, {0x3F5, 0x395}, {0x3F8, 0x3F7}, {0x3FB, 0x3FA}, {0x430, 0x410}, {0x431, 0x411},
+    {0x432, 0x412}, {0x433, 0x413}, {0x434, 0x414}, {0x435, 0x415}, {0x436, 0x416}, {0x437, 0x417},
+    {0x438, 0x418}, {0x439, 0x419}, {0x43A, 0x41A}, {0x43B, 0x41B}, {0x43C, 0x41C}, {0x43D, 0x41D},
+    {0x43E, 0x41E}, {0x43F, 0x41F}, {0x440, 0x420}, {0x441, 0x421}, {0x442, 0x422}, {0x443, 0x423},
+    {0x444, 0x424}, {0x445, 0x425}, {0x446, 0x426}, {0x447, 0x427}, {0x448, 0x428}, {0x449, 0x429},
+    {0x44A, 0x42A}, {0x44B, 0x42B}, {0x44C, 0x42C}, {0x44D, 0x42D}, {0x44E, 0x42E}, {0x44F, 0x42F},
+    {0x450, 0x400}, {0x451, 0x401}, {0x452, 0x402}, {0x453, 0x403}, {0x454, 0x404}, {0x455, 0x405},
+    {0x456, 0x406}, {0x457, 0x407}, {0x458, 0x408}, {0x459, 0x409}, {0x45A, 0x40A}, {0x45B, 0x40B},
+    {0x45C, 0x40C}, {0x45D, 0x40D}, {0x45E, 0x40E}, {0x45F, 0x40F}, {0x461, 0x460}, {0x463, 0x462},
+    {0x465, 0x464}, {0x467, 0x466}, {0x469, 0x468}, {0x46B, 0x46A}, {0x46D, 0x46C}, {0x46F, 0x46E},
+    {0x471, 0x470}, {0x473, 0x472}, {0x475, 0x474}, {0x477, 0x476}, {0x479, 0x478}, {0x47B, 0x47A},
+    {0x47D, 0x47C}, {0x47F, 0x47E}, {0x481, 0x480}, {0x48B, 0x48A}, {0x48D, 0x48C}, {0x48F, 0x48E},
+    {0x491, 0x490}, {0x493, 0x492}, {0x495, 0x494}, {0x497, 0x496}, {0x499, 0x498}, {0x49B, 0x49A},
+    {0x49D, 0x49C}, {0x49F, 0x49E}, {0x4A1, 0x4A0}, {0x4A3, 0x4A2}, {0x4A5, 0x4A4}, {0x4A7, 0x4A6},
+    {0x4A9, 0x4A8}, {0x4AB, 0x4AA}, {0x4AD, 0x4AC}, {0x4AF, 0x4AE}, {0x4B1, 0x4B0}, {0x4B3, 0x4B2},
+    {0x4B5, 0x4B4}, {0x4B7, 0x4B6}, {0x4B9, 0x4B8}, {0x4BB, 0x4BA}, {0x4BD, 0x4BC}, {0x4BF, 0x4BE},
+    {0x4C2, 0x4C1}, {0x4C4, 0x4C3}, {0x4C6, 0x4C5}, {0x4C8, 0x4C7}, {0x4CA, 0x4C9}, {0x4CC, 0x4CB},
+    {0x4CE, 0x4CD}, {0x4CF, 0x4C0}, {0x4D1, 0x4D0}, {0x4D3, 0x4D2}, {0x4D5, 0x4D4}, {0x4D7, 0x4D6},
+    {0x4D9, 0x4D8}, {0x4DB, 0x4DA}, {0x4DD, 0x4DC}, {0x4DF, 0x4DE}, {0x4E1, 0x4E0}, {0x4E3, 0x4E2},
+    {0x4E5, 0x4E4}, {0x4E7, 0x4E6}, {0x4E9, 0x4E8}, {0x4EB, 0x4EA}, {0x4ED, 0x4EC}, {0x4EF, 0x4EE},
+    {0x4F1, 0x4F0}, {0x4F3, 0x4F2}, {0x4F5, 0x4F4}, {0x4F7, 0x4F6}, {0x4F9, 0x4F8}, {0x4FB, 0x4FA},
+    {0x4FD, 0x4FC}, {0x4FF, 0x4FE}, {0x501, 0x500}, {0x503, 0x502}, {0x505, 0x504}, {0x507, 0x506},
+    {0x509, 0x508}, {0x50B, 0x50A}, {0x50D, 0x50C}, {0x50F, 0x50E}, {0x511, 0x510}, {0x513, 0x512},
+    {0x515, 0x514}, {0x517, 0x516}, {0x519, 0x518}, {0x51B, 0x51A}, {0x51D, 0x51C}, {0x51F, 0x51E},
+    {0x521, 0x520}, {0x523, 0x522}, {0x525, 0x524}, {0x527, 0x526}, {0x529, 0x528}, {0x52B, 0x52A},
+    {0x52D, 0x52C}, {0x52F, 0x52E}, {0x561, 0x531}, {0x562, 0x532}, {0x563, 0x533}, {0x564, 0x534},
+    {0x565, 0x535}, {0x566, 0x536}, {0x567, 0x537}, {0x568, 0x538}, {0x569, 0x539}, {0x56A, 0x53A},
+    {0x56B, 0x53B}, {0x56C, 0x53C}, {0x56D, 0x53D}, {0x56E, 0x53E}, {0x56F, 0x53F}, {0x570, 0x540},
+    {0x571, 0x541}, {0x572, 0x542}, {0x573, 0x543}, {0x574, 0x544}, {0x575, 0x545}, {0x576, 0x546},
+    {0x577, 0x547}, {0x578, 0x548}, {0x579, 0x549}, {0x57A, 0x54A}, {0x57B, 0x54B}, {0x57C, 0x54C},
+    {0x57D, 0x54D}, {0x57E, 0x54E}, {0x57F, 0x54F}, {0x580, 0x550}, {0x581, 0x551}, {0x582, 0x552},
+    {0x583, 0x553}, {0x584, 0x554}, {0x585, 0x555}, {0x586, 0x556}, {0x10D0, 0x1C90}, {0x10D1, 0x1C91},
+    {0x10D2, 0x1C92}, {0x10D3, 0x1C93}, {0x10D4, 0x1C94}, {0x10D5, 0x1C95}, {0x10D6, 0x1C96}, {0x10D7, 0x1C97},
+    {0x10D8, 0x1C98}, {0x10D9, 0x1C99}, {0x10DA, 0x1C9A}, {0x10DB, 0x1C9B}, {0x10DC, 0x1C9C}, {0x10DD, 0x1C9D},
+    {0x10DE, 0x1C9E}, {0x10DF, 0x1C9F}, {0x10E0, 0x1CA0}, {0x10E1, 0x1CA1}, {0x10E2, 0x1CA2}, {0x10E3, 0x1CA3},
+    {0x10E4, 0x1CA4}, {0x10E5, 0x1CA5}, {0x10E6, 0x1CA6}, {0x10E7, 0x1CA7}, {0x10E8, 0x1CA8}, {0x10E9, 0x1CA9},
+    {0x10EA, 0x1CAA}, {0x10EB, 0x1CAB}, {0x10EC, 0x1CAC}, {0x10ED, 0x1CAD}, {0x10EE, 0x1CAE}, {0x10EF, 0x1CAF},
+    {0x10F0, 0x1CB0}, {0x10F1, 0x1CB1}, {0x10F2, 0x1CB2}, {0x10F3, 0x1CB3}, {0x10F4, 0x1CB4}, {0x10F5, 0x1CB5},
+    {0x10F6, 0x1CB6}, {0x10F7, 0x1CB7}, {0x10F8, 0x1CB8}, {0x10F9, 0x1CB9}, {0x10FA, 0x1CBA}, {0x10FD, 0x1CBD},
+    {0x10FE, 0x1CBE}, {0x10FF, 0x1CBF}, {0x13F8, 0x13F0}, {0x13F9, 0x13F1}, {0x13FA, 0x13F2}, {0x13FB, 0x13F3},
+    {0x13FC, 0x13F4}, {0x13FD, 0x13F5}, {0x1C80, 0x412}, {0x1C81, 0x414}, {0x1C82, 0x41E}, {0x1C83, 0x421},
+    {0x1C84, 0x422}, {0x1C85, 0x422}, {0x1C86, 0x42A}, {0x1C87, 0x462}, {0x1C88, 0xA64A}, {0x1C8A, 0x1C89},
+    {0x1D79, 0xA77D}, {0x1D7D, 0x2C63}, {0x1D8E, 0xA7C6}, {0x1E01, 0x1E00}, {0x1E03, 0x1E02}, {0x1E05, 0x1E04},
+    {0x1E07, 0x1E06}, {0x1E09, 0x1E08}, {0x1E0B, 0x1E0A}, {0x1E0D, 0x1E0C}, {0x1E0F, 0x1E0E}, {0x1E11, 0x1E10},
+    {0x1E13, 0x1E12}, {0x1E15, 0x1E14}, {0x1E17, 0x1E16}, {0x1E19, 0x1E18}, {0x1E1B, 0x1E1A}, {0x1E1D, 0x1E1C},
+    {0x1E1F, 0x1E1E}, {0x1E21, 0x1E20}, {0x1E23, 0x1E22}, {0x1E25, 0x1E24}, {0x1E27, 0x1E26}, {0x1E29, 0x1E28},
+    {0x1E2B, 0x1E2A}, {0x1E2D, 0x1E2C}, {0x1E2F, 0x1E2E}, {0x1E31, 0x1E30}, {0x1E33, 0x1E32}, {0x1E35, 0x1E34},
+    {0x1E37, 0x1E36}, {0x1E39, 0x1E38}, {0x1E3B, 0x1E3A}, {0x1E3D, 0x1E3C}, {0x1E3F, 0x1E3E}, {0x1E41, 0x1E40},
+    {0x1E43, 0x1E42}, {0x1E45, 0x1E44}, {0x1E47, 0x1E46}, {0x1E49, 0x1E48}, {0x1E4B, 0x1E4A}, {0x1E4D, 0x1E4C},
+    {0x1E4F, 0x1E4E}, {0x1E51, 0x1E50}, {0x1E53, 0x1E52}, {0x1E55, 0x1E54}, {0x1E57, 0x1E56}, {0x1E59, 0x1E58},
+    {0x1E5B, 0x1E5A}, {0x1E5D, 0x1E5C}, {0x1E5F, 0x1E5E}, {0x1E61, 0x1E60}, {0x1E63, 0x1E62}, {0x1E65, 0x1E64},
+    {0x1E67, 0x1E66}, {0x1E69, 0x1E68}, {0x1E6B, 0x1E6A}, {0x1E6D, 0x1E6C}, {0x1E6F, 0x1E6E}, {0x1E71, 0x1E70},
+    {0x1E73, 0x1E72}, {0x1E75, 0x1E74}, {0x1E77, 0x1E76}, {0x1E79, 0x1E78}, {0x1E7B, 0x1E7A}, {0x1E7D, 0x1E7C},
+    {0x1E7F, 0x1E7E}, {0x1E81, 0x1E80}, {0x1E83, 0x1E82}, {0x1E85, 0x1E84}, {0x1E87, 0x1E86}, {0x1E89, 0x1E88},
+    {0x1E8B, 0x1E8A}, {0x1E8D, 0x1E8C}, {0x1E8F, 0x1E8E}, {0x1E91, 0x1E90}, {0x1E93, 0x1E92}, {0x1E95, 0x1E94},
+    {0x1E9B, 0x1E60}, {0x1EA1, 0x1EA0}, {0x1EA3, 0x1EA2}, {0x1EA5, 0x1EA4}, {0x1EA7, 0x1EA6}, {0x1EA9, 0x1EA8},
+    {0x1EAB, 0x1EAA}, {0x1EAD, 0x1EAC}, {0x1EAF, 0x1EAE}, {0x1EB1, 0x1EB0}, {0x1EB3, 0x1EB2}, {0x1EB5, 0x1EB4},
+    {0x1EB7, 0x1EB6}, {0x1EB9, 0x1EB8}, {0x1EBB, 0x1EBA}, {0x1EBD, 0x1EBC}, {0x1EBF, 0x1EBE}, {0x1EC1, 0x1EC0},
+    {0x1EC3, 0x1EC2}, {0x1EC5, 0x1EC4}, {0x1EC7, 0x1EC6}, {0x1EC9, 0x1EC8}, {0x1ECB, 0x1ECA}, {0x1ECD, 0x1ECC},
+    {0x1ECF, 0x1ECE}, {0x1ED1, 0x1ED0}, {0x1ED3, 0x1ED2}, {0x1ED5, 0x1ED4}, {0x1ED7, 0x1ED6}, {0x1ED9, 0x1ED8},
+    {0x1EDB, 0x1EDA}, {0x1EDD, 0x1EDC}, {0x1EDF, 0x1EDE}, {0x1EE1, 0x1EE0}, {0x1EE3, 0x1EE2}, {0x1EE5, 0x1EE4},
+    {0x1EE7, 0x1EE6}, {0x1EE9, 0x1EE8}, {0x1EEB, 0x1EEA}, {0x1EED, 0x1EEC}, {0x1EEF, 0x1EEE}, {0x1EF1, 0x1EF0},
+    {0x1EF3, 0x1EF2}, {0x1EF5, 0x1EF4}, {0x1EF7, 0x1EF6}, {0x1EF9, 0x1EF8}, {0x1EFB, 0x1EFA}, {0x1EFD, 0x1EFC},
+    {0x1EFF, 0x1EFE}, {0x1F00, 0x1F08}, {0x1F01, 0x1F09}, {0x1F02, 0x1F0A}, {0x1F03, 0x1F0B}, {0x1F04, 0x1F0C},
+    {0x1F05, 0x1F0D}, {0x1F06, 0x1F0E}, {0x1F07, 0x1F0F}, {0x1F10, 0x1F18}, {0x1F11, 0x1F19}, {0x1F12, 0x1F1A},
+    {0x1F13, 0x1F1B}, {0x1F14, 0x1F1C}, {0x1F15, 0x1F1D}, {0x1F20, 0x1F28}, {0x1F21, 0x1F29}, {0x1F22, 0x1F2A},
+    {0x1F23, 0x1F2B}, {0x1F24, 0x1F2C}, {0x1F25, 0x1F2D}, {0x1F26, 0x1F2E}, {0x1F27, 0x1F2F}, {0x1F30, 0x1F38},
+    {0x1F31, 0x1F39}, {0x1F32, 0x1F3A}, {0x1F33, 0x1F3B}, {0x1F34, 0x1F3C}, {0x1F35, 0x1F3D}, {0x1F36, 0x1F3E},
+    {0x1F37, 0x1F3F}, {0x1F40, 0x1F48}, {0x1F41, 0x1F49}, {0x1F42, 0x1F4A}, {0x1F43, 0x1F4B}, {0x1F44, 0x1F4C},
+    {0x1F45, 0x1F4D}, {0x1F51, 0x1F59}, {0x1F53, 0x1F5B}, {0x1F55, 0x1F5D}, {0x1F57, 0x1F5F}, {0x1F60, 0x1F68},
+    {0x1F61, 0x1F69}, {0x1F62, 0x1F6A}, {0x1F63, 0x1F6B}, {0x1F64, 0x1F6C}, {0x1F65, 0x1F6D}, {0x1F66, 0x1F6E},
+    {0x1F67, 0x1F6F}, {0x1F70, 0x1FBA}, {0x1F71, 0x1FBB}, {0x1F72, 0x1FC8}, {0x1F73, 0x1FC9}, {0x1F74, 0x1FCA},
+    {0x1F75, 0x1FCB}, {0x1F76, 0x1FDA}, {0x1F77, 0x1FDB}, {0x1F78, 0x1FF8}, {0x1F79, 0x1FF9}, {0x1F7A, 0x1FEA},
+    {0x1F7B, 0x1FEB}, {0x1F7C, 0x1FFA}, {0x1F7D, 0x1FFB}, {0x1F80, 0x1F88}, {0x1F81, 0x1F89}, {0x1F82, 0x1F8A},
+    {0x1F83, 0x1F8B}, {0x1F84, 0x1F8C}, {0x1F85, 0x1F8D}, {0x1F86, 0x1F8E}, {0x1F87, 0x1F8F}, {0x1F90, 0x1F98},
+    {0x1F91, 0x1F99}, {0x1F92, 0x1F9A}, {0x1F93, 0x1F9B}, {0x1F94, 0x1F9C}, {0x1F95, 0x1F9D}, {0x1F96, 0x1F9E},
+    {0x1F97, 0x1F9F}, {0x1FA0, 0x1FA8}, {0x1FA1, 0x1FA9}, {0x1FA2, 0x1FAA}, {0x1FA3, 0x1FAB}, {0x1FA4, 0x1FAC},
+    {0x1FA5, 0x1FAD}, {0x1FA6, 0x1FAE}, {0x1FA7, 0x1FAF}, {0x1FB0, 0x1FB8}, {0x1FB1, 0x1FB9}, {0x1FB3, 0x1FBC},
+    {0x1FBE, 0x399}, {0x1FC3, 0x1FCC}, {0x1FD0, 0x1FD8}, {0x1FD1, 0x1FD9}, {0x1FE0, 0x1FE8}, {0x1FE1, 0x1FE9},
+    {0x1FE5, 0x1FEC}, {0x1FF3, 0x1FFC}, {0x214E, 0x2132}, {0x2170, 0x2160}, {0x2171, 0x2161}, {0x2172, 0x2162},
+    {0x2173, 0x2163}, {0x2174, 0x2164}, {0x2175, 0x2165}, {0x2176, 0x2166}, {0x2177, 0x2167}, {0x2178, 0x2168},
+    {0x2179, 0x2169}, {0x217A, 0x216A}, {0x217B, 0x216B}, {0x217C, 0x216C}, {0x217D, 0x216D}, {0x217E, 0x216E},
+    {0x217F, 0x216F}, {0x2184, 0x2183}, {0x24D0, 0x24B6}, {0x24D1, 0x24B7}, {0x24D2, 0x24B8}, {0x24D3, 0x24B9},
+    {0x24D4, 0x24BA}, {0x24D5, 0x24BB}, {0x24D6, 0x24BC}, {0x24D7, 0x24BD}, {0x24D8, 0x24BE}, {0x24D9, 0x24BF},
+    {0x24DA, 0x24C0}, {0x24DB, 0x24C1}, {0x24DC, 0x24C2}, {0x24DD, 0x24C3}, {0x24DE, 0x24C4}, {0x24DF, 0x24C5},
+    {0x24E0, 0x24C6}, {0x24E1, 0x24C7}, {0x24E2, 0x24C8}, {0x24E3, 0x24C9}, {0x24E4, 0x24CA}, {0x24E5, 0x24CB},
+    {0x24E6, 0x24CC}, {0x24E7, 0x24CD}, {0x24E8, 0x24CE}, {0x24E9, 0x24CF}, {0x2C30, 0x2C00}, {0x2C31, 0x2C01},
+    {0x2C32, 0x2C02}, {0x2C33, 0x2C03}, {0x2C34, 0x2C04}, {0x2C35, 0x2C05}, {0x2C36, 0x2C06}, {0x2C37, 0x2C07},
+    {0x2C38, 0x2C08}, {0x2C39, 0x2C09}, {0x2C3A, 0x2C0A}, {0x2C3B, 0x2C0B}, {0x2C3C, 0x2C0C}, {0x2C3D, 0x2C0D},
+    {0x2C3E, 0x2C0E}, {0x2C3F, 0x2C0F}, {0x2C40, 0x2C10}, {0x2C41, 0x2C11}, {0x2C42, 0x2C12}, {0x2C43, 0x2C13},
+    {0x2C44, 0x2C14}, {0x2C45, 0x2C15}, {0x2C46, 0x2C16}, {0x2C47, 0x2C17}, {0x2C48, 0x2C18}, {0x2C49, 0x2C19},
+    {0x2C4A, 0x2C1A}, {0x2C4B, 0x2C1B}, {0x2C4C, 0x2C1C}, {0x2C4D, 0x2C1D}, {0x2C4E, 0x2C1E}, {0x2C4F, 0x2C1F},
+    {0x2C50, 0x2C20}, {0x2C51, 0x2C21}, {0x2C52, 0x2C22}, {0x2C53, 0x2C23}, {0x2C54, 0x2C24}, {0x2C55, 0x2C25},
+    {0x2C56, 0x2C26}, {0x2C57, 0x2C27}, {0x2C58, 0x2C28}, {0x2C59, 0x2C29}, {0x2C5A, 0x2C2A}, {0x2C5B, 0x2C2B},
+    {0x2C5C, 0x2C2C}, {0x2C5D, 0x2C2D}, {0x2C5E, 0x2C2E}, {0x2C5F, 0x2C2F}, {0x2C61, 0x2C60}, {0x2C65, 0x23A},
+    {0x2C66, 0x23E}, {0x2C68, 0x2C67}, {0x2C6A, 0x2C69}, {0x2C6C, 0x2C6B}, {0x2C73, 0x2C72}, {0x2C76, 0x2C75},
+    {0x2C81, 0x2C80}, {0x2C83, 0x2C82}, {0x2C85, 0x2C84}, {0x2C87, 0x2C86}, {0x2C89, 0x2C88}, {0x2C8B, 0x2C8A},
+    {0x2C8D, 0x2C8C}, {0x2C8F, 0x2C8E}, {0x2C91, 0x2C90}, {0x2C93, 0x2C92}, {0x2C95, 0x2C94}, {0x2C97, 0x2C96},
+    {0x2C99, 0x2C98}, {0x2C9B, 0x2C9A}, {0x2C9D, 0x2C9C}, {0x2C9F, 0x2C9E}, {0x2CA1, 0x2CA0}, {0x2CA3, 0x2CA2},
+    {0x2CA5, 0x2CA4}, {0x2CA7, 0x2CA6}, {0x2CA9, 0x2CA8}, {0x2CAB, 0x2CAA}, {0x2CAD, 0x2CAC}, {0x2CAF, 0x2CAE},
+    {0x2CB1, 0x2CB0}, {0x2CB3, 0x2CB2}, {0x2CB5, 0x2CB4}, {0x2CB7, 0x2CB6}, {0x2CB9, 0x2CB8}, {0x2CBB, 0x2CBA},
+    {0x2CBD, 0x2CBC}, {0x2CBF, 0x2CBE}, {0x2CC1, 0x2CC0}, {0x2CC3, 0x2CC2}, {0x2CC5, 0x2CC4}, {0x2CC7, 0x2CC6},
+    {0x2CC9, 0x2CC8}, {0x2CCB, 0x2CCA}, {0x2CCD, 0x2CCC}, {0x2CCF, 0x2CCE}, {0x2CD1, 0x2CD0}, {0x2CD3, 0x2CD2},
+    {0x2CD5, 0x2CD4}, {0x2CD7, 0x2CD6}, {0x2CD9, 0x2CD8}, {0x2CDB, 0x2CDA}, {0x2CDD, 0x2CDC}, {0x2CDF, 0x2CDE},
+    {0x2CE1, 0x2CE0}, {0x2CE3, 0x2CE2}, {0x2CEC, 0x2CEB}, {0x2CEE, 0x2CED}, {0x2CF3, 0x2CF2}, {0x2D00, 0x10A0},
+    {0x2D01, 0x10A1}, {0x2D02, 0x10A2}, {0x2D03, 0x10A3}, {0x2D04, 0x10A4}, {0x2D05, 0x10A5}, {0x2D06, 0x10A6},
+    {0x2D07, 0x10A7}, {0x2D08, 0x10A8}, {0x2D09, 0x10A9}, {0x2D0A, 0x10AA}, {0x2D0B, 0x10AB}, {0x2D0C, 0x10AC},
+    {0x2D0D, 0x10AD}, {0x2D0E, 0x10AE}, {0x2D0F, 0x10AF}, {0x2D10, 0x10B0}, {0x2D11, 0x10B1}, {0x2D12, 0x10B2},
+    {0x2D13, 0x10B3}, {0x2D14, 0x10B4}, {0x2D15, 0x10B5}, {0x2D16, 0x10B6}, {0x2D17, 0x10B7}, {0x2D18, 0x10B8},
+    {0x2D19, 0x10B9}, {0x2D1A, 0x10BA}, {0x2D1B, 0x10BB}, {0x2D1C, 0x10BC}, {0x2D1D, 0x10BD}, {0x2D1E, 0x10BE},
+    {0x2D1F, 0x10BF}, {0x2D20, 0x10C0}, {0x2D21, 0x10C1}, {0x2D22, 0x10C2}, {0x2D23, 0x10C3}, {0x2D24, 0x10C4},
+    {0x2D25, 0x10C5}, {0x2D27, 0x10C7}, {0x2D2D, 0x10CD}, {0xA641, 0xA640}, {0xA643, 0xA642}, {0xA645, 0xA644},
+    {0xA647, 0xA646}, {0xA649, 0xA648}, {0xA64B, 0xA64A}, {0xA64D, 0xA64C}, {0xA64F, 0xA64E}, {0xA651, 0xA650},
+    {0xA653, 0xA652}, {0xA655, 0xA654}, {0xA657, 0xA656}, {0xA659, 0xA658}, {0xA65B, 0xA65A}, {0xA65D, 0xA65C},
+    {0xA65F, 0xA65E}, {0xA661, 0xA660}, {0xA663, 0xA662}, {0xA665, 0xA664}, {0xA667, 0xA666}, {0xA669, 0xA668},
+    {0xA66B, 0xA66A}, {0xA66D, 0xA66C}, {0xA681, 0xA680}, {0xA683, 0xA682}, {0xA685, 0xA684}, {0xA687, 0xA686},
+    {0xA689, 0xA688}, {0xA68B, 0xA68A}, {0xA68D, 0xA68C}, {0xA68F, 0xA68E}, {0xA691, 0xA690}, {0xA693, 0xA692},
+    {0xA695, 0xA694}, {0xA697, 0xA696}, {0xA699, 0xA698}, {0xA69B, 0xA69A}, {0xA723, 0xA722}, {0xA725, 0xA724},
+    {0xA727, 0xA726}, {0xA729, 0xA728}, {0xA72B, 0xA72A}, {0xA72D, 0xA72C}, {0xA72F, 0xA72E}, {0xA733, 0xA732},
+    {0xA735, 0xA734}, {0xA737, 0xA736}, {0xA739, 0xA738}, {0xA73B, 0xA73A}, {0xA73D, 0xA73C}, {0xA73F, 0xA73E},
+    {0xA741, 0xA740}, {0xA743, 0xA742}, {0xA745, 0xA744}, {0xA747, 0xA746}, {0xA749, 0xA748}, {0xA74B, 0xA74A},
+    {0xA74D, 0xA74C}, {0xA74F, 0xA74E}, {0xA751, 0xA750}, {0xA753, 0xA752}, {0xA755, 0xA754}, {0xA757, 0xA756},
+    {0xA759, 0xA758}, {0xA75B, 0xA75A}, {0xA75D, 0xA75C}, {0xA75F, 0xA75E}, {0xA761, 0xA760}, {0xA763, 0xA762},
+    {0xA765, 0xA764}, {0xA767, 0xA766}, {0xA769, 0xA768}, {0xA76B, 0xA76A}, {0xA76D, 0xA76C}, {0xA76F, 0xA76E},
+    {0xA77A, 0xA779}, {0xA77C, 0xA77B}, {0xA77F, 0xA77E}, {0xA781, 0xA780}, {0xA783, 0xA782}, {0xA785, 0xA784},
+    {0xA787, 0xA786}, {0xA78C, 0xA78B}, {0xA791, 0xA790}, {0xA793, 0xA792}, {0xA794, 0xA7C4}, {0xA797, 0xA796},
+    {0xA799, 0xA798}, {0xA79B, 0xA79A}, {0xA79D, 0xA79C}, {0xA79F, 0xA79E}, {0xA7A1, 0xA7A0}, {0xA7A3, 0xA7A2},
+    {0xA7A5, 0xA7A4}, {0xA7A7, 0xA7A6}, {0xA7A9, 0xA7A8}, {0xA7B5, 0xA7B4}, {0xA7B7, 0xA7B6}, {0xA7B9, 0xA7B8},
+    {0xA7BB, 0xA7BA}, {0xA7BD, 0xA7BC}, {0xA7BF, 0xA7BE}, {0xA7C1, 0xA7C0}, {0xA7C3, 0xA7C2}, {0xA7C8, 0xA7C7},
+    {0xA7CA, 0xA7C9}, {0xA7CD, 0xA7CC}, {0xA7D1, 0xA7D0}, {0xA7D7, 0xA7D6}, {0xA7D9, 0xA7D8}, {0xA7DB, 0xA7DA},
+    {0xA7F6, 0xA7F5}, {0xAB53, 0xA7B3}, {0xAB70, 0x13A0}, {0xAB71, 0x13A1}, {0xAB72, 0x13A2}, {0xAB73, 0x13A3},
+    {0xAB74, 0x13A4}, {0xAB75, 0x13A5}, {0xAB76, 0x13A6}, {0xAB77, 0x13A7}, {0xAB78, 0x13A8}, {0xAB79, 0x13A9},
+    {0xAB7A, 0x13AA}, {0xAB7B, 0x13AB}, {0xAB7C, 0x13AC}, {0xAB7D, 0x13AD}, {0xAB7E, 0x13AE}, {0xAB7F, 0x13AF},
+    {0xAB80, 0x13B0}, {0xAB81, 0x13B1}, {0xAB82, 0x13B2}, {0xAB83, 0x13B3}, {0xAB84, 0x13B4}, {0xAB85, 0x13B5},
+    {0xAB86, 0x13B6}, {0xAB87, 0x13B7}, {0xAB88, 0x13B8}, {0xAB89, 0x13B9}, {0xAB8A, 0x13BA}, {0xAB8B, 0x13BB},
+    {0xAB8C, 0x13BC}, {0xAB8D, 0x13BD}, {0xAB8E, 0x13BE}, {0xAB8F, 0x13BF}, {0xAB90, 0x13C0}, {0xAB91, 0x13C1},
+    {0xAB92, 0x13C2}, {0xAB93, 0x13C3}, {0xAB94, 0x13C4}, {0xAB95, 0x13C5}, {0xAB96, 0x13C6}, {0xAB97, 0x13C7},
+    {0xAB98, 0x13C8}, {0xAB99, 0x13C9}, {0xAB9A, 0x13CA}, {0xAB9B, 0x13CB}, {0xAB9C, 0x13CC}, {0xAB9D, 0x13CD},
+    {0xAB9E, 0x13CE}, {0xAB9F, 0x13CF}, {0xABA0, 0x13D0}, {0xABA1, 0x13D1}, {0xABA2, 0x13D2}, {0xABA3, 0x13D3},
+    {0xABA4, 0x13D4}, {0xABA5, 0x13D5}, {0xABA6, 0x13D6}, {0xABA7, 0x13D7}, {0xABA8, 0x13D8}, {0xABA9, 0x13D9},
+    {0xABAA, 0x13DA}, {0xABAB, 0x13DB}, {0xABAC, 0x13DC}, {0xABAD, 0x13DD}, {0xABAE, 0x13DE}, {0xABAF, 0x13DF},
+    {0xABB0, 0x13E0}, {0xABB1, 0x13E1}, {0xABB2, 0x13E2}, {0xABB3, 0x13E3}, {0xABB4, 0x13E4}, {0xABB5, 0x13E5},
+    {0xABB6, 0x13E6}, {0xABB7, 0x13E7}, {0xABB8, 0x13E8}, {0xABB9, 0x13E9}, {0xABBA, 0x13EA}, {0xABBB, 0x13EB},
+    {0xABBC, 0x13EC}, {0xABBD, 0x13ED}, {0xABBE, 0x13EE}, {0xABBF, 0x13EF}, {0xFF41, 0xFF21}, {0xFF42, 0xFF22},
+    {0xFF43, 0xFF23}, {0xFF44, 0xFF24}, {0xFF45, 0xFF25}, {0xFF46, 0xFF26}, {0xFF47, 0xFF27}, {0xFF48, 0xFF28},
+    {0xFF49, 0xFF29}, {0xFF4A, 0xFF2A}, {0xFF4B, 0xFF2B}, {0xFF4C, 0xFF2C}, {0xFF4D, 0xFF2D}, {0xFF4E, 0xFF2E},
+    {0xFF4F, 0xFF2F}, {0xFF50, 0xFF30}, {0xFF51, 0xFF31}, {0xFF52, 0xFF32}, {0xFF53, 0xFF33}, {0xFF54, 0xFF34},
+    {0xFF55, 0xFF35}, {0xFF56, 0xFF36}, {0xFF57, 0xFF37}, {0xFF58, 0xFF38}, {0xFF59, 0xFF39}, {0xFF5A, 0xFF3A},
+    {0x10428, 0x10400}, {0x10429, 0x10401}, {0x1042A, 0x10402}, {0x1042B, 0x10403}, {0x1042C, 0x10404}, {0x1042D, 0x10405},
+    {0x1042E, 0x10406}, {0x1042F, 0x10407}, {0x10430, 0x10408}, {0x10431, 0x10409}, {0x10432, 0x1040A}, {0x10433, 0x1040B},
+    {0x10434, 0x1040C}, {0x10435, 0x1040D}, {0x10436, 0x1040E}, {0x10437, 0x1040F}, {0x10438, 0x10410}, {0x10439, 0x10411},
+    {0x1043A, 0x10412}, {0x1043B, 0x10413}, {0x1043C, 0x10414}, {0x1043D, 0x10415}, {0x1043E, 0x10416}, {0x1043F, 0x10417},
+    {0x10440, 0x10418}, {0x10441, 0x10419}, {0x10442, 0x1041A}, {0x10443, 0x1041B}, {0x10444, 0x1041C}, {0x10445, 0x1041D},
+    {0x10446, 0x1041E}, {0x10447, 0x1041F}, {0x10448, 0x10420}, {0x10449, 0x10421}, {0x1044A, 0x10422}, {0x1044B, 0x10423},
+    {0x1044C, 0x10424}, {0x1044D, 0x10425}, {0x1044E, 0x10426}, {0x1044F, 0x10427}, {0x104D8, 0x104B0}, {0x104D9, 0x104B1},
+    {0x104DA, 0x104B2}, {0x104DB, 0x104B3}, {0x104DC, 0x104B4}, {0x104DD, 0x104B5}, {0x104DE, 0x104B6}, {0x104DF, 0x104B7},
+    {0x104E0, 0x104B8}, {0x104E1, 0x104B9}, {0x104E2, 0x104BA}, {0x104E3, 0x104BB}, {0x104E4, 0x104BC}, {0x104E5, 0x104BD},
+    {0x104E6, 0x104BE}, {0x104E7, 0x104BF}, {0x104E8, 0x104C0}, {0x104E9, 0x104C1}, {0x104EA, 0x104C2}, {0x104EB, 0x104C3},
+    {0x104EC, 0x104C4}, {0x104ED, 0x104C5}, {0x104EE, 0x104C6}, {0x104EF, 0x104C7}, {0x104F0, 0x104C8}, {0x104F1, 0x104C9},
+    {0x104F2, 0x104CA}, {0x104F3, 0x104CB}, {0x104F4, 0x104CC}, {0x104F5, 0x104CD}, {0x104F6, 0x104CE}, {0x104F7, 0x104CF},
+    {0x104F8, 0x104D0}, {0x104F9, 0x104D1}, {0x104FA, 0x104D2}, {0x104FB, 0x104D3}, {0x10597, 0x10570}, {0x10598, 0x10571},
+    {0x10599, 0x10572}, {0x1059A, 0x10573}, {0x1059B, 0x10574}, {0x1059C, 0x10575}, {0x1059D, 0x10576}, {0x1059E, 0x10577},
+    {0x1059F, 0x10578}, {0x105A0, 0x10579}, {0x105A1, 0x1057A}, {0x105A3, 0x1057C}, {0x105A4, 0x1057D}, {0x105A5, 0x1057E},
+    {0x105A6, 0x1057F}, {0x105A7, 0x10580}, {0x105A8, 0x10581}, {0x105A9, 0x10582}, {0x105AA, 0x10583}, {0x105AB, 0x10584},
+    {0x105AC, 0x10585}, {0x105AD, 0x10586}, {0x105AE, 0x10587}, {0x105AF, 0x10588}, {0x105B0, 0x10589}, {0x105B1, 0x1058A},
+    {0x105B3, 0x1058C}, {0x105B4, 0x1058D}, {0x105B5, 0x1058E}, {0x105B6, 0x1058F}, {0x105B7, 0x10590}, {0x105B8, 0x10591},
+    {0x105B9, 0x10592}, {0x105BB, 0x10594}, {0x105BC, 0x10595}, {0x10CC0, 0x10C80}, {0x10CC1, 0x10C81}, {0x10CC2, 0x10C82},
+    {0x10CC3, 0x10C83}, {0x10CC4, 0x10C84}, {0x10CC5, 0x10C85}, {0x10CC6, 0x10C86}, {0x10CC7, 0x10C87}, {0x10CC8, 0x10C88},
+    {0x10CC9, 0x10C89}, {0x10CCA, 0x10C8A}, {0x10CCB, 0x10C8B}, {0x10CCC, 0x10C8C}, {0x10CCD, 0x10C8D}, {0x10CCE, 0x10C8E},
+    {0x10CCF, 0x10C8F}, {0x10CD0, 0x10C90}, {0x10CD1, 0x10C91}, {0x10CD2, 0x10C92}, {0x10CD3, 0x10C93}, {0x10CD4, 0x10C94},
+    {0x10CD5, 0x10C95}, {0x10CD6, 0x10C96}, {0x10CD7, 0x10C97}, {0x10CD8, 0x10C98}, {0x10CD9, 0x10C99}, {0x10CDA, 0x10C9A},
+    {0x10CDB, 0x10C9B}, {0x10CDC, 0x10C9C}, {0x10CDD, 0x10C9D}, {0x10CDE, 0x10C9E}, {0x10CDF, 0x10C9F}, {0x10CE0, 0x10CA0},
+    {0x10CE1, 0x10CA1}, {0x10CE2, 0x10CA2}, {0x10CE3, 0x10CA3}, {0x10CE4, 0x10CA4}, {0x10CE5, 0x10CA5}, {0x10CE6, 0x10CA6},
+    {0x10CE7, 0x10CA7}, {0x10CE8, 0x10CA8}, {0x10CE9, 0x10CA9}, {0x10CEA, 0x10CAA}, {0x10CEB, 0x10CAB}, {0x10CEC, 0x10CAC},
+    {0x10CED, 0x10CAD}, {0x10CEE, 0x10CAE}, {0x10CEF, 0x10CAF}, {0x10CF0, 0x10CB0}, {0x10CF1, 0x10CB1}, {0x10CF2, 0x10CB2},
+    {0x10D70, 0x10D50}, {0x10D71, 0x10D51}, {0x10D72, 0x10D52}, {0x10D73, 0x10D53}, {0x10D74, 0x10D54}, {0x10D75, 0x10D55},
+    {0x10D76, 0x10D56}, {0x10D77, 0x10D57}, {0x10D78, 0x10D58}, {0x10D79, 0x10D59}, {0x10D7A, 0x10D5A}, {0x10D7B, 0x10D5B},
+    {0x10D7C, 0x10D5C}, {0x10D7D, 0x10D5D}, {0x10D7E, 0x10D5E}, {0x10D7F, 0x10D5F}, {0x10D80, 0x10D60}, {0x10D81, 0x10D61},
+    {0x10D82, 0x10D62}, {0x10D83, 0x10D63}, {0x10D84, 0x10D64}, {0x10D85, 0x10D65}, {0x118C0, 0x118A0}, {0x118C1, 0x118A1},
+    {0x118C2, 0x118A2}, {0x118C3, 0x118A3}, {0x118C4, 0x118A4}, {0x118C5, 0x118A5}, {0x118C6, 0x118A6}, {0x118C7, 0x118A7},
+    {0x118C8, 0x118A8}, {0x118C9, 0x118A9}, {0x118CA, 0x118AA}, {0x118CB, 0x118AB}, {0x118CC, 0x118AC}, {0x118CD, 0x118AD},
+    {0x118CE, 0x118AE}, {0x118CF, 0x118AF}, {0x118D0, 0x118B0}, {0x118D1, 0x118B1}, {0x118D2, 0x118B2}, {0x118D3, 0x118B3},
+    {0x118D4, 0x118B4}, {0x118D5, 0x118B5}, {0x118D6, 0x118B6}, {0x118D7, 0x118B7}, {0x118D8, 0x118B8}, {0x118D9, 0x118B9},
+    {0x118DA, 0x118BA}, {0x118DB, 0x118BB}, {0x118DC, 0x118BC}, {0x118DD, 0x118BD}, {0x118DE, 0x118BE}, {0x118DF, 0x118BF},
+    {0x16E60, 0x16E40}, {0x16E61, 0x16E41}, {0x16E62, 0x16E42}, {0x16E63, 0x16E43}, {0x16E64, 0x16E44}, {0x16E65, 0x16E45},
+    {0x16E66, 0x16E46}, {0x16E67, 0x16E47}, {0x16E68, 0x16E48}, {0x16E69, 0x16E49}, {0x16E6A, 0x16E4A}, {0x16E6B, 0x16E4B},
+    {0x16E6C, 0x16E4C}, {0x16E6D, 0x16E4D}, {0x16E6E, 0x16E4E}, {0x16E6F, 0x16E4F}, {0x16E70, 0x16E50}, {0x16E71, 0x16E51},
+    {0x16E72, 0x16E52}, {0x16E73, 0x16E53}, {0x16E74, 0x16E54}, {0x16E75, 0x16E55}, {0x16E76, 0x16E56}, {0x16E77, 0x16E57},
+    {0x16E78, 0x16E58}, {0x16E79, 0x16E59}, {0x16E7A, 0x16E5A}, {0x16E7B, 0x16E5B}, {0x16E7C, 0x16E5C}, {0x16E7D, 0x16E5D},
+    {0x16E7E, 0x16E5E}, {0x16E7F, 0x16E5F}, {0x1E922, 0x1E900}, {0x1E923, 0x1E901}, {0x1E924, 0x1E902}, {0x1E925, 0x1E903},
+    {0x1E926, 0x1E904}, {0x1E927, 0x1E905}, {0x1E928, 0x1E906}, {0x1E929, 0x1E907}, {0x1E92A, 0x1E908}, {0x1E92B, 0x1E909},
+    {0x1E92C, 0x1E90A}, {0x1E92D, 0x1E90B}, {0x1E92E, 0x1E90C}, {0x1E92F, 0x1E90D}, {0x1E930, 0x1E90E}, {0x1E931, 0x1E90F},
+    {0x1E932, 0x1E910}, {0x1E933, 0x1E911}, {0x1E934, 0x1E912}, {0x1E935, 0x1E913}, {0x1E936, 0x1E914}, {0x1E937, 0x1E915},
+    {0x1E938, 0x1E916}, {0x1E939, 0x1E917}, {0x1E93A, 0x1E918}, {0x1E93B, 0x1E919}, {0x1E93C, 0x1E91A}, {0x1E93D, 0x1E91B},
+    {0x1E93E, 0x1E91C}, {0x1E93F, 0x1E91D}, {0x1E940, 0x1E91E}, {0x1E941, 0x1E91F}, {0x1E942, 0x1E920}, {0x1E943, 0x1E921},
+};
+/* END generated by scripts/unicode/gen-lowercase.py */
+
+/* c's simple case mapping from the tables above, or c. */
+static uint32_t byn_case_map(uint32_t c, bool upper) {
+    const uint32_t (*m)[2] = upper ? byn_upper_map : byn_lower_map;
+    size_t lo = 0, hi = upper ? sizeof byn_upper_map / sizeof byn_upper_map[0] : sizeof byn_lower_map / sizeof byn_lower_map[0];
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (m[mid][0] == c) return m[mid][1];
+        if (m[mid][0] < c) lo = mid + 1;
+        else hi = mid;
+    }
+    return c;
+}
+
+byn_str byn_str_case(byn_str s, bool upper, byn_alloc* to) {
+    if (s.len == 0) return s;
+    /* A mapping can change the byte count (U+023A is 2 bytes, U+2C65 is 3), so measure first. */
+    uint8_t b[4];
+    int64_t len = 0;
+    for (int64_t i = 0; i < s.len;) len += byn_utf8_put(b, byn_case_map(byn_str_next(s, &i), upper));
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    for (int64_t i = 0, n = 0; i < s.len;) {
+        int k = byn_utf8_put(b, byn_case_map(byn_str_next(s, &i), upper));
+        memcpy(out + n, b, (size_t)k);
+        n += k;
+    }
+    return (byn_str){out, len};
+}
+
+byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to, const char* file, int line) {
+    int64_t runes = 0;
+    for (int64_t pos = 0; pos < s.len; runes++) byn_str_next(s, &pos);
+    uint8_t b[4];
+    int w = byn_utf8_put(b, c);
+    int64_t pad = n > runes ? n - runes : 0;
+    if (pad > (INT64_MAX - s.len) / w) byn_panic("padded text is too long", file, line);
+    int64_t len = s.len + pad * w;
+    if (len == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    if (s.len > 0) memcpy(out, s.ptr, (size_t)s.len);
+    for (int64_t i = 0; i < pad; i++) memcpy(out + s.len + i * w, b, (size_t)w);
+    return (byn_str){out, len};
+}
+
+byn_str byn_bytes_string(const uint8_t* p, int64_t n, byn_alloc* to) {
+    /* At most "255, " per byte, plus the brackets. */
+    uint8_t* out = to->resize(to, NULL, 0, n * 5 + 2);
+    int64_t o = 0;
+    out[o++] = '[';
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0) out[o++] = ',', out[o++] = ' ';
+        uint8_t v = p[i];
+        if (v >= 100) out[o++] = (uint8_t)('0' + v / 100);
+        if (v >= 10) out[o++] = (uint8_t)('0' + v / 10 % 10);
+        out[o++] = (uint8_t)('0' + v % 10);
+    }
+    out[o++] = ']';
+    return (byn_str){out, o};
+}
+
+/* Kinds as in `BuiltinMember`'s view order: 0 runes, 1 utf16, 2 lines, 3 parts. */
+bool byn_view_more(byn_text_view v, int64_t pos, int32_t kind) {
+    if (kind == 3) return pos >= 0;
+    return pos < v.s.len || (kind == 1 && v.pending != 0);
+}
+
+byn_text_view byn_parts(byn_str s, byn_str sep, int64_t limit, const char* file, int line) {
+    if (sep.len == 0) byn_panic("parts with an empty separator", file, line);
+    if (limit < 0) byn_panic("parts with a negative limit", file, line);
+    return (byn_text_view){s, sep, limit, 0};
+}
+
+byn_text_view byn_parts_rune(byn_str s, uint32_t c, int64_t limit, const char* file, int line) {
+    if (limit < 0) byn_panic("parts with a negative limit", file, line);
+    byn_text_view v = {s, {NULL, 0}, limit, 0, {0}};
+    v.sep.len = byn_utf8_put(v.rune, c);
+    return v;
+}
+
+uint16_t byn_utf16_next(byn_text_view* v, int64_t* pos) {
+    if (v->pending != 0) {
+        uint16_t low = v->pending;
+        v->pending = 0;
+        return low;
+    }
+    uint32_t c = byn_str_next(v->s, pos);
+    if (c < 0x10000) return (uint16_t)c;
+    c -= 0x10000;
+    v->pending = (uint16_t)(0xDC00 | (c & 0x3FF));
+    return (uint16_t)(0xD800 | (c >> 10));
+}
+
+byn_str byn_lines_next(byn_text_view* v, int64_t* pos) {
+    int64_t start = *pos, end = start;
+    while (end < v->s.len && v->s.ptr[end] != '\n') end++;
+    bool newline = end < v->s.len;
+    *pos = newline ? end + 1 : end;
+    if (newline && end > start && v->s.ptr[end - 1] == '\r') end--;
+    return (byn_str){v->s.ptr + start, end - start};
+}
+
+byn_str byn_parts_next(byn_text_view* v, int64_t* pos) {
+    int64_t start = *pos;
+    byn_str sep = v->sep.ptr != NULL ? v->sep : (byn_str){v->rune, v->sep.len};
+    int64_t at = v->limit == 1 ? -1 : byn_find(v->s, sep, start);
+    if (at < 0) {
+        *pos = -1;
+        return (byn_str){v->s.ptr + start, v->s.len - start};
+    }
+    if (v->limit > 1) v->limit--;
+    *pos = at + sep.len;
+    return (byn_str){v->s.ptr + start, at - start};
+}
+
+uint16_t* byn_utf16_copy(byn_str s, int64_t* len, byn_alloc* to) {
+    byn_text_view v = {s, {NULL, 0}, 0, 0};
+    int64_t n = 0;
+    for (int64_t pos = 0; byn_view_more(v, pos, 1); byn_utf16_next(&v, &pos)) n++;
+    *len = n;
+    if (n == 0) return NULL;
+    uint16_t* out = to->resize(to, NULL, 0, n * (int64_t)sizeof(uint16_t));
+    int64_t i = 0;
+    for (int64_t pos = 0; byn_view_more(v, pos, 1);) out[i++] = byn_utf16_next(&v, &pos);
+    return out;
+}
+
+/* ── Sorting ─────────────────────────────────────────────────────────────── */
+
+/* Insertion sort on short runs, then in-place merges by rotation (SymMerge): stable, O(n log² n), no scratch memory. */
+
+static void byn_sort_reverse(uint8_t* p, int64_t i, int64_t j, int64_t size) {
+    for (j--; i < j; i++, j--)
+        for (int64_t k = 0; k < size; k++) {
+            uint8_t t = p[i * size + k];
+            p[i * size + k] = p[j * size + k];
+            p[j * size + k] = t;
+        }
+}
+
+/* Moves [m, j) in front of [i, m). */
+static void byn_sort_rotate(uint8_t* p, int64_t i, int64_t m, int64_t j, int64_t size) {
+    byn_sort_reverse(p, i, m, size);
+    byn_sort_reverse(p, m, j, size);
+    byn_sort_reverse(p, i, j, size);
+}
+
+/* Merges the sorted runs [lo, m) and [m, hi). */
+static void byn_sort_merge(uint8_t* p, int64_t lo, int64_t m, int64_t hi, int64_t size, bool (*less)(const void*, const void*)) {
+    if (m - lo == 1) {
+        int64_t i = m, j = hi;
+        while (i < j) {
+            int64_t h = i + (j - i) / 2;
+            if (less(p + h * size, p + lo * size)) i = h + 1;
+            else j = h;
+        }
+        byn_sort_rotate(p, lo, lo + 1, i, size);
+        return;
+    }
+    if (hi - m == 1) {
+        int64_t i = lo, j = m;
+        while (i < j) {
+            int64_t h = i + (j - i) / 2;
+            if (!less(p + m * size, p + h * size)) i = h + 1;
+            else j = h;
+        }
+        byn_sort_rotate(p, i, m, m + 1, size);
+        return;
+    }
+    int64_t mid = lo + (hi - lo) / 2, n = mid + m, start, r;
+    if (m > mid) {
+        start = n - hi;
+        r = mid;
+    } else {
+        start = lo;
+        r = m;
+    }
+    int64_t last = n - 1;
+    while (start < r) {
+        int64_t c = start + (r - start) / 2;
+        if (!less(p + (last - c) * size, p + c * size)) start = c + 1;
+        else r = c;
+    }
+    int64_t end = n - start;
+    if (start < m && m < end) byn_sort_rotate(p, start, m, end, size);
+    if (lo < start && start < mid) byn_sort_merge(p, lo, start, mid, size, less);
+    if (mid < end && end < hi) byn_sort_merge(p, mid, end, hi, size, less);
+}
+
+void byn_sort(void* base, int64_t n, int64_t size, bool (*less)(const void* a, const void* b)) {
+    enum { run = 20 };
+    uint8_t* p = (uint8_t*)base;
+    for (int64_t lo = 0; lo < n; lo += run) {
+        int64_t hi = lo + run < n ? lo + run : n;
+        for (int64_t i = lo + 1; i < hi; i++)
+            for (int64_t j = i; j > lo && less(p + j * size, p + (j - 1) * size); j--) byn_sort_reverse(p, j - 1, j + 1, size);
+    }
+    for (int64_t w = run; w < n; w *= 2)
+        for (int64_t lo = 0; lo + w < n; lo += 2 * w) byn_sort_merge(p, lo, lo + w, lo + 2 * w < n ? lo + 2 * w : n, size, less);
+}
+
+/* ── Allocators ──────────────────────────────────────────────────────────── */
+
+static void* byn_general_resize(byn_alloc* self, void* old, int64_t old_size, int64_t new_size) {
+    (void)self;
+    (void)old_size;
+    void* p = realloc(old, (size_t)new_size);
+    if (!p) byn_panic("out of memory", NULL, 0);
+    return p;
+}
+
+byn_alloc byn_general = {byn_general_resize};
+byn_alloc* byn_context = &byn_general;
+
+void byn_release(byn_alloc* from, void* p) {
+    if (from == &byn_general) free(p);
+}
+
+typedef struct byn_chunk {
+    struct byn_chunk* next;
+    int64_t size;
+    int64_t used;
+    _Alignas(16) uint8_t data[];
+} byn_chunk;
+
+struct byn_arena {
+    byn_alloc base; /* first, so a byn_arena* is a byn_alloc* */
+    byn_chunk* chunks;
+};
+
+static void* byn_arena_take(byn_arena* a, int64_t n) {
+    n = (n + 15) & ~(int64_t)15;
+    byn_chunk* c = a->chunks;
+    if (!c || c->used + n > c->size) {
+        int64_t size = n > 4096 ? n : 4096;
+        if (c && c->size * 2 > size) size = c->size * 2;
+        c = (byn_chunk*)malloc(sizeof(byn_chunk) + (size_t)size);
+        if (!c) byn_panic("out of memory", NULL, 0);
+        c->next = a->chunks;
+        c->size = size;
+        c->used = 0;
+        a->chunks = c;
+    }
+    void* p = c->data + c->used;
+    c->used += n;
+    return p;
+}
+
+static void* byn_arena_resize(byn_alloc* self, void* old, int64_t old_size, int64_t new_size) {
+    void* p = byn_arena_take((byn_arena*)self, new_size);
+    if (old && old_size > 0) memcpy(p, old, (size_t)(old_size < new_size ? old_size : new_size));
+    return p;
+}
+
+byn_arena* byn_arena_new(void) {
+    byn_arena* a = (byn_arena*)malloc(sizeof *a);
+    if (!a) byn_panic("out of memory", NULL, 0);
+    a->base.resize = byn_arena_resize;
+    a->chunks = NULL;
+    return a;
+}
+
+void byn_arena_reset(byn_arena* a) {
+    byn_chunk* c = a->chunks;
+    while (c) {
+        byn_chunk* next = c->next;
+#ifdef BYN_DEBUG
+        byn_own_forget(c->data, c->data + c->size);
+#endif
+        free(c);
+        c = next;
+    }
+    a->chunks = NULL;
+}
+
+void byn_arena_free(byn_arena* a) {
+    byn_arena_reset(a);
+    free(a);
+}
+
+byn_alloc* byn_arena_alloc(byn_arena* a) { return &a->base; }
+
+void* byn_copy_bytes(const void* p, int64_t n, byn_alloc* to) {
+    if (n == 0) return NULL;
+    void* q = to->resize(to, NULL, 0, n);
+    memcpy(q, p, (size_t)n);
+    return q;
+}
+
+byn_str byn_str_copy(byn_str s, byn_alloc* to) {
+    return (byn_str){(const uint8_t*)byn_copy_bytes(s.ptr, s.len, to), s.len};
+}
+
+byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radix radix, byn_alloc* to) {
+    static const uint8_t bases[] = {2, 8, 10, 16};
+    uint64_t base = bases[radix];
+    bool negative = radix == 2 && is_signed && v < 0;
+    uint64_t u = negative ? 0 - (uint64_t)v : (uint64_t)v;
+    if (bits < 64) u &= (UINT64_C(1) << bits) - 1;
+    uint8_t buf[65];
+    int n = 65;
+    do {
+        buf[--n] = (uint8_t)"0123456789abcdef"[u % base];
+        u /= base;
+    } while (u != 0);
+    if (negative) buf[--n] = '-';
+    return byn_str_copy((byn_str){buf + n, 65 - n}, to);
+}
+
+int64_t byn_int_parse_at(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
+    static const uint8_t bases[] = {2, 8, 10, 16};
+    uint64_t base = bases[radix];
+    bool decimal = radix == 2;
+    int64_t i = 0;
+    bool negative = decimal && is_signed && s.len > 0 && s.ptr[0] == '-';
+    if (negative) i = 1;
+    if (i >= s.len) return i;
+    /* Decimal: the magnitude's limit; the others: every bit of the type. */
+    uint64_t max = bits < 64 ? (UINT64_C(1) << bits) - 1 : UINT64_MAX;
+    if (decimal && is_signed) max = negative ? (UINT64_C(1) << (bits - 1)) : (UINT64_C(1) << (bits - 1)) - 1;
+    uint64_t u = 0;
+    bool overflow = false;
+    for (; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        uint64_t d = c >= '0' && c <= '9' ? (uint64_t)(c - '0') : c >= 'a' && c <= 'f' ? (uint64_t)(c - 'a' + 10)
+            : c >= 'A' && c <= 'F' ? (uint64_t)(c - 'A' + 10) : 99;
+        if (d >= base) return i;
+        /* A bad digit after the overflow is still reported first. */
+        if (overflow || u > (max - d) / base) overflow = true;
+        else u = u * base + d;
+    }
+    if (overflow) return -2;
+    if (negative) *out = (int64_t)(0 - u);
+    else if (is_signed && bits < 64 && (u >> (bits - 1)) != 0) *out = (int64_t)(u | ~((UINT64_C(1) << bits) - 1));
+    else *out = (int64_t)u;
+    return -1;
+}
+
+bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
+    return byn_int_parse_at(s, bits, is_signed, radix, out) == -1;
+}
+
+/* The "C" locale, created once, so a float's `.` never depends on the process locale. */
+#ifdef _WIN32
+static _locale_t byn_c_locale(void) {
+    static _locale_t c;
+    if (!c) c = _create_locale(LC_ALL, "C");
+    if (!c) byn_panic("out of memory", NULL, 0);
+    return c;
+}
+#else
+static locale_t byn_c_locale(void) {
+    static locale_t c;
+    if (!c) c = newlocale(LC_ALL_MASK, "C", (locale_t)0);
+    if (!c) byn_panic("out of memory", NULL, 0);
+    return c;
+}
+#endif
+
+/* s is the whole of `-`? digits (`.` digits)? ([eE] [+-]? digits)?. */
+static bool byn_float_form(byn_str s) {
+    int64_t i = s.len > 0 && s.ptr[0] == '-' ? 1 : 0, from = i;
+    while (i < s.len && s.ptr[i] >= '0' && s.ptr[i] <= '9') i++;
+    if (i == from) return false;
+    if (i < s.len && s.ptr[i] == '.') {
+        from = ++i;
+        while (i < s.len && s.ptr[i] >= '0' && s.ptr[i] <= '9') i++;
+        if (i == from) return false;
+    }
+    if (i < s.len && (s.ptr[i] | 0x20) == 'e') {
+        i++;
+        if (i < s.len && (s.ptr[i] == '+' || s.ptr[i] == '-')) i++;
+        from = i;
+        while (i < s.len && s.ptr[i] >= '0' && s.ptr[i] <= '9') i++;
+        if (i == from) return false;
+    }
+    return i == s.len;
+}
+
+bool byn_float_parse(byn_str s, bool single, double* out) {
+    if (!byn_float_form(s)) return false;
+    /* strtod needs a terminated copy. */
+    char small[64];
+    char* buf = s.len < (int64_t)sizeof small ? small : (char*)malloc((size_t)s.len + 1);
+    if (!buf) byn_panic("out of memory", NULL, 0);
+    memcpy(buf, s.ptr, (size_t)s.len);
+    buf[s.len] = '\0';
+    char* end;
+#ifdef _WIN32
+    double v = single ? (double)_strtof_l(buf, &end, byn_c_locale()) : _strtod_l(buf, &end, byn_c_locale());
+#else
+    double v = single ? (double)strtof_l(buf, &end, byn_c_locale()) : strtod_l(buf, &end, byn_c_locale());
+#endif
+    bool whole = end == buf + s.len;
+    if (buf != small) free(buf);
+    if (!whole) return false;
+    *out = v;
+    return true;
+}
+
+int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to) {
+    for (int64_t i = 0; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return i;
+    }
+    /* An odd count lacks the last byte's second digit, which would be at the end. */
+    if (s.len % 2 != 0) return s.len;
+    uint8_t* p = s.len == 0 ? NULL : to->resize(to, NULL, 0, s.len / 2);
+    for (int64_t i = 0; i < s.len / 2; i++) {
+        uint8_t h = s.ptr[2 * i], l = s.ptr[2 * i + 1];
+        int hi = h <= '9' ? h - '0' : (h | 0x20) - 'a' + 10;
+        int lo = l <= '9' ? l - '0' : (l | 0x20) - 'a' + 10;
+        p[i] = (uint8_t)(hi << 4 | lo);
+    }
+    *out = p;
+    return -1;
+}
+
+byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to) {
+    if (n == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, n * 2);
+    for (int64_t i = 0; i < n; i++) {
+        out[2 * i] = (uint8_t)"0123456789abcdef"[p[i] >> 4];
+        out[2 * i + 1] = (uint8_t)"0123456789abcdef"[p[i] & 0xf];
+    }
+    return (byn_str){out, n * 2};
+}
+
+/* ── Path ────────────────────────────────────────────────────────────────── */
+
+/* .NET's `System.IO.Path` algorithms (`Path.cs`, `PathInternal.cs` and their Windows and Unix halves), over UTF-8 bytes
+ * instead of UTF-16 units; every separator, `.`, `:` and drive letter is ASCII, so the indexes agree. `relative` compares
+ * text, so it decodes the full paths to UTF-16 units and compares those as .NET does. */
+
+#ifdef _WIN32
+#define BYN_PATH_SEP '\\'
+static bool byn_path_sep(uint8_t c) { return c == '\\' || c == '/'; }
+#else
+#define BYN_PATH_SEP '/'
+static bool byn_path_sep(uint8_t c) { return c == '/'; }
+#endif
+
+/* .NET's casing differs by OS (Windows .NET maps fewer code points than macOS .NET), so each OS has its own block; Linux compares
+ * ordinally and uses none, so it takes the #else one. */
+#if defined(_WIN32)
+/* BEGIN path case tables (Windows): generated by StdPathTests.CaseTablesMatchDotNet from .NET's own casing; `BAYAN_UPDATE=1` rewrites them. */
+/* `char.ToUpperInvariant` on a UTF-16 unit: {first, last, step, delta} runs. */
+static const int32_t byn_path_upper_invariant[][4] = {
+    {0x0061, 0x007A, 1, -32}, {0x00B5, 0x00B5, 1, 743}, {0x00E0, 0x00F6, 1, -32}, {0x00F8, 0x00FE, 1, -32},
+    {0x00FF, 0x00FF, 1, 121}, {0x0101, 0x012F, 2, -1}, {0x0133, 0x0137, 2, -1}, {0x013A, 0x0148, 2, -1},
+    {0x014B, 0x0177, 2, -1}, {0x017A, 0x017E, 2, -1}, {0x017F, 0x017F, 1, -300}, {0x0180, 0x0180, 1, 195},
+    {0x0183, 0x0185, 2, -1}, {0x0188, 0x0188, 1, -1}, {0x018C, 0x018C, 1, -1}, {0x0192, 0x0192, 1, -1},
+    {0x0195, 0x0195, 1, 97}, {0x0199, 0x0199, 1, -1}, {0x019A, 0x019A, 1, 163}, {0x019E, 0x019E, 1, 130},
+    {0x01A1, 0x01A5, 2, -1}, {0x01A8, 0x01A8, 1, -1}, {0x01AD, 0x01AD, 1, -1}, {0x01B0, 0x01B0, 1, -1},
+    {0x01B4, 0x01B6, 2, -1}, {0x01B9, 0x01B9, 1, -1}, {0x01BD, 0x01BD, 1, -1}, {0x01BF, 0x01BF, 1, 56},
+    {0x01C5, 0x01C5, 1, -1}, {0x01C6, 0x01C6, 1, -2}, {0x01C8, 0x01C8, 1, -1}, {0x01C9, 0x01C9, 1, -2},
+    {0x01CB, 0x01CB, 1, -1}, {0x01CC, 0x01CC, 1, -2}, {0x01CE, 0x01DC, 2, -1}, {0x01DD, 0x01DD, 1, -79},
+    {0x01DF, 0x01EF, 2, -1}, {0x01F2, 0x01F2, 1, -1}, {0x01F3, 0x01F3, 1, -2}, {0x01F5, 0x01F5, 1, -1},
+    {0x01F9, 0x021F, 2, -1}, {0x0223, 0x0233, 2, -1}, {0x023C, 0x023C, 1, -1}, {0x023F, 0x0240, 1, 10815},
+    {0x0242, 0x0242, 1, -1}, {0x0247, 0x024F, 2, -1}, {0x0250, 0x0250, 1, 10783}, {0x0251, 0x0251, 1, 10780},
+    {0x0252, 0x0252, 1, 10782}, {0x0253, 0x0253, 1, -210}, {0x0254, 0x0254, 1, -206}, {0x0256, 0x0257, 1, -205},
+    {0x0259, 0x0259, 1, -202}, {0x025B, 0x025B, 1, -203}, {0x025C, 0x025C, 1, 42319}, {0x0260, 0x0260, 1, -205},
+    {0x0261, 0x0261, 1, 42315}, {0x0263, 0x0263, 1, -207}, {0x0265, 0x0265, 1, 42280}, {0x0266, 0x0266, 1, 42308},
+    {0x0268, 0x0268, 1, -209}, {0x0269, 0x0269, 1, -211}, {0x026A, 0x026A, 1, 42308}, {0x026B, 0x026B, 1, 10743},
+    {0x026C, 0x026C, 1, 42305}, {0x026F, 0x026F, 1, -211}, {0x0271, 0x0271, 1, 10749}, {0x0272, 0x0272, 1, -213},
+    {0x0275, 0x0275, 1, -214}, {0x027D, 0x027D, 1, 10727}, {0x0280, 0x0280, 1, -218}, {0x0282, 0x0282, 1, 42307},
+    {0x0283, 0x0283, 1, -218}, {0x0287, 0x0287, 1, 42282}, {0x0288, 0x0288, 1, -218}, {0x0289, 0x0289, 1, -69},
+    {0x028A, 0x028B, 1, -217}, {0x028C, 0x028C, 1, -71}, {0x0292, 0x0292, 1, -219}, {0x029D, 0x029D, 1, 42261},
+    {0x029E, 0x029E, 1, 42258}, {0x0345, 0x0345, 1, 84}, {0x0371, 0x0373, 2, -1}, {0x0377, 0x0377, 1, -1},
+    {0x037B, 0x037D, 1, 130}, {0x03AC, 0x03AC, 1, -38}, {0x03AD, 0x03AF, 1, -37}, {0x03B1, 0x03C1, 1, -32},
+    {0x03C2, 0x03C2, 1, -31}, {0x03C3, 0x03CB, 1, -32}, {0x03CC, 0x03CC, 1, -64}, {0x03CD, 0x03CE, 1, -63},
+    {0x03D0, 0x03D0, 1, -62}, {0x03D1, 0x03D1, 1, -57}, {0x03D5, 0x03D5, 1, -47}, {0x03D6, 0x03D6, 1, -54},
+    {0x03D7, 0x03D7, 1, -8}, {0x03D9, 0x03EF, 2, -1}, {0x03F0, 0x03F0, 1, -86}, {0x03F1, 0x03F1, 1, -80},
+    {0x03F2, 0x03F2, 1, 7}, {0x03F3, 0x03F3, 1, -116}, {0x03F5, 0x03F5, 1, -96}, {0x03F8, 0x03F8, 1, -1},
+    {0x03FB, 0x03FB, 1, -1}, {0x0430, 0x044F, 1, -32}, {0x0450, 0x045F, 1, -80}, {0x0461, 0x0481, 2, -1},
+    {0x048B, 0x04BF, 2, -1}, {0x04C2, 0x04CE, 2, -1}, {0x04CF, 0x04CF, 1, -15}, {0x04D1, 0x052F, 2, -1},
+    {0x0561, 0x0586, 1, -48}, {0x10D0, 0x10FA, 1, 3008}, {0x10FD, 0x10FF, 1, 3008}, {0x13F8, 0x13FD, 1, -8},
+    {0x1C80, 0x1C80, 1, -6254}, {0x1C81, 0x1C81, 1, -6253}, {0x1C82, 0x1C82, 1, -6244}, {0x1C83, 0x1C84, 1, -6242},
+    {0x1C85, 0x1C85, 1, -6243}, {0x1C86, 0x1C86, 1, -6236}, {0x1C87, 0x1C87, 1, -6181}, {0x1C88, 0x1C88, 1, 35266},
+    {0x1D79, 0x1D79, 1, 35332}, {0x1D7D, 0x1D7D, 1, 3814}, {0x1D8E, 0x1D8E, 1, 35384}, {0x1E01, 0x1E95, 2, -1},
+    {0x1E9B, 0x1E9B, 1, -59}, {0x1EA1, 0x1EFF, 2, -1}, {0x1F00, 0x1F07, 1, 8}, {0x1F10, 0x1F15, 1, 8},
+    {0x1F20, 0x1F27, 1, 8}, {0x1F30, 0x1F37, 1, 8}, {0x1F40, 0x1F45, 1, 8}, {0x1F51, 0x1F57, 2, 8},
+    {0x1F60, 0x1F67, 1, 8}, {0x1F70, 0x1F71, 1, 74}, {0x1F72, 0x1F75, 1, 86}, {0x1F76, 0x1F77, 1, 100},
+    {0x1F78, 0x1F79, 1, 128}, {0x1F7A, 0x1F7B, 1, 112}, {0x1F7C, 0x1F7D, 1, 126}, {0x1F80, 0x1F87, 1, 8},
+    {0x1F90, 0x1F97, 1, 8}, {0x1FA0, 0x1FA7, 1, 8}, {0x1FB0, 0x1FB1, 1, 8}, {0x1FB3, 0x1FB3, 1, 9},
+    {0x1FBE, 0x1FBE, 1, -7205}, {0x1FC3, 0x1FC3, 1, 9}, {0x1FD0, 0x1FD1, 1, 8}, {0x1FE0, 0x1FE1, 1, 8},
+    {0x1FE5, 0x1FE5, 1, 7}, {0x1FF3, 0x1FF3, 1, 9}, {0x214E, 0x214E, 1, -28}, {0x2170, 0x217F, 1, -16},
+    {0x2184, 0x2184, 1, -1}, {0x24D0, 0x24E9, 1, -26}, {0x2C30, 0x2C5F, 1, -48}, {0x2C61, 0x2C61, 1, -1},
+    {0x2C65, 0x2C65, 1, -10795}, {0x2C66, 0x2C66, 1, -10792}, {0x2C68, 0x2C6C, 2, -1}, {0x2C73, 0x2C73, 1, -1},
+    {0x2C76, 0x2C76, 1, -1}, {0x2C81, 0x2CE3, 2, -1}, {0x2CEC, 0x2CEE, 2, -1}, {0x2CF3, 0x2CF3, 1, -1},
+    {0x2D00, 0x2D25, 1, -7264}, {0x2D27, 0x2D27, 1, -7264}, {0x2D2D, 0x2D2D, 1, -7264}, {0xA641, 0xA66D, 2, -1},
+    {0xA681, 0xA69B, 2, -1}, {0xA723, 0xA72F, 2, -1}, {0xA733, 0xA76F, 2, -1}, {0xA77A, 0xA77C, 2, -1},
+    {0xA77F, 0xA787, 2, -1}, {0xA78C, 0xA78C, 1, -1}, {0xA791, 0xA793, 2, -1}, {0xA794, 0xA794, 1, 48},
+    {0xA797, 0xA7A9, 2, -1}, {0xA7B5, 0xA7C3, 2, -1}, {0xA7C8, 0xA7CA, 2, -1}, {0xA7D1, 0xA7D1, 1, -1},
+    {0xA7D7, 0xA7D9, 2, -1}, {0xA7F6, 0xA7F6, 1, -1}, {0xAB53, 0xAB53, 1, -928}, {0xAB70, 0xABBF, 1, -38864},
+    {0xFF41, 0xFF5A, 1, -32}
+};
+/* `OrdinalCasing.ToUpper` (`OrdinalIgnoreCase` on a unit) where it differs from `char.ToUpperInvariant`: {unit, upper}. */
+static const int32_t byn_path_upper_ordinal[][2] = {
+    {0x017F, 0x017F}
+};
+/* `CharUnicodeInfo.ToUpper` (`OrdinalIgnoreCase` on a surrogate pair's scalar): {first, last, step, delta} runs. */
+static const int32_t byn_path_upper_scalar[][4] = {
+    {0x10428, 0x1044F, 1, -40}, {0x104D8, 0x104FB, 1, -40}, {0x10597, 0x105A1, 1, -39}, {0x105A3, 0x105B1, 1, -39},
+    {0x105B3, 0x105B9, 1, -39}, {0x105BB, 0x105BC, 1, -39}, {0x10CC0, 0x10CF2, 1, -64}, {0x10D70, 0x10D85, 1, -32},
+    {0x118C0, 0x118DF, 1, -32}, {0x16E60, 0x16E7F, 1, -32}, {0x1E922, 0x1E943, 1, -34}
+};
+/* END path case tables (Windows) */
+#else
+/* BEGIN path case tables (macOS): generated by StdPathTests.CaseTablesMatchDotNet from .NET's own casing; `BAYAN_UPDATE=1` rewrites them. */
+/* `char.ToUpperInvariant` on a UTF-16 unit: {first, last, step, delta} runs. */
+static const int32_t byn_path_upper_invariant[][4] = {
+    {0x0061, 0x007A, 1, -32}, {0x00B5, 0x00B5, 1, 743}, {0x00E0, 0x00F6, 1, -32}, {0x00F8, 0x00FE, 1, -32},
+    {0x00FF, 0x00FF, 1, 121}, {0x0101, 0x012F, 2, -1}, {0x0133, 0x0137, 2, -1}, {0x013A, 0x0148, 2, -1},
+    {0x014B, 0x0177, 2, -1}, {0x017A, 0x017E, 2, -1}, {0x017F, 0x017F, 1, -300}, {0x0180, 0x0180, 1, 195},
+    {0x0183, 0x0185, 2, -1}, {0x0188, 0x0188, 1, -1}, {0x018C, 0x018C, 1, -1}, {0x0192, 0x0192, 1, -1},
+    {0x0195, 0x0195, 1, 97}, {0x0199, 0x0199, 1, -1}, {0x019A, 0x019A, 1, 163}, {0x019B, 0x019B, 1, 42561},
+    {0x019E, 0x019E, 1, 130}, {0x01A1, 0x01A5, 2, -1}, {0x01A8, 0x01A8, 1, -1}, {0x01AD, 0x01AD, 1, -1},
+    {0x01B0, 0x01B0, 1, -1}, {0x01B4, 0x01B6, 2, -1}, {0x01B9, 0x01B9, 1, -1}, {0x01BD, 0x01BD, 1, -1},
+    {0x01BF, 0x01BF, 1, 56}, {0x01C5, 0x01C5, 1, -1}, {0x01C6, 0x01C6, 1, -2}, {0x01C8, 0x01C8, 1, -1},
+    {0x01C9, 0x01C9, 1, -2}, {0x01CB, 0x01CB, 1, -1}, {0x01CC, 0x01CC, 1, -2}, {0x01CE, 0x01DC, 2, -1},
+    {0x01DD, 0x01DD, 1, -79}, {0x01DF, 0x01EF, 2, -1}, {0x01F2, 0x01F2, 1, -1}, {0x01F3, 0x01F3, 1, -2},
+    {0x01F5, 0x01F5, 1, -1}, {0x01F9, 0x021F, 2, -1}, {0x0223, 0x0233, 2, -1}, {0x023C, 0x023C, 1, -1},
+    {0x023F, 0x0240, 1, 10815}, {0x0242, 0x0242, 1, -1}, {0x0247, 0x024F, 2, -1}, {0x0250, 0x0250, 1, 10783},
+    {0x0251, 0x0251, 1, 10780}, {0x0252, 0x0252, 1, 10782}, {0x0253, 0x0253, 1, -210}, {0x0254, 0x0254, 1, -206},
+    {0x0256, 0x0257, 1, -205}, {0x0259, 0x0259, 1, -202}, {0x025B, 0x025B, 1, -203}, {0x025C, 0x025C, 1, 42319},
+    {0x0260, 0x0260, 1, -205}, {0x0261, 0x0261, 1, 42315}, {0x0263, 0x0263, 1, -207}, {0x0264, 0x0264, 1, 42343},
+    {0x0265, 0x0265, 1, 42280}, {0x0266, 0x0266, 1, 42308}, {0x0268, 0x0268, 1, -209}, {0x0269, 0x0269, 1, -211},
+    {0x026A, 0x026A, 1, 42308}, {0x026B, 0x026B, 1, 10743}, {0x026C, 0x026C, 1, 42305}, {0x026F, 0x026F, 1, -211},
+    {0x0271, 0x0271, 1, 10749}, {0x0272, 0x0272, 1, -213}, {0x0275, 0x0275, 1, -214}, {0x027D, 0x027D, 1, 10727},
+    {0x0280, 0x0280, 1, -218}, {0x0282, 0x0282, 1, 42307}, {0x0283, 0x0283, 1, -218}, {0x0287, 0x0287, 1, 42282},
+    {0x0288, 0x0288, 1, -218}, {0x0289, 0x0289, 1, -69}, {0x028A, 0x028B, 1, -217}, {0x028C, 0x028C, 1, -71},
+    {0x0292, 0x0292, 1, -219}, {0x029D, 0x029D, 1, 42261}, {0x029E, 0x029E, 1, 42258}, {0x0345, 0x0345, 1, 84},
+    {0x0371, 0x0373, 2, -1}, {0x0377, 0x0377, 1, -1}, {0x037B, 0x037D, 1, 130}, {0x03AC, 0x03AC, 1, -38},
+    {0x03AD, 0x03AF, 1, -37}, {0x03B1, 0x03C1, 1, -32}, {0x03C2, 0x03C2, 1, -31}, {0x03C3, 0x03CB, 1, -32},
+    {0x03CC, 0x03CC, 1, -64}, {0x03CD, 0x03CE, 1, -63}, {0x03D0, 0x03D0, 1, -62}, {0x03D1, 0x03D1, 1, -57},
+    {0x03D5, 0x03D5, 1, -47}, {0x03D6, 0x03D6, 1, -54}, {0x03D7, 0x03D7, 1, -8}, {0x03D9, 0x03EF, 2, -1},
+    {0x03F0, 0x03F0, 1, -86}, {0x03F1, 0x03F1, 1, -80}, {0x03F2, 0x03F2, 1, 7}, {0x03F3, 0x03F3, 1, -116},
+    {0x03F5, 0x03F5, 1, -96}, {0x03F8, 0x03F8, 1, -1}, {0x03FB, 0x03FB, 1, -1}, {0x0430, 0x044F, 1, -32},
+    {0x0450, 0x045F, 1, -80}, {0x0461, 0x0481, 2, -1}, {0x048B, 0x04BF, 2, -1}, {0x04C2, 0x04CE, 2, -1},
+    {0x04CF, 0x04CF, 1, -15}, {0x04D1, 0x052F, 2, -1}, {0x0561, 0x0586, 1, -48}, {0x10D0, 0x10FA, 1, 3008},
+    {0x10FD, 0x10FF, 1, 3008}, {0x13F8, 0x13FD, 1, -8}, {0x1C80, 0x1C80, 1, -6254}, {0x1C81, 0x1C81, 1, -6253},
+    {0x1C82, 0x1C82, 1, -6244}, {0x1C83, 0x1C84, 1, -6242}, {0x1C85, 0x1C85, 1, -6243}, {0x1C86, 0x1C86, 1, -6236},
+    {0x1C87, 0x1C87, 1, -6181}, {0x1C88, 0x1C88, 1, 35266}, {0x1C8A, 0x1C8A, 1, -1}, {0x1D79, 0x1D79, 1, 35332},
+    {0x1D7D, 0x1D7D, 1, 3814}, {0x1D8E, 0x1D8E, 1, 35384}, {0x1E01, 0x1E95, 2, -1}, {0x1E9B, 0x1E9B, 1, -59},
+    {0x1EA1, 0x1EFF, 2, -1}, {0x1F00, 0x1F07, 1, 8}, {0x1F10, 0x1F15, 1, 8}, {0x1F20, 0x1F27, 1, 8},
+    {0x1F30, 0x1F37, 1, 8}, {0x1F40, 0x1F45, 1, 8}, {0x1F51, 0x1F57, 2, 8}, {0x1F60, 0x1F67, 1, 8},
+    {0x1F70, 0x1F71, 1, 74}, {0x1F72, 0x1F75, 1, 86}, {0x1F76, 0x1F77, 1, 100}, {0x1F78, 0x1F79, 1, 128},
+    {0x1F7A, 0x1F7B, 1, 112}, {0x1F7C, 0x1F7D, 1, 126}, {0x1F80, 0x1F87, 1, 8}, {0x1F90, 0x1F97, 1, 8},
+    {0x1FA0, 0x1FA7, 1, 8}, {0x1FB0, 0x1FB1, 1, 8}, {0x1FB3, 0x1FB3, 1, 9}, {0x1FBE, 0x1FBE, 1, -7205},
+    {0x1FC3, 0x1FC3, 1, 9}, {0x1FD0, 0x1FD1, 1, 8}, {0x1FE0, 0x1FE1, 1, 8}, {0x1FE5, 0x1FE5, 1, 7},
+    {0x1FF3, 0x1FF3, 1, 9}, {0x214E, 0x214E, 1, -28}, {0x2170, 0x217F, 1, -16}, {0x2184, 0x2184, 1, -1},
+    {0x24D0, 0x24E9, 1, -26}, {0x2C30, 0x2C5F, 1, -48}, {0x2C61, 0x2C61, 1, -1}, {0x2C65, 0x2C65, 1, -10795},
+    {0x2C66, 0x2C66, 1, -10792}, {0x2C68, 0x2C6C, 2, -1}, {0x2C73, 0x2C73, 1, -1}, {0x2C76, 0x2C76, 1, -1},
+    {0x2C81, 0x2CE3, 2, -1}, {0x2CEC, 0x2CEE, 2, -1}, {0x2CF3, 0x2CF3, 1, -1}, {0x2D00, 0x2D25, 1, -7264},
+    {0x2D27, 0x2D27, 1, -7264}, {0x2D2D, 0x2D2D, 1, -7264}, {0xA641, 0xA66D, 2, -1}, {0xA681, 0xA69B, 2, -1},
+    {0xA723, 0xA72F, 2, -1}, {0xA733, 0xA76F, 2, -1}, {0xA77A, 0xA77C, 2, -1}, {0xA77F, 0xA787, 2, -1},
+    {0xA78C, 0xA78C, 1, -1}, {0xA791, 0xA793, 2, -1}, {0xA794, 0xA794, 1, 48}, {0xA797, 0xA7A9, 2, -1},
+    {0xA7B5, 0xA7C3, 2, -1}, {0xA7C8, 0xA7CA, 2, -1}, {0xA7CD, 0xA7DB, 2, -1}, {0xA7F6, 0xA7F6, 1, -1},
+    {0xAB53, 0xAB53, 1, -928}, {0xAB70, 0xABBF, 1, -38864}, {0xFF41, 0xFF5A, 1, -32}
+};
+/* `OrdinalCasing.ToUpper` (`OrdinalIgnoreCase` on a unit) where it differs from `char.ToUpperInvariant`: {unit, upper}. */
+static const int32_t byn_path_upper_ordinal[][2] = {
+    {0x017F, 0x017F}
+};
+/* `CharUnicodeInfo.ToUpper` (`OrdinalIgnoreCase` on a surrogate pair's scalar): {first, last, step, delta} runs. */
+static const int32_t byn_path_upper_scalar[][4] = {
+    {0x10428, 0x1044F, 1, -40}, {0x104D8, 0x104FB, 1, -40}, {0x10597, 0x105A1, 1, -39}, {0x105A3, 0x105B1, 1, -39},
+    {0x105B3, 0x105B9, 1, -39}, {0x105BB, 0x105BC, 1, -39}, {0x10CC0, 0x10CF2, 1, -64}, {0x10D70, 0x10D85, 1, -32},
+    {0x118C0, 0x118DF, 1, -32}, {0x16E60, 0x16E7F, 1, -32}, {0x1E922, 0x1E943, 1, -34}
+};
+/* END path case tables (macOS) */
+#endif
+
+/* A `{first, last, step, delta}` run table: `c + delta` when `c` is in a run, else `c`. */
+static uint32_t byn_path_runs(const int32_t (*t)[4], size_t n, uint32_t c) {
+    size_t lo = 0, hi = n;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if ((int64_t)t[mid][0] <= (int64_t)c) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo == 0) return c;
+    const int32_t* r = t[lo - 1];
+    return (int64_t)c <= r[1] && (c - (uint32_t)r[0]) % (uint32_t)r[2] == 0 ? (uint32_t)((int64_t)c + r[3]) : c;
+}
+
+/* `char.ToUpperInvariant`, which `PathInternal.EqualStartingCharacterCount` applies to each UTF-16 unit. */
+static uint16_t byn_path_upper(uint16_t c) {
+    return (uint16_t)byn_path_runs(byn_path_upper_invariant, sizeof byn_path_upper_invariant / sizeof byn_path_upper_invariant[0], c);
+}
+
+/* `OrdinalCasing.ToUpper`, which `OrdinalIgnoreCase` applies to a unit outside a surrogate pair. */
+static uint16_t byn_path_upper_ordinal_unit(uint16_t c) {
+    for (size_t i = 0; i < sizeof byn_path_upper_ordinal / sizeof byn_path_upper_ordinal[0]; i++)
+        if (byn_path_upper_ordinal[i][0] == c) return (uint16_t)byn_path_upper_ordinal[i][1];
+    return byn_path_upper(c);
+}
+
+/* `CharUnicodeInfo.ToUpper`, which `OrdinalIgnoreCase` applies to the scalar of a surrogate pair. */
+static uint32_t byn_path_upper_scalar_of(uint32_t c) {
+    return byn_path_runs(byn_path_upper_scalar, sizeof byn_path_upper_scalar / sizeof byn_path_upper_scalar[0], c);
+}
+
+/* `PathInternal.IsCaseSensitive` is false on Windows and Apple platforms (measured on macOS). */
+#if defined(_WIN32) || defined(__APPLE__)
+#define BYN_PATH_IGNORE_CASE 1
+#else
+#define BYN_PATH_IGNORE_CASE 0
+#endif
+
+#ifdef _WIN32
+static bool byn_path_drive(uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+
+/* `PathInternal.IsExtended`: `\\?\` or `\??\`. */
+static bool byn_path_extended(const uint8_t* p, int64_t n) {
+    return n >= 4 && p[0] == '\\' && (p[1] == '\\' || p[1] == '?') && p[2] == '?' && p[3] == '\\';
+}
+
+/* `PathInternal.IsDevice`: extended, or `\\.\` / `\\?\` with either separator. */
+static bool byn_path_device(const uint8_t* p, int64_t n) {
+    return byn_path_extended(p, n) || (n >= 4 && byn_path_sep(p[0]) && byn_path_sep(p[1]) && (p[2] == '.' || p[2] == '?') && byn_path_sep(p[3]));
+}
+
+/* `PathInternal.GetRootLength` (Windows): device, UNC (`\\server\share`), `\`, or a drive (`C:`, `C:\`). */
+static int64_t byn_path_root_length(const uint8_t* p, int64_t n) {
+    int64_t i = 0;
+    bool device = byn_path_device(p, n);
+    bool unc = device && n >= 8 && byn_path_sep(p[7]) && p[4] == 'U' && p[5] == 'N' && p[6] == 'C';
+    if ((!device || unc) && n > 0 && byn_path_sep(p[0])) {
+        if (unc || (n > 1 && byn_path_sep(p[1]))) {
+            i = unc ? 8 : 2;
+            int skip = 2;
+            while (i < n && (!byn_path_sep(p[i]) || --skip > 0)) i++;
+        } else {
+            i = 1;
+        }
+    } else if (device) {
+        i = 4;
+        while (i < n && !byn_path_sep(p[i])) i++;
+        if (i < n && i > 4 && byn_path_sep(p[i])) i++;
+    } else if (n >= 2 && p[1] == ':' && byn_path_drive(p[0])) {
+        i = 2;
+        if (n > 2 && byn_path_sep(p[2])) i++;
+    }
+    return i;
+}
+#else
+static int64_t byn_path_root_length(const uint8_t* p, int64_t n) { return n > 0 && p[0] == '/' ? 1 : 0; }
+#endif
+
+bool byn_path_is_rooted(byn_str s) {
+#ifdef _WIN32
+    return (s.len >= 1 && byn_path_sep(s.ptr[0])) || (s.len >= 2 && byn_path_drive(s.ptr[0]) && s.ptr[1] == ':');
+#else
+    return s.len >= 1 && s.ptr[0] == '/';
+#endif
+}
+
+byn_str byn_path_file_name(byn_str s, byn_alloc* to) {
+    if (s.len == 0) return (byn_str){NULL, 0};
+    int64_t root = byn_path_root_length(s.ptr, s.len);
+    int64_t i = s.len - 1;
+    while (i >= 0 && !byn_path_sep(s.ptr[i])) i--;
+    int64_t start = i < root ? root : i + 1;
+    return byn_str_copy((byn_str){s.ptr + start, s.len - start}, to);
+}
+
+typedef struct {
+    uint8_t* p;
+    int64_t n, cap;
+} byn_path_buf;
+
+static void byn_path_put(byn_path_buf* b, const void* s, int64_t n) {
+    if (b->n + n > b->cap) {
+        int64_t cap = b->cap < 64 ? 64 : b->cap * 2;
+        while (cap < b->n + n) cap *= 2;
+        uint8_t* q = (uint8_t*)realloc(b->p, (size_t)cap);
+        if (!q) byn_panic("out of memory", NULL, 0);
+        b->p = q;
+        b->cap = cap;
+    }
+    if (n > 0) memcpy(b->p + b->n, s, (size_t)n);
+    b->n += n;
+}
+
+/* A full path as the UTF-16 units .NET holds, with each unit's byte offset in the UTF-8 text (`at[n]` is its length; both units of a
+ * surrogate pair have the sequence's offset). Bayan text is valid UTF-8; an invalid sequence would still become one U+FFFD per
+ * maximal subpart, as .NET's decoder makes it. */
+typedef struct {
+    uint16_t* u;
+    int64_t* at;
+    int64_t n;
+} byn_path_units;
+
+static byn_path_units byn_path_units_of(const uint8_t* s, int64_t n) {
+    byn_path_units r = {(uint16_t*)malloc(sizeof(uint16_t) * (size_t)(n + 1)), (int64_t*)malloc(sizeof(int64_t) * (size_t)(n + 1)), 0};
+    if (!r.u || !r.at) byn_panic("out of memory", NULL, 0);
+    for (int64_t i = 0; i < n;) {
+        uint8_t b = s[i];
+        int len = b < 0x80 ? 1 : b >= 0xC2 && b <= 0xDF ? 2 : b >= 0xE0 && b <= 0xEF ? 3 : b >= 0xF0 && b <= 0xF4 ? 4 : 0;
+        uint8_t lo = b == 0xE0 ? 0xA0 : b == 0xF0 ? 0x90 : 0x80, hi = b == 0xED ? 0x9F : b == 0xF4 ? 0x8F : 0xBF;
+        uint32_t c = len == 1 ? b : len == 2 ? b & 0x1Fu : len == 3 ? b & 0x0Fu : b & 0x07u;
+        int k = 1;
+        for (; k < len && i + k < n; k++) {
+            uint8_t t = s[i + k];
+            if (t < (k == 1 ? lo : 0x80) || t > (k == 1 ? hi : 0xBF)) break;
+            c = c << 6 | (t & 0x3Fu);
+        }
+        if (k < len || len == 0) c = 0xFFFD;
+        if (c >= 0x10000) {
+            r.at[r.n] = i;
+            r.u[r.n++] = (uint16_t)(0xD800 + ((c - 0x10000) >> 10));
+            r.at[r.n] = i;
+            r.u[r.n++] = (uint16_t)(0xDC00 + ((c - 0x10000) & 0x3FF));
+        } else {
+            r.at[r.n] = i;
+            r.u[r.n++] = (uint16_t)c;
+        }
+        i += k;
+    }
+    r.at[r.n] = n;
+    return r;
+}
+
+#ifdef _WIN32
+static wchar_t* byn_path_wide(int64_t n) {
+    wchar_t* w = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)(n > 0 ? n : 1));
+    if (!w) byn_panic("out of memory", NULL, 0);
+    return w;
+}
+
+/* The capacity .NET's `ValueStringBuilder` has after growing from `have` units to hold `want`: `ArrayPool<char>.Shared.Rent` of
+ * the larger of `want` and twice `have`, which is a power of two from 16. */
+static int64_t byn_path_grown(int64_t have, int64_t want) {
+    int64_t n = want > have * 2 ? want : have * 2, cap = 16;
+    while (cap < n) cap *= 2;
+    return cap;
+}
+
+/* UTF-8 bytes to NUL-terminated UTF-16 as `Encoding.UTF8.GetString` decodes them (one U+FFFD per maximal invalid subpart). */
+static wchar_t* byn_path_wide_of(const uint8_t* s, int64_t n) {
+    byn_path_units u = byn_path_units_of(s, n);
+    wchar_t* w = byn_path_wide(u.n + 1);
+    for (int64_t i = 0; i < u.n; i++) w[i] = (wchar_t)u.u[i];
+    w[u.n] = 0;
+    free(u.u);
+    free(u.at);
+    return w;
+}
+
+/* UTF-16 to UTF-8 as `Encoding.UTF8.GetBytes` encodes it: a surrogate outside a pair becomes U+FFFD. */
+static void byn_path_utf8_of(byn_path_buf* out, const wchar_t* w, int64_t n) {
+    for (int64_t i = 0; i < n; i++) {
+        uint32_t c = w[i];
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < n && w[i + 1] >= 0xDC00 && w[i + 1] <= 0xDFFF)
+            c = 0x10000 + ((c - 0xD800) << 10) + ((uint32_t)w[++i] - 0xDC00);
+        else if (c >= 0xD800 && c <= 0xDFFF)
+            c = 0xFFFD;
+        uint8_t b[4];
+        int k;
+        if (c < 0x80) b[0] = (uint8_t)c, k = 1;
+        else if (c < 0x800) b[0] = (uint8_t)(0xC0 | c >> 6), b[1] = (uint8_t)(0x80 | (c & 0x3F)), k = 2;
+        else if (c < 0x10000) b[0] = (uint8_t)(0xE0 | c >> 12), b[1] = (uint8_t)(0x80 | (c >> 6 & 0x3F)), b[2] = (uint8_t)(0x80 | (c & 0x3F)), k = 3;
+        else b[0] = (uint8_t)(0xF0 | c >> 18), b[1] = (uint8_t)(0x80 | (c >> 12 & 0x3F)), b[2] = (uint8_t)(0x80 | (c >> 6 & 0x3F)), b[3] = (uint8_t)(0x80 | (c & 0x3F)), k = 4;
+        byn_path_put(out, b, k);
+    }
+}
+
+/* `PathHelper.TryExpandShortFileName` (dotnet/runtime `PathHelper.Windows.cs`): `GetLongPathNameW` on a `\\?\` form of the full
+ * path, trimming a segment at a time from the end until the rest exists, then the trimmed part put back; the full path itself
+ * when nothing can be expanded. Takes `full` (`*n` units, freed) and `cap`, the capacity .NET's builder holding it has, and
+ * returns the result, its length in `*n`. `GetLongPathNameW` writes into a buffer of that capacity; when the long name does not
+ * fit, .NET grows it and retries with the temporary NUL already put back, so the capacity decides which segment is found. */
+static wchar_t* byn_path_expand_short(wchar_t* full, int64_t* n, int64_t cap) {
+    /* Root and device tests look only at ASCII, so the UTF-16 units' ASCII shape answers them. */
+    uint8_t* shape = (uint8_t*)malloc((size_t)(*n > 0 ? *n : 1));
+    if (!shape) byn_panic("out of memory", NULL, 0);
+    for (int64_t i = 0; i < *n; i++) shape[i] = full[i] < 0x80 ? (uint8_t)full[i] : 0x80;
+    int64_t root = byn_path_root_length(shape, *n);
+    bool device = byn_path_device(shape, *n);
+    free(shape);
+    bool dos_unc = false, dot_device = false;
+    int64_t diff = 0, in_n;
+    wchar_t* in = byn_path_wide(*n + 9);
+    if (device) {
+        memcpy(in, full, sizeof(wchar_t) * (size_t)*n);
+        in_n = *n;
+        if (full[2] == L'.') {
+            dot_device = true;
+            in[2] = L'?';
+        }
+    } else {
+        /* `PrependDevicePathChars`: `\\server\share` becomes `\\?\UNC\server\share`, anything else `\\?\` plus the path. */
+        dos_unc = *n > 1 && full[0] == L'\\' && full[1] == L'\\';
+        if (dos_unc) {
+            memcpy(in, L"\\\\?\\UNC\\", sizeof(wchar_t) * 8);
+            memcpy(in + 8, full + 2, sizeof(wchar_t) * (size_t)(*n - 2));
+            diff = 6;
+        } else {
+            memcpy(in, L"\\\\?\\", sizeof(wchar_t) * 4);
+            memcpy(in + 4, full, sizeof(wchar_t) * (size_t)*n);
+            diff = 4;
+        }
+        in_n = *n + diff;
+    }
+    in[in_n] = 0;
+    root += diff;
+    wchar_t* out = byn_path_wide(cap);
+    int64_t out_n = 0, found = in_n - 1;
+    bool ok = false;
+    while (!ok) {
+        DWORD r = GetLongPathNameW(in, out, (DWORD)cap);
+        /* Put back any temporary NUL. */
+        if (in[found] == 0) in[found] = L'\\';
+        if (r == 0) {
+            DWORD e = GetLastError();
+            if (e != ERROR_FILE_NOT_FOUND && e != ERROR_PATH_NOT_FOUND) break;
+            /* Not found at this index: look further back, ending the string there for now. */
+            found--;
+            for (; found > root && in[found] != L'\\'; found--) {}
+            if (found == root) break;
+            in[found] = 0;
+        } else if (r > cap) {
+            cap = byn_path_grown(cap, r);
+            free(out);
+            out = byn_path_wide(cap);
+        } else {
+            ok = true;
+            out_n = r;
+            if (found < in_n - 1) {
+                /* A partial find: put back the part that does not exist. */
+                wchar_t* longer = byn_path_wide(out_n + in_n - found);
+                memcpy(longer, out, sizeof(wchar_t) * (size_t)out_n);
+                memcpy(longer + out_n, in + found, sizeof(wchar_t) * (size_t)(in_n - found));
+                free(out);
+                out = longer;
+                out_n += in_n - found;
+            }
+        }
+    }
+    wchar_t* use = ok ? out : in;
+    int64_t use_n = ok ? out_n : in_n;
+    if (dot_device) use[2] = L'.';
+    /* `\\?\UNC\` back to `\\` once the prefix difference is cut. */
+    if (dos_unc) use[6] = L'\\';
+    wchar_t* result = byn_path_wide(use_n - diff);
+    memcpy(result, use + diff, sizeof(wchar_t) * (size_t)(use_n - diff));
+    *n = use_n - diff;
+    free(in);
+    free(out);
+    free(full);
+    return result;
+}
+#endif
+
+/* Panics with `name: what`, `name` being the `Path` function that was called. */
+static BYN_NORETURN void byn_path_fail(const char* name, const char* what, const char* file, int line) {
+    char msg[96];
+    snprintf(msg, sizeof msg, "%s: %s", name, what);
+    byn_panic(msg, file, line);
+}
+
+/* `Path.GetFullPath`: on Windows `GetFullPathNameW` and, when the result has a `~`, short-name expansion, as .NET's
+ * `PathHelper.Normalize` does (an extended `\\?\` path is already full); elsewhere the working directory joined to a relative
+ * path, then `PathInternal.RemoveRelativeSegments`, and `/` for an empty result. `name` names the caller in
+ * the panic text. */
+static byn_path_buf byn_path_full(byn_str s, const char* name, const char* file, int line) {
+    byn_path_buf out = {0};
+#ifdef _WIN32
+    if (byn_path_extended(s.ptr, s.len)) {
+        byn_path_put(&out, s.ptr, s.len);
+        return out;
+    }
+    wchar_t* w = byn_path_wide_of(s.ptr, s.len);
+    /* .NET's builder starts as `stackalloc char[MaxShortPath]` (260) and grows when the full path does not fit. */
+    int64_t cap = 260;
+    DWORD need = GetFullPathNameW(w, 0, NULL, NULL);
+    if (need == 0) byn_path_fail(name, "the path cannot be made full", file, line);
+    if (need > cap) cap = byn_path_grown(cap, need);
+    wchar_t* full = byn_path_wide(cap);
+    DWORD got = GetFullPathNameW(w, (DWORD)cap, full, NULL);
+    if (got == 0 || got >= cap) byn_path_fail(name, "the path cannot be made full", file, line);
+    int64_t fulln = got;
+    for (int64_t i = 0; i < fulln; i++)
+        if (full[i] == L'~') {
+            full = byn_path_expand_short(full, &fulln, cap);
+            break;
+        }
+    byn_path_utf8_of(&out, full, fulln);
+    free(full);
+    free(w);
+    return out;
+#else
+    byn_path_buf in = {0};
+    if (s.ptr[0] != '/') {
+        char* cwd = getcwd(NULL, 0);
+        if (!cwd) byn_path_fail(name, "the working directory cannot be read", file, line);
+        int64_t cn = (int64_t)strlen(cwd);
+        byn_path_put(&in, cwd, cn);
+        if (cn == 0 || cwd[cn - 1] != '/') byn_path_put(&in, "/", 1);
+        free(cwd);
+    }
+    byn_path_put(&in, s.ptr, s.len);
+    const uint8_t* p = in.p;
+    int64_t n = in.n;
+    int64_t skip = byn_path_root_length(p, n);
+    if (skip > 0 && byn_path_sep(p[skip - 1])) skip--;
+    if (skip > 0) byn_path_put(&out, p, skip);
+    for (int64_t i = skip; i < n; i++) {
+        uint8_t c = p[i];
+        if (byn_path_sep(c) && i + 1 < n) {
+            if (byn_path_sep(p[i + 1])) continue;
+            if ((i + 2 == n || byn_path_sep(p[i + 2])) && p[i + 1] == '.') {
+                i++;
+                continue;
+            }
+            if (i + 2 < n && (i + 3 == n || byn_path_sep(p[i + 3])) && p[i + 1] == '.' && p[i + 2] == '.') {
+                int64_t k;
+                for (k = out.n - 1; k >= skip; k--) {
+                    if (byn_path_sep(out.p[k])) {
+                        out.n = (i + 3 >= n && k == skip) ? k + 1 : k;
+                        break;
+                    }
+                }
+                if (k < skip) out.n = skip;
+                i += 2;
+                continue;
+            }
+        }
+        byn_path_put(&out, &c, 1);
+    }
+    free(in.p);
+    if (out.n == 0) byn_path_put(&out, "/", 1);
+    (void)name;
+    (void)file;
+    (void)line;
+    return out;
+#endif
+}
+
+/* `PathInternal.IsEffectivelyEmpty`: empty, or on Windows only spaces. */
+static bool byn_path_effectively_empty(byn_str s) {
+#ifdef _WIN32
+    for (int64_t i = 0; i < s.len; i++)
+        if (s.ptr[i] != ' ') return false;
+    return true;
+#else
+    return s.len == 0;
+#endif
+}
+
+/* `Path.GetDirectoryName`: `GetDirectoryNameOffset`, then `PathInternal.NormalizeDirectorySeparators` on the prefix. */
+bool byn_path_directory_name(byn_str s, byn_str* out, byn_alloc* to) {
+    if (byn_path_effectively_empty(s)) return false;
+    int64_t root = byn_path_root_length(s.ptr, s.len), end = s.len;
+    if (end <= root) return false;
+    while (end > root && !byn_path_sep(s.ptr[--end])) {}
+    while (end > root && byn_path_sep(s.ptr[end - 1])) end--;
+    uint8_t* d = end > 0 ? to->resize(to, NULL, 0, end) : NULL;
+    int64_t n = 0, i = 0;
+#ifdef _WIN32
+    /* Windows keeps a leading separator before a second one (UNC, device), as `\`. */
+    if (end > 0 && byn_path_sep(s.ptr[0])) {
+        d[n++] = '\\';
+        i = 1;
+    }
+#endif
+    for (; i < end; i++) {
+        if (byn_path_sep(s.ptr[i]) && i + 1 < end && byn_path_sep(s.ptr[i + 1])) continue;
+        d[n++] = byn_path_sep(s.ptr[i]) ? BYN_PATH_SEP : s.ptr[i];
+    }
+    *out = (byn_str){d, n};
+    return true;
+}
+
+/* `Path.Combine(params string[])`: from the last rooted part on, each non-empty part, with the OS separator before it unless the
+   text so far ends in a separator. The two-argument `CombineInternal` gives the same bytes: a `b` that starts with a separator is rooted. */
+byn_str byn_path_combine_span(const byn_str* p, int64_t n, byn_alloc* to) {
+    int64_t first = 0, size = 0;
+    for (int64_t i = 0; i < n; i++)
+        if (p[i].len > 0 && byn_path_is_rooted(p[i])) first = i;
+    for (int64_t i = first; i < n; i++) size += p[i].len + 1;
+    uint8_t* d = size > 0 ? to->resize(to, NULL, 0, size) : NULL;
+    int64_t len = 0;
+    for (int64_t i = first; i < n; i++) {
+        if (p[i].len == 0) continue;
+        if (len > 0 && !byn_path_sep(d[len - 1])) d[len++] = BYN_PATH_SEP;
+        memcpy(d + len, p[i].ptr, (size_t)p[i].len);
+        len += p[i].len;
+    }
+    return (byn_str){d, len};
+}
+
+byn_str byn_path_combine(byn_str a, byn_str b, byn_alloc* to) {
+    byn_str parts[2] = {a, b};
+    return byn_path_combine_span(parts, 2, to);
+}
+
+static bool byn_path_usep(uint16_t c) { return c < 0x80 && byn_path_sep((uint8_t)c); }
+
+static bool byn_path_high(const uint16_t* u, int64_t i, int64_t n) {
+    return u[i] >= 0xD800 && u[i] <= 0xDBFF && i < n - 1 && u[i + 1] >= 0xDC00 && u[i + 1] <= 0xDFFF;
+}
+
+/* `PathInternal.AreRootsEqual`'s `string.Compare` over the first `n` units: `Ordinal`, or where case is ignored `OrdinalIgnoreCase`
+ * as `OrdinalCasing.CompareStringIgnoreCase` does it (a surrogate pair by its scalar, never equal to a lone unit). */
+static bool byn_path_roots_equal(const uint16_t* a, const uint16_t* b, int64_t n) {
+#if BYN_PATH_IGNORE_CASE
+    for (int64_t i = 0; i < n;) {
+        bool pa = byn_path_high(a, i, n), pb = byn_path_high(b, i, n);
+        if (pa != pb) return false;
+        if (!pa) {
+            if (a[i] != b[i] && byn_path_upper_ordinal_unit(a[i]) != byn_path_upper_ordinal_unit(b[i])) return false;
+            i++;
+            continue;
+        }
+        uint32_t sa = 0x10000 + ((uint32_t)(a[i] - 0xD800) << 10) + (uint32_t)(a[i + 1] - 0xDC00);
+        uint32_t sb = 0x10000 + ((uint32_t)(b[i] - 0xD800) << 10) + (uint32_t)(b[i + 1] - 0xDC00);
+        if (sa != sb && byn_path_upper_scalar_of(sa) != byn_path_upper_scalar_of(sb)) return false;
+        i += 2;
+    }
+    return true;
+#else
+    return memcmp(a, b, sizeof(uint16_t) * (size_t)n) == 0;
+#endif
+}
+
+/* `PathInternal.EqualStartingCharacterCount`'s test: equal units, or where case is ignored equal `char.ToUpperInvariant`. */
+static bool byn_path_unit_eq(uint16_t a, uint16_t b) {
+#if BYN_PATH_IGNORE_CASE
+    return a == b || byn_path_upper(a) == byn_path_upper(b);
+#else
+    return a == b;
+#endif
+}
+
+/* The unit index whose byte offset is `at` (a root ends at a separator or the end, so at a unit's start). */
+static int64_t byn_path_unit_index(const byn_path_units* x, int64_t at) {
+    int64_t i = 0;
+    while (i < x->n && x->at[i] < at) i++;
+    return i;
+}
+
+/* `Path.GetRelativePath` after both paths are full, over their UTF-16 units: the target when the roots differ or nothing is shared,
+ * `.` for the same path, otherwise a `..` per segment of `f` past the common part, then the rest of `p` (its trailing separator
+ * kept), copied from `p`'s bytes. */
+static void byn_path_relative_into(byn_path_buf* sb, const uint8_t* fb, int64_t fbn, const uint8_t* pb, int64_t pbn) {
+    static const uint8_t sep = BYN_PATH_SEP;
+    byn_path_units fx = byn_path_units_of(fb, fbn), px = byn_path_units_of(pb, pbn);
+    const uint16_t *f = fx.u, *p = px.u;
+    int64_t fn = fx.n, pn = px.n;
+    int64_t root = byn_path_unit_index(&fx, byn_path_root_length(fb, fbn));
+    bool same_root = root == byn_path_unit_index(&px, byn_path_root_length(pb, pbn)) && byn_path_roots_equal(f, p, root);
+    /* `GetCommonPathLength`. */
+    int64_t common = 0;
+    while (common < fn && common < pn && byn_path_unit_eq(f[common], p[common])) common++;
+    if (common != 0 && !(common == fn && (common == pn || byn_path_usep(p[common]))) && !(common == pn && byn_path_usep(f[common])))
+        while (common > 0 && !byn_path_usep(f[common - 1])) common--;
+    if (!same_root || common == 0) {
+        byn_path_put(sb, pb, pbn);
+    } else {
+        int64_t from_len = byn_path_usep(f[fn - 1]) ? fn - 1 : fn;
+        bool trailing = byn_path_usep(p[pn - 1]);
+        int64_t path_len = trailing ? pn - 1 : pn;
+        if (from_len == path_len && common >= from_len) {
+            byn_path_put(sb, ".", 1);
+        } else {
+            if (common < from_len) {
+                byn_path_put(sb, "..", 2);
+                for (int64_t i = common + 1; i < from_len; i++)
+                    if (byn_path_usep(f[i])) {
+                        byn_path_put(sb, &sep, 1);
+                        byn_path_put(sb, "..", 2);
+                    }
+            } else if (byn_path_usep(p[common])) {
+                common++;
+            }
+            int64_t diff = path_len - common + (trailing ? 1 : 0);
+            if (diff > 0) {
+                if (sb->n > 0) byn_path_put(sb, &sep, 1);
+                byn_path_put(sb, pb + px.at[common], px.at[common + diff] - px.at[common]);
+            }
+        }
+    }
+    free(fx.u);
+    free(fx.at);
+    free(px.u);
+    free(px.at);
+}
+
+byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line) {
+    if (byn_path_effectively_empty(from) || byn_path_effectively_empty(path)) byn_panic("Path.relative: the path is empty", file, line);
+    if (memchr(from.ptr, 0, (size_t)from.len) || memchr(path.ptr, 0, (size_t)path.len)) byn_panic("Path.relative: the path has a NUL byte", file, line);
+    byn_path_buf f = byn_path_full(from, "Path.relative", file, line), p = byn_path_full(path, "Path.relative", file, line), sb = {0};
+    byn_path_relative_into(&sb, f.p, f.n, p.p, p.n);
+    byn_str result = byn_str_copy((byn_str){sb.p, sb.n}, to);
+    free(sb.p);
+    free(f.p);
+    free(p.p);
+    return result;
+}
+
+byn_str byn_path_full_path(byn_str s, byn_alloc* to, const char* file, int line) {
+    if (byn_path_effectively_empty(s)) byn_panic("Path.fullPath: the path is empty", file, line);
+    if (memchr(s.ptr, 0, (size_t)s.len)) byn_panic("Path.fullPath: the path has a NUL byte", file, line);
+    byn_path_buf f = byn_path_full(s, "Path.fullPath", file, line);
+    byn_str result = byn_str_copy((byn_str){f.p, f.n}, to);
+    free(f.p);
+    return result;
+}
+
+void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc) {
+    if (need <= *cap) return;
+    int64_t grown = *cap < 4 ? 4 : *cap * 2;
+    if (grown < need) grown = need;
+#ifdef BYN_DEBUG
+    void* old = *ptr;
+#endif
+    *ptr = alloc->resize(alloc, *ptr, *cap * elem_size, grown * elem_size);
+#ifdef BYN_DEBUG
+    byn_own_rekey(old, *ptr);
+#endif
+    *cap = grown;
+}
+
+/* ── Maps ────────────────────────────────────────────────────────────────── */
+
+uint64_t byn_hash_seed;
+
+void byn_hash_seed_init(bool fixed) {
+    if (fixed) {
+        byn_hash_seed = 0;
+        return;
+    }
+#ifdef _WIN32
+    uint64_t pid = (uint64_t)GetCurrentProcessId();
+#else
+    uint64_t pid = (uint64_t)getpid();
+#endif
+    byn_hash_seed = (uint64_t)byn_io_monotonic_nanos() ^ (pid << 32 | pid);
+}
+
+uint64_t byn_hash_bytes(const void* p, int64_t n) {
+    const uint8_t* b = (const uint8_t*)p;
+    uint64_t h = UINT64_C(14695981039346656037) ^ byn_hash_seed;
+    for (int64_t i = 0; i < n; i++) {
+        h ^= b[i];
+        h *= UINT64_C(1099511628211);
+    }
+    return h;
+}
+
+uint64_t byn_hash_mix(uint64_t h, uint64_t part) {
+    for (int i = 0; i < 8; i++) {
+        h ^= (uint8_t)(part >> (i * 8));
+        h *= UINT64_C(1099511628211);
+    }
+    return h;
+}
+
+int64_t byn_map_find(const byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq) {
+    if (h->icap == 0) return -1;
+    uint64_t mask = (uint64_t)h->icap - 1;
+    for (uint64_t s = hash & mask;; s = (s + 1) & mask) {
+        int32_t e = h->index[s];
+        if (e < 0) return -1;
+        if (!h->dead[e] && h->hashes[e] == hash && eq((const uint8_t*)keys + e * ksize, key)) return e;
+    }
+}
+
+static void byn_map_place(byn_map_hdr* h, int64_t e) {
+    uint64_t mask = (uint64_t)h->icap - 1;
+    uint64_t s = h->hashes[e] & mask;
+    while (h->index[s] >= 0) s = (s + 1) & mask;
+    h->index[s] = (int32_t)e;
+}
+
+/* Compacts away tombstones, grows the entries to `cap` and rebuilds the index. */
+static void byn_map_rehash(byn_map_hdr* h, uint8_t** keys, int64_t ksize, uint8_t** vals, int64_t vsize, int64_t cap) {
+    int64_t j = 0;
+    for (int64_t i = 0; i < h->len; i++) {
+        if (h->dead[i]) continue;
+        if (i != j) {
+            memcpy(*keys + j * ksize, *keys + i * ksize, (size_t)ksize);
+            memcpy(*vals + j * vsize, *vals + i * vsize, (size_t)vsize);
+            h->hashes[j] = h->hashes[i];
+        }
+        h->dead[j++] = false;
+    }
+    h->len = h->live = j;
+    if (cap > h->cap) {
+        byn_alloc* a = h->alloc;
+#ifdef BYN_DEBUG
+        uint8_t* old = *keys;
+#endif
+        *keys = a->resize(a, *keys, h->cap * ksize, cap * ksize);
+#ifdef BYN_DEBUG
+        byn_own_rekey(old, *keys);
+#endif
+        *vals = a->resize(a, *vals, h->cap * vsize, cap * vsize);
+        h->hashes = a->resize(a, h->hashes, h->cap * (int64_t)sizeof(uint64_t), cap * (int64_t)sizeof(uint64_t));
+        h->dead = a->resize(a, h->dead, h->cap * (int64_t)sizeof(bool), cap * (int64_t)sizeof(bool));
+        h->index = a->resize(a, h->index, h->icap * (int64_t)sizeof(int32_t), cap * 2 * (int64_t)sizeof(int32_t));
+        h->cap = cap;
+        h->icap = cap * 2;
+    }
+    memset(h->index, 0xFF, (size_t)h->icap * sizeof(int32_t));
+    for (int64_t i = 0; i < h->len; i++) byn_map_place(h, i);
+}
+
+int64_t byn_map_insert(byn_map_hdr* h, void** keys, int64_t ksize, void** vals, int64_t vsize, const void* key,
+                       uint64_t hash, byn_key_eq eq, bool* added) {
+    int64_t e = byn_map_find(h, *keys, ksize, key, hash, eq);
+    *added = e < 0;
+    if (e >= 0) return e;
+    if (h->len == h->cap) {
+        int64_t cap = h->cap < 8 ? 8 : h->cap;
+        if ((h->live + 1) * 2 > cap) cap *= 2;
+        if (cap > INT32_MAX / 2) byn_panic("map too large", __FILE__, __LINE__);
+        byn_map_rehash(h, (uint8_t**)keys, ksize, (uint8_t**)vals, vsize, cap);
+    }
+    e = h->len++;
+    h->live++;
+    h->hashes[e] = hash;
+    h->dead[e] = false;
+    byn_map_place(h, e);
+    return e;
+}
+
+bool byn_map_remove(byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq) {
+    int64_t e = byn_map_find(h, keys, ksize, key, hash, eq);
+    if (e < 0) return false;
+    h->dead[e] = true;
+    h->live--;
+    return true;
+}
+
+void byn_map_clear(byn_map_hdr* h) {
+    h->len = h->live = 0;
+    if (h->icap > 0) memset(h->index, 0xFF, (size_t)h->icap * sizeof(int32_t));
+}
+
+void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void** dkeys, const void* vals, int64_t vsize,
+                  void** dvals, byn_map_hdr* dst, byn_alloc* to) {
+    *dst = (byn_map_hdr){0};
+    dst->alloc = to;
+    *dkeys = NULL;
+    *dvals = NULL;
+    if (src->live == 0) return;
+    int64_t cap = 8;
+    while (cap < src->live) cap *= 2;
+    dst->cap = cap;
+    dst->icap = cap * 2;
+    *dkeys = to->resize(to, NULL, 0, cap * ksize);
+    *dvals = to->resize(to, NULL, 0, cap * vsize);
+    dst->hashes = to->resize(to, NULL, 0, cap * (int64_t)sizeof(uint64_t));
+    dst->dead = to->resize(to, NULL, 0, cap * (int64_t)sizeof(bool));
+    dst->index = to->resize(to, NULL, 0, dst->icap * (int64_t)sizeof(int32_t));
+    int64_t j = 0;
+    for (int64_t i = 0; i < src->len; i++) {
+        if (src->dead[i]) continue;
+        memcpy((uint8_t*)*dkeys + j * ksize, (const uint8_t*)keys + i * ksize, (size_t)ksize);
+        memcpy((uint8_t*)*dvals + j * vsize, (const uint8_t*)vals + i * vsize, (size_t)vsize);
+        dst->hashes[j] = src->hashes[i];
+        dst->dead[j++] = false;
+    }
+    dst->len = dst->live = j;
+    memset(dst->index, 0xFF, (size_t)dst->icap * sizeof(int32_t));
+    for (int64_t i = 0; i < j; i++) byn_map_place(dst, i);
+}
+
+byn_writer byn_strbuf_copy(byn_writer w, byn_alloc* to) {
+    byn_writer r = byn_strbuf_grow(to);
+    r.buf = (uint8_t*)byn_copy_bytes(w.buf, w.len, to);
+    r.cap = r.len = w.len;
+    return r;
+}
+
+/* ── Symbols ─────────────────────────────────────────────────────────────── */
+
+/* Texts and their hashes by ID, an open-addressed index of IDs (UINT32_MAX empty, twice the capacity), and the chunk new
+ * texts are copied into. All from the general allocator, never freed. */
+static byn_str* byn_sym_texts;
+static uint64_t* byn_sym_hashes;
+static uint32_t* byn_sym_index;
+static uint32_t byn_sym_len, byn_sym_cap;
+static uint8_t* byn_sym_chunk;
+static int64_t byn_sym_room;
+
+static void byn_sym_place(uint32_t id) {
+    uint64_t mask = (uint64_t)byn_sym_cap * 2 - 1;
+    uint64_t s = byn_sym_hashes[id] & mask;
+    while (byn_sym_index[s] != UINT32_MAX) s = (s + 1) & mask;
+    byn_sym_index[s] = id;
+}
+
+static uint32_t byn_sym_add(byn_str s, uint64_t hash) {
+    if (byn_sym_len == byn_sym_cap) {
+        uint32_t cap = byn_sym_cap < 64 ? 64 : byn_sym_cap * 2;
+        if (cap > UINT32_MAX / 4) byn_panic("symbol table too large", __FILE__, __LINE__);
+        byn_alloc* a = &byn_general;
+        byn_sym_texts = a->resize(a, byn_sym_texts, byn_sym_cap * (int64_t)sizeof(byn_str), cap * (int64_t)sizeof(byn_str));
+        byn_sym_hashes = a->resize(a, byn_sym_hashes, byn_sym_cap * (int64_t)sizeof(uint64_t), cap * (int64_t)sizeof(uint64_t));
+        byn_sym_index = a->resize(a, byn_sym_index, byn_sym_cap * 2 * (int64_t)sizeof(uint32_t), cap * 2 * (int64_t)sizeof(uint32_t));
+        byn_sym_cap = cap;
+        memset(byn_sym_index, 0xFF, (size_t)cap * 2 * sizeof(uint32_t));
+        for (uint32_t i = 0; i < byn_sym_len; i++) byn_sym_place(i);
+    }
+    uint32_t id = byn_sym_len++;
+    byn_sym_texts[id] = s;
+    byn_sym_hashes[id] = hash;
+    byn_sym_place(id);
+    return id;
+}
+
+void byn_sym_init(const byn_str* lits, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) byn_sym_add(lits[i], byn_hash_bytes(lits[i].ptr, lits[i].len));
+}
+
+byn_sym byn_sym_intern(byn_str s) {
+    uint64_t hash = byn_hash_bytes(s.ptr, s.len);
+    if (byn_sym_cap > 0) {
+        uint64_t mask = (uint64_t)byn_sym_cap * 2 - 1;
+        for (uint64_t i = hash & mask; byn_sym_index[i] != UINT32_MAX; i = (i + 1) & mask) {
+            uint32_t id = byn_sym_index[i];
+            if (byn_sym_hashes[id] == hash && byn_str_eq(byn_sym_texts[id], s)) return (byn_sym){id};
+        }
+    }
+    if (s.len > byn_sym_room) {
+        int64_t size = s.len > 4096 ? s.len : 4096;
+        byn_sym_chunk = byn_general.resize(&byn_general, NULL, 0, size);
+        byn_sym_room = size;
+    }
+    if (s.len > 0) memcpy(byn_sym_chunk, s.ptr, (size_t)s.len);
+    byn_str text = {byn_sym_chunk, s.len};
+    byn_sym_chunk += s.len;
+    byn_sym_room -= s.len;
+    return (byn_sym){byn_sym_add(text, hash)};
+}
+
+byn_str byn_sym_text(byn_sym s) {
+    return byn_sym_texts[s.id];
+}
+
+/* ── Program entry ───────────────────────────────────────────────────────── */
+
+int64_t byn_utf8_invalid_at(const uint8_t* p, int64_t n) {
+    int64_t i = 0;
+    while (i < n) {
+        uint8_t c = p[i];
+        if (c < 0x80) {
+            i++;
+            continue;
+        }
+        int len;
+        uint32_t min;
+        uint32_t v;
+        if ((c & 0xE0) == 0xC0) len = 2, min = 0x80, v = c & 0x1F;
+        else if ((c & 0xF0) == 0xE0) len = 3, min = 0x800, v = c & 0x0F;
+        else if ((c & 0xF8) == 0xF0) len = 4, min = 0x10000, v = c & 0x07;
+        else return i;
+        if (n - i < len) return i;
+        for (int k = 1; k < len; k++) {
+            if ((p[i + k] & 0xC0) != 0x80) return i;
+            v = v << 6 | (p[i + k] & 0x3F);
+        }
+        if (v < min || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)) return i;
+        i += len;
+    }
+    return -1;
+}
+
+byn_str byn_utf8_decode_replace(const uint8_t* p, int64_t n, byn_alloc* to) {
+    /* At most three bytes per input byte: a lone invalid byte becomes U+FFFD. */
+    uint8_t* out = n == 0 ? NULL : to->resize(to, NULL, 0, n * 3);
+    int64_t len = 0;
+    int64_t i = 0;
+    while (i < n) {
+        int64_t bad = byn_utf8_invalid_at(p + i, n - i);
+        int64_t valid = bad < 0 ? n - i : bad;
+        memcpy(out + len, p + i, (size_t)valid);
+        len += valid;
+        i += valid;
+        if (bad < 0) break;
+        out[len++] = 0xEF, out[len++] = 0xBF, out[len++] = 0xBD;
+        /* One U+FFFD per invalid sequence: a lead byte takes the continuation bytes it expects. */
+        uint8_t c = p[i++];
+        int expect = (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : 0;
+        while (expect-- > 0 && i < n && (p[i] & 0xC0) == 0x80) i++;
+    }
+    if (out) out = to->resize(to, out, n * 3, len);
+    return (byn_str){out, len};
+}
+
+bool byn_utf8_valid(const uint8_t* p, int64_t n) {
+    return byn_utf8_invalid_at(p, n) < 0;
+}
+
+static BYN_NORETURN void byn_bad_arg(int i) {
+    byn_stdio_binary();
+    fprintf(stderr, "error: argument %d is not valid UTF-8\n", i);
+    fflush(stderr);
+    exit(1);
+}
+
+byn_str* byn_args(int* argc, char** argv) {
+#ifdef _WIN32
+    /* The CRT's argv is in the ANSI code page; the UTF-16 command line is what the caller passed. */
+    (void)argv;
+    int wargc = 0;
+    wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    if (!wargv) byn_panic("out of memory", NULL, 0);
+    *argc = wargc;
+    int n = wargc > 1 ? wargc - 1 : 0;
+    byn_str* args = (byn_str*)malloc(sizeof(byn_str) * (size_t)(n > 0 ? n : 1));
+    if (!args) byn_panic("out of memory", NULL, 0);
+    for (int i = 0; i < n; i++) {
+        const wchar_t* w = wargv[i + 1];
+        int un = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, NULL, 0, NULL, NULL);
+        if (un <= 0) byn_bad_arg(i + 1);
+        char* p = (char*)malloc((size_t)un);
+        if (!p) byn_panic("out of memory", NULL, 0);
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, p, un, NULL, NULL);
+        args[i] = (byn_str){(const uint8_t*)p, un - 1};
+    }
+    LocalFree(wargv);
+    return args;
+#else
+    int n = *argc > 1 ? *argc - 1 : 0;
+    byn_str* args = (byn_str*)malloc(sizeof(byn_str) * (size_t)(n > 0 ? n : 1));
+    if (!args) byn_panic("out of memory", NULL, 0);
+    for (int i = 0; i < n; i++) {
+        const uint8_t* p = (const uint8_t*)argv[i + 1];
+        int64_t len = (int64_t)strlen(argv[i + 1]);
+        if (!byn_utf8_valid(p, len)) byn_bad_arg(i + 1);
+        args[i] = (byn_str){p, len};
+    }
+    return args;
+#endif
+}
+
+/* ── Io ──────────────────────────────────────────────────────────────────── */
+
+static uint32_t byn_io_error(int e) {
+    switch (e) {
+    case ENOENT: return BYN_IO_NOT_FOUND;
+    case EACCES:
+    case EPERM: return BYN_IO_PERMISSION_DENIED;
+    case ENOTDIR: return BYN_IO_NOT_A_DIRECTORY;
+    default: return BYN_IO_OTHER;
+    }
+}
+
+/* Opens a UTF-8 path; NULL with errno set on failure. */
+static FILE* byn_io_open(byn_str path, const char* mode) {
+    if (memchr(path.ptr, 0, (size_t)path.len)) {
+        errno = ENOENT;
+        return NULL;
+    }
+#ifdef _WIN32
+    int wn = MultiByteToWideChar(CP_UTF8, 0, (const char*)path.ptr, (int)path.len, NULL, 0);
+    wchar_t* wpath = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)(wn + 1));
+    if (!wpath) byn_panic("out of memory", NULL, 0);
+    MultiByteToWideChar(CP_UTF8, 0, (const char*)path.ptr, (int)path.len, wpath, wn);
+    wpath[wn] = 0;
+    wchar_t wmode[4] = {0};
+    for (int i = 0; mode[i] && i < 3; i++) wmode[i] = (wchar_t)mode[i];
+    FILE* f = _wfopen(wpath, wmode);
+    free(wpath);
+    return f;
+#else
+    char* cpath = (char*)malloc((size_t)path.len + 1);
+    if (!cpath) byn_panic("out of memory", NULL, 0);
+    memcpy(cpath, path.ptr, (size_t)path.len);
+    cpath[path.len] = 0;
+    FILE* f = fopen(cpath, mode);
+    free(cpath);
+    return f;
+#endif
+}
+
+uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc) {
+    FILE* f = byn_io_open(path, "rb");
+    if (!f) return byn_io_error(errno);
+    uint8_t* buf = NULL;
+    int64_t cap = 0;
+    int64_t n = 0;
+    for (;;) {
+        if (n == cap) {
+            int64_t grown = cap < 4096 ? 4096 : cap * 2;
+            buf = (uint8_t*)alloc->resize(alloc, buf, cap, grown);
+            cap = grown;
+        }
+        size_t got = fread(buf + n, 1, (size_t)(cap - n), f);
+        n += (int64_t)got;
+        if (got == 0) break;
+    }
+    bool failed = ferror(f) != 0;
+    int e = errno;
+    if (fclose(f) != 0 && !failed) failed = true, e = errno;
+    if (failed) return byn_io_error(e);
+    *ptr = buf;
+    *len = n;
+    return 0;
+}
+
+uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc) {
+    uint8_t* p;
+    int64_t n;
+    uint32_t err = byn_io_read(path, &p, &n, alloc);
+    if (err != 0) return err;
+    if (!byn_utf8_valid(p, n)) return BYN_IO_INVALID_UTF8;
+    if (out) *out = (byn_str){p, n};
+    return 0;
+}
+
+uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc) {
+#ifdef _WIN32
+    /* Text mode would turn CRLF into LF and stop at Ctrl-Z. */
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+    uint8_t* buf = NULL;
+    int64_t cap = 0;
+    int64_t n = 0;
+    for (;;) {
+        if (n == cap) {
+            int64_t grown = cap < 4096 ? 4096 : cap * 2;
+            buf = (uint8_t*)alloc->resize(alloc, buf, cap, grown);
+            cap = grown;
+        }
+        size_t got = fread(buf + n, 1, (size_t)(cap - n), stdin);
+        n += (int64_t)got;
+        if (got == 0) break;
+    }
+    if (ferror(stdin)) return byn_io_error(errno);
+    if (out) *out = (byn_str){buf, n};
+    return 0;
+}
+
+uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len) {
+    FILE* f = byn_io_open(path, "wb");
+    if (!f) return byn_io_error(errno);
+    size_t put = len > 0 ? fwrite(ptr, 1, (size_t)len, f) : 0;
+    bool failed = (int64_t)put != len;
+    int e = errno;
+    if (fclose(f) != 0 && !failed) failed = true, e = errno;
+    if (failed) return byn_io_error(e);
+    return 0;
+}
+
+/* Growable bytes from malloc: process output is drained before `alloc` sees it. */
+typedef struct byn_bytes {
+    uint8_t* ptr;
+    int64_t len;
+    int64_t cap;
+} byn_bytes;
+
+static void byn_bytes_reserve(byn_bytes* b, int64_t more) {
+    if (b->len + more <= b->cap) return;
+    int64_t grown = b->cap < 4096 ? 4096 : b->cap * 2;
+    while (grown < b->len + more) grown *= 2;
+    uint8_t* p = (uint8_t*)realloc(b->ptr, (size_t)grown);
+    if (!p) byn_panic("out of memory", NULL, 0);
+    b->ptr = p;
+    b->cap = grown;
+}
+
+static int byn_str_order(const void* a, const void* b) {
+    const byn_str* x = (const byn_str*)a;
+    const byn_str* y = (const byn_str*)b;
+    int64_t n = x->len < y->len ? x->len : y->len;
+    int c = n > 0 ? memcmp(x->ptr, y->ptr, (size_t)n) : 0;
+    if (c != 0) return c;
+    return x->len < y->len ? -1 : x->len > y->len;
+}
+
+/* Copies an entry name into `alloc` and appends it to the list; false if it is not UTF-8. */
+static bool byn_list_dir_add(byn_str** ptr, int64_t* len, int64_t* cap, const char* name, int64_t n, byn_alloc* alloc) {
+    if (!byn_utf8_valid((const uint8_t*)name, n)) return false;
+    byn_list_reserve((void**)ptr, cap, *len + 1, (int64_t)sizeof(byn_str), alloc);
+    (*ptr)[(*len)++] = byn_str_copy((byn_str){(const uint8_t*)name, n}, alloc);
+    return true;
+}
+
+#ifdef _WIN32
+/* A UTF-8 string as a NUL-terminated wide string from malloc. */
+static wchar_t* byn_wide(const uint8_t* p, int64_t n) {
+    int wn = n > 0 ? MultiByteToWideChar(CP_UTF8, 0, (const char*)p, (int)n, NULL, 0) : 0;
+    wchar_t* w = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)(wn + 1));
+    if (!w) byn_panic("out of memory", NULL, 0);
+    if (wn > 0) MultiByteToWideChar(CP_UTF8, 0, (const char*)p, (int)n, w, wn);
+    w[wn] = 0;
+    return w;
+}
+
+static uint32_t byn_win_error(DWORD e) {
+    switch (e) {
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_PATH_NOT_FOUND:
+    case ERROR_INVALID_NAME:
+    case ERROR_BAD_PATHNAME: return BYN_IO_NOT_FOUND;
+    case ERROR_ACCESS_DENIED: return BYN_IO_PERMISSION_DENIED;
+    case ERROR_DIRECTORY: return BYN_IO_NOT_A_DIRECTORY;
+    default: return BYN_IO_OTHER;
+    }
+}
+#else
+/* A path as a NUL-terminated string from malloc, or NULL if it holds a NUL byte. */
+static char* byn_cstr(byn_str s) {
+    if (memchr(s.ptr, 0, (size_t)s.len)) return NULL;
+    char* c = (char*)malloc((size_t)s.len + 1);
+    if (!c) byn_panic("out of memory", NULL, 0);
+    memcpy(c, s.ptr, (size_t)s.len);
+    c[s.len] = 0;
+    return c;
+}
+#endif
+
+#ifndef _WIN32
+/* The bytes of an environment value as .NET decodes them: each well-formed sequence cut short, each lone invalid byte, and each lead
+   with an out-of-range second byte, is one U+FFFD (measured against live .NET in StdEnvTests; `byn_utf8_decode_replace` skips the continuation bytes
+   a lead byte expects instead). */
+static byn_str byn_env_decode(const uint8_t* p, int64_t n, byn_alloc* to) {
+    uint8_t* out = n == 0 ? NULL : to->resize(to, NULL, 0, n * 3);
+    int64_t len = 0, i = 0;
+    while (i < n) {
+        uint8_t c = p[i];
+        int need = c >= 0xC2 && c <= 0xDF ? 1 : c >= 0xE0 && c <= 0xEF ? 2 : c >= 0xF0 && c <= 0xF4 ? 3 : 0;
+        uint8_t lo = 0x80, hi = 0xBF;
+        if (c == 0xE0) lo = 0xA0;
+        else if (c == 0xED) hi = 0x9F;
+        else if (c == 0xF0) lo = 0x90;
+        else if (c == 0xF4) hi = 0x8F;
+        int64_t j = i + 1;
+        int k = 0;
+        for (; k < need && j < n && p[j] >= lo && p[j] <= hi; k++, j++) lo = 0x80, hi = 0xBF;
+        /* A second byte that is a continuation but out of range (overlong, surrogate, past U+10FFFF) goes with its lead, as in .NET. */
+        int skip = need > 0 && k == 0 && j < n && (p[j] & 0xC0) == 0x80;
+        if (skip) j++;
+        if (!skip && (c < 0x80 || (need > 0 && k == need))) {
+            memcpy(out + len, p + i, (size_t)(j - i));
+            len += j - i;
+        } else {
+            out[len++] = 0xEF, out[len++] = 0xBF, out[len++] = 0xBD;
+        }
+        i = j;
+    }
+    if (out) out = to->resize(to, out, n * 3, len);
+    return (byn_str){out, len};
+}
+#endif
+
+bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to) {
+#ifdef _WIN32
+    wchar_t* w = byn_wide(name.ptr, name.len);
+    DWORD n = 128;
+    wchar_t* v = NULL;
+    DWORD got = 0;
+    /* As .NET: grow the buffer while the value does not fit. */
+    for (;;) {
+        v = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)n);
+        if (!v) byn_panic("out of memory", NULL, 0);
+        SetLastError(ERROR_SUCCESS);
+        got = GetEnvironmentVariableW(w, v, n);
+        if (got == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+            free(v);
+            free(w);
+            return false;
+        }
+        if (got < n) break;
+        free(v);
+        n = got;
+    }
+    free(w);
+    int un = got > 0 ? WideCharToMultiByte(CP_UTF8, 0, v, (int)got, NULL, 0, NULL, NULL) : 0;
+    char* u = (char*)malloc((size_t)un + 1);
+    if (!u) byn_panic("out of memory", NULL, 0);
+    if (un > 0) WideCharToMultiByte(CP_UTF8, 0, v, (int)got, u, un, NULL, NULL);
+    free(v);
+    *out = byn_utf8_decode_replace((const uint8_t*)u, un, to);
+    free(u);
+    return true;
+#else
+    /* .NET passes the name as a C string, so a NUL ends it; a name with `=` is never found. */
+    const uint8_t* nul = name.len > 0 ? memchr(name.ptr, 0, (size_t)name.len) : NULL;
+    if (nul) name.len = nul - name.ptr;
+    if (name.len > 0 && memchr(name.ptr, '=', (size_t)name.len)) return false;
+    char* c = byn_cstr(name);
+    const char* v = getenv(c);
+    free(c);
+    if (!v) return false;
+    *out = byn_env_decode((const uint8_t*)v, (int64_t)strlen(v), to);
+    return true;
+#endif
+}
+
+/* As .NET `File.Exists`: an empty path, a NUL, a path (made full as `Path.GetFullPath`) ending in a separator, a missing entry and a directory give false; a dangling symlink gives true on POSIX. */
+bool byn_fs_file_exists(byn_str path) {
+    if (byn_path_effectively_empty(path) || (path.len > 0 && memchr(path.ptr, 0, (size_t)path.len))) return false;
+    byn_path_buf f = byn_path_full(path, "Fs.fileExists", NULL, 0);
+    bool found = false;
+    if (f.n > 0 && !byn_path_sep(f.p[f.n - 1])) {
+#ifdef _WIN32
+        wchar_t* w = byn_path_wide_of(f.p, f.n);
+        size_t wn = wcslen(w);
+        /* As .NET `EnsureExtendedPrefixIfNeeded`: a full path of 260 or more chars gets `\\?\` (`\\?\UNC\` for `\\server\share`). */
+        if (wn >= 260 && !byn_path_extended((const uint8_t*)f.p, f.n) && !(wn >= 4 && w[0] == L'\\' && w[1] == L'\\' && w[2] == L'.' && w[3] == L'\\')) {
+            bool unc = wn >= 2 && w[0] == L'\\' && w[1] == L'\\';
+            const wchar_t* prefix = unc ? L"\\\\?\\UNC\\" : L"\\\\?\\";
+            size_t pn = wcslen(prefix);
+            wchar_t* x = (wchar_t*)malloc(sizeof(wchar_t) * (wn + pn + 1));
+            if (!x) byn_panic("out of memory", NULL, 0);
+            wcscpy(x, prefix);
+            wcscpy(x + pn, unc ? w + 2 : w);
+            free(w);
+            w = x;
+        }
+        DWORD attrs = GetFileAttributesW(w);
+        /* As .NET `FillAttributeInfo`: a sharing violation falls back to the directory listing's attributes. */
+        if (attrs == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_SHARING_VIOLATION) {
+            WIN32_FIND_DATAW fd;
+            HANDLE h = FindFirstFileW(w, &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                attrs = fd.dwFileAttributes;
+                FindClose(h);
+            }
+        }
+        found = attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+        free(w);
+#else
+        char* c = byn_cstr((byn_str){f.p, f.n});
+        struct stat st;
+        /* As .NET: a link whose target is missing is still an entry, and not a directory. */
+        found = (stat(c, &st) == 0 || lstat(c, &st) == 0) && (st.st_mode & S_IFMT) != S_IFDIR;
+        free(c);
+#endif
+    }
+    free(f.p);
+    return found;
+}
+
+uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* alloc) {
+    byn_str* names = NULL;
+    int64_t n = 0;
+    int64_t cap = 0;
+    if (memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    DWORD attrs = GetFileAttributesW(wpath);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        free(wpath);
+        return byn_win_error(GetLastError());
+    }
+    if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        free(wpath);
+        return BYN_IO_NOT_A_DIRECTORY;
+    }
+    size_t wn = wcslen(wpath);
+    wchar_t* pattern = (wchar_t*)malloc(sizeof(wchar_t) * (wn + 3));
+    if (!pattern) byn_panic("out of memory", NULL, 0);
+    memcpy(pattern, wpath, sizeof(wchar_t) * wn);
+    if (wn > 0 && wpath[wn - 1] != L'\\' && wpath[wn - 1] != L'/') pattern[wn++] = L'\\';
+    pattern[wn++] = L'*';
+    pattern[wn] = 0;
+    free(wpath);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern, &fd);
+    free(pattern);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        if (e != ERROR_FILE_NOT_FOUND) return byn_win_error(e);
+    } else {
+        uint32_t err = 0;
+        do {
+            const wchar_t* w = fd.cFileName;
+            if (wcscmp(w, L".") == 0 || wcscmp(w, L"..") == 0) continue;
+            char name[MAX_PATH * 4];
+            int un = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, name, (int)sizeof name, NULL, NULL);
+            if (un <= 0 || !byn_list_dir_add(&names, &n, &cap, name, un - 1, alloc)) {
+                err = BYN_IO_INVALID_UTF8;
+                break;
+            }
+        } while (FindNextFileW(h, &fd));
+        DWORD e = GetLastError();
+        FindClose(h);
+        if (err != 0) return err;
+        if (e != ERROR_NO_MORE_FILES) return byn_win_error(e);
+    }
+#else
+    char* cpath = byn_cstr(path);
+    DIR* d = opendir(cpath);
+    int e = errno;
+    free(cpath);
+    if (!d) return byn_io_error(e);
+    for (;;) {
+        errno = 0;
+        struct dirent* ent = readdir(d);
+        if (!ent) {
+            e = errno;
+            break;
+        }
+        const char* name = ent->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
+        if (!byn_list_dir_add(&names, &n, &cap, name, (int64_t)strlen(name), alloc)) {
+            closedir(d);
+            return BYN_IO_INVALID_UTF8;
+        }
+    }
+    closedir(d);
+    if (e != 0) return byn_io_error(e);
+#endif
+    if (n > 1) qsort(names, (size_t)n, sizeof(byn_str), byn_str_order);
+    *ptr = names;
+    *len = n;
+    return 0;
+}
+
+uint32_t byn_io_remove(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    BOOL ok = DeleteFileW(wpath);
+    DWORD e = ok ? 0 : GetLastError();
+    free(wpath);
+    if (ok || e == ERROR_FILE_NOT_FOUND) return 0;
+    return byn_win_error(e);
+#else
+    /* As .NET: the path is made full (`.` and `..` resolved) before it is deleted. */
+    byn_path_buf f = byn_path_full(path, "Io.remove", NULL, 0);
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    int rc = unlink(cpath);
+    int e = errno;
+    free(cpath);
+    if (rc == 0) {
+        free(f.p);
+        return 0;
+    }
+    if (e == ENOENT) {
+        /* A missing file is not an error, but a missing directory is. */
+        int64_t i = f.n;
+        while (i > 0 && !byn_path_sep(f.p[i - 1])) i--;
+        bool missing = false;
+        if (i > 0) {
+            char* d = byn_cstr((byn_str){f.p, i > 1 ? i - 1 : i});
+            struct stat st;
+            missing = stat(d, &st) != 0 || (st.st_mode & S_IFMT) != S_IFDIR;
+            free(d);
+        }
+        free(f.p);
+        return missing ? BYN_IO_NOT_FOUND : 0;
+    }
+    free(f.p);
+    if (e == EISDIR) return BYN_IO_PERMISSION_DENIED;
+    return byn_io_error(e);
+#endif
+}
+
+#ifndef _WIN32
+/* `mkdir` with the missing parents made first; 0 or the errno. An existing directory is not an error, an existing file is. */
+static int byn_mkdir_all(char* p, int64_t n) {
+    if (mkdir(p, 0777) == 0) return 0;
+    int e = errno;
+    struct stat st;
+    if (e == EEXIST) return stat(p, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR ? 0 : EEXIST;
+    if (e != ENOENT) return e;
+    int64_t i = n;
+    while (i > 0 && p[i - 1] != '/') i--;
+    if (i <= 1) return e;
+    p[i - 1] = 0;
+    int r = byn_mkdir_all(p, i - 1);
+    p[i - 1] = '/';
+    if (r != 0) return r;
+    if (mkdir(p, 0777) == 0) return 0;
+    e = errno;
+    return e == EEXIST && stat(p, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR ? 0 : e;
+}
+#endif
+
+uint32_t byn_io_create_directory(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+    /* As .NET: the full path without its trailing separators. */
+    byn_path_buf f = byn_path_full(path, "Io.createDirectory", NULL, 0);
+    while (f.n > 1 && byn_path_sep(f.p[f.n - 1])) f.n--;
+#ifdef _WIN32
+    /* .NET starts after `Path.GetPathRoot`: `C:\`, `\\?\C:\` or `\\server\share\`, so the walk never creates a root. */
+    wchar_t* wroot = byn_wide(f.p, byn_path_root_length(f.p, f.n));
+    size_t root = wcslen(wroot);
+    free(wroot);
+    wchar_t* w = byn_wide(f.p, f.n);
+    free(f.p);
+    size_t wn = wcslen(w);
+    uint32_t result = 0;
+    for (size_t i = root; i <= wn && result == 0; i++) {
+        if (i < wn && w[i] != L'\\' && w[i] != L'/') continue;
+        wchar_t keep = w[i];
+        w[i] = 0;
+        if (!CreateDirectoryW(w, NULL)) {
+            DWORD e = GetLastError();
+            DWORD attrs = e == ERROR_ALREADY_EXISTS ? GetFileAttributesW(w) : INVALID_FILE_ATTRIBUTES;
+            if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY)) result = e == ERROR_ALREADY_EXISTS ? BYN_IO_OTHER : byn_win_error(e);
+        }
+        w[i] = keep;
+    }
+    free(w);
+    return result;
+#else
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    free(f.p);
+    int e = byn_mkdir_all(cpath, (int64_t)strlen(cpath));
+    free(cpath);
+    return e == 0 ? 0 : byn_io_error(e);
+#endif
+}
+
+uint32_t byn_io_remove_directory(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    BOOL ok = RemoveDirectoryW(wpath);
+    DWORD e = ok ? 0 : GetLastError();
+    free(wpath);
+    return ok ? 0 : byn_win_error(e);
+#else
+    /* As .NET: the path is made full first, and a symlink to a directory is unlinked. */
+    byn_path_buf f = byn_path_full(path, "Io.removeDirectory", NULL, 0);
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    free(f.p);
+    int rc = rmdir(cpath);
+    int e = errno;
+    struct stat st;
+    if (rc != 0 && e == ENOTDIR && lstat(cpath, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK && stat(cpath, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR) {
+        rc = unlink(cpath);
+        e = errno;
+    }
+    free(cpath);
+    return rc == 0 ? 0 : byn_io_error(e);
+#endif
+}
+
+static void byn_bytes_add(byn_bytes* b, const void* p, int64_t n) {
+    byn_bytes_reserve(b, n);
+    memcpy(b->ptr + b->len, p, (size_t)n);
+    b->len += n;
+}
+
+/* Whether `s` can be quoted for cmd.exe exactly: no NUL, CR or LF (they end the command), no `"`
+ * (it would close the quotes) and no `%` (expanded even inside quotes). */
+static bool byn_batch_safe(byn_str s) {
+    for (int64_t i = 0; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        if (c == 0 || c == '\r' || c == '\n' || c == '"' || c == '%') return false;
+    }
+    return true;
+}
+
+bool byn_batch_cmdline(byn_str path, const byn_str* args, int64_t nargs, byn_str* out) {
+    if (path.len < 4 || !byn_batch_safe(path)) return false;
+    char ext[4];
+    for (int i = 0; i < 4; i++) {
+        uint8_t c = path.ptr[path.len - 4 + i];
+        ext[i] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    }
+    if (memcmp(ext, ".bat", 4) != 0 && memcmp(ext, ".cmd", 4) != 0) return false;
+    /* A bare name would make cmd.exe search the current directory and PATH. */
+    if (!memchr(path.ptr, '/', (size_t)path.len) && !memchr(path.ptr, '\\', (size_t)path.len)) return false;
+    for (int64_t i = 0; i < nargs; i++)
+        if (!byn_batch_safe(args[i])) return false;
+    byn_bytes b = {NULL, 0, 0};
+    const char* head = "cmd.exe /d /e:ON /v:OFF /s /c \"\"";
+    byn_bytes_add(&b, head, (int64_t)strlen(head));
+    byn_bytes_add(&b, path.ptr, path.len);
+    byn_bytes_add(&b, "\"", 1);
+    for (int64_t i = 0; i < nargs; i++) {
+        byn_bytes_add(&b, " \"", 2);
+        byn_bytes_add(&b, args[i].ptr, args[i].len);
+        byn_bytes_add(&b, "\"", 1);
+    }
+    byn_bytes_add(&b, "\"", 1);
+    *out = (byn_str){b.ptr, b.len};
+    return true;
+}
+
+/* Checks both captured streams are UTF-8 and copies them into `alloc`; frees them either way. */
+static uint32_t byn_process_finish(byn_bytes* streams, int32_t code, byn_process* out, byn_alloc* alloc) {
+    uint32_t result = 0;
+    if (!byn_utf8_valid(streams[0].ptr, streams[0].len) || !byn_utf8_valid(streams[1].ptr, streams[1].len))
+        result = BYN_IO_INVALID_UTF8;
+    else if (out)
+        *out = (byn_process){code, byn_str_copy((byn_str){streams[0].ptr, streams[0].len}, alloc),
+                             byn_str_copy((byn_str){streams[1].ptr, streams[1].len}, alloc)};
+    free(streams[0].ptr);
+    free(streams[1].ptr);
+    return result;
+}
+
+#ifdef _WIN32
+
+/* Appends one argument quoted so that CommandLineToArgvW and the MSVC runtime read it back unchanged. */
+static void byn_quote_arg(byn_bytes* b, byn_str s) {
+    if (b->len > 0) byn_bytes_add(b, " ", 1);
+    bool plain = s.len > 0;
+    for (int64_t i = 0; i < s.len && plain; i++)
+        if (s.ptr[i] == ' ' || s.ptr[i] == '\t' || s.ptr[i] == '\n' || s.ptr[i] == '\v' || s.ptr[i] == '"') plain = false;
+    if (plain) {
+        byn_bytes_add(b, s.ptr, s.len);
+        return;
+    }
+    byn_bytes_add(b, "\"", 1);
+    for (int64_t i = 0;; i++) {
+        int64_t slashes = 0;
+        while (i < s.len && s.ptr[i] == '\\') i++, slashes++;
+        if (i == s.len) {
+            for (int64_t k = 0; k < slashes * 2; k++) byn_bytes_add(b, "\\", 1);
+            break;
+        }
+        int64_t count = s.ptr[i] == '"' ? slashes * 2 + 1 : slashes;
+        for (int64_t k = 0; k < count; k++) byn_bytes_add(b, "\\", 1);
+        byn_bytes_add(b, &s.ptr[i], 1);
+    }
+    byn_bytes_add(b, "\"", 1);
+}
+
+/* Whether a program name ends in `.bat` or `.cmd`; Windows ignores trailing dots and spaces. */
+static bool byn_is_batch(const wchar_t* s, size_t n) {
+    while (n > 0 && (s[n - 1] == L'.' || s[n - 1] == L' ')) n--;
+    return n >= 4 && (_wcsnicmp(s + n - 4, L".bat", 4) == 0 || _wcsnicmp(s + n - 4, L".cmd", 4) == 0);
+}
+
+/* `dir` (`dn` units), a separator, `name` and `ext` as a file path from malloc if it is a file, else NULL. */
+static wchar_t* byn_program_in(const wchar_t* dir, size_t dn, const wchar_t* name, size_t nn, const wchar_t* ext, size_t xn) {
+    wchar_t* c = (wchar_t*)malloc(sizeof(wchar_t) * (dn + nn + xn + 2));
+    if (!c) byn_panic("out of memory", NULL, 0);
+    memcpy(c, dir, sizeof(wchar_t) * dn);
+    size_t at = dn;
+    if (c[at - 1] != L'\\' && c[at - 1] != L'/') c[at++] = L'\\';
+    memcpy(c + at, name, sizeof(wchar_t) * nn);
+    memcpy(c + at + nn, ext, sizeof(wchar_t) * xn);
+    c[at + nn + xn] = 0;
+    DWORD attrs = GetFileAttributesW(c);
+    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) return c;
+    free(c);
+    return NULL;
+}
+
+/* `program` itself if it names a path, else the first PATH entry holding it as given or with a
+ * PATHEXT extension; `.BAT` and `.CMD` are never appended. */
+static wchar_t* byn_find_program(byn_str program) {
+    wchar_t* name = byn_wide(program.ptr, program.len);
+    if (memchr(program.ptr, '/', (size_t)program.len) || memchr(program.ptr, '\\', (size_t)program.len)) return name;
+    wchar_t path[32767];
+    wchar_t exts[1024];
+    DWORD pn = GetEnvironmentVariableW(L"PATH", path, 32767);
+    if (pn == 0 || pn >= 32767) path[0] = 0;
+    DWORD en = GetEnvironmentVariableW(L"PATHEXT", exts, 1024);
+    if (en == 0 || en >= 1024) wcscpy(exts, L".COM;.EXE;.BAT;.CMD");
+    size_t nn = wcslen(name);
+    /* Like CreateProcess, the bare name is tried only when its final component already has an extension. */
+    wchar_t* base = wcsrchr(name, L'.');
+    int bare = base != NULL;
+    wchar_t* found = NULL;
+    for (wchar_t* dir = path; *dir && !found;) {
+        wchar_t* dend = wcschr(dir, L';');
+        size_t dn = dend ? (size_t)(dend - dir) : wcslen(dir);
+        if (dn > 0 && bare) found = byn_program_in(dir, dn, name, nn, L"", 0);
+        for (wchar_t* ext = exts; *ext && dn > 0 && !found;) {
+            wchar_t* eend = wcschr(ext, L';');
+            size_t xn = eend ? (size_t)(eend - ext) : wcslen(ext);
+            if (xn > 0 && !byn_is_batch(ext, xn)) found = byn_program_in(dir, dn, name, nn, ext, xn);
+            ext = eend ? eend + 1 : ext + xn;
+        }
+        dir = dend ? dend + 1 : dir + dn;
+    }
+    free(name);
+    return found;
+}
+
+typedef struct byn_drain {
+    HANDLE h;
+    byn_bytes bytes;
+} byn_drain;
+
+static DWORD WINAPI byn_drain_pipe(LPVOID arg) {
+    byn_drain* d = (byn_drain*)arg;
+    for (;;) {
+        byn_bytes_reserve(&d->bytes, 4096);
+        DWORD got = 0;
+        if (!ReadFile(d->h, d->bytes.ptr + d->bytes.len, 4096, &got, NULL) || got == 0) break;
+        d->bytes.len += got;
+    }
+    return 0;
+}
+
+/* Runs `app` with the command line `wline` (both freed here), capturing both streams into `streams`. */
+static uint32_t byn_win_spawn(wchar_t* app, wchar_t* wline, byn_bytes* streams, int32_t* code) {
+    SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
+    HANDLE reads[2];
+    HANDLE writes[2];
+    if (!CreatePipe(&reads[0], &writes[0], &sa, 0)) {
+        free(app);
+        free(wline);
+        return byn_win_error(GetLastError());
+    }
+    if (!CreatePipe(&reads[1], &writes[1], &sa, 0)) {
+        DWORD e = GetLastError();
+        CloseHandle(reads[0]);
+        CloseHandle(writes[0]);
+        free(app);
+        free(wline);
+        return byn_win_error(e);
+    }
+    SetHandleInformation(reads[0], HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(reads[1], HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOW si;
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = writes[0];
+    si.hStdError = writes[1];
+    PROCESS_INFORMATION pi;
+    BOOL started = CreateProcessW(app, wline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    DWORD e = GetLastError();
+    free(app);
+    free(wline);
+    CloseHandle(writes[0]);
+    CloseHandle(writes[1]);
+    if (!started) {
+        CloseHandle(reads[0]);
+        CloseHandle(reads[1]);
+        return byn_win_error(e);
+    }
+    CloseHandle(pi.hThread);
+    byn_drain drains[2] = {{reads[0], {NULL, 0, 0}}, {reads[1], {NULL, 0, 0}}};
+    HANDLE t = CreateThread(NULL, 0, byn_drain_pipe, &drains[1], 0, NULL);
+    if (!t) byn_drain_pipe(&drains[1]);
+    byn_drain_pipe(&drains[0]);
+    if (t) {
+        WaitForSingleObject(t, INFINITE);
+        CloseHandle(t);
+    }
+    CloseHandle(reads[0]);
+    CloseHandle(reads[1]);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD status = 0;
+    GetExitCodeProcess(pi.hProcess, &status);
+    CloseHandle(pi.hProcess);
+    *code = (int32_t)status;
+    streams[0] = drains[0].bytes;
+    streams[1] = drains[1].bytes;
+    return 0;
+}
+#endif
+
+uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc) {
+    if (program.len == 0 || memchr(program.ptr, 0, (size_t)program.len)) return BYN_IO_NOT_FOUND;
+    for (int64_t i = 0; i < nargs; i++)
+        if (memchr(args[i].ptr, 0, (size_t)args[i].len)) return BYN_IO_OTHER;
+    byn_bytes streams[2] = {{NULL, 0, 0}, {NULL, 0, 0}};
+    int32_t code;
+#ifdef _WIN32
+    wchar_t* app = byn_find_program(program);
+    if (!app) return BYN_IO_NOT_FOUND;
+    /* CreateProcessW runs a batch file through cmd.exe, which re-parses the arguments (BatBadBut). */
+    if (byn_is_batch(app, wcslen(app))) {
+        free(app);
+        return BYN_IO_PERMISSION_DENIED;
+    }
+    byn_bytes line = {NULL, 0, 0};
+    byn_quote_arg(&line, program);
+    for (int64_t i = 0; i < nargs; i++) byn_quote_arg(&line, args[i]);
+    wchar_t* wline = byn_wide(line.ptr, line.len);
+    free(line.ptr);
+    uint32_t err = byn_win_spawn(app, wline, streams, &code);
+    if (err != 0) return err;
+#else
+    char** argv = (char**)malloc(sizeof(char*) * (size_t)(nargs + 2));
+    if (!argv) byn_panic("out of memory", NULL, 0);
+    argv[0] = byn_cstr(program);
+    for (int64_t i = 0; i < nargs; i++) argv[i + 1] = byn_cstr(args[i]);
+    argv[nargs + 1] = NULL;
+    int pipes[2][2];
+    uint32_t err = 0;
+    if (pipe(pipes[0]) != 0) err = byn_io_error(errno);
+    else if (pipe(pipes[1]) != 0) {
+        err = byn_io_error(errno);
+        close(pipes[0][0]);
+        close(pipes[0][1]);
+    }
+    pid_t pid = 0;
+    if (err == 0) {
+        for (int i = 0; i < 2; i++) {
+            fcntl(pipes[i][0], F_SETFD, FD_CLOEXEC);
+            fcntl(pipes[i][1], F_SETFD, FD_CLOEXEC);
+        }
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+        posix_spawn_file_actions_adddup2(&actions, pipes[0][1], 1);
+        posix_spawn_file_actions_adddup2(&actions, pipes[1][1], 2);
+        int rc = posix_spawnp(&pid, argv[0], &actions, NULL, argv, environ);
+        posix_spawn_file_actions_destroy(&actions);
+        close(pipes[0][1]);
+        close(pipes[1][1]);
+        if (rc != 0) {
+            err = byn_io_error(rc);
+            close(pipes[0][0]);
+            close(pipes[1][0]);
+        }
+    }
+    for (int64_t i = 0; i <= nargs; i++) free(argv[i]);
+    free(argv);
+    if (err != 0) return err;
+    /* Drain both pipes together, so a child that fills one while we block on the other cannot deadlock. */
+    struct pollfd fds[2] = {{pipes[0][0], POLLIN, 0}, {pipes[1][0], POLLIN, 0}};
+    int open = 2;
+    while (open > 0) {
+        if (poll(fds, 2, -1) < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        for (int i = 0; i < 2; i++) {
+            if (fds[i].fd < 0 || !(fds[i].revents & (POLLIN | POLLHUP | POLLERR))) continue;
+            byn_bytes_reserve(&streams[i], 4096);
+            ssize_t got = read(fds[i].fd, streams[i].ptr + streams[i].len, 4096);
+            if (got > 0) streams[i].len += got;
+            else if (got == 0 || errno != EINTR) {
+                close(fds[i].fd);
+                fds[i].fd = -1;
+                open--;
+            }
+        }
+    }
+    for (int i = 0; i < 2; i++)
+        if (fds[i].fd >= 0) close(fds[i].fd);
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    code = WIFSIGNALED(status) ? 128 + WTERMSIG(status) : WEXITSTATUS(status);
+#endif
+    return byn_process_finish(streams, code, out, alloc);
+}
+
+uint32_t byn_io_run_batch(byn_str path, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc) {
+#ifdef _WIN32
+    byn_str line;
+    if (!byn_batch_cmdline(path, args, nargs, &line)) return BYN_IO_INVALID_INPUT;
+    /* cmd.exe from the system directory: neither PATH nor %ComSpec% can redirect it. */
+    wchar_t sys[MAX_PATH];
+    UINT sn = GetSystemDirectoryW(sys, MAX_PATH);
+    if (sn == 0 || sn >= MAX_PATH - 9) {
+        free((void*)line.ptr);
+        return byn_win_error(GetLastError());
+    }
+    wchar_t* app = (wchar_t*)malloc(sizeof(wchar_t) * (sn + 9));
+    if (!app) byn_panic("out of memory", NULL, 0);
+    memcpy(app, sys, sizeof(wchar_t) * sn);
+    wcscpy(app + sn, L"\\cmd.exe");
+    wchar_t* wline = byn_wide(line.ptr, line.len);
+    free((void*)line.ptr);
+    byn_bytes streams[2] = {{NULL, 0, 0}, {NULL, 0, 0}};
+    int32_t code;
+    uint32_t err = byn_win_spawn(app, wline, streams, &code);
+    if (err != 0) return err;
+    return byn_process_finish(streams, code, out, alloc);
+#else
+    (void)path, (void)args, (void)nargs, (void)out, (void)alloc;
+    return BYN_IO_UNSUPPORTED;
+#endif
+}
+
+void byn_io_write(int32_t fd, byn_str s) {
+    if (fd == 1) {
+        byn_out(s.ptr, s.len);
+        return;
+    }
+    byn_stdout_flush();
+    fwrite(s.ptr, 1, (size_t)s.len, stderr);
+    fflush(stderr);
+}
+
+int64_t byn_io_monotonic_nanos(void) {
+#ifdef _WIN32
+    LARGE_INTEGER count;
+    LARGE_INTEGER freq;
+    QueryPerformanceCounter(&count);
+    QueryPerformanceFrequency(&freq);
+    int64_t c = count.QuadPart;
+    int64_t f = freq.QuadPart;
+    return c / f * 1000000000 + c % f * 1000000000 / f;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+#endif
+}

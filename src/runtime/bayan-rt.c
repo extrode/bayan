@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <spawn.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -2804,6 +2805,129 @@ static char* byn_cstr(byn_str s) {
 }
 #endif
 
+#ifndef _WIN32
+/* The bytes of an environment value as .NET decodes them: each well-formed sequence cut short, each lone invalid byte, and each lead
+   with an out-of-range second byte, is one U+FFFD (measured against live .NET in StdEnvTests; `byn_utf8_decode_replace` skips the continuation bytes
+   a lead byte expects instead). */
+static byn_str byn_env_decode(const uint8_t* p, int64_t n, byn_alloc* to) {
+    uint8_t* out = n == 0 ? NULL : to->resize(to, NULL, 0, n * 3);
+    int64_t len = 0, i = 0;
+    while (i < n) {
+        uint8_t c = p[i];
+        int need = c >= 0xC2 && c <= 0xDF ? 1 : c >= 0xE0 && c <= 0xEF ? 2 : c >= 0xF0 && c <= 0xF4 ? 3 : 0;
+        uint8_t lo = 0x80, hi = 0xBF;
+        if (c == 0xE0) lo = 0xA0;
+        else if (c == 0xED) hi = 0x9F;
+        else if (c == 0xF0) lo = 0x90;
+        else if (c == 0xF4) hi = 0x8F;
+        int64_t j = i + 1;
+        int k = 0;
+        for (; k < need && j < n && p[j] >= lo && p[j] <= hi; k++, j++) lo = 0x80, hi = 0xBF;
+        /* A second byte that is a continuation but out of range (overlong, surrogate, past U+10FFFF) goes with its lead, as in .NET. */
+        int skip = need > 0 && k == 0 && j < n && (p[j] & 0xC0) == 0x80;
+        if (skip) j++;
+        if (!skip && (c < 0x80 || (need > 0 && k == need))) {
+            memcpy(out + len, p + i, (size_t)(j - i));
+            len += j - i;
+        } else {
+            out[len++] = 0xEF, out[len++] = 0xBF, out[len++] = 0xBD;
+        }
+        i = j;
+    }
+    if (out) out = to->resize(to, out, n * 3, len);
+    return (byn_str){out, len};
+}
+#endif
+
+bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to) {
+#ifdef _WIN32
+    wchar_t* w = byn_wide(name.ptr, name.len);
+    DWORD n = 128;
+    wchar_t* v = NULL;
+    DWORD got = 0;
+    /* As .NET: grow the buffer while the value does not fit. */
+    for (;;) {
+        v = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)n);
+        if (!v) byn_panic("out of memory", NULL, 0);
+        SetLastError(ERROR_SUCCESS);
+        got = GetEnvironmentVariableW(w, v, n);
+        if (got == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+            free(v);
+            free(w);
+            return false;
+        }
+        if (got < n) break;
+        free(v);
+        n = got;
+    }
+    free(w);
+    int un = got > 0 ? WideCharToMultiByte(CP_UTF8, 0, v, (int)got, NULL, 0, NULL, NULL) : 0;
+    char* u = (char*)malloc((size_t)un + 1);
+    if (!u) byn_panic("out of memory", NULL, 0);
+    if (un > 0) WideCharToMultiByte(CP_UTF8, 0, v, (int)got, u, un, NULL, NULL);
+    free(v);
+    *out = byn_utf8_decode_replace((const uint8_t*)u, un, to);
+    free(u);
+    return true;
+#else
+    /* .NET passes the name as a C string, so a NUL ends it; a name with `=` is never found. */
+    const uint8_t* nul = name.len > 0 ? memchr(name.ptr, 0, (size_t)name.len) : NULL;
+    if (nul) name.len = nul - name.ptr;
+    if (name.len > 0 && memchr(name.ptr, '=', (size_t)name.len)) return false;
+    char* c = byn_cstr(name);
+    const char* v = getenv(c);
+    free(c);
+    if (!v) return false;
+    *out = byn_env_decode((const uint8_t*)v, (int64_t)strlen(v), to);
+    return true;
+#endif
+}
+
+/* As .NET `File.Exists`: an empty path, a NUL, a path (made full as `Path.GetFullPath`) ending in a separator, a missing entry and a directory give false; a dangling symlink gives true on POSIX. */
+bool byn_fs_file_exists(byn_str path) {
+    if (byn_path_effectively_empty(path) || (path.len > 0 && memchr(path.ptr, 0, (size_t)path.len))) return false;
+    byn_path_buf f = byn_path_full(path, "Fs.fileExists", NULL, 0);
+    bool found = false;
+    if (f.n > 0 && !byn_path_sep(f.p[f.n - 1])) {
+#ifdef _WIN32
+        wchar_t* w = byn_path_wide_of(f.p, f.n);
+        size_t wn = wcslen(w);
+        /* As .NET `EnsureExtendedPrefixIfNeeded`: a full path of 260 or more chars gets `\\?\` (`\\?\UNC\` for `\\server\share`). */
+        if (wn >= 260 && !byn_path_extended((const uint8_t*)f.p, f.n) && !(wn >= 4 && w[0] == L'\\' && w[1] == L'\\' && w[2] == L'.' && w[3] == L'\\')) {
+            bool unc = wn >= 2 && w[0] == L'\\' && w[1] == L'\\';
+            const wchar_t* prefix = unc ? L"\\\\?\\UNC\\" : L"\\\\?\\";
+            size_t pn = wcslen(prefix);
+            wchar_t* x = (wchar_t*)malloc(sizeof(wchar_t) * (wn + pn + 1));
+            if (!x) byn_panic("out of memory", NULL, 0);
+            wcscpy(x, prefix);
+            wcscpy(x + pn, unc ? w + 2 : w);
+            free(w);
+            w = x;
+        }
+        DWORD attrs = GetFileAttributesW(w);
+        /* As .NET `FillAttributeInfo`: a sharing violation falls back to the directory listing's attributes. */
+        if (attrs == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_SHARING_VIOLATION) {
+            WIN32_FIND_DATAW fd;
+            HANDLE h = FindFirstFileW(w, &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                attrs = fd.dwFileAttributes;
+                FindClose(h);
+            }
+        }
+        found = attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+        free(w);
+#else
+        char* c = byn_cstr((byn_str){f.p, f.n});
+        struct stat st;
+        /* As .NET: a link whose target is missing is still an entry, and not a directory. */
+        found = (stat(c, &st) == 0 || lstat(c, &st) == 0) && (st.st_mode & S_IFMT) != S_IFDIR;
+        free(c);
+#endif
+    }
+    free(f.p);
+    return found;
+}
+
 uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* alloc) {
     byn_str* names = NULL;
     int64_t n = 0;
@@ -2878,6 +3002,128 @@ uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* a
     *ptr = names;
     *len = n;
     return 0;
+}
+
+uint32_t byn_io_remove(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    BOOL ok = DeleteFileW(wpath);
+    DWORD e = ok ? 0 : GetLastError();
+    free(wpath);
+    if (ok || e == ERROR_FILE_NOT_FOUND) return 0;
+    return byn_win_error(e);
+#else
+    /* As .NET: the path is made full (`.` and `..` resolved) before it is deleted. */
+    byn_path_buf f = byn_path_full(path, "Io.remove", NULL, 0);
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    int rc = unlink(cpath);
+    int e = errno;
+    free(cpath);
+    if (rc == 0) {
+        free(f.p);
+        return 0;
+    }
+    if (e == ENOENT) {
+        /* A missing file is not an error, but a missing directory is. */
+        int64_t i = f.n;
+        while (i > 0 && !byn_path_sep(f.p[i - 1])) i--;
+        bool missing = false;
+        if (i > 0) {
+            char* d = byn_cstr((byn_str){f.p, i > 1 ? i - 1 : i});
+            struct stat st;
+            missing = stat(d, &st) != 0 || (st.st_mode & S_IFMT) != S_IFDIR;
+            free(d);
+        }
+        free(f.p);
+        return missing ? BYN_IO_NOT_FOUND : 0;
+    }
+    free(f.p);
+    if (e == EISDIR) return BYN_IO_PERMISSION_DENIED;
+    return byn_io_error(e);
+#endif
+}
+
+#ifndef _WIN32
+/* `mkdir` with the missing parents made first; 0 or the errno. An existing directory is not an error, an existing file is. */
+static int byn_mkdir_all(char* p, int64_t n) {
+    if (mkdir(p, 0777) == 0) return 0;
+    int e = errno;
+    struct stat st;
+    if (e == EEXIST) return stat(p, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR ? 0 : EEXIST;
+    if (e != ENOENT) return e;
+    int64_t i = n;
+    while (i > 0 && p[i - 1] != '/') i--;
+    if (i <= 1) return e;
+    p[i - 1] = 0;
+    int r = byn_mkdir_all(p, i - 1);
+    p[i - 1] = '/';
+    if (r != 0) return r;
+    if (mkdir(p, 0777) == 0) return 0;
+    e = errno;
+    return e == EEXIST && stat(p, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR ? 0 : e;
+}
+#endif
+
+uint32_t byn_io_create_directory(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+    /* As .NET: the full path without its trailing separators. */
+    byn_path_buf f = byn_path_full(path, "Io.createDirectory", NULL, 0);
+    while (f.n > 1 && byn_path_sep(f.p[f.n - 1])) f.n--;
+#ifdef _WIN32
+    /* .NET starts after `Path.GetPathRoot`: `C:\`, `\\?\C:\` or `\\server\share\`, so the walk never creates a root. */
+    wchar_t* wroot = byn_wide(f.p, byn_path_root_length(f.p, f.n));
+    size_t root = wcslen(wroot);
+    free(wroot);
+    wchar_t* w = byn_wide(f.p, f.n);
+    free(f.p);
+    size_t wn = wcslen(w);
+    uint32_t result = 0;
+    for (size_t i = root; i <= wn && result == 0; i++) {
+        if (i < wn && w[i] != L'\\' && w[i] != L'/') continue;
+        wchar_t keep = w[i];
+        w[i] = 0;
+        if (!CreateDirectoryW(w, NULL)) {
+            DWORD e = GetLastError();
+            DWORD attrs = e == ERROR_ALREADY_EXISTS ? GetFileAttributesW(w) : INVALID_FILE_ATTRIBUTES;
+            if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY)) result = e == ERROR_ALREADY_EXISTS ? BYN_IO_OTHER : byn_win_error(e);
+        }
+        w[i] = keep;
+    }
+    free(w);
+    return result;
+#else
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    free(f.p);
+    int e = byn_mkdir_all(cpath, (int64_t)strlen(cpath));
+    free(cpath);
+    return e == 0 ? 0 : byn_io_error(e);
+#endif
+}
+
+uint32_t byn_io_remove_directory(byn_str path) {
+    if (byn_path_effectively_empty(path) || memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    BOOL ok = RemoveDirectoryW(wpath);
+    DWORD e = ok ? 0 : GetLastError();
+    free(wpath);
+    return ok ? 0 : byn_win_error(e);
+#else
+    /* As .NET: the path is made full first, and a symlink to a directory is unlinked. */
+    byn_path_buf f = byn_path_full(path, "Io.removeDirectory", NULL, 0);
+    char* cpath = byn_cstr((byn_str){f.p, f.n});
+    free(f.p);
+    int rc = rmdir(cpath);
+    int e = errno;
+    struct stat st;
+    if (rc != 0 && e == ENOTDIR && lstat(cpath, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK && stat(cpath, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR) {
+        rc = unlink(cpath);
+        e = errno;
+    }
+    free(cpath);
+    return rc == 0 ? 0 : byn_io_error(e);
+#endif
 }
 
 static void byn_bytes_add(byn_bytes* b, const void* p, int64_t n) {

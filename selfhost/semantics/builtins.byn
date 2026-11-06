@@ -111,6 +111,9 @@ ModId t9Create(ref Ctx c) {
     let _ = t9MakeIo(ref c, by: m, for: "readFile", as: .ioReadFile, to: internList(ref c, by: prim(.u8)), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "readText", as: .ioReadText, to: prim(.string), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "writeFile", as: .ioWriteFile, to: prim(.void), from: t9Two("path", as: prim(.string), for: "bytes", to: roBytes), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "remove", as: .ioRemove, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "createDirectory", as: .ioCreateDirectory, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "removeDirectory", as: .ioRemoveDirectory, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "listDir", as: .ioListDir, to: internList(ref c, by: prim(.string)), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "run", as: .ioRun, to: builtinType(.processResult), from: t9Two("program", as: prim(.string), for: "args", to: roStrings), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "runBatch", as: .ioRunBatch, to: builtinType(.processResult), from: t9Two("path", as: prim(.string), for: "args", to: roStrings), at: ioError)
@@ -140,6 +143,8 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombine, to: prim(.string), from: t9Two("path1", as: prim(.string), for: "path2", to: prim(.string)), at: "Path.combine")
     let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombineSpan, to: prim(.string), from: t9One("paths", as: internSpan(ref c, by: prim(.string), readOnly: true)), at: "Path.combine(paths)")
     let _ = t9Make(ref c, by: m, for: "fullPath", as: .pathFullPath, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fullPath")
+    let _ = t9Make(ref c, by: m, for: "get", as: .envGet, to: internOptional(ref c, by: prim(.string)), from: t9One("name", as: prim(.string)), at: "Env.get")
+    let _ = t9Make(ref c, by: m, for: "fileExists", as: .fsFileExists, to: prim(.bool), from: t9One("path", as: prim(.string)), at: "Fs.fileExists")
 
     // The iteration interfaces are declared from source too; the declare pass declares their members like a user interface's.
     let iteration = t9Parse(ref c, for: iterationSource, by: m)
@@ -289,6 +294,22 @@ FuncId findPath(ref Ctx c, for string name) {
     return -1
 }
 
+/// A static member of `Env`, or -1.
+FuncId findEnv(ref Ctx c, for string name) {
+    switch name {
+        case "get": return t9Function(ref c, for: "Env.get")
+    }
+    return -1
+}
+
+/// A static member of `Fs`, or -1.
+FuncId findFs(ref Ctx c, for string name) {
+    switch name {
+        case "fileExists": return t9Function(ref c, for: "Fs.fileExists")
+    }
+    return -1
+}
+
 /// A static member of `string`, or -1.
 FuncId findString(ref Ctx c, for string name) {
     switch name {
@@ -322,7 +343,7 @@ FuncId intParse(ref Ctx c, for PrimitiveKind t) {
 /// A static member of `Io`, or -1.
 FuncId findIo(ref Ctx c, for string name) {
     switch name {
-        case "readFile" or "readText" or "writeFile" or "listDir" or "run" or "runBatch" or "monotonicNanos" or "stdout" or "stderr" or "stdin":
+        case "readFile" or "readText" or "writeFile" or "remove" or "createDirectory" or "removeDirectory" or "listDir" or "run" or "runBatch" or "monotonicNanos" or "stdout" or "stderr" or "stdin":
             return t9Function(ref c, for: $"Io.{name}")
     }
     return -1

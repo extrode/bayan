@@ -1,0 +1,11 @@
+// `Env.get` allocates from `context.allocator`, so a result made inside `provide` borrows that arena.
+void main() uses env, alloc {
+    var home: string? = null
+    {
+        using let arena = Arena()
+        provide allocator: arena {
+            home = Env.get("HOME")
+        }
+    }
+    print(home ?? "-")
+}

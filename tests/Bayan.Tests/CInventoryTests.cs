@@ -1,5 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Bayan.Cli;
+using Bayan.Semantics;
+using Bayan.Backend.C;
+using Bayan.Syntax.Text;
 
 namespace Bayan.Tests;
 
@@ -16,21 +20,35 @@ public sealed partial class CInventoryTests
     private static readonly string[] LiteralFiles = ["src/Bayan.Backend.C/CEmitter.cs"];
 
     [GeneratedRegex(@"__builtin_\w+|__attribute__\s*\(\(([^()]|\([^()]*\))*\)\)|__declspec|\balloca\b|__typeof__|\btypeof\b|__auto_type|__thread\b|__int128|__extension__|__restrict\w*|#pragma \w+|_Pragma|__asm__|\basm\b|__has_builtin|__PRETTY_FUNCTION__|__COUNTER__|\(\{")]
-    private static partial Regex Extensions();
+    internal static partial Regex Extensions();
 
-    [GeneratedRegex(@"^\| (?<site>[^ |]+:\d+) \| `(?<token>[^`]+)` \| (?<why>.+) \|$")]
+    [GeneratedRegex(@"^\| (?<file>[^ |`]+) `(?<anchor>[^`]+)` \| `(?<token>[^`]+)` \| (?<why>.+) \|$")]
     private static partial Regex Row();
 
     [Fact]
     public void EveryHitIsARowAndEveryRowHasAHit()
     {
         var hits = Hits().Order(StringComparer.Ordinal).ToList();
-        var rows = Rows().Order(StringComparer.Ordinal).ToList();
+        var bad = new List<string>();
+        var rows = Rows(bad).Order(StringComparer.Ordinal).ToList();
+        Assert.True(bad.Count == 0, string.Join("\n", bad));
         var noRow = hits.Except(rows).ToList();
         var noHit = rows.Except(hits).ToList();
         Assert.True(noRow.Count == 0 && noHit.Count == 0,
             $"hits without a row:\n{string.Join("\n", noRow)}\nrows without a hit:\n{string.Join("\n", noHit)}");
         Assert.Equal(hits, rows);
+    }
+
+    /// <summary>The scan sees what the C# emitter really writes: the extensions in the C of a small program are all rows.</summary>
+    [Fact]
+    public void EmittedCOfAProgramUsesOnlyRowTokens()
+    {
+        var c = Compilation.Create([new SourceText("main.byn", "print(\"hi\")\n"u8.ToArray())], Path.GetTempPath());
+        Assert.False(c.Diagnostics.HasErrors);
+        var rows = Rows([]).Select(r => r[(r.IndexOf(' ') + 1)..]).ToHashSet(StringComparer.Ordinal);
+        var emitted = CliApp.EmitC(c, BuildMode.Debug);
+        var unlisted = Extensions().Matches(emitted).SelectMany(m => Split(m.Value)).Where(t => !rows.Contains(t)).ToList();
+        Assert.True(unlisted.Count == 0, $"emitted extension tokens without a row: {string.Join(", ", unlisted)}");
     }
 
     private static IEnumerable<string> Hits()
@@ -53,15 +71,58 @@ public sealed partial class CInventoryTests
         }
     }
 
-    private static IEnumerable<string> Rows()
+    /// <summary>Each row as <c>file:line token</c>, its anchor resolved to a line; an anchor matching no line or several goes to <paramref name="bad"/>.</summary>
+    private static List<string> Rows(List<string> bad)
     {
+        var rows = new List<string>();
         foreach (var line in Read(InventoryPath).ReplaceLineEndings("\n").Split('\n'))
         {
             if (!line.StartsWith("| ", StringComparison.Ordinal) || line.StartsWith("| Site ", StringComparison.Ordinal)) continue;
             var m = Row().Match(line);
             Assert.True(m.Success, $"inventory table line is not a row: {line}");
-            yield return $"{m.Groups["site"].Value} {m.Groups["token"].Value}";
+            var file = m.Groups["file"].Value;
+            var anchor = m.Groups["anchor"].Value;
+            var at = AnchorLines(Read(file), anchor);
+            if (at.Count != 1)
+            {
+                bad.Add($"anchor {file} `{anchor}` matches {(at.Count == 0 ? "no line" : "lines " + string.Join(", ", at))}; it must match exactly one");
+                continue;
+            }
+            rows.Add($"{file}:{at[0]} {m.Groups["token"].Value}");
         }
+        return rows;
+    }
+
+    /// <summary>
+    /// The 1-based lines of <paramref name="text"/> holding <paramref name="fragment"/> (Q1040). An end of the fragment that is a
+    /// letter, digit or <c>_</c> must not touch another one, so <c>byn_env_get</c> does not match <c>byn_env_get_all</c>.
+    /// </summary>
+    public static List<int> AnchorLines(string text, string fragment)
+    {
+        static bool Word(char c) => char.IsLetterOrDigit(c) || c == '_';
+        var found = new List<int>();
+        var lines = text.ReplaceLineEndings("\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var l = lines[i];
+            for (var at = l.IndexOf(fragment, StringComparison.Ordinal); at >= 0; at = l.IndexOf(fragment, at + 1, StringComparison.Ordinal))
+            {
+                var end = at + fragment.Length;
+                if (Word(fragment[0]) && at > 0 && Word(l[at - 1])) continue;
+                if (Word(fragment[^1]) && end < l.Length && Word(l[end])) continue;
+                found.Add(i + 1);
+                break;
+            }
+        }
+        return found;
+    }
+
+    [Fact]
+    public void AnchorMatchesWholeWordsOnly()
+    {
+        Assert.Equal([2], AnchorLines("byn_env_get_all(x);\nbyn_env_get(x);\nmy_byn_env_get(x);\n", "byn_env_get"));
+        Assert.Equal([1, 2], AnchorLines("a(\"x\")\nb(\"x\")\n", "(\"x\")"));
+        Assert.Empty(AnchorLines("a\nb\n", "c"));
     }
 
     private static string Read(string repoPath) => File.ReadAllText(Path.Combine(Golden.RepoRoot, repoPath));

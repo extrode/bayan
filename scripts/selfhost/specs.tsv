@@ -1,4 +1,5 @@
 spec	dir	tasks	plan	api	shared	bydir	prefix	base	review	land	tick	tmp
 010	docs/specs/010-self-hosted-semantics	010-tasks.md	010-plan.md	010-api.md	selfhost/semantics/ctx.byn	selfhost/semantics	SelfhostSemanticsT	feat/010-self-hosted-semantics	docs(010):	chore(010): land	chore(010): tick	tmp/010-
 011	docs/specs/011-self-hosted-emitter	011-tasks.md	011-plan.md	011-api.md	selfhost/emitter/lctx.byn,selfhost/emitter/cprint/cctx.byn	selfhost/emitter	SelfhostEmitterT	feat/011-self-hosted-emitter	docs(011):	chore(011): land	chore(011): tick	tmp/011-
+012	docs/specs/012-self-hosted-bootstrap	012-tasks.md	012-plan.md	012-api.md	selfhost/driver/dctx.byn	selfhost/driver	SelfhostDriverT	feat/012-self-hosted-bootstrap	docs(012):	chore(012): land	chore(012): tick	tmp/012-
 014	docs/specs/014-std-path-module	014-tasks.md	014-plan.md	014-api.md	selfhost/semantics/ctx.byn	selfhost/semantics	SelfhostPathT	feat/014-std-path-module	docs(014):	chore(014): land	chore(014): tick	tmp/014-

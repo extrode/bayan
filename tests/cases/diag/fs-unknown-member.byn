@@ -1,0 +1,2 @@
+// `Fs` has `fileExists`; a misspelt member gets the nearest one (BYN2003).
+let found = Fs.fileExist("a.txt")

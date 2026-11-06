@@ -1,6 +1,31 @@
 {
   "version": 1,
   "files": {
+    "selfhost/driver/build.byn": {
+      "mutation": null,
+      "coverage": 0.96,
+      "branches": 0.9867
+    },
+    "selfhost/driver/cc.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/driver/commands.byn": {
+      "mutation": null,
+      "coverage": 0.9643,
+      "branches": 0.9667
+    },
+    "selfhost/driver/dctx.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": null
+    },
+    "selfhost/driver/main.byn": {
+      "mutation": null,
+      "coverage": 0.9914,
+      "branches": 1.0
+    },
     "selfhost/emitter/cprint/builtin.byn": {
       "mutation": null,
       "coverage": 0.9864,
@@ -86,6 +111,11 @@
       "coverage": 1.0,
       "branches": 1.0
     },
+    "selfhost/lexer/main.byn": {
+      "mutation": null,
+      "coverage": 0.0678,
+      "branches": 0.0167
+    },
     "selfhost/parser/decls.byn": {
       "mutation": null,
       "coverage": 0.9659,
@@ -95,6 +125,11 @@
       "mutation": null,
       "coverage": 0.9655,
       "branches": 0.7863
+    },
+    "selfhost/parser/main.byn": {
+      "mutation": null,
+      "coverage": 0.1333,
+      "branches": 0.1429
     },
     "selfhost/parser/parser.byn": {
       "mutation": null,
@@ -133,7 +168,7 @@
     },
     "selfhost/semantics/builtins.byn": {
       "mutation": null,
-      "coverage": 0.9804,
+      "coverage": 0.9811,
       "branches": 0.9643
     },
     "selfhost/semantics/calls.byn": {
@@ -178,8 +213,8 @@
     },
     "selfhost/semantics/effects.byn": {
       "mutation": null,
-      "coverage": 0.8997,
-      "branches": 0.8275
+      "coverage": 0.9432,
+      "branches": 0.8659
     },
     "selfhost/semantics/errorcases.byn": {
       "mutation": null,
@@ -213,8 +248,8 @@
     },
     "selfhost/semantics/json.byn": {
       "mutation": null,
-      "coverage": 0.3636,
-      "branches": 0.4643
+      "coverage": 0.875,
+      "branches": 0.6667
     },
     "selfhost/semantics/ownership.byn": {
       "mutation": null,
@@ -238,18 +273,18 @@
     },
     "selfhost/semantics/symbols.byn": {
       "mutation": null,
-      "coverage": 0.6651,
-      "branches": 0.6406
+      "coverage": 0.7339,
+      "branches": 0.7422
     },
     "selfhost/semantics/typed.byn": {
       "mutation": null,
-      "coverage": 0.087,
-      "branches": 0.0488
+      "coverage": 0.8188,
+      "branches": 0.7317
     },
     "selfhost/semantics/types.byn": {
       "mutation": null,
-      "coverage": 0.8626,
-      "branches": 0.8081
+      "coverage": 0.9738,
+      "branches": 0.8721
     }
   }
 }

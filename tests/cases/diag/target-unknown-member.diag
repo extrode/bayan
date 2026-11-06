@@ -1,0 +1,6 @@
+error BYN2003: `osx` is not a member of `Target`
+
+  2 │ print(Target.osx)
+    │              ^^^
+    │
+  help: did you mean `os`?

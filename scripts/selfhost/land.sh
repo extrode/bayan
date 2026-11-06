@@ -12,6 +12,7 @@
 # report (tmp/guard-run/coverage/bayan-quality.json, written whenever the branch changed a selfhost .byn), after the merge the
 # tick commit raises the baseline's coverage and branches (update; a lower value never replaces an entry): a filtered per-task run
 # can only raise the recorded coverage, and the drop check waits for a full-suite measurement (work/todo.md).
+# Before all of it, the base checkout's preflight.sh must pass (its output: tmp/preflight-land-<t>.txt; not with --check-scope).
 # No mutation runs here (--mutate is dropped): the mutation scores come from the batch run (013 T28).
 set -eu
 CHECK=0; [ "${1:-}" = --check-scope ] && { CHECK=1; shift; }
@@ -23,6 +24,11 @@ IFS=$'\t' read -r _ DIR TASKS _ _ _ _ _ _ REVSUB LANDSUB TICKSUB TMPP <<< "$ROW"
 BASE=$(git rev-parse --abbrev-ref HEAD)
 SHA=$(git rev-parse "$BR")
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "LAND REFUSED: the base worktree has uncommitted changes"; exit 1; }
+# the base checkout's preflight first (stale cites, files outside the list, Question numbers, cross-cutting tests, the wp1 run)
+if [ $CHECK = 0 ]; then
+  mkdir -p tmp; BAYAN_BASE=$BASE bash "$PWD/scripts/selfhost/preflight.sh" "$SPEC" "$T" "$BR" > "tmp/preflight-land-$t.txt" 2>&1 && PX=0 || PX=$?
+  cat "tmp/preflight-land-$t.txt"; [ $PX = 0 ] || { echo "LAND REFUSED: preflight failed (tmp/preflight-land-$t.txt)"; exit 1; }
+fi
 PATH="/usr/bin:$PATH" python3 -I scripts/selfhost/wave-brief.py . "$T" --spec "$SPEC" > /dev/null
 # the base checkout's guard, by absolute path: a branch cannot run a guard it rewrote
 LINE=$(grep -m1 '^bash scripts/selfhost/guard.sh' "$TMPP$t/prompt.md") || {
@@ -63,11 +69,21 @@ fi
   [ -n "$rc" ] && [[ $parent == $rc* ]] \
     || { echo "LAND REFUSED: $REVIEW reviews ${rc:-no commit}, not $parent, the commit under the review; re-review after the last change"; exit 1; }
   grep -q '^Verdict: PASS' "$REVIEW" || { echo "LAND REFUSED: $REVIEW does not say 'Verdict: PASS'"; exit 1; }
-  if grep -E '^\| *[0-9]+ *\| *HIGH *\|' "$REVIEW" | grep -vqE '\| *(fixed|resolved: Q[0-9]{3}) *\|? *$'; then
+  if grep -E '^\| *[0-9]+ *\| *HIGH *\|' "$REVIEW" | grep -vqE '\| *(fixed|resolved: Q[0-9]{3,4}) *\|? *$'; then
     echo "LAND REFUSED: $REVIEW lists a HIGH finding that is neither fixed nor resolved by a Question"; exit 1; fi
   "${GUARD[@]}" | tail -25 | tee "../guard-land-$t.txt"
   grep -q '^GUARD PASS' "../guard-land-$t.txt" || { echo "LAND REFUSED: guard failed"; exit 1; }
 )
+# bootstrap/ follows the compiler (012 T6, user 2026-11-05): a change under selfhost/ or src/runtime/ regenerates
+# bootstrap/bayan.c and the runtime copies in the checked worktree before the merge; the tick commit carries them
+REGEN=0
+if [ -f "$WT/tests/Bayan.Tests/BootstrapTests.cs" ] && [ -n "$(git diff --name-only "$BASE...$SHA" -- selfhost/ src/runtime/)" ]; then
+  [ -z "$(git diff --name-only "$SHA...$BASE" -- selfhost/ src/runtime/)" ] \
+    || { echo "LAND REFUSED: $BASE changed selfhost/ or src/runtime/ after $BR branched, so bootstrap/ regenerated on $BR would not be the merged tree's; merge $BASE into $BR and land again"; exit 1; }
+  REGEN=1; mkdir -p tmp
+  ( cd "$WT" && BAYAN_UPDATE=1 nice dotnet test -v q --filter FullyQualifiedName~BootstrapTests ) > "tmp/land-$t-bootstrap.txt" 2>&1 \
+    || { tail -20 "tmp/land-$t-bootstrap.txt"; echo "LAND REFUSED: BAYAN_UPDATE=1 BootstrapTests failed (tmp/land-$t-bootstrap.txt)"; exit 1; }
+fi
 
 COVREPORT=$WT/tmp/guard-run/coverage/bayan-quality.json
 # the update after the merge must not fail half-way (merge done, tick uncommitted): try it on a copy first
@@ -79,5 +95,6 @@ fi
 [ "$(git rev-parse "$BR")" = "$SHA" ] || { echo "LAND REFUSED: $BR moved from $SHA while it was checked; land again"; exit 1; }
 git merge --no-ff -m "$LANDSUB $T" "$SHA"
 perl -i -pe "s/^- \[ \] $T /- [x] $T /" "$DIR/$TASKS"
+[ $REGEN = 0 ] || { cp "$WT/bootstrap/bayan.c" "$WT/bootstrap/bayan-rt.h" "$WT/bootstrap/bayan-rt.c" bootstrap/; git add bootstrap/; }
 [ ! -f "$COVREPORT" ] || python3 -I "$(dirname "$0")/quality-baseline.py" update tests/quality-baseline.json "$WT" "$COVREPORT"
 git commit -qam "$TICKSUB $T" && echo "LANDED $T"
