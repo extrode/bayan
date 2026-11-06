@@ -66,7 +66,7 @@ for p in tmp/cache/CACHEDIR.TAG "${BAYAN_CACHE:-}/CACHEDIR.TAG" "${XDG_CACHE_HOM
 done
 
 printf '== 7. scratch left by the 2026-11-06 review and 012 landing session\n'
-for p in tmp/union-resolve.js tmp/pb.keep tmp/rv3-test-insert.sh tmp/wp1-t7.log tmp/preflight-land-t7.txt tmp/memory-gate-test tmp/memory-gate-test.*; do [ -e "$p" ] && drop "$p"; done
+for p in tmp/union-resolve.js tmp/pb.keep tmp/rv3-test-insert.sh tmp/wp1-t7.log tmp/preflight-land-t7.txt tmp/memory-gate-test tmp/memory-gate-test.* tmp/pinned-bayan-test.*; do [ -e "$p" ] && drop "$p"; done
 for p in /tmp/rl /tmp/gen /tmp/gen2 /tmp/gen.py /tmp/gen-em.txt /tmp/gen-sem.txt; do [ -e "$p" ] && [ -O "$p" ] && drop "$p"; done
 
 printf '== done: %s KB %s\n' "$total" "$([ "$execute" = 1 ] && [ "$scratch" = 1 ] && echo removed || echo 'would be removed (dry run; --execute --delete-scratch acts)')"

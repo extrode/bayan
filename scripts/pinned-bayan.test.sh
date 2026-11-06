@@ -5,8 +5,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="$root/scripts/pinned-bayan.sh"
-tmp="$root/tmp/pinned-bayan-test"
-rm -rf "$tmp"
+mkdir -p "$root/tmp"; tmp="$(mktemp -d "$root/tmp/pinned-bayan-test.XXXXXX")"
 mkdir -p "$tmp/aux"
 trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL: $1" >&2; exit 1; }
