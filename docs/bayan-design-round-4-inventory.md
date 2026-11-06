@@ -168,3 +168,23 @@ Unrelated issues seen while auditing:
 - **Word order:** the guide gains one sentence on type-first declarations against name-first locals.
 - **§5 guardrails:** accepted: no `!` suppression (a trapping unwrap, if wanted, is spelled `?? panic "…"`); `return`
   inside a lambda is local to it; inference never crosses the module.
+
+### Batch 5 (user, 2026-11-06)
+- **Row 38 closure escape + `fails` polymorphism:** explicit `where (T -> bool fails E)`; `E` is inferred at the call
+  from the lambda's error set under monomorphization (checker-only, Q345). BYN2825 becomes the dedicated code for
+  storing or returning a borrowed closure, replacing the generic BYN3002 at those sites.
+- **Row 37 `final` states (BYN7013):** states marked `final` in the `states` block (contextual word, not reserved);
+  checked at normal-path scope end only; `fail` and `defer failing` paths are exempt. All-paths checking may follow
+  later without breaking accepted code.
+- **Row 42 consuming `finish()`:** no change in round 4; `finish().copy()` stays the path. A separate `move this`
+  member is added only on profiling evidence (Sūq or selfhost).
+- **Row 43 Q745 summaries across packages:** `bayan api diff` treats a change to a public function's store/return
+  summary as breaking, and the lock/module cache records the summaries. Declared summaries in the signature stay open
+  if diff noise is high.
+- **Row 70 Sūq F-30:** `void dispose(move this)` on `struct unique`: runs once, replaces derived cleanup, then fields
+  still owned are disposed in reverse order. Supersedes the `drop(ref this)` / `dispose(ref this)` forms.
+- **Row 71 HQ64:** BYN2788 stays; `T?` or per-field `take()` covers the use.
+- **Row 72 HQ68:** L006's wording narrows to "types that have `.copy`" (docs only).
+- **Row 74 HQ342:** BYN7012 at the instantiating call stays; revisit with typestate scope.
+- Noted on the way: SPEC :1953 still calls `finish()` "move this … no copy", contradicting :303 and revision 0018;
+  inventory row 38 cites "007 Q114" where the function-value decision is Q345.
