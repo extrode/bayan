@@ -15,8 +15,13 @@ namespace Bayan.Tests;
 /// <c>src/runtime/</c>; <c>BAYAN_UPDATE=1</c> rewrites all three. The working directory is process-wide, so this runs alone.
 /// </summary>
 [Collection(nameof(ToolchainEnvironment))]
+[Trait("Law", "L027")]
 public sealed class BootstrapTests
 {
+    private static bool Full => Environment.GetEnvironmentVariable("BAYAN_LAW_TIER") == "full";
+
+    private static int StageCount => Full ? 3 : 2;
+
     private static readonly string[] Modes = ["safe", "debug"];
 
     private static string StagesDir => Path.Combine(Golden.RepoRoot, "tmp", "bootstrap");
@@ -56,7 +61,7 @@ public sealed class BootstrapTests
 
     private static bool BuildStages()
     {
-        for (var n = 1; n <= 3; n++)
+        for (var n = 1; n <= StageCount; n++)
         {
             var dir = Path.Combine(StagesDir, $"stage{n}");
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
@@ -79,7 +84,7 @@ public sealed class BootstrapTests
         }
         Assert.True(exit == 0, $"stage 1 (C#): exit {exit}\n{stderr}");
         times.Append($"stage1 build {clock.Elapsed.TotalSeconds:F2}s\n");
-        for (var n = 1; n <= 3; n++)
+        for (var n = 1; n <= StageCount; n++)
         {
             if (n > 1)
             {
@@ -123,7 +128,7 @@ public sealed class BootstrapTests
         return $"{label}, line {i + 1}\n  first:  {(i < a.Length ? a[i] : "<end>")}\n  second: {(i < b.Length ? b[i] : "<end>")}";
     }
 
-    /// <summary>C1 == C2 == C3 in <c>safe</c> and <c>debug</c> (R9).</summary>
+    /// <summary>C1 == C2 in <c>safe</c> and <c>debug</c>, and C1 == C3 with <c>BAYAN_LAW_TIER=full</c> (R9, Q8).</summary>
     [Fact]
     public void StagesReachAFixpoint()
     {
@@ -131,7 +136,29 @@ public sealed class BootstrapTests
         {
             var c1 = C(1, mode);
             Assert.Null(FirstDifference($"{mode}: stage1 vs stage2", c1, C(2, mode)));
-            Assert.Null(FirstDifference($"{mode}: stage1 vs stage3", c1, C(3, mode)));
+            if (Full) Assert.Null(FirstDifference($"{mode}: stage1 vs stage3", c1, C(3, mode)));
+        }
+    }
+
+    [Fact]
+    public void CSharpEmitEqualsStage1()
+    {
+        var saved = Environment.CurrentDirectory;
+        try
+        {
+            Environment.CurrentDirectory = Golden.RepoRoot;
+            foreach (var mode in Modes)
+            {
+                var stdout = new StringWriter();
+                var stderr = new StringWriter();
+                var exit = CliApp.Run(EmitArgs(mode), stdout, stderr);
+                Assert.True(exit == 0, $"C# --emit-c --mode {mode}: exit {exit}\n{stderr}");
+                Assert.Null(FirstDifference($"{mode}: C# vs stage1", Encoding.UTF8.GetBytes(stdout.ToString()), C(1, mode)));
+            }
+        }
+        finally
+        {
+            Environment.CurrentDirectory = saved;
         }
     }
 
