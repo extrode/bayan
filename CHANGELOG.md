@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Lint BYN5103: a line starting with a joining token (`.`, `?.`, `??`, `&&`, `||`, `and`, `or`, `catch`, `fails`, …) must be indented deeper than its statement's first line; `bayan format` applies the fix.
+
 ### Changed
 - `ensures` is no longer reserved and can be used as an identifier (revision 0019, round-4 batch 1); BYN0012 no longer fires on it.
 
