@@ -1,0 +1,3 @@
+i64 f(i64 x) => x
+i64 f(string s) => s.length
+print($"{f(1)}")

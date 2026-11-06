@@ -256,3 +256,24 @@ review** (kit/Sūq public-surface counts: every release).
   `since:`, it becomes an optional field of `@deprecated`, not a second attribute.
 - **Contradiction pass:** one revision file, written against batches 1-8 (not the pre-round text), applied after
   this batch is recorded.
+
+## Batch 9 (user, 2026-11-06)
+
+- **HQ78 per-field-path loans:** keep per-root loans; closed with a trigger. Count the sites in Sūq + selfhost where
+  code was split or reordered to dodge a per-root loan conflict, at Sūq's first runnable release and the round-5
+  review. Reopen at ≥10 sites, or at once when any consumer is blocked. Deferring is safe: field paths accept strictly
+  more programs, and under Q745 (`api diff` breaks only on a tightened summary) the summary changes are loosenings.
+  Scope if reopened: Rust's, disjoint borrows of direct field paths within a body, not through method calls.
+- **A001 §1 format specifiers:** closed as superseded by revision 0003 §6 (SPEC :917, :1997). A001 :29 gets a pointer
+  to it, not a silent delete. The two-spellings question is answered by SPEC :2347: `{x:.2}` is an input form,
+  refused with BYN1068 and rewritten by `bayan format` to `{x, digits: 2}`, so there is one spelling.
+- **Tiers Q6 `kit.template`:** batch 2 stands. Evaluated at the first Sūq milestone after markup ships: drop
+  `kit.template` if Sūq renders every page with markup and has 0 `kit.template` uses.
+- **Tiers Q7 `Event<T>`:** home is `std.event` (SPEC :1791 `uses alloc`). SPEC fixes, applied by the contradiction
+  revision: `struct unique Event<T>`; `subscriberCount` read-only (a getter); the subscribed lambda must own its
+  captures (move captures) or it is BYN2825; `Subscription` drop unsubscribes through `dispose(move this)`, with
+  `cancel(move this)` as the explicit early form on the same code path (no second meaning); a subscription stores the
+  allocator it was made with, so unsubscribe frees with that allocator, with a golden that subscribes under one
+  allocator and drops under another (when `std.event` is implemented).
+- **Also:** `markup` (tiers :152, :419 "reserved in round 4") becomes a contextual word under batch 4, like `law`
+  and `effect`; the contradiction revision applies it.
