@@ -85,7 +85,8 @@ git checkout -q -b evict race; echo evict > src/Bayan.Cli/stamp; git commit -qam
 PINNED_BAYAN_REF=evict "$script" > "$tmp/out" || fail "the eviction build failed"
 [ -x "$r/.cache/bayan/$evsha/bin/bayan" ] || fail "the new build was evicted"
 [ ! -e "$r/.cache/bayan/$evsha/src" ] || fail "the build's src checkout was kept"
-[ "$(ls "$r/.cache/bayan" | wc -l | tr -d ' ')" -le 3 ] || fail "more than 3 cached commits remain: $(ls "$r/.cache/bayan")"
+[ "$(ls "$r/.cache/bayan" | grep -vx CACHEDIR.TAG | wc -l | tr -d ' ')" -le 3 ] || fail "more than 3 cached commits remain: $(ls "$r/.cache/bayan")"
+head -1 "$r/.cache/bayan/CACHEDIR.TAG" | grep -qx "Signature: 8a477f597d28d172789f06886806bc55" || fail "the pinned cache carries no CACHEDIR.TAG"
 [ -d "$r/.cache/bayan/.build-other-1" ] || fail "a recent build in progress was removed"
 git checkout -q feat/x
 

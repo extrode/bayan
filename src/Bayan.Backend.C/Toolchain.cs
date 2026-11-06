@@ -61,6 +61,23 @@ public static class Toolchain
 
     private static string Programs => Path.Combine(CacheData, "programs");
 
+    /// <summary>The CACHEDIR.TAG signature (bford.info/cachedir): backup tools and worktree removal treat a tagged
+    /// directory as a disposable cache, so the program cache under a checkout never blocks or bloats.</summary>
+    internal const string CacheDirTag = "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by bayan.\n# For information about cache directory tags see https://bford.info/cachedir/\n";
+
+    /// <summary>Writes <c>CACHEDIR.TAG</c> at the cache root once; a cache that cannot be tagged still works.</summary>
+    internal static void TagCacheDirectory()
+    {
+        var tag = Path.Combine(CacheDirectory, "CACHEDIR.TAG");
+        if (File.Exists(tag)) return;
+        try
+        {
+            Directory.CreateDirectory(CacheDirectory);
+            File.WriteAllText(tag, CacheDirTag);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     private static string Scripts => Path.Combine(CacheData, "scripts");
 
     private static string Staging => Path.Combine(CacheData, "tmp");
@@ -286,6 +303,7 @@ public static class Toolchain
     /// <summary>Builds into a private directory, then renames it to <c>programs/&lt;key&gt;</c>; null on success.</summary>
     private static string? Compile(string[] compiler, List<string> flags, string cSource, string key, string exeName, bool windows)
     {
+        TagCacheDirectory();
         var work = Path.Combine(Staging, key[..16] + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         try
@@ -448,6 +466,7 @@ public static class Toolchain
     {
         try
         {
+            TagCacheDirectory();
             Directory.CreateDirectory(Scripts);
             var temp = Path.Combine(Scripts, scriptKey + "." + Guid.NewGuid().ToString("N") + ".tmp");
             File.WriteAllText(temp, programKey + "\n");
