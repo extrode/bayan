@@ -183,6 +183,19 @@ public sealed class CliMemoryBoundsTests
         Assert.DoesNotContain("inner-link", output);
     }
 
+    [Fact]
+    public void M3_FormatAndAuditFindFilesUnderNestedBuildNamedDirectories()
+    {
+        var root = Fresh("nested-bin");
+        var file = Path.Combine(root, "src", "bin", "x.byn");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "unsafe void poke() {\n}\nlet a = true\nunless !a { print(\"y\") }\n");
+        var (_, formatOut, formatErr) = Run("format", "--check", root);
+        Assert.Contains("x.byn", formatOut + formatErr);
+        var (_, auditOut, _) = Run("audit", root);
+        Assert.Contains("unsafe void poke()", auditOut);
+    }
+
     // ── M4 ───────────────────────────────────────────────────────────────────────
 
     [Fact]
