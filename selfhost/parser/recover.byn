@@ -143,6 +143,20 @@ public List<Diagnostic> lintLineJoins(ref Parser p) uses alloc {
                 continue
         }
     }
+    // Each line's first token, and the first token of the line its statement starts on, filled forward: the statement
+    // starts on the first line reached by stepping back over joined lines and bracketed groups, and every step goes back.
+    var first = List<i64>()
+    var statement = List<i64>()
+    for i in 0..p.count {
+        first.append(i > 0 && !p.lexed.tokens[i].hasNewlineBefore ? first[i - 1] : i)
+        statement.append(i)
+        if first[i] != i { continue }
+        if opener[i] >= 0 {
+            statement[i] = statement[first[opener[i]]]
+        } else if i > 0 && joinsLineBefore(ref p, at: i) {
+            statement[i] = statement[first[i - 1]]
+        }
+    }
     for i in 1..p.count {
         if !breaksLine(ref p, at: i) || hasBlankLineBefore(ref p, at: i) || !isWasl(ref p, at: i) { continue }
         // After lā the line above already continues; after `{` or `,` the line starts an entry (a statement, an arm).
@@ -150,16 +164,7 @@ public List<Diagnostic> lintLineJoins(ref Parser p) uses alloc {
         if p.kindAt(i) == .catchKeyword && p.kindAt(i - 1) == .closeBrace { continue }
         // At a field's indentation `requires` is a struct-level rule (O3, spec §2.5), so its indentation is meant.
         if p.kindAt(i) == .requiresKeyword { continue }
-        var start = lineFirst(ref p, at: i - 1)
-        while true {
-            if opener[start] >= 0 {
-                start = lineFirst(ref p, at: opener[start])
-            } else if start > 0 && joinsLineBefore(ref p, at: start) {
-                start = lineFirst(ref p, at: start - 1)
-            } else {
-                break
-            }
-        }
+        let start = statement[first[i - 1]]
         let token = p.lexed.tokens[i]
         let indent = indentAt(ref p, at: token.start)
         let statementIndent = indentAt(ref p, at: p.lexed.tokens[start].start)
@@ -178,13 +183,6 @@ public List<Diagnostic> lintLineJoins(ref Parser p) uses alloc {
         })
     }
     return lints
-}
-
-/// The first token on the line holding token `index`.
-i64 lineFirst(ref Parser p, at i64 index) {
-    var i = index
-    while i > 0 && !p.lexed.tokens[i].hasNewlineBefore { i -= 1 }
-    return i
 }
 
 /// Whether token `index` continues the statement on the line before it.
