@@ -49,7 +49,7 @@ if [ ! -x "$cache/bin/$exe" ]; then
   touch "$cache"
   n=0
   for d in $(ls -t "$main/.cache/bayan"); do
-    case "$d" in .*|CACHEDIR.TAG) continue ;; esac
+    case "$d" in .*|CACHEDIR.TAG) continue ;; CACHEDIR.TAG.*) [ -n "$(find "$main/.cache/bayan/$d" -mmin -120)" ] || rm -f "$main/.cache/bayan/$d"; continue ;; esac
     n=$((n+1)); [ "$n" -le 3 ] || [ "$d" = "$sha" ] || [ -n "$(find "$main/.cache/bayan/$d" -maxdepth 0 -mmin -120)" ] || rm -rf "${main:?}/.cache/bayan/$d"
   done
   find "$main/.cache/bayan" -maxdepth 1 -name '.build-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true

@@ -310,6 +310,9 @@ public sealed class CliMemoryBoundsTests
             var again = Toolchain.Build("int main(void) { return 1; }\n", BuildMode.Safe);
             Assert.True(again.CacheHit);
             Assert.True(File.Exists(tag));
+            File.Delete(tag);
+            Assert.NotNull(Toolchain.LookupScript("s", Path.GetFileName(again.ExecutablePath!)));
+            Assert.True(File.Exists(tag));
         });
     }
 

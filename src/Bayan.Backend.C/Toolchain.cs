@@ -464,7 +464,9 @@ public static class Toolchain
         var pointer = Path.Combine(Scripts, scriptKey);
         try
         {
-            return File.Exists(pointer) ? Lookup(File.ReadAllText(pointer).Trim(), exeName) : null;
+            var exe = File.Exists(pointer) ? Lookup(File.ReadAllText(pointer).Trim(), exeName) : null;
+            if (exe != null) TagCacheDirectory();
+            return exe;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
