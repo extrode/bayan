@@ -1,10 +1,16 @@
-// Continuations indented deeper than their statement are quiet, and so is `catch` right after `}` (BYN5103).
+// Continuations indented deeper than their statement are quiet, and so are `catch` right after `}` and a struct-level `requires` at a field's indentation (BYN5103).
 union error ParseError {
     empty
 }
 
 struct Box {
     string text
+}
+
+struct Span {
+    i64 lo
+    i64 hi
+    requires lo <= hi
 }
 
 i64 digit(Box b) fails ParseError {
