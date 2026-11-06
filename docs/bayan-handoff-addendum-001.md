@@ -91,7 +91,7 @@ Package {
 /dist/
 /gen/
 ```
-Lockfile policy: `bayan.lock` is committed for apps and libraries alike (reproducible builds); do not ignore it.
+Lockfile policy (name superseded 2026-11-06: the lockfile is `package.lock.byn`, `docs/bayan-design-round-4-inventory.md` batch 1): `bayan.lock` is committed for apps and libraries alike (reproducible builds); do not ignore it.
 
 **`.gitattributes`:**
 ```
