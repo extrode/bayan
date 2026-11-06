@@ -21,7 +21,8 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostEmitterT11Tests
 {
-    // args: mode, the C file name of the C# `FunctionEmitter`, the case flags, then bayan-check's. Flag `1` emits and
+    // args: mode, the C file name of the C# `FunctionEmitter` (not read: each function's is numbered as the C# does), the
+    // case flags, then bayan-check's. Flag `1` emits and
     // compares a case, `2` emits it into a scratch context (not compared), anything else skips it.
     private const string Main = """
         import semantics
@@ -39,7 +40,7 @@ public sealed class SelfhostEmitterT11Tests
             var reported = List<semantics.T26Reported>()
             var ok = false
             var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
-            if args[0] == "cases" || args[0] == "errors" { Io.stdout.write(t11Cases(ref c, at: args[1], for: args[2], by: args[0] == "errors")) }
+            if args[0] == "cases" || args[0] == "errors" { Io.stdout.write(t11Cases(ref c, for: args[2], by: args[0] == "errors")) }
             return 0
         }
 
@@ -127,19 +128,26 @@ public sealed class SelfhostEmitterT11Tests
             return f
         }
 
-        string t11Cases(ref Ctx c, at string file, for string flags, by bool errors) uses alloc {
+        string t11Cases(ref Ctx c, for string flags, by bool errors) uses alloc {
             var cc = CCtx {}
             var scratch = CCtx {}
             // `Lowerer.Lower` first, as the oracle's emitters are built over its functions (its filter is `Functions`').
             var l = LCtx {}
             let p = lower(ref c, to: ref l)
+            // Each function's file as `CEmitter.FileName` names it when the oracle's emitters are built: `byn_file_N`,
+            // numbered in function order.
+            var files = Map<string, string>()
+            for i in 0..p.functions.length {
+                let key = $"{c.functions[p.functions[i].symbol].file}"
+                if !files.contains(key) { files[key] = $"byn_file_{files.length}" }
+            }
             var sb = StrBuf()
             sb.append("== cases\n")
             var n: i64 = 0
             for i in 0..p.functions.length {
                 if errors { break }
                 let fn = p.functions[i].symbol
-                var f = t11Func(ref scratch, from: ref c, for: in p.functions[i], at: file)
+                var f = t11Func(ref scratch, from: ref c, for: in p.functions[i], at: files[$"{c.functions[fn].file}"])
                 for e in semantics.descendants(in c, for: c.functions[fn].body) {
                     let k = semantics.boundKind(e)
                     if !(k == .builtinCall || k == .unary || k == .binary || k == .conversion || k == .index || k == .slice) { continue }
@@ -154,7 +162,7 @@ public sealed class SelfhostEmitterT11Tests
             for i in 0..p.functions.length {
                 let fn = p.functions[i].symbol
                 unless t11Loops(ref c, through: in l.tree, for: fn, by: errors) { continue }
-                var f = t11Func(ref scratch, from: ref c, for: in p.functions[i], at: file)
+                var f = t11Func(ref scratch, from: ref c, for: in p.functions[i], at: files[$"{c.functions[fn].file}"])
                 for e in t11Lowered(in c, through: in l.tree, for: p.functions[i].body) {
                     unless t11LowererMember(in c, for: e, by: errors) { continue }
                     let flag = n < flags.length ? flags[n..n + 1] : "0"
