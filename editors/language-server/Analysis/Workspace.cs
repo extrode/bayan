@@ -185,7 +185,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
     readonly List<string> _roots = [];
     long _chars;
     bool _limitLogged;
-    int _dirs; // directories entered by all folder walks so far
+    readonly HashSet<string> _dirs = new(PathComparer); // distinct directories entered by folder walks
     bool _dirsLogged;
 
     /// <summary>True while the file or character budget is spent; further disk files are not indexed.</summary>
@@ -306,7 +306,8 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
     }
 
     /// <summary>True when an open buffer is larger than the per-file limit and must not be analysed.</summary>
-    public bool TooLarge(string text) => text.Length > maxFileBytes;
+    public bool TooLarge(string text) =>
+        text.Length > maxFileBytes || (text.Length * 3L > maxFileBytes && System.Text.Encoding.UTF8.GetByteCount(text) > maxFileBytes);
 
     /// <summary>Forgets a document whose buffer is too large, whether open or indexed from disk.</summary>
     public void Drop(string uri)
@@ -401,6 +402,7 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         var cmp = PathComparer == StringComparer.Ordinal ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         foreach (var (k, d) in _docs.ToList())
             if (!d.IsOpen && k.StartsWith(prefix, cmp)) { RemoveKey(k, d); removed.Add(d.Uri); }
+        _dirs.RemoveWhere(x => x.StartsWith(prefix, cmp) || PathComparer.Equals(x, key));
         return removed;
     }
 
@@ -436,13 +438,13 @@ public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long max
         while (stack.Count > 0 && !LimitReached)
         {
             var dir = stack.Pop();
-            if (_dirs >= maxDirs)
+            if (!_dirs.Contains(dir) && _dirs.Count >= maxDirs)
             {
                 if (!_dirsLogged) Console.Error.WriteLine($"bayan-lsp: the folder walk stopped after {maxDirs} directories; later directories are not indexed");
                 _dirsLogged = true;
                 return;
             }
-            _dirs++;
+            _dirs.Add(dir);
             try
             {
                 foreach (var f in Directory.EnumerateFiles(dir, "*.byn"))
