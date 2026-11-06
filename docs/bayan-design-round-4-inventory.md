@@ -123,3 +123,21 @@ Unrelated issues seen while auditing:
   :1661 (`.gc`), and checks whether BYN0012 still guards anything.
 - **Lockfile:** `package.lock.byn` (v0.3 packages plan S04). A001's `bayan.lock` line is superseded.
 - Still open from batch 1: HQ371 (unordered `HashMap`) and the stale tiers §2 :40 line; they move to batch 2.
+
+### Batch 2 (user, 2026-11-06)
+- **Tiers Q1:** interfaces in `std.db`; drivers `kit.db.sqlite`, `kit.db.pg`; `kit.sql` retired.
+- **Tiers Q4:** accepted. Classification and simple case tables in `core`; folding, special casing and normalization in
+  `std.text`. Full mapping uses a distinct spelling (e.g. `as: .full`) and never changes `core` names on import. This
+  amends revision 0003's ASCII-only v0.1 line.
+- **Tiers Q5:** legacy encodings in a separate `kit.encoding`.
+- **Tiers Q6:** stays open; revisit after markup ships. Runtime-loaded templates are the case markup does not cover.
+- **Tiers Q7:** `Event<T>` in `core` if it needs no allocator, else `std.event`; decided when built.
+- **Tiers Q9:** `kit.xml` stays unbuilt (015 S9); if built, in `kit`, pull reader first, and no DTDs and no entity
+  expansion by default.
+- **Tiers Q11:** `std.config` is a thin binder over `std.cli` and `std.env`; sources are pluggable (file sources later);
+  bound values follow the taint rules (§15).
+- **HQ371:** accepted on the user's condition that `Map` is an insertion-ordered hash with O(1) lookup and per-process
+  seeded hashing. It is: SPEC :284 (insertion order) and `src/runtime/bayan-rt.c` `byn_hash_seed_init` (seed from time
+  and pid, fixed under the test flag). The seed feeds FNV-1a, which is not flood-resistant: a security-audit item.
+- Still open from the tiers list: Q2 (crypto scope), Q6, Q8 (`kit.tls` backend), Q12, the "Proposed" catalog rows;
+  tiers §2 :40 ("auto-imports `kit`") is stale since Q10 was dropped.

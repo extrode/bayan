@@ -37,7 +37,7 @@ Related decisions:
 - Versioned modules come from `kit`, never `std` (packages design, Nov 1).
 - `kit` gets a lifecycle policy: semver, a documented deprecation window, and `bayan audit` covering `kit` advisories.
 - `core` must not need libc. `std` and `kit` pull libc in only when used, through the runtime (`rt`), never directly (toolchain item K4). This keeps cross-builds and the future own-sysroot work simple.
-- Proposed, not decided: script mode (`bayan run`) auto-imports `kit`.
+- Dropped 2026-11-02 (Q10): script mode imports explicitly; it does not auto-import `kit`.
 
 ## 3. Placement rules
 
