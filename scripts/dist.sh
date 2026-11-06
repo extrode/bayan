@@ -12,6 +12,7 @@
 # elsewhere and import the binary with --from <dir> --rid <rid> (its label is this checkout's unless --label is given;
 # its BUILD-INFO commit is "unknown" unless --commit names the commit it was built from).
 set -euo pipefail
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0  # no MSBuild worker or build server outlives the run
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lock="" plock=""

@@ -17,6 +17,7 @@
 # runs on every guard (when a selfhost .byn changed), landing included. A python helper that exits non-zero (a malformed report, manifest or baseline) is a
 # FAIL item naming its input, never a silent pass.
 set -u
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0  # no MSBuild worker or build server outlives the run
 BASE=""; ALLOW=""; FILTER=""; TASK=""; MUTATE=""
 while [ $# -gt 0 ]; do case "$1" in
   --base) BASE=$2; shift 2;; --allow) ALLOW=$2; shift 2;; --filter) FILTER=$2; shift 2;; --task) TASK=$2; shift 2;;
@@ -41,7 +42,7 @@ rm -f "$LOG/quality-"*.json  # a mutation report left by an earlier run must not
 COV="$LOG/coverage"; rm -f "$COV/bayan-quality.json" "$COV/functions.json"; TX=1
 
 # 3 build
-dotnet build -v q > "$LOG/build.txt" 2>&1
+dotnet build -v q -p:UseSharedCompilation=false > "$LOG/build.txt" 2>&1
 W=$(grep -cE ' warning [A-Z]+[0-9]+' "$LOG/build.txt"); E=$(grep -cE ' error [A-Z]+[0-9]+' "$LOG/build.txt")
 [ "$E" = 0 ] && [ "$W" = 0 ] || note "build: $E errors, $W warnings — $(grep -m3 -E ' (error|warning) [A-Z]+[0-9]+' "$LOG/build.txt" | sed 's/.*\///' | tr '\n' ' ')"
 
@@ -50,7 +51,7 @@ if [ "$E" = 0 ]; then
   # the harness writes the coverage report in a ProcessExit handler; vstest kills the test host shortly after the run unless
   # given longer, and merging ~1,100 counter files (L022 under coverage, T41) takes more than its default
   ( [ -n "$COVER" ] && export BAYAN_COVERAGE=$COV BAYAN_COVERAGE_FILES=$COVER VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=600000
-    dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" ) > "$LOG/test.txt" 2>&1; TX=$?
+    dotnet test --no-build -p:UseSharedCompilation=false --filter "$FILTER" --logger "console;verbosity=normal" ) > "$LOG/test.txt" 2>&1; TX=$?
   R=$(grep -E 'Total tests:|^ *(Passed|Failed|Skipped): *[0-9]+' "$LOG/test.txt" | tr -s ' \n' ' ')
   [ $TX = 0 ] || note "tests: FAIL ($R) — first failure: $(grep -m1 -A8 'Error Message' "$LOG/test.txt" | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
   grep -qE 'No test matches|Total tests: 0' "$LOG/test.txt" && note "tests: filter '$FILTER' matched no tests"

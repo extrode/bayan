@@ -15,6 +15,7 @@
 # Each copied report's `path`s are rewritten relative to the repo root (a path outside it fails the group, naming the report);
 # CI shards (.github/workflows/mutation.yml) upload only the reports, and a final job runs one `update` over all of them.
 set -u
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0  # no MSBuild worker or build server outlives the run
 TASKS=docs/specs/010-self-hosted-semantics/010-tasks.md; LIST=0; FILES=""; SHARD=""
 while [ $# -gt 0 ]; do case "$1" in
   --list) LIST=1; shift;; --files) FILES=$2; shift 2;; --shard) SHARD=$2; shift 2;; --tasks) TASKS=$2; shift 2;;

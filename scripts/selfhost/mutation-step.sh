@@ -6,6 +6,7 @@
 # `@unobservable because "…"` come back marked, not survived. The reports are copied to <log dir>/quality-<n>-<binary>.json.
 # Problems go to the caller's note() (which fills its FAIL array: the step runs only while FAIL is empty). Returns 0 when it
 # reached the per-build runs, 1 when the CLI, the recording or the manifest stopped it before.
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0  # no MSBuild worker or build server outlives the run
 mutation_step() {
   local LOG=$1 FILTER=$2 MUTATE=$3 SURV=$4 REL=${1#$PWD/} n name bin sites l MX
   local BAYAN SNAP=$1/snap REPLAY
@@ -15,7 +16,7 @@ mutation_step() {
     note "mutation: no pinned bayan — $(tail -1 "$LOG/pinned-bayan.txt")"
   else
     rm -f "$SNAP/manifest.json" "$SNAP/runs.jsonl"
-    BAYAN_SNAPSHOT=$SNAP BAYAN_SNAPSHOT_FILES=$MUTATE dotnet test --no-build --filter "($FILTER)&Snapshot!=skip" --logger "console;verbosity=normal" > "$LOG/record.txt" 2>&1 \
+    BAYAN_SNAPSHOT=$SNAP BAYAN_SNAPSHOT_FILES=$MUTATE dotnet test --no-build -p:UseSharedCompilation=false --filter "($FILTER)&Snapshot!=skip" --logger "console;verbosity=normal" > "$LOG/record.txt" 2>&1 \
       || note "mutation: recording the tests under BAYAN_SNAPSHOT failed ($REL/record.txt) — $(grep -m1 -A8 'Error Message' "$LOG/record.txt" | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
     if [ ${#FAIL[@]} = 0 ] && [ ! -f "$SNAP/manifest.json" ]; then
       note "mutation: the recording wrote no $REL/snap/manifest.json: no test under --filter '$FILTER' builds a selfhost program"; fi
