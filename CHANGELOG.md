@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- `ensures` is no longer reserved and can be used as an identifier (revision 0019, round-4 batch 1); BYN0012 no longer fires on it.
+
 ## [0.2.0] - 2026-11-06
 
 Bayan compiles itself: the self-hosted lexer, parser, checker, emitter and driver in `selfhost/` build a `bayan` that
