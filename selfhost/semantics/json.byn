@@ -1,4 +1,4 @@
-// T26: the CLI's lines around the diagnostics (Messages.cs:128-139), `ProgramName` (CliApp.cs:528) and
+// T26: the CLI's lines around the diagnostics (Messages.cs:128-139), `ProgramName` (CliApp.cs:535) and
 // `--diagnostics json` (DiagnosticJson.cs).
 // Each message is its `Messages.cs` format with the arguments in place; `mark` is the style's symbol
 // (`Symbols.Ellipsis`, `Cross` or `Dot`).
@@ -21,7 +21,7 @@ string buildExplain(string code) => $"  explain: bayan explain {code}"
 /// Messages.cs:133 `CheckSummary`: `{0} checked {1} in {2}`; `seconds` is `Messages.Seconds` (`{0}s`).
 string checkSummary(string mark, for string program, by string seconds) => $"{mark} checked {program} in {seconds}"
 
-/// CliApp.cs:528 `ProgramName`: a project's short name, else the file's (a `main.byn` is named after its
+/// CliApp.cs:535 `ProgramName`: a project's short name, else the file's (a `main.byn` is named after its
 /// directory) or the directory's.
 string programName(ref Ctx c, for string path) {
     if (c.manifest is { } m) { return t10ShortName(in m) }
@@ -31,15 +31,9 @@ string programName(ref Ctx c, for string path) {
     return name
 }
 
-/// The C# `Path.GetFileName` of a `/` path: everything after the last `/`.
+/// The C# `Path.GetFileName`.
 string t26FileName(string path) {
-    var start: i64 = 0
-    var i: i64 = 0
-    for b in path.bytes {
-        if b == 0x2F { start = i + 1 }
-        i += 1
-    }
-    return path[start..path.length]
+    return Path.fileName(path)
 }
 
 /// The C# `Path.GetFileNameWithoutExtension`: the file name up to its last `.`.
@@ -55,10 +49,12 @@ string t26FileNameWithoutExtension(string path) {
     return name[0..dot]
 }
 
-/// The C# `TrimEnd(Path.DirectorySeparatorChar)`: `path` without its trailing `/`s.
+/// The C# `TrimEnd(Path.DirectorySeparatorChar)` (CliApp.cs:539): `path` without its trailing separators. The
+/// separator is the middle byte of `Path.combine("a", "b")`, which .NET joins with `DirectorySeparatorChar`.
 string t26TrimEndSlash(string path) {
+    let separator = Path.combine("a", "b").bytes[1]
     var end = path.length
-    while end > 0 && path.bytes[end - 1] == 0x2F { end -= 1 }
+    while end > 0 && path.bytes[end - 1] == separator { end -= 1 }
     return path[0..end]
 }
 

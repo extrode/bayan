@@ -1,0 +1,11 @@
+// os: unix
+// `Path.directoryName` on Unix paths: null for a root or an empty path, otherwise the text before the last separator.
+string show(string p) uses alloc {
+    let d = Path.directoryName(p)
+    if (d is { } dir) { return $"[{dir}]" }
+    return "null"
+}
+
+for p in ["/a/b.txt", "a/b", "a//b", "file", "/", "/a", "a/", "/a/b/", "", ".", "..", "a/.", "/dir/.hidden", "x y/z w.c", "/é/ü"] {
+    print($"[{p}] {show(p)}")
+}

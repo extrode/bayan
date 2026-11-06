@@ -67,7 +67,7 @@ public Ctx fromProject(string root, for string entryModule, by in CompilationOpt
         for f in found { files.append(f) }
     }
     var sources = List<lexer.SourceText>()
-    for f in files { sources.append(lexer.SourceText.create(t11RelativePath(root, to: f), from: t11ReadAllBytes(f))) }
+    for f in files { sources.append(lexer.SourceText.create(t11RelativePath(root, to: f).replaced("\\", by: "/"), from: t11ReadAllBytes(f))) }
     return create(from: move sources, at: src, by: in options, displayRoot: root)
 }
 
@@ -213,13 +213,15 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
 
 void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
     var nameBuf = StrBuf()
-    var dir = c.packageRoot
+    var parts = List<string>()
+    parts.append(c.packageRoot)
     for i in 0..decl.path.length {
         let part = t11Text(in c, from: file, at: decl.path[i])
         if i > 0 { nameBuf.append(".") }
         nameBuf.append(part)
-        dir = t11Combine(dir, by: part)
+        parts.append(part)
     }
+    let dir = Path.combine(parts.span)
     let name = $"{nameBuf.finish()}"
     let span = TextSpan.fromBounds(decl.path[0].start, until: decl.path[decl.path.length - 1].end)
     let alias = t11Text(in c, from: file, at: decl.alias ?? decl.path[decl.path.length - 1])
@@ -250,7 +252,7 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
             return
         }
         var sources = List<lexer.SourceText>()
-        for f in files { sources.append(lexer.SourceText.create(t11RelativePath(c.displayRoot, to: f), from: t11ReadAllBytes(f))) }
+        for f in files { sources.append(lexer.SourceText.create(t11RelativePath(c.displayRoot, to: f).replaced("\\", by: "/"), from: t11ReadAllBytes(f))) }
         module = loadModule(ref c, for: name, at: dir, from: move sources, by: c.files[file].module)
     }
     if c.files[file].imports.contains(alias) {
@@ -1266,79 +1268,24 @@ List<string> t11ListFiles(string dir) {
     return names
 }
 
-/// The C# `Path.GetDirectoryName` of an absolute `/` path: everything before the last `/` (`/` itself for a
-/// file at the root).
+/// The C# `Path.GetDirectoryName(path)!`.
 string t11DirectoryName(string path) {
-    var last: i64 = -1
-    var i: i64 = 0
-    for b in path.bytes {
-        if b == 0x2F { last = i }
-        i += 1
-    }
-    if last == 0 { return "/" }
-    if last < 0 { return "" }
-    return path[0..last]
+    return Path.directoryName(path) ?? panic("t11DirectoryName: no directory name")
 }
 
-/// The C# `Path.GetFullPath` of an absolute `/` path: .NET's `PathInternal.RemoveRelativeSegments` with root
-/// length 1 drops `//`, `/./` and `/../` segments (`..` unwinds to the previous `/`, never past the root). A
-/// relative path is returned as given (Q571).
+/// The C# `Path.GetFullPath`.
 string t11FullPath(string path) {
-    unless path.startsWith("/") { return path }
-    let n = path.length
-    var acc = ""
-    var run: i64 = 0
-    var i: i64 = 0
-    while i < n {
-        if path.bytes[i] == 0x2F && i + 1 < n {
-            if path.bytes[i + 1] == 0x2F {
-                acc = $"{acc}{path[run..i]}"
-                i += 1
-                run = i
-                continue
-            }
-            if (i + 2 == n || path.bytes[i + 2] == 0x2F) && path.bytes[i + 1] == 0x2E {
-                acc = $"{acc}{path[run..i]}"
-                i += 2
-                run = i
-                continue
-            }
-            if i + 2 < n && (i + 3 == n || path.bytes[i + 3] == 0x2F) && path.bytes[i + 1] == 0x2E && path.bytes[i + 2] == 0x2E {
-                acc = $"{acc}{path[run..i]}"
-                var s = acc.length - 1
-                while s >= 0 && acc.bytes[s] != 0x2F { s -= 1 }
-                // .NET keeps the root's `/` for a final `..` (`s + 1`); with root length 1 the fix below does that.
-                if s < 0 {
-                    acc = ""
-                } else {
-                    acc = acc[0..s]
-                }
-                i += 3
-                run = i
-                continue
-            }
-        }
-        i += 1
-    }
-    acc = $"{acc}{path[run..n]}"
-    // The root's `/` may have been eaten with the first segment.
-    if acc.length < 1 { acc = "/" }
-    return acc
+    return Path.fullPath(path)
 }
 
-/// The C# `Path.Combine(a, b)` for `/` paths.
+/// The C# `Path.Combine(a, b)`.
 string t11Combine(string a, by string b) {
-    if a.length == 0 { return b }
-    if a.endsWith("/") { return $"{a}{b}" }
-    return $"{a}/{b}"
+    return Path.combine(a, b)
 }
 
-/// The C# `Path.GetRelativePath(root, path)` for a `path` under `root`; any other path is returned whole (Q571).
+/// The C# `Path.GetRelativePath(root, path)`.
 string t11RelativePath(string root, to string path) {
-    if path == root { return "." }
-    let prefix = root.endsWith("/") ? root : $"{root}/"
-    if path.startsWith(prefix) { return path[prefix.length..path.length] }
-    return path
+    return Path.relative(root, to: path)
 }
 
 /// Sorts `xs` in ordinal (byte) order, the C# `Order(StringComparer.Ordinal)`.

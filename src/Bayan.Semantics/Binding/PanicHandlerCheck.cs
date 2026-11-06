@@ -65,7 +65,8 @@ internal static class PanicHandlerCheck
                 case BoundCollection { Type: ListType or MapType }:
                 case BoundCall { Function.Builtin: BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver or BuiltinFunction.ArenaNew
                     or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode or BuiltinFunction.SymbolIntern or BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir
-                    or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName }:
+                    or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName or BuiltinFunction.PathDirectoryName
+                    or BuiltinFunction.PathCombine or BuiltinFunction.PathCombineSpan or BuiltinFunction.PathFullPath }:
                 case BoundBuiltinCall { Member: BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy
                     or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy or BuiltinMember.IoReadAll or BuiltinMember.IntToString
                     or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet

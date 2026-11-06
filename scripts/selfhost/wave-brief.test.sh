@@ -73,5 +73,8 @@ if git cat-file -e $old:scripts/selfhost/wave-brief.py 2> /dev/null; then
   cmp -s tmp/wave-brief-old/review.md tmp/010-t43/review.md || { echo "FAIL: the 010 T43 review brief changed"; exit 1; }
   rm -rf tmp/wave-brief-old
 fi
+# golden expected files named in a task line (014 T6) are in its guard --allow
+python3 -I scripts/selfhost/wave-brief.py . T6 --spec 014 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/014-T6/prompt.md | grep -q 'tests/cases/run/path-full-path-empty.exitcode,.*tests/cases/emit/run-c.sha256' || { echo "FAIL: golden expected files are not in the guard --allow"; exit 1; }
 bash -n scripts/selfhost/guard.sh
 echo PASS

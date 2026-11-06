@@ -375,6 +375,10 @@ public enum BuiltinFunction
     PathIsRooted,
     PathRelative,
     PathFileName,
+    PathDirectoryName,
+    PathCombine,
+    PathCombineSpan,
+    PathFullPath,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }

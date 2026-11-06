@@ -88,7 +88,7 @@ Sizing notes. T4 is the largest lowering task because `LowerExpr` (190 lines) an
 - **Line directives.** `#line` bookkeeping (`MapLine`, `ResolveResets`) is byte-visible and depends on where C# chooses not to map (`Statement` restores `_lastLine` when a statement emits nothing: `CEmitter.cs:1465-1470`). Mitigation: `LineDirectiveTests` goldens in T9's tests; parity on the whole corpus in T13.
 - **Task cap.** `Builtin` (T11) and `Statement`+ownership (T9) are the two long switches. Mitigation: sizes above are under 1,000; the split rule for T4 is stated.
 - **Scripts hard-coded to 010 (D7).** Mitigation: the dispatcher's base commit lands before T1's branch is cut, and T1's guard run is its test.
-- **Round 4 (Q1).** The closure parts will be redone, and with them the checker's closure and `ref`/`out` escape rules (Q1's exception, Q745). Every range the redo touches, measured 2026-11-02. Each task that owns a range (T1, T2, T4, T7, T9, T10) marks it with a `// Q1: round 4 redoes this` comment, its brief in `011-tasks.md` names the ranges, and T1 copies this table into `011-api.md`. T11 owns none: `CEmitter.cs:1940-2449` has no `env`, `FunctionType` or `Lambda` reference (`awk` over the range, 2026-11-02), so it carries no marker. Lowering and printing (ported by 011):
+- **Round 4 (Q1).** The closure parts will be redone, and with them the checker's closure and `ref`/`out` escape rules (Q1's exception, Q745). Every range the redo touches, measured 2026-11-02. Each task that owns a range (T1, T2, T4, T7, T9, T10) marks it with a `// Q1: round 4 redoes this` comment, its brief in `011-tasks.md` names the ranges, and T1 copies this table into `011-api.md`. T11 owns none: `CEmitter.cs:1958-2467` has no `env`, `FunctionType` or `Lambda` reference (`awk` over the range, 2026-11-02), so it carries no marker. Lowering and printing (ported by 011):
 
   | Range | Method | What it does | Lines | Task |
   |---|---|---|---|---|
@@ -111,7 +111,7 @@ Sizing notes. T4 is the largest lowering task because `LowerExpr` (190 lines) an
   | `Binder.cs:31`, `BinderExpressions.cs:1922`, `:1932` | the lambda stack, push and pop | 3 | `selfhost/semantics/ctx.byn:623` (`lambdas`), `express4.byn:366` (push), `:399-404` (captures collected, pop), `:415-426` (`inLambda` and the lambda-of helper) |
   | `BinderExpressions.cs:1961-1983` | `Capture` | 23 | `express4.byn:430-473` (`capture`, 44) |
   | `BoundNodes.cs:246-247` | `BoundLambda` with its captures | 2 | `bound.byn:670` (field), `:1631` (children) |
-  | `Symbols.cs:245` | `FunctionSymbol.Captures` | 1 | `symbols.byn:182` |
+  | `Symbols.cs:245` | `FunctionSymbol.Captures` | 1 | `symbols.byn:189` |
   | `RegionAnalysis.cs:351-352`, `:458`, `:463` | lambda environment region, rule 4's environment exclusion | 4 | `region.byn:52` (environments), `:490-503` (lambda borrow and environment), `region2.byn:131` (exclusion) |
   | `OwnershipAnalysis.cs:383` | captures in ownership | 1 | `ownership.byn:533-537` |
   | `RegionAnalysis.cs` `Call` (after Q745) | written `ref`/`out` arguments and `ref this` receivers take borrows | measured when Q745 lands | `region*.byn`, same change (D13) |

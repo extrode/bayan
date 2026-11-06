@@ -11,18 +11,18 @@ using Bayan.Syntax.Text;
 namespace Bayan.Tests;
 
 /// <summary>
-/// Spec 014's slice (011 P2): <c>Path.isRooted</c>, <c>Path.fileName</c> and <c>Path.relative</c> give what .NET's
-/// <c>Path.IsPathRooted</c>, <c>Path.GetFileName</c> and <c>Path.GetRelativePath</c> give on the same OS, over a seeded corpus
+/// Spec 014's slice (011 P2), 014 T1, T2 and T3: <c>Path.isRooted</c>, <c>Path.fileName</c>, <c>Path.directoryName</c>, <c>Path.combine</c> (both forms), <c>Path.fullPath</c> and <c>Path.relative</c> give what .NET's
+/// <c>Path.IsPathRooted</c>, <c>Path.GetFileName</c>, <c>Path.GetDirectoryName</c>, <c>Path.Combine</c>, <c>Path.GetFullPath</c> and <c>Path.GetRelativePath</c> give on the same OS, over a seeded corpus
 /// with Windows-shaped inputs. On Windows the .NET calls use Windows rules, so the same corpus checks both separators, drive
 /// letters, UNC and case-insensitive <c>relative</c> there. Both sides run in the test process's working directory, so relative
 /// inputs resolve alike.
 /// </summary>
 public sealed class StdPathTests
 {
-    private static readonly string[] Atoms =
+    internal static readonly string[] Atoms =
         ["a", "b", "B", "abc", "ABC", "x y", "é", ".", "..", "...", "", "C:", "c:", "C:x", "file.txt", ".hidden", "~", "UNC", "?", "server", "share"];
 
-    private static readonly string[] Shapes =
+    internal static readonly string[] Shapes =
     [
         "", " ", "/", "//", "\\", "\\\\", "a", "/a", "a/", "/a/", "a/b", "a//b", "./a", "../a", ".", "..", "a/.", "a/..", "/a/b/",
         "C:", "C:\\", "C:/", "C:x", "C:\\x", "C:/x\\y", "c:\\X\\", "1:\\x", "\\x", "/x\\y", "\\\\server\\share", "\\\\server\\share\\",
@@ -30,7 +30,7 @@ public sealed class StdPathTests
         "a\\b", "a b/c d", "/é/ü", "file.txt", "/dir.d/", "a/b.c.d",
     ];
 
-    private static List<string> Corpus(int seed, int count)
+    internal static List<string> Corpus(int seed, int count)
     {
         var random = new Random(seed);
         var seps = new[] { "/", "\\", "//", "\\\\", "/\\" };
@@ -51,7 +51,7 @@ public sealed class StdPathTests
         return list;
     }
 
-    private static List<(string From, string To)> Pairs(int seed, int count)
+    internal static List<(string From, string To)> Pairs(int seed, int count)
     {
         var random = new Random(seed);
         var paths = Corpus(seed, count);
@@ -83,7 +83,7 @@ public sealed class StdPathTests
         return pairs;
     }
 
-    private static string Literal(string s)
+    internal static string Literal(string s)
     {
         var sb = new StringBuilder("\"");
         foreach (var ch in s)
@@ -91,9 +91,15 @@ public sealed class StdPathTests
         return sb.Append('"').ToString();
     }
 
-    private static string? Relative(string from, string to)
+    internal static string? Relative(string from, string to)
     {
         try { return Path.GetRelativePath(from, to); }
+        catch (ArgumentException) { return null; }
+    }
+
+    internal static string? FullPath(string path)
+    {
+        try { return Path.GetFullPath(path); }
         catch (ArgumentException) { return null; }
     }
 
@@ -113,6 +119,14 @@ public sealed class StdPathTests
             expected.Add(Path.IsPathRooted(p) ? "true" : "false");
             source.Append($"print(Path.fileName({Literal(p)}))\n");
             expected.Add(Path.GetFileName(p));
+            // .NET's null (a root, an empty path) prints as a marker no path in the corpus holds.
+            source.Append($"print(Path.directoryName({Literal(p)}) ?? \"<null>\")\n");
+            expected.Add(Path.GetDirectoryName(p) ?? "<null>");
+            // Relative inputs resolve against the working directory on both sides. .NET throws on an empty path (and on Windows a
+            // blank one); that is FullPathPanicsWhereDotNetThrows.
+            if (FullPath(p) is not { } full) continue;
+            source.Append($"print(Path.fullPath({Literal(p)}))\n");
+            expected.Add(full);
         }
         foreach (var (from, to) in Pairs(1014, 400))
         {
@@ -121,7 +135,23 @@ public sealed class StdPathTests
             source.Append($"print(Path.relative(from: {Literal(from)}, to: {Literal(to)}))\n");
             expected.Add(r);
         }
+        // `combine` brackets its result: an empty one is a line too.
+        foreach (var (a, b) in Pairs(2014, 200))
+        {
+            source.Append($"print($\"[{{Path.combine({Literal(a)}, {Literal(b)})}}]\")\n");
+            expected.Add($"[{Path.Combine(a, b)}]");
+        }
+        // Spans of 0-4 parts from the atoms and the shapes, which hold rooted ones, so a later rooted part restarts the result.
+        var spanRandom = new Random(3014);
+        var spanParts = Atoms.Concat(Shapes).ToArray();
+        for (var i = 0; i < 300; i++)
+        {
+            var parts = Enumerable.Range(0, i % 5).Select(_ => spanParts[spanRandom.Next(spanParts.Length)]).ToArray();
+            source.Append($"print($\"[{{Path.combine([{string.Join(", ", parts.Select(Literal))}])}}]\")\n");
+            expected.Add($"[{Path.Combine(parts)}]");
+        }
         Assert.True(expected.Count > 900, $"only {expected.Count} lines");
+        Assert.True(source.ToString().Split('\n').Count(l => l.StartsWith("print(Path.fullPath(\"") && !l.StartsWith("print(Path.fullPath(\"/")) > 100, "too few relative fullPath inputs");
 
         var c = Compilation.Create([new SourceText("paths.byn", Encoding.UTF8.GetBytes(source.ToString()))], dir);
         Assert.False(c.Diagnostics.HasErrors);
@@ -145,6 +175,55 @@ public sealed class StdPathTests
         var source0 = source.ToString().Split('\n');
         for (var i = 0; i < expected.Count; i++)
             Assert.True(expected[i] == actual[i], $"line {i + 1}: {source0[i]}\n.NET: [{expected[i]}]\nBayan: [{actual[i]}]");
+    }
+
+    /// <summary>
+    /// <c>Path.fullPath</c> panics, naming itself, on each input where <c>Path.GetFullPath</c> throws <c>ArgumentException</c> (empty,
+    /// a NUL byte, and on Windows blank), and prints what it returns otherwise.
+    /// </summary>
+    [Fact]
+    public async Task FullPathPanicsWhereDotNetThrows()
+    {
+        Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "std-path-full");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        (string Path, string Panic)[] cases =
+            [("", "the path is empty"), (" ", "the path is empty"), ("\0", "the path has a NUL byte"), ("a\0b", "the path has a NUL byte"), ("/a\0", "the path has a NUL byte")];
+        foreach (var (p, panic) in cases)
+        {
+            var full = FullPath(p);
+            // Only a blank path differs by OS: .NET throws on it on Windows alone.
+            Assert.True(full is null || p == " ", $"GetFullPath([{p}]) does not throw ArgumentException");
+            var source = $"print(Path.fullPath({Literal(p).Replace("\0", "\\0")}))\n";
+            var c = Compilation.Create([new SourceText("full.byn", Encoding.UTF8.GetBytes(source))], dir);
+            Assert.False(c.Diagnostics.HasErrors);
+            var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Safe), BuildMode.Safe);
+            Assert.True(build.Succeeded, build.Errors);
+            var psi = new ProcessStartInfo(build.ExecutablePath!)
+            {
+                WorkingDirectory = Directory.GetCurrentDirectory(),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            using var proc = Process.Start(psi)!;
+            var stderr = proc.StandardError.ReadToEndAsync();
+            var stdout = await proc.StandardOutput.ReadToEndAsync();
+            Assert.True(proc.WaitForExit(120_000), "program timed out after 120 s");
+            var err = (await stderr).ReplaceLineEndings("\n");
+            if (full is null)
+            {
+                Assert.True(proc.ExitCode != 0, $"[{p}]: .NET throws, Bayan exits 0 with [{stdout}]");
+                Assert.Equal($"panic: Path.fullPath: {panic}\n  at full.byn:1\n", err);
+            }
+            else
+            {
+                Assert.True(proc.ExitCode == 0, err);
+                Assert.Equal(full + "\n", stdout);
+            }
+        }
     }
 
     /// <summary>

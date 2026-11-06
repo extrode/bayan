@@ -116,7 +116,8 @@ public sealed class MutantSchemataTests
     public void MutantZeroIsThePlainProgram(string name)
     {
         var input = Path.Combine(Golden.CasesRoot, name);
-        if (OperatingSystem.IsWindows() && File.ReadLines(input).Take(2).Contains("// os: unix")) return;
+        var head = File.ReadLines(input).Take(2).ToList();
+        if (OperatingSystem.IsWindows() ? head.Contains("// os: unix") : head.Contains("// os: windows")) return;
         _ = Warm.Value;
         var exe = SchemataBuild(name);
         var work = Path.Combine(Golden.RepoRoot, "tmp", "run-schemata", Path.ChangeExtension(name, null).Replace('/', '_').Replace('\\', '_'));

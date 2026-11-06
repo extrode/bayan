@@ -136,6 +136,10 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Make(ref c, by: m, for: "isRooted", as: .pathIsRooted, to: prim(.bool), from: t9One("path", as: prim(.string)), at: "Path.isRooted")
     let _ = t9Make(ref c, by: m, for: "relative", as: .pathRelative, to: prim(.string), from: t9Two("from", as: prim(.string), for: "to", to: prim(.string)), at: "Path.relative")
     let _ = t9Make(ref c, by: m, for: "fileName", as: .pathFileName, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fileName")
+    let _ = t9Make(ref c, by: m, for: "directoryName", as: .pathDirectoryName, to: internOptional(ref c, by: prim(.string)), from: t9One("path", as: prim(.string)), at: "Path.directoryName")
+    let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombine, to: prim(.string), from: t9Two("path1", as: prim(.string), for: "path2", to: prim(.string)), at: "Path.combine")
+    let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombineSpan, to: prim(.string), from: t9One("paths", as: internSpan(ref c, by: prim(.string), readOnly: true)), at: "Path.combine(paths)")
+    let _ = t9Make(ref c, by: m, for: "fullPath", as: .pathFullPath, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fullPath")
 
     // The iteration interfaces are declared from source too; the declare pass declares their members like a user interface's.
     let iteration = t9Parse(ref c, for: iterationSource, by: m)
@@ -280,7 +284,7 @@ InterfaceId findInterface(ref Ctx c, for string name) {
 /// A static member of `Path`, or -1.
 FuncId findPath(ref Ctx c, for string name) {
     switch name {
-        case "isRooted" or "relative" or "fileName": return t9Function(ref c, for: $"Path.{name}")
+        case "isRooted" or "relative" or "fileName" or "directoryName" or "combine" or "fullPath": return t9Function(ref c, for: $"Path.{name}")
     }
     return -1
 }
