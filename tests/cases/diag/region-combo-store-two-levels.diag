@@ -1,0 +1,10 @@
+error BYN3002: arena `arena` does not live as long as `kept`, which borrows it
+
+  11 │     g = s
+     │         - `pass` stores `s` into `g` here
+     │
+  18 │         pass(mk2("ann", from: arena), to: out kept)
+     │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ arena `arena` is freed at the end of its
+     │                                                     block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough
