@@ -1,0 +1,7 @@
+import std.json
+
+// std.json has no key lookup member yet (016 T4): match `.object(let members)` or use `JsonReader`.
+void main() {
+    let v = json.Json.parse("{}") catch { return }
+    print(json.Json.encode(json.Json.get(v, "a")))
+}

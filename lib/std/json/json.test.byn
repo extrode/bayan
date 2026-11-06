@@ -1,0 +1,184 @@
+// Tests of std.json. Expected encodings are python3 `json.dumps` output (indent 0 is `json.dumps(v)`, N is
+// `json.dumps(v, indent=N)`) for `json.loads` of the input, recorded from a run, not written by hand.
+
+/// The tree of `text`, trusted for the test.
+JsonValue tree(string text) fails JsonError uses alloc {
+    return (try Json.parse(text)).trustUnchecked() because "test input is a literal"
+}
+
+/// `ok`, or the error `Json.parse(text)` fails with as `kind message @offset line:column`.
+string errorOf(string text) uses alloc {
+    let _ = Json.parse(text) catch switch {
+        .syntax e => return $"syntax {e.message} @{e.offset} {e.line}:{e.column}",
+        .tooDeep e => return $"tooDeep @{e.offset} {e.line}:{e.column}",
+    }
+    return "ok"
+}
+
+/// The tokens of `text`, one word each.
+string tokensOf(string text) fails JsonError uses alloc {
+    var reader = JsonReader.over(text)
+    var sb = StrBuf()
+    while true {
+        let token = (try reader.next()) ?? break
+        let word = token switch {
+            .startObject => "{",
+            .endObject => "}",
+            .startList => "[",
+            .endList => "]",
+            .key(let name) => $"key:{name}",
+            .text(let value) => $"text:{value}",
+            .number(let value, let digits) => $"number:{value}/{digits}",
+            .flag(let value) => $"flag:{value}",
+            .nothing => "null",
+        }
+        sb.append($"{word} ")
+    }
+    return $"{sb.finish()}"
+}
+
+@cases(
+    ("null", 0, "null"),
+    ("null", 2, "null"),
+    ("null", 4, "null"),
+    ("true", 0, "true"),
+    ("true", 2, "true"),
+    ("true", 4, "true"),
+    ("false", 0, "false"),
+    ("false", 2, "false"),
+    ("false", 4, "false"),
+    ("0", 0, "0"),
+    ("0", 2, "0"),
+    ("0", 4, "0"),
+    ("-12", 0, "-12"),
+    ("-12", 2, "-12"),
+    ("-12", 4, "-12"),
+    ("1.5", 0, "1.5"),
+    ("1.5", 2, "1.5"),
+    ("1.5", 4, "1.5"),
+    ("\"hi\"", 0, "\"hi\""),
+    ("\"hi\"", 2, "\"hi\""),
+    ("\"hi\"", 4, "\"hi\""),
+    ("[]", 0, "[]"),
+    ("[]", 2, "[]"),
+    ("[]", 4, "[]"),
+    ("{}", 0, "{}"),
+    ("{}", 2, "{}"),
+    ("{}", 4, "{}"),
+    ("[1, 2, 3]", 0, "[1, 2, 3]"),
+    ("[1, 2, 3]", 2, "[\n  1,\n  2,\n  3\n]"),
+    ("[1, 2, 3]", 4, "[\n    1,\n    2,\n    3\n]"),
+    ("{\"a\": 1, \"b\": [1, 2]}", 0, "{\"a\": 1, \"b\": [1, 2]}"),
+    ("{\"a\": 1, \"b\": [1, 2]}", 2, "{\n  \"a\": 1,\n  \"b\": [\n    1,\n    2\n  ]\n}"),
+    ("{\"a\": 1, \"b\": [1, 2]}", 4, "{\n    \"a\": 1,\n    \"b\": [\n        1,\n        2\n    ]\n}"),
+    ("{\"a\": {\"b\": {\"c\": []}}, \"d\": [{}, [], [null, true, false]], \"e\": \"x\"}", 0, "{\"a\": {\"b\": {\"c\": []}}, \"d\": [{}, [], [null, true, false]], \"e\": \"x\"}"),
+    ("{\"a\": {\"b\": {\"c\": []}}, \"d\": [{}, [], [null, true, false]], \"e\": \"x\"}", 2, "{\n  \"a\": {\n    \"b\": {\n      \"c\": []\n    }\n  },\n  \"d\": [\n    {},\n    [],\n    [\n      null,\n      true,\n      false\n    ]\n  ],\n  \"e\": \"x\"\n}"),
+    ("{\"a\": {\"b\": {\"c\": []}}, \"d\": [{}, [], [null, true, false]], \"e\": \"x\"}", 4, "{\n    \"a\": {\n        \"b\": {\n            \"c\": []\n        }\n    },\n    \"d\": [\n        {},\n        [],\n        [\n            null,\n            true,\n            false\n        ]\n    ],\n    \"e\": \"x\"\n}"),
+    (" \t\r\n [ 1 , { \"x\" : \"y\" } ] \n", 0, "[1, {\"x\": \"y\"}]"),
+    (" \t\r\n [ 1 , { \"x\" : \"y\" } ] \n", 2, "[\n  1,\n  {\n    \"x\": \"y\"\n  }\n]"),
+    (" \t\r\n [ 1 , { \"x\" : \"y\" } ] \n", 4, "[\n    1,\n    {\n        \"x\": \"y\"\n    }\n]"),
+    ("\"\\u00e9 \\ud83d\\ude00 \\n\\\"\\\\\\/\\b\\f\\r\\t \\u001f \\u007f\"", 0, "\"\\u00e9 \\ud83d\\ude00 \\n\\\"\\\\/\\b\\f\\r\\t \\u001f \\u007f\""),
+    ("\"\\u00e9 \\ud83d\\ude00 \\n\\\"\\\\\\/\\b\\f\\r\\t \\u001f \\u007f\"", 2, "\"\\u00e9 \\ud83d\\ude00 \\n\\\"\\\\/\\b\\f\\r\\t \\u001f \\u007f\""),
+    ("\"\\u00e9 \\ud83d\\ude00 \\n\\\"\\\\\\/\\b\\f\\r\\t \\u001f \\u007f\"", 4, "\"\\u00e9 \\ud83d\\ude00 \\n\\\"\\\\/\\b\\f\\r\\t \\u001f \\u007f\""),
+    ("\"café 中 😀\"", 0, "\"caf\\u00e9 \\u4e2d \\ud83d\\ude00\""),
+    ("\"café 中 😀\"", 2, "\"caf\\u00e9 \\u4e2d \\ud83d\\ude00\""),
+    ("\"café 中 😀\"", 4, "\"caf\\u00e9 \\u4e2d \\ud83d\\ude00\""),
+    ("[0, 10, -3.25, 0.5, 2.0, 1e+21, -1.5e-07]", 0, "[0, 10, -3.25, 0.5, 2.0, 1e+21, -1.5e-07]"),
+    ("[0, 10, -3.25, 0.5, 2.0, 1e+21, -1.5e-07]", 2, "[\n  0,\n  10,\n  -3.25,\n  0.5,\n  2.0,\n  1e+21,\n  -1.5e-07\n]"),
+    ("[0, 10, -3.25, 0.5, 2.0, 1e+21, -1.5e-07]", 4, "[\n    0,\n    10,\n    -3.25,\n    0.5,\n    2.0,\n    1e+21,\n    -1.5e-07\n]")
+)
+test "parse then encode is json.dumps" (string input, i32 indent, string expected) {
+    assert Json.encode(try tree(input), indent: indent) == expected
+}
+
+test "the reader gives every token kind, then null" {
+    assert (try tokensOf("{\"a\": [1.5e1, true, false, null, \"x\", {}]}")) =="{ key:a [ number:15/1.5e1 flag:true flag:false null text:x { } ] } "
+}
+
+test "next stays null after the end" {
+    var reader = JsonReader.over(" 7 ")
+    assert (try reader.next()) is .number(let value, _) && value == 7.0
+    assert (try reader.next()) is null
+    assert (try reader.next()) is null
+}
+
+test "a number keeps its text and its value" {
+    assert Json.encode(try tree("[1E5, 1.0, -0, 1e400]")) == "[1E5, 1.0, -0, 1e400]"
+    assert (try tree("2.5e-1")) is .number(let value, _) && value == 0.25
+}
+
+test "duplicate keys are kept in order" {
+    let v = try tree("{\"k\": 1, \"j\": 2, \"k\": 3}")
+    assert v is .object(let members) && members.length == 3 && members[0].key == "k" && members[2].key == "k"
+}
+
+test "escapes decode to their runes" {
+    assert (try tree("\"\\u00e9\\ud83d\\ude00\\n\\/\"")) is .text(let value) && value == "é😀\n/"
+    assert (try tree("\"\\u00C9\\uE000\"")) is .text(let upper) && upper == "É\u{E000}"
+}
+
+test "encode writes a built tree as json.dumps does" {
+    var members = List<JsonMember>()
+    members.append(JsonMember { key: "name", value: .text(value: "Bayān") })
+    members.append(JsonMember { key: "tags", value: .list(items: List<JsonValue>()) })
+    members.append(JsonMember { key: "meta", value: .object(members: List<JsonMember>()) })
+    members.append(JsonMember { key: "n", value: .number(value: 3.0, text: "3") })
+    members.append(JsonMember { key: "ok", value: .nothing })
+    let v = JsonValue.object(members: move members)
+    assert Json.encode(v) == "{\"name\": \"Bay\\u0101n\", \"tags\": [], \"meta\": {}, \"n\": 3, \"ok\": null}"
+    assert Json.encode(v, indent: 2) == "{\n  \"name\": \"Bay\\u0101n\",\n  \"tags\": [],\n  \"meta\": {},\n  \"n\": 3,\n  \"ok\": null\n}"
+}
+
+@cases(
+    ("", "syntax unexpected end of input @0 1:1"),
+    ("  ", "syntax unexpected end of input @2 1:3"),
+    ("[1,", "syntax unexpected end of input @3 1:4"),
+    ("1 2", "syntax unexpected content after the value @2 1:3"),
+    ("[1 2]", "syntax expected `,` or `]` @3 1:4"),
+    ("{\"a\": 1 \"b\": 2}", "syntax expected `,` or `}` @8 1:9"),
+    ("{\"a\" 1}", "syntax expected `:` @5 1:6"),
+    ("{1: 2}", "syntax expected a string key @1 1:2"),
+    ("{\"a\": 1,}", "syntax expected a string key @8 1:9"),
+    ("[1,]", "syntax expected a value @3 1:4"),
+    ("NaN", "syntax expected a value @0 1:1"),
+    ("Infinity", "syntax expected a value @0 1:1"),
+    ("-Infinity", "syntax invalid number @0 1:1"),
+    ("+1", "syntax expected a value @0 1:1"),
+    (".5", "syntax expected a value @0 1:1"),
+    ("01", "syntax leading zero in a number @0 1:1"),
+    ("-01", "syntax leading zero in a number @0 1:1"),
+    ("1.", "syntax invalid number @0 1:1"),
+    ("1.e5", "syntax invalid number @0 1:1"),
+    ("1e", "syntax invalid number @0 1:1"),
+    ("1e+", "syntax invalid number @0 1:1"),
+    ("-", "syntax invalid number @0 1:1"),
+    ("tru", "syntax expected a value @0 1:1"),
+    ("\"abc", "syntax unterminated string @0 1:1"),
+    ("\"a\u{1}\"", "syntax control character in a string @2 1:3"),
+    ("\"a\\x\"", "syntax invalid escape @2 1:3"),
+    ("\"\\u12g4\"", "syntax invalid \\u escape @1 1:2"),
+    ("\"\\u12G4\"", "syntax invalid \\u escape @1 1:2"),
+    ("\"\\u-123\"", "syntax invalid \\u escape @1 1:2"),
+    ("\"\\ud83d\\ue000\"", "syntax lone surrogate @1 1:2"),
+    ("\"\\ud83d\"", "syntax lone surrogate @1 1:2"),
+    ("\"\\ud83d\\u0041\"", "syntax lone surrogate @1 1:2"),
+    ("\"\\ude00\"", "syntax lone surrogate @1 1:2"),
+    ("[\n  \"é\", x]", "syntax expected a value @10 2:8"),
+    ("[1] x", "syntax unexpected content after the value @4 1:5"),
+)
+test "parse refuses broken text" (string input, string expected) {
+    assert errorOf(input) == expected
+}
+
+test "nesting past 128 levels is tooDeep" {
+    assert errorOf("[".repeated(128)) == "syntax unexpected end of input @128 1:129"
+    assert errorOf("[".repeated(129)) == "tooDeep @128 1:129"
+    assert errorOf($"{"{\"a\":".repeated(128)}{{") == "tooDeep @640 1:641"
+    assert Json.parse("[".repeated(100000)) fails JsonError.tooDeep
+}
+
+test "a reader error is the parse error" {
+    var reader = JsonReader.over("[}")
+    assert (try reader.next()) is .startList
+    assert reader.next() fails JsonError.syntax
+}

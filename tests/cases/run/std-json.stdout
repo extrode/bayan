@@ -1,0 +1,15 @@
+name: Bayān
+{"name": "Bay\u0101n", "tags": ["a", "b"], "size": 1.5, "ok": true, "none": null, "empty": {}}
+{
+  "name": "Bay\u0101n",
+  "tags": [
+    "a",
+    "b"
+  ],
+  "size": 1.5,
+  "ok": true,
+  "none": null,
+  "empty": {}
+}
+syntax: unexpected end of input at 1:6
+too deep at 128

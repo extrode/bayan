@@ -1,0 +1,29 @@
+import std.json
+
+/// Parses `text`, prints its `name` member and its encodings, or the error.
+void show(string text) {
+    let parsed = json.Json.parse(text) catch switch {
+        .syntax e => {
+            print($"syntax: {e.message} at {e.line}:{e.column}")
+            return
+        },
+        .tooDeep e => {
+            print($"too deep at {e.offset}")
+            return
+        },
+    }
+    let v = (move parsed).trustUnchecked() because "the input is a literal"
+    if v is .object(let members) {
+        for m in members {
+            if m.key == "name" && m.value is .text(let name) { print($"name: {name}") }
+        }
+    }
+    print(json.Json.encode(v))
+    print(json.Json.encode(v, indent: 2))
+}
+
+void main() {
+    show("""{"name": "Bayān", "tags": ["a", "b"], "size": 1.5, "ok": true, "none": null, "empty": {}}""")
+    show("[1, 2")
+    show("[".repeated(200))
+}

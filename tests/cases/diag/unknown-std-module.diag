@@ -3,4 +3,4 @@ error BYN2032: no std module `std.nope`
   1 │ import std.nope
     │        ^^^^^^^^
     │
-  help: remove the import: no std modules ship with this build
+  help: import one of `std.json`
