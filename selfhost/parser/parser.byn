@@ -43,6 +43,10 @@ public struct Parser {
     public List<List<AttributeSyntax>> statementAttributes = List<List<AttributeSyntax>>()
     public List<i64> statementAttributeKeys = List<i64>()
     public List<i64> statementAttributeStarts = List<i64>()
+    /// Set by `parseStruct` around each member it parses: a field is read-only once wrapped in `Owned`, and O3 splits its
+    /// rules only once every field of the struct is known (Q819), so `parseFieldOrProperty` leaves the field here unwrapped.
+    public bool collectField = false
+    public List<FieldDecl> collectedFields = List<FieldDecl>()
 
     public static Parser create(move LexResult lexed) uses alloc {
         let count = lexed.tokens.length

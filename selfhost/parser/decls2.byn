@@ -106,8 +106,7 @@ Decl parseInterfaceMember(ref Parser p) {
         }))
     }
     if after > 0 && isName(p.kindAt(after)) && p.kindAt(after + 1) == .fatArrow {
-        var structRules = List<RequiresRule>()
-        return parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, to: ref structRules, doc: doc)
+        return parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, doc: doc)
     }
     let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a method, getter or `type Name`", arg1: p.describe(p.current()))
     synchronize(ref p)
@@ -127,8 +126,7 @@ ExtensionDecl parseExtension(ref Parser p, at i64 start) {
         while p.kind() != .closeBrace && !p.atEnd() {
             let before = p.pos
             let errors = p.syntaxErrors
-            var structRules = List<RequiresRule>()
-            let member = parseDeclaration(ref p, topLevel: false, for: name, to: ref structRules)
+            let member = parseDeclaration(ref p, topLevel: false, for: name)
             unless member is .none { members.append(move member) }
             recoverIfNeeded(ref p, from: errors)
             if p.pos == before { let _ = p.advance() }
@@ -146,7 +144,10 @@ void expectClose(ref Parser p, from Token open, for string what) {
 }
 
 Decl parseFieldOrProperty(ref Parser p, at i64 start, by Modifiers modifiers, through move List<AttributeSyntax> attributes,
-    to ref List<RequiresRule> structRules, string? doc = null) {
+    string? doc = null) {
+    // `parseStruct` sets it for its own member only; clear it so nothing nested collects.
+    let collect = p.collectField
+    p.collectField = false
     var type: TypeSyntax = .none
     var name = TextSpan { start: 0, length: 0 }
     if isNameThenType(ref p, at: p.pos) {
@@ -197,24 +198,22 @@ Decl parseFieldOrProperty(ref Parser p, at i64 start, by Modifiers modifiers, th
     if p.accept(.equals) { init = parseExpression(ref p) }
     var rules = parseRequiresLines(ref p)
     expectEnd(ref p)
-    // O3 (Q446): a rule with `at .f` belongs to the struct; split it out before wrapping in `Owned`.
-    var own = List<RequiresRule>()
-    var reversed = List<RequiresRule>()
-    while rules.length > 0 { reversed.append(rules.removeLast()) }
-    while reversed.length > 0 {
-        let rule = reversed.removeLast()
-        if rule.at is null { own.append(move rule) } else { structRules.append(move rule) }
-    }
-    return Decl.fieldDecl(Owned(FieldDecl {
+    var field = FieldDecl {
         span: p.spanFrom(start),
         modifiers: modifiers,
         type: move type,
         name: name,
         defaultKeyword: move init,
-        requiresKeyword: move own,
+        requiresKeyword: move rules,
         doc: doc,
         attributes: move attributes,
-    }))
+    }
+    // O3 (Q819): `parseStruct` splits the field's rules once it knows every field, then wraps it.
+    if collect {
+        p.collectedFields.append(move field)
+        return .none
+    }
+    return Decl.fieldDecl(Owned(move field))
 }
 
 /// The `requires` rules of a field or type: on its line, then one per line with no blank line between.

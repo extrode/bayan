@@ -417,7 +417,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
     }
 
-    /// <summary>T44: inputs the C# parser once threw on (<c>ParserTests.TruncatedInputReportsWithoutThrowing</c>) dump as the C# parser
+    /// <summary>010 T45: inputs the C# parser once threw on (<c>ParserTests.TruncatedInputReportsWithoutThrowing</c>) dump as the C# parser
     /// dumps them, whose output is written under <c>tmp/parser-ref/</c>, and agree on the exit code.</summary>
     [Theory]
     [InlineData("first-primitive-name", "int()fails")]
@@ -428,7 +428,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     [InlineData("unless-unclosed-group", "unless ((((((((((((((((((()")]
     public void TruncatedInputDumpsAsTheCSharpParser(string name, string source) => DumpsAsTheCSharpParser("truncated", name, source);
 
-    /// <summary>T44: the rest of <c>expectName</c> and <c>parseBody</c>: a C# primitive name past the first token, after a
+    /// <summary>010 T45: the rest of <c>expectName</c> and <c>parseBody</c>: a C# primitive name past the first token, after a
     /// <c>.</c> or not, and a braceless body that is itself an error.</summary>
     [Theory]
     [InlineData("primitive-name-later", "let int = 1\n")]

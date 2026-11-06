@@ -10,13 +10,13 @@
 
 import parser
 
-type BNode = i64
+public type BNode = i64
 
 // ── Kinds ──────────────────────────────────────────────────────────────────────
 
 /// Every concrete `BoundExpr`, `BoundStmt` and `BoundPattern` record of `BoundNodes.cs` in file order, then the
 /// three group records of `BinderExpressions.cs`; keyword names are renamed (Q535). The ordinals are fixed.
-enum BoundKind {
+public enum BoundKind {
     literal
     symbolLiteral
     defaultValue
@@ -97,7 +97,7 @@ enum BoundKind {
 }
 
 /// C# `BuiltinMember`, in C# order.
-enum BuiltinMember {
+public enum BuiltinMember {
     stringLength
     stringBytes
     stringIsEmpty
@@ -203,7 +203,7 @@ enum BuiltinMember {
 }
 
 /// C# `ConversionKind`, in C# order.
-enum ConversionKind {
+public enum ConversionKind {
     identity
     widen
     numericCast
@@ -223,7 +223,7 @@ enum ConversionKind {
 }
 
 /// C# `IterationKind`.
-enum IterationKind {
+public enum IterationKind {
     indexable
     enumerator
 }
@@ -231,7 +231,7 @@ enum IterationKind {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 /// What a `Constant` holds: C#'s boxed `Int128`, `double`, `bool`, `string` or `Rune` (Q536).
-enum ConstantKind {
+public enum ConstantKind {
     integer
     real
     flag
@@ -240,13 +240,13 @@ enum ConstantKind {
 }
 
 /// C# `ConstantValue`: only the field named by `kind` is meaningful.
-struct Constant {
-    ConstantKind kind
-    Big integer = Big { lo: 0, hi: 0 }
-    f64 real = 0.0
-    bool flag = false
-    string text = ""
-    u32 rune = 0
+public struct Constant {
+    public ConstantKind kind
+    public Big integer = Big { lo: 0, hi: 0 }
+    public f64 real = 0.0
+    public bool flag = false
+    public string text = ""
+    public u32 rune = 0
 }
 
 /// `ConstantValue.ToString()`.
@@ -262,7 +262,7 @@ string constantText(in Constant k) {
 
 /// C#'s `double.ToString()` under the invariant culture: the shortest round-trip digits, in exponent form
 /// `1E+20` / `1E-05` when the decimal exponent is at least 17 or below -4; `Infinity`, `-Infinity`, `NaN`.
-string realText(f64 v) {
+public string realText(f64 v) uses alloc {
     if v != v { return "NaN" }
     let s = $"{v}"
     if s == "inf" { return "Infinity" }
@@ -349,15 +349,15 @@ string realText(f64 v) {
 
 // ── Handles ────────────────────────────────────────────────────────────────────
 
-BNode makeBound(BoundKind kind, at i64 index) => (i64(kind.ordinal) << 32) | index
+public BNode makeBound(BoundKind kind, at i64 index) => (i64(kind.ordinal) << 32) | index
 
-BoundKind boundKind(BNode n) => BoundKind.fromOrdinal(n >> 32) ?? .errorExpr
+public BoundKind boundKind(BNode n) => BoundKind.fromOrdinal(n >> 32) ?? .errorExpr
 
 i64 boundIndex(BNode n) => n & 0xFFFFFFFF
 
-bool isStmtKind(BoundKind k) => k.ordinal >= BoundKind.block.ordinal && k.ordinal <= BoundKind.errorStmt.ordinal
+public bool isStmtKind(BoundKind k) => k.ordinal >= BoundKind.block.ordinal && k.ordinal <= BoundKind.errorStmt.ordinal
 
-bool isPatternKind(BoundKind k) {
+public bool isPatternKind(BoundKind k) {
     switch k {
         case .constantPattern or .relationalPattern or .rangePattern or .bindPattern or .notPattern or .binaryPattern
             or .propertyPattern or .unionPattern or .errorPattern:
@@ -367,14 +367,14 @@ bool isPatternKind(BoundKind k) {
     }
 }
 
-bool isExprKind(BoundKind k) => !isStmtKind(k) && !isPatternKind(k)
+public bool isExprKind(BoundKind k) => !isStmtKind(k) && !isPatternKind(k)
 
 // ── Constants and syntax facts keyed by handle ──────────────────────────────────
 
 /// C# `BoundExpr.Constant`; null when `e` is not a compile-time constant.
-Constant? exprConstant(in Ctx c, for BExpr e) => c.constants.tryGet(at: e)
+public Constant? exprConstant(in Ctx c, for BExpr e) => c.constants.tryGet(at: e)
 
-void setConstant(ref Ctx c, for BExpr e, to Constant k) {
+public void setConstant(ref Ctx c, for BExpr e, to Constant k) uses alloc {
     c.constants[e] = k
 }
 
@@ -393,603 +393,822 @@ const syntaxCall: i64 = 16
 i64 syntaxFlags(in Ctx c, for BNode n) => c.syntaxFlags.tryGet(at: n) ?? 0
 
 /// Records the `syntax…` bits of the node C# would build from the same `Syntax`.
-void setSyntaxFlags(ref Ctx c, for BNode n, to i64 flags) {
+public void setSyntaxFlags(ref Ctx c, for BNode n, to i64 flags) uses alloc {
     c.syntaxFlags[n] = flags
 }
 
-bool hasSyntax(in Ctx c, for BNode n, by i64 flag) => (syntaxFlags(in c, for: n) & flag) != 0
+public bool hasSyntax(in Ctx c, for BNode n, by i64 flag) => (syntaxFlags(in c, for: n) & flag) != 0
+
+// ── Syntax nodes (T21, Q849, Q850) ─────────────────────────────────────────────
+
+/// The case of a recorded `parser.Expr`: the C# record type of `BoundNode.Syntax` when it is an `Expr`.
+public enum ExprSyntaxKind {
+    literalExpr
+    interpolatedExpr
+    nameExpr
+    thisExpr
+    memberExpr
+    targetMemberExpr
+    callExpr
+    indexExpr
+    unaryExpr
+    binaryExpr
+    rangeExpr
+    conditionalExpr
+    castExpr
+    isExpr
+    exceptExpr
+    inExpr
+    switchExpr
+    tryExpr
+    moveExpr
+    catchExpr
+    caughtErrorExpr
+    jumpExpr
+    blockExpr
+    structLiteralExpr
+    withExpr
+    spreadExpr
+    mapEntryExpr
+    collectionExpr
+    tupleExpr
+    parenExpr
+    lambdaExpr
+    stackallocExpr
+    patternExpr
+    errorExpr
+}
+
+/// A recorded `parser.Expr` (a non-owning copy, since `parser.Expr` owns its children): its case and span, and the
+/// children `Lowerer.Anchor` and `IsLiteral` walk, as handles into `Ctx.exprSyntaxNodes` (-1 when the case has none).
+public struct ExprSyntax {
+    public ExprSyntaxKind kind
+    public TextSpan span
+    /// `ParenExpr.Inner`.
+    public i64 inner = -1
+    /// `MemberExpr.Member`.
+    public TextSpan member = TextSpan { start: 0, length: 0 }
+    /// `CallExpr.Callee`.
+    public i64 callee = -1
+    /// `BinaryExpr.Left`.
+    public i64 left = -1
+    /// `IsExpr.Value`.
+    public i64 value = -1
+    /// `IndexExpr.Target`.
+    public i64 target = -1
+    /// `ConditionalExpr.Condition`.
+    public i64 condition = -1
+    /// `UnaryExpr.Operand` and `UnaryExpr.Op`.
+    public i64 operand = -1
+    public parser.UnaryOp op = .plus
+}
+
+/// C# `n.Syntax` when it is an `Expr`, else null.
+public ExprSyntax? exprSyntax(in Ctx c, for BNode n) {
+    let h = c.exprSyntaxOf.tryGet(at: n) ?? -1
+    if h == -1 { return null }
+    return c.exprSyntaxNodes[h]
+}
+
+/// The child `node` of a recorded syntax node (its `inner`, `callee`, … handle).
+public ExprSyntax exprSyntaxNode(in Ctx c, at i64 node) => c.exprSyntaxNodes[node]
+
+/// Records `e` (with the children `exprSyntax` gives) and returns its handle; -1 for `.none`.
+i64 syntaxNode(ref Ctx c, from in parser.Expr e) uses alloc {
+    switch e {
+        case .literalExpr(let x):
+            return syntaxLeaf(ref c, as: .literalExpr, at: x.value.span)
+        case .interpolatedExpr(let x):
+            return syntaxLeaf(ref c, as: .interpolatedExpr, at: x.value.span)
+        case .nameExpr(let x):
+            return syntaxLeaf(ref c, as: .nameExpr, at: x.value.span)
+        case .thisExpr(let x):
+            return syntaxLeaf(ref c, as: .thisExpr, at: x.value.span)
+        case .memberExpr(let x):
+            return syntaxOfMember(ref c, from: in x.value)
+        case .targetMemberExpr(let x):
+            return syntaxLeaf(ref c, as: .targetMemberExpr, at: x.value.span)
+        case .callExpr(let x):
+            return syntaxOfCall(ref c, from: in x.value)
+        case .indexExpr(let x):
+            return syntaxOfIndex(ref c, from: in x.value)
+        case .unaryExpr(let x):
+            return syntaxOfUnary(ref c, from: in x.value)
+        case .binaryExpr(let x):
+            return syntaxOfBinary(ref c, from: in x.value)
+        case .rangeExpr(let x):
+            return syntaxLeaf(ref c, as: .rangeExpr, at: x.value.span)
+        case .conditionalExpr(let x):
+            return syntaxOfConditional(ref c, from: in x.value)
+        case .castExpr(let x):
+            return syntaxLeaf(ref c, as: .castExpr, at: x.value.span)
+        case .isExpr(let x):
+            return syntaxOfIs(ref c, from: in x.value)
+        case .exceptExpr(let x):
+            return syntaxLeaf(ref c, as: .exceptExpr, at: x.value.span)
+        case .inExpr(let x):
+            return syntaxLeaf(ref c, as: .inExpr, at: x.value.span)
+        case .switchExpr(let x):
+            return syntaxLeaf(ref c, as: .switchExpr, at: x.value.span)
+        case .tryExpr(let x):
+            return syntaxLeaf(ref c, as: .tryExpr, at: x.value.span)
+        case .moveExpr(let x):
+            return syntaxLeaf(ref c, as: .moveExpr, at: x.value.span)
+        case .catchExpr(let x):
+            return syntaxLeaf(ref c, as: .catchExpr, at: x.value.span)
+        case .caughtErrorExpr(let x):
+            return syntaxLeaf(ref c, as: .caughtErrorExpr, at: x.value.span)
+        case .jumpExpr(let x):
+            return syntaxLeaf(ref c, as: .jumpExpr, at: x.value.span)
+        case .blockExpr(let x):
+            return syntaxLeaf(ref c, as: .blockExpr, at: x.value.span)
+        case .structLiteralExpr(let x):
+            return syntaxLeaf(ref c, as: .structLiteralExpr, at: x.value.span)
+        case .withExpr(let x):
+            return syntaxLeaf(ref c, as: .withExpr, at: x.value.span)
+        case .spreadExpr(let x):
+            return syntaxLeaf(ref c, as: .spreadExpr, at: x.value.span)
+        case .mapEntryExpr(let x):
+            // coverage-exempt: Q853
+            return syntaxLeaf(ref c, as: .mapEntryExpr, at: x.value.span)
+        case .collectionExpr(let x):
+            return syntaxLeaf(ref c, as: .collectionExpr, at: x.value.span)
+        case .tupleExpr(let x):
+            return syntaxLeaf(ref c, as: .tupleExpr, at: x.value.span)
+        case .parenExpr(let x):
+            return syntaxOfParen(ref c, from: in x.value)
+        case .lambdaExpr(let x):
+            return syntaxLeaf(ref c, as: .lambdaExpr, at: x.value.span)
+        case .stackallocExpr(let x):
+            return syntaxLeaf(ref c, as: .stackallocExpr, at: x.value.span)
+        case .patternExpr(let x):
+            return syntaxLeaf(ref c, as: .patternExpr, at: x.value.span)
+        case .errorExpr(let x):
+            // coverage-exempt: Q853 through 550
+            return syntaxLeaf(ref c, as: .errorExpr, at: x.value.span)
+        case .none:
+            return -1
+    }
+}
+
+/// Records a syntax node with no walked children.
+i64 syntaxLeaf(ref Ctx c, as ExprSyntaxKind kind, at TextSpan span) uses alloc => syntaxAppend(ref c, from: ExprSyntax { kind: kind, span: span })
+
+i64 syntaxAppend(ref Ctx c, from ExprSyntax node) uses alloc {
+    c.exprSyntaxNodes.append(node)
+    return c.exprSyntaxNodes.length - 1
+}
+
+/// Records a `ParenExpr` and the `Inner` child it walks.
+i64 syntaxOfParen(ref Ctx c, from in parser.ParenExpr x) uses alloc {
+    let inner = syntaxNode(ref c, from: in x.inner)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .parenExpr, span: x.span, inner: inner })
+}
+
+/// Records a `MemberExpr` and its `Member` name.
+/// A synthetic `for try` member name (`t28SyntheticName`) is its C# span, `f.Iterable.Span` (Q739).
+i64 syntaxOfMember(ref Ctx c, from in parser.MemberExpr x) uses alloc => syntaxAppend(ref c, from: ExprSyntax { kind: .memberExpr, span: x.span, member: t40RealSpan(in c, for: x.member) })
+
+/// Records a `CallExpr` and the `Callee` child it walks.
+i64 syntaxOfCall(ref Ctx c, from in parser.CallExpr x) uses alloc {
+    let callee = syntaxNode(ref c, from: in x.callee)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .callExpr, span: x.span, callee: callee })
+}
+
+/// Records a `BinaryExpr` and the `Left` child it walks.
+i64 syntaxOfBinary(ref Ctx c, from in parser.BinaryExpr x) uses alloc {
+    let left = syntaxNode(ref c, from: in x.left)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .binaryExpr, span: x.span, left: left })
+}
+
+/// Records an `IsExpr` and the `Value` child it walks.
+i64 syntaxOfIs(ref Ctx c, from in parser.IsExpr x) uses alloc {
+    let value = syntaxNode(ref c, from: in x.value)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .isExpr, span: x.span, value: value })
+}
+
+/// Records an `IndexExpr` and the `Target` child it walks.
+i64 syntaxOfIndex(ref Ctx c, from in parser.IndexExpr x) uses alloc {
+    let target = syntaxNode(ref c, from: in x.target)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .indexExpr, span: x.span, target: target })
+}
+
+/// Records a `ConditionalExpr` and the `Condition` child it walks.
+i64 syntaxOfConditional(ref Ctx c, from in parser.ConditionalExpr x) uses alloc {
+    let condition = syntaxNode(ref c, from: in x.condition)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .conditionalExpr, span: x.span, condition: condition })
+}
+
+/// Records a `UnaryExpr`, its `Op` and the `Operand` child it walks.
+i64 syntaxOfUnary(ref Ctx c, from in parser.UnaryExpr x) uses alloc {
+    let operand = syntaxNode(ref c, from: in x.operand)
+    return syntaxAppend(ref c, from: ExprSyntax { kind: .unaryExpr, span: x.span, operand: operand, op: x.op })
+}
+
+/// Records `n`'s syntax as the node `h` (-1 records nothing) and returns `n`.
+BNode recordSyntaxNode(ref Ctx c, for BNode n, at i64 h) uses alloc {
+    if h != -1 { c.exprSyntaxOf[n] = h }
+    return n
+}
+
+/// `n`, built with `Syntax = e`.
+BNode recordSyntax(ref Ctx c, for BNode n, from in parser.Expr e) uses alloc => recordSyntaxNode(ref c, for: n, at: syntaxNode(ref c, from: in e))
+
+/// `n`, built with `Syntax = value.Syntax`.
+BNode shareSyntax(ref Ctx c, for BNode n, from BNode value) uses alloc => recordSyntaxNode(ref c, for: n, at: c.exprSyntaxOf.tryGet(at: value) ?? -1)
 
 // ── Records ────────────────────────────────────────────────────────────────────
 
-struct BLiteral {
-    TextSpan span
-    Type type
-    Constant value
+public struct BLiteral {
+    public TextSpan span
+    public Type type
+    public Constant value
 }
 
-struct BSymbolLiteral {
-    TextSpan span
-    string text
+public struct BSymbolLiteral {
+    public TextSpan span
+    public string text
 }
 
-struct BDefault {
-    TextSpan span
-    Type type
+public struct BDefault {
+    public TextSpan span
+    public Type type
 }
 
-struct BLocal {
-    TextSpan span
-    LocalId local
-    Type type = -1
+public struct BLocal {
+    public TextSpan span
+    public LocalId local
+    public Type type = -1
 }
 
-struct BThis {
-    TextSpan span
-    Type type
+public struct BThis {
+    public TextSpan span
+    public Type type
 }
 
-struct BField {
-    TextSpan span
-    BExpr receiver
-    FieldId field
-    Type type = -1
+public struct BField {
+    public TextSpan span
+    public BExpr receiver
+    public FieldId field
+    public Type type = -1
 }
 
-struct BTupleElement {
-    TextSpan span
-    BExpr receiver
-    i64 index
-    Type type
+public struct BTupleElement {
+    public TextSpan span
+    public BExpr receiver
+    public i64 index
+    public Type type
 }
 
-struct BCall {
-    TextSpan span
-    FuncId function
-    BExpr receiver = -1
-    List<BExpr> arguments = List<BExpr>()
-    Type type
+public struct BCall {
+    public TextSpan span
+    public FuncId function
+    public BExpr receiver = -1
+    public List<BExpr> arguments = List<BExpr>()
+    public Type type
 }
 
-struct BBuiltinCall {
-    TextSpan span
-    BuiltinMember member
-    BExpr receiver
-    List<BExpr> arguments = List<BExpr>()
-    Type type
+public struct BBuiltinCall {
+    public TextSpan span
+    public BuiltinMember member
+    public BExpr receiver
+    public List<BExpr> arguments = List<BExpr>()
+    public Type type
 }
 
-struct BUnary {
-    TextSpan span
-    parser.UnaryOp op
-    BExpr operand
-    Type type
+public struct BUnary {
+    public TextSpan span
+    public parser.UnaryOp op
+    public BExpr operand
+    public Type type
 }
 
-struct BBinary {
-    TextSpan span
-    parser.BinaryOp op
-    BExpr left
-    BExpr right
-    Type type
+public struct BBinary {
+    public TextSpan span
+    public parser.BinaryOp op
+    public BExpr left
+    public BExpr right
+    public Type type
 }
 
-struct BConversion {
-    TextSpan span
-    BExpr operand
-    Type type
-    ConversionKind kind
+public struct BConversion {
+    public TextSpan span
+    public BExpr operand
+    public Type type
+    public ConversionKind kind
 }
 
-struct BTryFrom {
-    TextSpan span
-    BExpr operand
-    Type target
-    Type type
+public struct BTryFrom {
+    public TextSpan span
+    public BExpr operand
+    public Type target
+    public Type type
 }
 
-struct BConditional {
-    TextSpan span
-    BExpr condition
-    BExpr whenTrue
-    BExpr whenFalse
-    Type type
+public struct BConditional {
+    public TextSpan span
+    public BExpr condition
+    public BExpr whenTrue
+    public BExpr whenFalse
+    public Type type
 }
 
-struct BCoalesce {
-    TextSpan span
-    BExpr left
-    BExpr right
-    Type type
+public struct BCoalesce {
+    public TextSpan span
+    public BExpr left
+    public BExpr right
+    public Type type
 }
 
-struct BStructLiteral {
-    TextSpan span
-    StructId structId
-    List<BExpr> fields = List<BExpr>()
-    VariantId state = -1
-    List<BExpr> payload = List<BExpr>()
-    Type type = -1
+public struct BStructLiteral {
+    public TextSpan span
+    public StructId structId
+    public List<BExpr> fields = List<BExpr>()
+    public VariantId state = -1
+    public List<BExpr> payload = List<BExpr>()
+    public Type type = -1
 }
 
-struct BWith {
-    TextSpan span
-    BExpr target
-    List<BWithUpdate> updates = List<BWithUpdate>()
-    Type type = -1
+public struct BWith {
+    public TextSpan span
+    public BExpr target
+    public List<BWithUpdate> updates = List<BWithUpdate>()
+    public Type type = -1
 }
 
-struct BTuple {
-    TextSpan span
-    Type tupleType
-    List<BExpr> elements = List<BExpr>()
+public struct BTuple {
+    public TextSpan span
+    public Type tupleType
+    public List<BExpr> elements = List<BExpr>()
 }
 
-struct BCollection {
-    TextSpan span
-    Type type
-    List<BExpr> elements = List<BExpr>()
+public struct BCollection {
+    public TextSpan span
+    public Type type
+    public List<BExpr> elements = List<BExpr>()
 }
 
-struct BSpread {
-    TextSpan span
-    BExpr operand
-    Type type
+public struct BSpread {
+    public TextSpan span
+    public BExpr operand
+    public Type type
 }
 
-struct BIndex {
-    TextSpan span
-    BExpr target
-    BExpr index
-    bool fromEnd = false
-    Type type
+public struct BIndex {
+    public TextSpan span
+    public BExpr target
+    public BExpr index
+    public bool fromEnd = false
+    public Type type
 }
 
-struct BSlice {
-    TextSpan span
-    BExpr target
-    BExpr start = -1
-    bool startFromEnd = false
-    BExpr end = -1
-    bool endFromEnd = false
-    bool inclusive = false
-    Type type
+public struct BSlice {
+    public TextSpan span
+    public BExpr target
+    public BExpr start = -1
+    public bool startFromEnd = false
+    public BExpr end = -1
+    public bool endFromEnd = false
+    public bool inclusive = false
+    public Type type
 }
 
-struct BRange {
-    TextSpan span
-    BExpr start
-    BExpr end
-    bool inclusive = false
-    Type type
+public struct BRange {
+    public TextSpan span
+    public BExpr start
+    public BExpr end
+    public bool inclusive = false
+    public Type type
 }
 
-struct BIs {
-    TextSpan span
-    BExpr value
-    BPattern pattern
+public struct BIs {
+    public TextSpan span
+    public BExpr value
+    public BPattern pattern
 }
 
-struct BSwitchExpr {
-    TextSpan span
-    BExpr value
-    List<BSwitchArm> arms = List<BSwitchArm>()
-    Type type
+public struct BSwitchExpr {
+    public TextSpan span
+    public BExpr value
+    public List<BSwitchArm> arms = List<BSwitchArm>()
+    public Type type
 }
 
-struct BInterpolated {
-    TextSpan span
-    List<BInterpolationPart> parts = List<BInterpolationPart>()
+public struct BInterpolated {
+    public TextSpan span
+    public List<BInterpolationPart> parts = List<BInterpolationPart>()
 }
 
-struct BMove {
-    TextSpan span
-    BExpr operand
-    Type type = -1
+public struct BMove {
+    public TextSpan span
+    public BExpr operand
+    public Type type = -1
 }
 
-struct BTry {
-    TextSpan span
-    BExpr operand
-    Type type
+public struct BTry {
+    public TextSpan span
+    public BExpr operand
+    public Type type
 }
 
-struct BCatch {
-    TextSpan span
-    BExpr operand
-    LocalId binding = -1
-    VariantId variant = -1
-    BExpr handler
-    Type type
+public struct BCatch {
+    public TextSpan span
+    public BExpr operand
+    public LocalId binding = -1
+    public VariantId variant = -1
+    public BExpr handler
+    public Type type
 }
 
-struct BJump {
-    TextSpan span
-    BStmt jump
+public struct BJump {
+    public TextSpan span
+    public BStmt jump
 }
 
-struct BBlockExpr {
-    TextSpan span
-    BStmt block
-    Type type
+public struct BBlockExpr {
+    public TextSpan span
+    public BStmt block
+    public Type type
 }
 
-struct BErrorVariant {
-    TextSpan span
-    VariantId variant
-    List<BExpr> payload = List<BExpr>()
-    Type type = -1
+public struct BErrorVariant {
+    public TextSpan span
+    public VariantId variant
+    public List<BExpr> payload = List<BExpr>()
+    public Type type = -1
 }
 
-struct BEnumMember {
-    TextSpan span
-    EnumMemberId member
-    Type type = -1
+public struct BEnumMember {
+    public TextSpan span
+    public EnumMemberId member
+    public Type type = -1
 }
 
-struct BUnionNew {
-    TextSpan span
-    VariantId variant
-    List<BExpr> payload = List<BExpr>()
-    Type type = -1
+public struct BUnionNew {
+    public TextSpan span
+    public VariantId variant
+    public List<BExpr> payload = List<BExpr>()
+    public Type type = -1
 }
 
-struct BEnumValues {
-    TextSpan span
-    EnumId enumId
-    Type type
+public struct BEnumValues {
+    public TextSpan span
+    public EnumId enumId
+    public Type type
 }
 
-struct BStaticArray {
-    TextSpan span
-    ConstId constId
-    Type type = -1
+public struct BStaticArray {
+    public TextSpan span
+    public ConstId constId
+    public Type type = -1
 }
 
-struct BStackalloc {
-    TextSpan span
-    Type element
-    i64 count
-    Type type
+public struct BStackalloc {
+    public TextSpan span
+    public Type element
+    public i64 count
+    public Type type
 }
 
-struct BErrorExpr {
-    TextSpan span
+public struct BErrorExpr {
+    public TextSpan span
 }
 
-struct BTypeRef {
-    TextSpan span
-    Type referenced
+public struct BTypeRef {
+    public TextSpan span
+    public Type referenced
 }
 
-struct BModuleRef {
-    TextSpan span
-    ModId module
+public struct BModuleRef {
+    public TextSpan span
+    public ModId module
 }
 
-struct BLambda {
-    TextSpan span
-    FuncId lambda
-    List<BExpr> captures = List<BExpr>()
-    Type functionType
+public struct BLambda {
+    public TextSpan span
+    public FuncId lambda
+    public List<BExpr> captures = List<BExpr>()
+    public Type functionType
 }
 
-struct BFunctionRef {
-    TextSpan span
-    FuncId function
-    Type functionType
+public struct BFunctionRef {
+    public TextSpan span
+    public FuncId function
+    public Type functionType
 }
 
-struct BBlock {
-    TextSpan span
-    List<BStmt> statements = List<BStmt>()
+public struct BBlock {
+    public TextSpan span
+    public List<BStmt> statements = List<BStmt>()
 }
 
-struct BLocalDecl {
-    TextSpan span
-    LocalId local
-    BExpr initializer = -1
+public struct BLocalDecl {
+    public TextSpan span
+    public LocalId local
+    public BExpr initializer = -1
 }
 
-struct BExprStmt {
-    TextSpan span
-    BExpr expr
+public struct BExprStmt {
+    public TextSpan span
+    public BExpr expr
 }
 
-struct BAssign {
-    TextSpan span
-    BExpr target
-    BExpr value
-    parser.BinaryOp? op = null
+public struct BAssign {
+    public TextSpan span
+    public BExpr target
+    public BExpr value
+    public parser.BinaryOp? op = null
 }
 
-struct BReturn {
-    TextSpan span
-    BExpr value = -1
+public struct BReturn {
+    public TextSpan span
+    public BExpr value = -1
 }
 
-struct BFail {
-    TextSpan span
-    BExpr error
+public struct BFail {
+    public TextSpan span
+    public BExpr error
 }
 
-struct BBecome {
-    TextSpan span
-    VariantId state
-    List<BExpr> payload = List<BExpr>()
+public struct BBecome {
+    public TextSpan span
+    public VariantId state
+    public List<BExpr> payload = List<BExpr>()
 }
 
-struct BBreak {
-    TextSpan span
-    i64 target
+public struct BBreak {
+    public TextSpan span
+    public i64 target
 }
 
-struct BContinue {
-    TextSpan span
-    i64 target
+public struct BContinue {
+    public TextSpan span
+    public i64 target
 }
 
-struct BIf {
-    TextSpan span
-    BExpr condition
-    BStmt then
-    BStmt elseBranch = -1
-    bool isNever = false
+public struct BIf {
+    public TextSpan span
+    public BExpr condition
+    public BStmt then
+    public BStmt elseBranch = -1
+    public bool isNever = false
+    public bool guarded = false
 }
 
-struct BWhile {
-    TextSpan span
-    BExpr condition
-    BStmt body
-    i64 target
+public struct BWhile {
+    public TextSpan span
+    public BExpr condition
+    public BStmt body
+    public i64 target
 }
 
-struct BDoWhile {
-    TextSpan span
-    BStmt body
-    BExpr condition
-    i64 target
+public struct BDoWhile {
+    public TextSpan span
+    public BStmt body
+    public BExpr condition
+    public i64 target
 }
 
-struct BFor {
-    TextSpan span
-    LocalId variable
-    BExpr iterable
-    BStmt body
-    i64 target
-    UserIteration? userIteration = null
+public struct BFor {
+    public TextSpan span
+    public LocalId variable
+    public BExpr iterable
+    public BStmt body
+    public i64 target
+    public UserIteration? userIteration = null
 }
 
-struct BSwitch {
-    TextSpan span
-    BExpr value
-    List<BSwitchSection> sections = List<BSwitchSection>()
-    i64 target
-    bool exhaustive = false
+public struct BSwitch {
+    public TextSpan span
+    public BExpr value
+    public List<BSwitchSection> sections = List<BSwitchSection>()
+    public i64 target
+    public bool exhaustive = false
 }
 
-struct BDefer {
-    TextSpan span
-    BStmt body
+public struct BDefer {
+    public TextSpan span
+    public BStmt body
 }
 
-struct BAssert {
-    TextSpan span
-    BExpr condition
-    ErrorSetId failsWith = -1
-    VariantId failsCase = -1
+public struct BAssert {
+    public TextSpan span
+    public BExpr condition
+    public ErrorSetId failsWith = -1
+    public VariantId failsCase = -1
 }
 
-struct BErrdefer {
-    TextSpan span
-    LocalId error = -1
-    BStmt body
+public struct BErrdefer {
+    public TextSpan span
+    public LocalId error = -1
+    public BStmt body
 }
 
-struct BPanicDefer {
-    TextSpan span
-    LocalId panic = -1
-    BStmt body
+public struct BPanicDefer {
+    public TextSpan span
+    public LocalId panic = -1
+    public BStmt body
 }
 
-struct BSetOnPanic {
-    TextSpan span
-    FuncId handler
+public struct BSetOnPanic {
+    public TextSpan span
+    public FuncId handler
 }
 
-struct BContext {
-    TextSpan span
-    BExpr allocator
-    BStmt body
+public struct BContext {
+    public TextSpan span
+    public BExpr allocator
+    public BStmt body
 }
 
-struct BErrorStmt {
-    TextSpan span
+public struct BErrorStmt {
+    public TextSpan span
 }
 
-struct BConstantPattern {
-    TextSpan span
-    Type inputType
-    BExpr value
+public struct BConstantPattern {
+    public TextSpan span
+    public Type inputType
+    public BExpr value
 }
 
-struct BRelationalPattern {
-    TextSpan span
-    Type inputType
-    parser.BinaryOp op
-    BExpr value
+public struct BRelationalPattern {
+    public TextSpan span
+    public Type inputType
+    public parser.BinaryOp op
+    public BExpr value
 }
 
-struct BRangePattern {
-    TextSpan span
-    Type inputType
-    BExpr start
-    BExpr end
-    bool inclusive = false
+public struct BRangePattern {
+    public TextSpan span
+    public Type inputType
+    public BExpr start
+    public BExpr end
+    public bool inclusive = false
 }
 
-struct BBindPattern {
-    TextSpan span
-    Type inputType
-    LocalId local = -1
+public struct BBindPattern {
+    public TextSpan span
+    public Type inputType
+    public LocalId local = -1
 }
 
-struct BNotPattern {
-    TextSpan span
-    Type inputType
-    BPattern operand
+public struct BNotPattern {
+    public TextSpan span
+    public Type inputType
+    public BPattern operand
 }
 
-struct BBinaryPattern {
-    TextSpan span
-    Type inputType
-    bool isAnd = false
-    BPattern left
-    BPattern right
+public struct BBinaryPattern {
+    public TextSpan span
+    public Type inputType
+    public bool isAnd = false
+    public BPattern left
+    public BPattern right
 }
 
-struct BPropertyPattern {
-    TextSpan span
-    Type inputType
-    Type valueType
-    List<BSubpattern> subpatterns = List<BSubpattern>()
-    LocalId designation = -1
+public struct BPropertyPattern {
+    public TextSpan span
+    public Type inputType
+    public Type valueType
+    public List<BSubpattern> subpatterns = List<BSubpattern>()
+    public LocalId designation = -1
 }
 
-struct BUnionField {
-    TextSpan span
-    BExpr receiver
-    VariantId variant
-    i64 index
-    Type type = -1
+public struct BUnionField {
+    public TextSpan span
+    public BExpr receiver
+    public VariantId variant
+    public i64 index
+    public Type type = -1
 }
 
-struct BUnionPattern {
-    TextSpan span
-    Type inputType
-    VariantId variant
-    List<BPattern> subpatterns = List<BPattern>()
-    LocalId designation = -1
+public struct BUnionPattern {
+    public TextSpan span
+    public Type inputType
+    public VariantId variant
+    public List<BPattern> subpatterns = List<BPattern>()
+    public LocalId designation = -1
 }
 
-struct BErrorField {
-    TextSpan span
-    BExpr receiver
-    VariantId variant
-    i64 index
-    Type type = -1
+public struct BErrorField {
+    public TextSpan span
+    public BExpr receiver
+    public VariantId variant
+    public i64 index
+    public Type type = -1
 }
 
-struct BErrorPattern {
-    TextSpan span
-    Type inputType
-    VariantId variant
-    List<BPattern> subpatterns = List<BPattern>()
+public struct BErrorPattern {
+    public TextSpan span
+    public Type inputType
+    public VariantId variant
+    public List<BPattern> subpatterns = List<BPattern>()
 }
 
-struct BMethodGroup {
-    TextSpan span
-    BExpr receiver = -1
-    FuncId function
-    List<TextSpan> typeArgs = List<TextSpan>()
+public struct BMethodGroup {
+    public TextSpan span
+    public BExpr receiver = -1
+    public FuncId function
+    public List<TextSpan> typeArgs = List<TextSpan>()
 }
 
-struct BVariantGroup {
-    TextSpan span
-    VariantId variant
+public struct BVariantGroup {
+    public TextSpan span
+    public VariantId variant
 }
 
-struct BBuiltinGroup {
-    TextSpan span
-    BExpr receiver
-    string name
+public struct BBuiltinGroup {
+    public TextSpan span
+    public BExpr receiver
+    public string name
 }
 
-struct BSwitchArm {
-    TextSpan span
-    BPattern pattern
-    BExpr guard = -1
-    BExpr value
+public struct BSwitchArm {
+    public TextSpan span
+    public BPattern pattern
+    public BExpr guard = -1
+    public BExpr value
 }
 
-struct BInterpolationPart {
-    string? text = null
-    BExpr value = -1
-    BFormatSpec? spec = null
+public struct BInterpolationPart {
+    public string? text = null
+    public BExpr value = -1
+    public BFormatSpec? spec = null
 }
 
-struct BFormatSpec {
-    i64 radix = 0
-    bool debug = false
-    i64 width = 0
-    u32 fill = 32
-    i64 align = -1
-    i64 digits = -1
+public struct BFormatSpec {
+    public i64 radix = 0
+    public bool debug = false
+    public i64 width = 0
+    public u32 fill = 32
+    public i64 align = -1
+    public i64 digits = -1
 }
 
-struct UserIteration {
-    IterationKind kind
-    FuncId advance = -1
-    FuncId item = -1
-    LocalId spill = -1
-    FieldId advanceField = -1
-    FieldId itemField = -1
+public struct UserIteration {
+    public IterationKind kind
+    public FuncId advance = -1
+    public FuncId item = -1
+    public LocalId spill = -1
+    public FieldId advanceField = -1
+    public FieldId itemField = -1
 }
 
-struct BSwitchSection {
-    TextSpan span
-    BPattern pattern = -1
-    BExpr guard = -1
-    List<BStmt> body = List<BStmt>()
+public struct BSwitchSection {
+    public TextSpan span
+    public BPattern pattern = -1
+    public BExpr guard = -1
+    public List<BStmt> body = List<BStmt>()
 }
 
-struct BSubpattern {
-    List<BMemberStep> path = List<BMemberStep>()
-    BPattern pattern
+public struct BSubpattern {
+    public List<BMemberStep> path = List<BMemberStep>()
+    public BPattern pattern
 }
 
-struct BMemberStep {
-    FieldId field = -1
-    PropertyId propertyId = -1
-    i64 tupleIndex = -1
-    BuiltinMember? builtin = null
-    Type type
+public struct BMemberStep {
+    public FieldId field = -1
+    public PropertyId propertyId = -1
+    public i64 tupleIndex = -1
+    public BuiltinMember? builtin = null
+    public Type type
 }
 
-struct StructChecks {
-    FuncId check
-    List<StructRule> rules = List<StructRule>()
+public struct StructChecks {
+    public FuncId check
+    public List<StructRule> rules = List<StructRule>()
 }
 
-struct StructRule {
-    TextSpan span
-    FieldId field = -1
-    BExpr condition
-    List<FieldId> reads = List<FieldId>()
+public struct StructRule {
+    public TextSpan span
+    public FieldId field = -1
+    public BExpr condition
+    public List<FieldId> reads = List<FieldId>()
 }
 
-struct BWithUpdate {
-    FieldId field
-    BExpr value
+public struct BWithUpdate {
+    public FieldId field
+    public BExpr value
 }
 
 // ── Constructors ───────────────────────────────────────────────────────────────
 
-BExpr addLiteral(ref Ctx c, from move BLiteral n) {
+public BExpr addLiteral(ref Ctx c, from move BLiteral n) uses alloc {
     c.bLiterals.append(move n)
     return makeBound(.literal, at: c.bLiterals.length - 1)
 }
 
-BExpr addSymbolLiteral(ref Ctx c, from move BSymbolLiteral n) {
+public BExpr addSymbolLiteral(ref Ctx c, from move BSymbolLiteral n) uses alloc {
     c.bSymbolLiterals.append(move n)
     return makeBound(.symbolLiteral, at: c.bSymbolLiterals.length - 1)
 }
 
-BExpr addDefault(ref Ctx c, from move BDefault n) {
+public BExpr addDefault(ref Ctx c, from move BDefault n) uses alloc {
     c.bDefaults.append(move n)
     return makeBound(.defaultValue, at: c.bDefaults.length - 1)
 }
 
-BExpr addLocal(ref Ctx c, from move BLocal n) {
+public BExpr addLocal(ref Ctx c, from move BLocal n) uses alloc {
     var m = move n
     // C# `new BoundLocal(n, local) { Type = known }` keeps a narrowed state type (BinderExpressions.cs:526).
     if m.type == -1 { m.type = c.locals[m.local].type }
@@ -997,64 +1216,64 @@ BExpr addLocal(ref Ctx c, from move BLocal n) {
     return makeBound(.local, at: c.bLocals.length - 1)
 }
 
-BExpr addThis(ref Ctx c, from move BThis n) {
+public BExpr addThis(ref Ctx c, from move BThis n) uses alloc {
     c.bThises.append(move n)
     return makeBound(.thisRef, at: c.bThises.length - 1)
 }
 
-BExpr addField(ref Ctx c, from move BField n) {
+public BExpr addField(ref Ctx c, from move BField n) uses alloc {
     var m = move n
     m.type = c.fields[m.field].type
     c.bFields.append(move m)
     return makeBound(.field, at: c.bFields.length - 1)
 }
 
-BExpr addTupleElement(ref Ctx c, from move BTupleElement n) {
+public BExpr addTupleElement(ref Ctx c, from move BTupleElement n) uses alloc {
     c.bTupleElements.append(move n)
     return makeBound(.tupleElement, at: c.bTupleElements.length - 1)
 }
 
-BExpr addCall(ref Ctx c, from move BCall n) {
+public BExpr addCall(ref Ctx c, from move BCall n) uses alloc {
     c.bCalls.append(move n)
     return makeBound(.call, at: c.bCalls.length - 1)
 }
 
-BExpr addBuiltinCall(ref Ctx c, from move BBuiltinCall n) {
+public BExpr addBuiltinCall(ref Ctx c, from move BBuiltinCall n) uses alloc {
     c.bBuiltinCalls.append(move n)
     return makeBound(.builtinCall, at: c.bBuiltinCalls.length - 1)
 }
 
-BExpr addUnary(ref Ctx c, from move BUnary n) {
+public BExpr addUnary(ref Ctx c, from move BUnary n) uses alloc {
     c.bUnaries.append(move n)
     return makeBound(.unary, at: c.bUnaries.length - 1)
 }
 
-BExpr addBinary(ref Ctx c, from move BBinary n) {
+public BExpr addBinary(ref Ctx c, from move BBinary n) uses alloc {
     c.bBinaries.append(move n)
     return makeBound(.binary, at: c.bBinaries.length - 1)
 }
 
-BExpr addConversion(ref Ctx c, from move BConversion n) {
+public BExpr addConversion(ref Ctx c, from move BConversion n) uses alloc {
     c.bConversions.append(move n)
     return makeBound(.conversion, at: c.bConversions.length - 1)
 }
 
-BExpr addTryFrom(ref Ctx c, from move BTryFrom n) {
+public BExpr addTryFrom(ref Ctx c, from move BTryFrom n) uses alloc {
     c.bTryFroms.append(move n)
     return makeBound(.tryFrom, at: c.bTryFroms.length - 1)
 }
 
-BExpr addConditional(ref Ctx c, from move BConditional n) {
+public BExpr addConditional(ref Ctx c, from move BConditional n) uses alloc {
     c.bConditionals.append(move n)
     return makeBound(.conditional, at: c.bConditionals.length - 1)
 }
 
-BExpr addCoalesce(ref Ctx c, from move BCoalesce n) {
+public BExpr addCoalesce(ref Ctx c, from move BCoalesce n) uses alloc {
     c.bCoalesces.append(move n)
     return makeBound(.coalesce, at: c.bCoalesces.length - 1)
 }
 
-BExpr addStructLiteral(ref Ctx c, from move BStructLiteral n) {
+public BExpr addStructLiteral(ref Ctx c, from move BStructLiteral n) uses alloc {
     var m = move n
     // A state literal `T.s { … }` is of type `T.s` (`literal with { State = state, Type = stateType }`, BinderExpressions.cs:1609).
     if m.state == -1 || m.type == -1 { m.type = makeType(.structType, at: m.structId) }
@@ -1062,323 +1281,323 @@ BExpr addStructLiteral(ref Ctx c, from move BStructLiteral n) {
     return makeBound(.structLiteral, at: c.bStructLiterals.length - 1)
 }
 
-BExpr addWith(ref Ctx c, from move BWith n) {
+public BExpr addWith(ref Ctx c, from move BWith n) uses alloc {
     var m = move n
     m.type = exprType(in c, for: m.target)
     c.bWiths.append(move m)
     return makeBound(.withExpr, at: c.bWiths.length - 1)
 }
 
-BExpr addTuple(ref Ctx c, from move BTuple n) {
+public BExpr addTuple(ref Ctx c, from move BTuple n) uses alloc {
     c.bTuples.append(move n)
     return makeBound(.tuple, at: c.bTuples.length - 1)
 }
 
-BExpr addCollection(ref Ctx c, from move BCollection n) {
+public BExpr addCollection(ref Ctx c, from move BCollection n) uses alloc {
     c.bCollections.append(move n)
     return makeBound(.collection, at: c.bCollections.length - 1)
 }
 
-BExpr addSpread(ref Ctx c, from move BSpread n) {
+public BExpr addSpread(ref Ctx c, from move BSpread n) uses alloc {
     c.bSpreads.append(move n)
     return makeBound(.spread, at: c.bSpreads.length - 1)
 }
 
-BExpr addIndex(ref Ctx c, from move BIndex n) {
+public BExpr addIndex(ref Ctx c, from move BIndex n) uses alloc {
     c.bIndexes.append(move n)
     return makeBound(.index, at: c.bIndexes.length - 1)
 }
 
-BExpr addSlice(ref Ctx c, from move BSlice n) {
+public BExpr addSlice(ref Ctx c, from move BSlice n) uses alloc {
     c.bSlices.append(move n)
     return makeBound(.slice, at: c.bSlices.length - 1)
 }
 
-BExpr addRange(ref Ctx c, from move BRange n) {
+public BExpr addRange(ref Ctx c, from move BRange n) uses alloc {
     c.bRanges.append(move n)
     return makeBound(.range, at: c.bRanges.length - 1)
 }
 
-BExpr addIs(ref Ctx c, from move BIs n) {
+public BExpr addIs(ref Ctx c, from move BIs n) uses alloc {
     c.bIses.append(move n)
     return makeBound(.isExpr, at: c.bIses.length - 1)
 }
 
-BExpr addSwitchExpr(ref Ctx c, from move BSwitchExpr n) {
+public BExpr addSwitchExpr(ref Ctx c, from move BSwitchExpr n) uses alloc {
     c.bSwitchExprs.append(move n)
     return makeBound(.switchExpr, at: c.bSwitchExprs.length - 1)
 }
 
-BExpr addInterpolated(ref Ctx c, from move BInterpolated n) {
+public BExpr addInterpolated(ref Ctx c, from move BInterpolated n) uses alloc {
     c.bInterpolateds.append(move n)
     return makeBound(.interpolated, at: c.bInterpolateds.length - 1)
 }
 
-BExpr addMove(ref Ctx c, from move BMove n) {
+public BExpr addMove(ref Ctx c, from move BMove n) uses alloc {
     var m = move n
     m.type = exprType(in c, for: m.operand)
     c.bMoves.append(move m)
     return makeBound(.moveExpr, at: c.bMoves.length - 1)
 }
 
-BExpr addTry(ref Ctx c, from move BTry n) {
+public BExpr addTry(ref Ctx c, from move BTry n) uses alloc {
     c.bTries.append(move n)
     return makeBound(.tryExpr, at: c.bTries.length - 1)
 }
 
-BExpr addCatch(ref Ctx c, from move BCatch n) {
+public BExpr addCatch(ref Ctx c, from move BCatch n) uses alloc {
     c.bCatches.append(move n)
     return makeBound(.catchExpr, at: c.bCatches.length - 1)
 }
 
-BExpr addJump(ref Ctx c, from move BJump n) {
+public BExpr addJump(ref Ctx c, from move BJump n) uses alloc {
     c.bJumps.append(move n)
     return makeBound(.jump, at: c.bJumps.length - 1)
 }
 
-BExpr addBlockExpr(ref Ctx c, from move BBlockExpr n) {
+public BExpr addBlockExpr(ref Ctx c, from move BBlockExpr n) uses alloc {
     c.bBlockExprs.append(move n)
     return makeBound(.blockExpr, at: c.bBlockExprs.length - 1)
 }
 
-BExpr addErrorVariant(ref Ctx c, from move BErrorVariant n) {
+public BExpr addErrorVariant(ref Ctx c, from move BErrorVariant n) uses alloc {
     var m = move n
     m.type = makeType(.errorSet, at: c.errorVariants[m.variant].set)
     c.bErrorVariants.append(move m)
     return makeBound(.errorVariant, at: c.bErrorVariants.length - 1)
 }
 
-BExpr addEnumMember(ref Ctx c, from move BEnumMember n) {
+public BExpr addEnumMember(ref Ctx c, from move BEnumMember n) uses alloc {
     var m = move n
     m.type = makeType(.enumType, at: c.enumMembers[m.member].owner)
     c.bEnumMembers.append(move m)
     return makeBound(.enumMember, at: c.bEnumMembers.length - 1)
 }
 
-BExpr addUnionNew(ref Ctx c, from move BUnionNew n) {
+public BExpr addUnionNew(ref Ctx c, from move BUnionNew n) uses alloc {
     var m = move n
     m.type = makeType(.unionType, at: c.unionVariants[m.variant].owner)
     c.bUnionNews.append(move m)
     return makeBound(.unionNew, at: c.bUnionNews.length - 1)
 }
 
-BExpr addEnumValues(ref Ctx c, from move BEnumValues n) {
+public BExpr addEnumValues(ref Ctx c, from move BEnumValues n) uses alloc {
     c.bEnumValues.append(move n)
     return makeBound(.enumValues, at: c.bEnumValues.length - 1)
 }
 
-BExpr addStaticArray(ref Ctx c, from move BStaticArray n) {
+public BExpr addStaticArray(ref Ctx c, from move BStaticArray n) uses alloc {
     var m = move n
     m.type = c.consts[m.constId].type
     c.bStaticArrays.append(move m)
     return makeBound(.staticArray, at: c.bStaticArrays.length - 1)
 }
 
-BExpr addStackalloc(ref Ctx c, from move BStackalloc n) {
+public BExpr addStackalloc(ref Ctx c, from move BStackalloc n) uses alloc {
     c.bStackallocs.append(move n)
     return makeBound(.stackalloc, at: c.bStackallocs.length - 1)
 }
 
-BExpr addErrorExpr(ref Ctx c, from move BErrorExpr n) {
+public BExpr addErrorExpr(ref Ctx c, from move BErrorExpr n) uses alloc {
     c.bErrorExprs.append(move n)
     return makeBound(.errorExpr, at: c.bErrorExprs.length - 1)
 }
 
-BExpr addTypeRef(ref Ctx c, from move BTypeRef n) {
+public BExpr addTypeRef(ref Ctx c, from move BTypeRef n) uses alloc {
     c.bTypeRefs.append(move n)
     return makeBound(.typeRef, at: c.bTypeRefs.length - 1)
 }
 
-BExpr addModuleRef(ref Ctx c, from move BModuleRef n) {
+public BExpr addModuleRef(ref Ctx c, from move BModuleRef n) uses alloc {
     c.bModuleRefs.append(move n)
     return makeBound(.moduleRef, at: c.bModuleRefs.length - 1)
 }
 
-BExpr addLambda(ref Ctx c, from move BLambda n) {
+public BExpr addLambda(ref Ctx c, from move BLambda n) uses alloc {
     c.bLambdas.append(move n)
     return makeBound(.lambda, at: c.bLambdas.length - 1)
 }
 
-BExpr addFunctionRef(ref Ctx c, from move BFunctionRef n) {
+public BExpr addFunctionRef(ref Ctx c, from move BFunctionRef n) uses alloc {
     c.bFunctionRefs.append(move n)
     return makeBound(.functionRef, at: c.bFunctionRefs.length - 1)
 }
 
-BStmt addBlock(ref Ctx c, from move BBlock n) {
+public BStmt addBlock(ref Ctx c, from move BBlock n) uses alloc {
     c.bBlocks.append(move n)
     return makeBound(.block, at: c.bBlocks.length - 1)
 }
 
-BStmt addLocalDecl(ref Ctx c, from move BLocalDecl n) {
+public BStmt addLocalDecl(ref Ctx c, from move BLocalDecl n) uses alloc {
     c.bLocalDecls.append(move n)
     return makeBound(.localDecl, at: c.bLocalDecls.length - 1)
 }
 
-BStmt addExprStmt(ref Ctx c, from move BExprStmt n) {
+public BStmt addExprStmt(ref Ctx c, from move BExprStmt n) uses alloc {
     c.bExprStmts.append(move n)
     return makeBound(.exprStmt, at: c.bExprStmts.length - 1)
 }
 
-BStmt addAssign(ref Ctx c, from move BAssign n) {
+public BStmt addAssign(ref Ctx c, from move BAssign n) uses alloc {
     c.bAssigns.append(move n)
     return makeBound(.assign, at: c.bAssigns.length - 1)
 }
 
-BStmt addReturn(ref Ctx c, from move BReturn n) {
+public BStmt addReturn(ref Ctx c, from move BReturn n) uses alloc {
     c.bReturns.append(move n)
     return makeBound(.returnStmt, at: c.bReturns.length - 1)
 }
 
-BStmt addFail(ref Ctx c, from move BFail n) {
+public BStmt addFail(ref Ctx c, from move BFail n) uses alloc {
     c.bFails.append(move n)
     return makeBound(.failStmt, at: c.bFails.length - 1)
 }
 
-BStmt addBecome(ref Ctx c, from move BBecome n) {
+public BStmt addBecome(ref Ctx c, from move BBecome n) uses alloc {
     c.bBecomes.append(move n)
     return makeBound(.becomeStmt, at: c.bBecomes.length - 1)
 }
 
-BStmt addBreak(ref Ctx c, from move BBreak n) {
+public BStmt addBreak(ref Ctx c, from move BBreak n) uses alloc {
     c.bBreaks.append(move n)
     return makeBound(.breakStmt, at: c.bBreaks.length - 1)
 }
 
-BStmt addContinue(ref Ctx c, from move BContinue n) {
+public BStmt addContinue(ref Ctx c, from move BContinue n) uses alloc {
     c.bContinues.append(move n)
     return makeBound(.continueStmt, at: c.bContinues.length - 1)
 }
 
-BStmt addIf(ref Ctx c, from move BIf n) {
+public BStmt addIf(ref Ctx c, from move BIf n) uses alloc {
     c.bIfs.append(move n)
     return makeBound(.ifStmt, at: c.bIfs.length - 1)
 }
 
-BStmt addWhile(ref Ctx c, from move BWhile n) {
+public BStmt addWhile(ref Ctx c, from move BWhile n) uses alloc {
     c.bWhiles.append(move n)
     return makeBound(.whileStmt, at: c.bWhiles.length - 1)
 }
 
-BStmt addDoWhile(ref Ctx c, from move BDoWhile n) {
+public BStmt addDoWhile(ref Ctx c, from move BDoWhile n) uses alloc {
     c.bDoWhiles.append(move n)
     return makeBound(.doWhile, at: c.bDoWhiles.length - 1)
 }
 
-BStmt addFor(ref Ctx c, from move BFor n) {
+public BStmt addFor(ref Ctx c, from move BFor n) uses alloc {
     c.bFors.append(move n)
     return makeBound(.forStmt, at: c.bFors.length - 1)
 }
 
-BStmt addSwitch(ref Ctx c, from move BSwitch n) {
+public BStmt addSwitch(ref Ctx c, from move BSwitch n) uses alloc {
     c.bSwitches.append(move n)
     return makeBound(.switchStmt, at: c.bSwitches.length - 1)
 }
 
-BStmt addDefer(ref Ctx c, from move BDefer n) {
+public BStmt addDefer(ref Ctx c, from move BDefer n) uses alloc {
     c.bDefers.append(move n)
     return makeBound(.deferStmt, at: c.bDefers.length - 1)
 }
 
-BStmt addAssert(ref Ctx c, from move BAssert n) {
+public BStmt addAssert(ref Ctx c, from move BAssert n) uses alloc {
     c.bAsserts.append(move n)
     return makeBound(.assertStmt, at: c.bAsserts.length - 1)
 }
 
-BStmt addErrdefer(ref Ctx c, from move BErrdefer n) {
+public BStmt addErrdefer(ref Ctx c, from move BErrdefer n) uses alloc {
     c.bErrdefers.append(move n)
     return makeBound(.errdeferStmt, at: c.bErrdefers.length - 1)
 }
 
-BStmt addPanicDefer(ref Ctx c, from move BPanicDefer n) {
+public BStmt addPanicDefer(ref Ctx c, from move BPanicDefer n) uses alloc {
     c.bPanicDefers.append(move n)
     return makeBound(.panicDefer, at: c.bPanicDefers.length - 1)
 }
 
-BStmt addSetOnPanic(ref Ctx c, from move BSetOnPanic n) {
+public BStmt addSetOnPanic(ref Ctx c, from move BSetOnPanic n) uses alloc {
     c.bSetOnPanics.append(move n)
     return makeBound(.setOnPanic, at: c.bSetOnPanics.length - 1)
 }
 
-BStmt addContext(ref Ctx c, from move BContext n) {
+public BStmt addContext(ref Ctx c, from move BContext n) uses alloc {
     c.bContexts.append(move n)
     return makeBound(.contextStmt, at: c.bContexts.length - 1)
 }
 
-BStmt addErrorStmt(ref Ctx c, from move BErrorStmt n) {
+public BStmt addErrorStmt(ref Ctx c, from move BErrorStmt n) uses alloc {
     c.bErrorStmts.append(move n)
     return makeBound(.errorStmt, at: c.bErrorStmts.length - 1)
 }
 
-BPattern addConstantPattern(ref Ctx c, from move BConstantPattern n) {
+public BPattern addConstantPattern(ref Ctx c, from move BConstantPattern n) uses alloc {
     c.bConstantPatterns.append(move n)
     return makeBound(.constantPattern, at: c.bConstantPatterns.length - 1)
 }
 
-BPattern addRelationalPattern(ref Ctx c, from move BRelationalPattern n) {
+public BPattern addRelationalPattern(ref Ctx c, from move BRelationalPattern n) uses alloc {
     c.bRelationalPatterns.append(move n)
     return makeBound(.relationalPattern, at: c.bRelationalPatterns.length - 1)
 }
 
-BPattern addRangePattern(ref Ctx c, from move BRangePattern n) {
+public BPattern addRangePattern(ref Ctx c, from move BRangePattern n) uses alloc {
     c.bRangePatterns.append(move n)
     return makeBound(.rangePattern, at: c.bRangePatterns.length - 1)
 }
 
-BPattern addBindPattern(ref Ctx c, from move BBindPattern n) {
+public BPattern addBindPattern(ref Ctx c, from move BBindPattern n) uses alloc {
     c.bBindPatterns.append(move n)
     return makeBound(.bindPattern, at: c.bBindPatterns.length - 1)
 }
 
-BPattern addNotPattern(ref Ctx c, from move BNotPattern n) {
+public BPattern addNotPattern(ref Ctx c, from move BNotPattern n) uses alloc {
     c.bNotPatterns.append(move n)
     return makeBound(.notPattern, at: c.bNotPatterns.length - 1)
 }
 
-BPattern addBinaryPattern(ref Ctx c, from move BBinaryPattern n) {
+public BPattern addBinaryPattern(ref Ctx c, from move BBinaryPattern n) uses alloc {
     c.bBinaryPatterns.append(move n)
     return makeBound(.binaryPattern, at: c.bBinaryPatterns.length - 1)
 }
 
-BPattern addPropertyPattern(ref Ctx c, from move BPropertyPattern n) {
+public BPattern addPropertyPattern(ref Ctx c, from move BPropertyPattern n) uses alloc {
     c.bPropertyPatterns.append(move n)
     return makeBound(.propertyPattern, at: c.bPropertyPatterns.length - 1)
 }
 
-BExpr addUnionField(ref Ctx c, from move BUnionField n) {
+public BExpr addUnionField(ref Ctx c, from move BUnionField n) uses alloc {
     var m = move n
     m.type = c.locals[c.unionVariants[m.variant].fields[m.index]].type
     c.bUnionFields.append(move m)
     return makeBound(.unionField, at: c.bUnionFields.length - 1)
 }
 
-BPattern addUnionPattern(ref Ctx c, from move BUnionPattern n) {
+public BPattern addUnionPattern(ref Ctx c, from move BUnionPattern n) uses alloc {
     c.bUnionPatterns.append(move n)
     return makeBound(.unionPattern, at: c.bUnionPatterns.length - 1)
 }
 
-BExpr addErrorField(ref Ctx c, from move BErrorField n) {
+public BExpr addErrorField(ref Ctx c, from move BErrorField n) uses alloc {
     var m = move n
     m.type = c.locals[c.errorVariants[m.variant].fields[m.index]].type
     c.bErrorFields.append(move m)
     return makeBound(.errorField, at: c.bErrorFields.length - 1)
 }
 
-BPattern addErrorPattern(ref Ctx c, from move BErrorPattern n) {
+public BPattern addErrorPattern(ref Ctx c, from move BErrorPattern n) uses alloc {
     c.bErrorPatterns.append(move n)
     return makeBound(.errorPattern, at: c.bErrorPatterns.length - 1)
 }
 
-BExpr addMethodGroup(ref Ctx c, from move BMethodGroup n) {
+public BExpr addMethodGroup(ref Ctx c, from move BMethodGroup n) uses alloc {
     c.bMethodGroups.append(move n)
     return makeBound(.methodGroup, at: c.bMethodGroups.length - 1)
 }
 
-BExpr addVariantGroup(ref Ctx c, from move BVariantGroup n) {
+public BExpr addVariantGroup(ref Ctx c, from move BVariantGroup n) uses alloc {
     c.bVariantGroups.append(move n)
     return makeBound(.variantGroup, at: c.bVariantGroups.length - 1)
 }
 
-BExpr addBuiltinGroup(ref Ctx c, from move BBuiltinGroup n) {
+public BExpr addBuiltinGroup(ref Ctx c, from move BBuiltinGroup n) uses alloc {
     c.bBuiltinGroups.append(move n)
     return makeBound(.builtinGroup, at: c.bBuiltinGroups.length - 1)
 }
@@ -1386,7 +1605,7 @@ BExpr addBuiltinGroup(ref Ctx c, from move BBuiltinGroup n) {
 // ── Base-class members ─────────────────────────────────────────────────────────
 
 /// C# `BoundExpr.Type`.
-Type exprType(in Ctx c, for BExpr e) {
+public Type exprType(in Ctx c, for BExpr e) {
     let i = boundIndex(e)
     switch boundKind(e) {
         case .literal: return c.bLiterals[i].type
@@ -1441,7 +1660,7 @@ Type exprType(in Ctx c, for BExpr e) {
 }
 
 /// C# `BoundNode.Syntax.Span`.
-TextSpan nodeSpan(in Ctx c, for BNode n) {
+public TextSpan nodeSpan(in Ctx c, for BNode n) {
     let i = boundIndex(n)
     switch boundKind(n) {
         case .literal: return c.bLiterals[i].span
@@ -1525,7 +1744,7 @@ TextSpan nodeSpan(in Ctx c, for BNode n) {
 }
 
 /// C# `BoundPattern.InputType`.
-Type patternInput(in Ctx c, for BPattern p) {
+public Type patternInput(in Ctx c, for BPattern p) {
     let i = boundIndex(p)
     switch boundKind(p) {
         case .constantPattern: return c.bConstantPatterns[i].inputType
@@ -1544,7 +1763,7 @@ Type patternInput(in Ctx c, for BPattern p) {
 // ── Walk ───────────────────────────────────────────────────────────────────────
 
 /// C# `BoundTree.Children`: the direct children of a node, in evaluation order.
-List<BNode> children(in Ctx c, for BNode n) {
+public List<BNode> children(in Ctx c, for BNode n) uses alloc {
     var result = List<BNode>()
     let i = boundIndex(n)
     switch boundKind(n) {
@@ -1702,7 +1921,7 @@ List<BNode> children(in Ctx c, for BNode n) {
 }
 
 /// C# `BoundTree.Descendants`: the node and everything below it, pre-order.
-List<BNode> descendants(in Ctx c, for BNode n) {
+public List<BNode> descendants(in Ctx c, for BNode n) uses alloc {
     var result = List<BNode>()
     var stack = List<BNode>()
     stack.append(n)

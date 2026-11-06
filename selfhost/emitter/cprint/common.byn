@@ -1,0 +1,240 @@
+// T2: CEmitter.cs 397-476 (`CType`, `ErrorCType`, `Key`, `Named`), 588-599 (`Helper`), 1237-1253 (`Line`,
+// `LineOf`, `Loc`, `MapLine`). Registration order is byte-visible (D5).
+
+import semantics
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+/// CEmitter.cs:399 `CType`: the C name of `t`, registering a named type in `_types`/`_typeOrder`.
+public string cType(ref CCtx cc, from ref Ctx c, for Type t) uses alloc {
+    let i = i64(t & 0xFFFFFFFF)
+    switch semantics.kindOf(t) {
+        case .primitive:
+            switch semantics.primKindOf(i) {
+                case .i8: return "int8_t"
+                case .i16: return "int16_t"
+                case .i32: return "int32_t"
+                case .i64 or .isize: return "int64_t"
+                case .u8: return "uint8_t"
+                case .u16: return "uint16_t"
+                case .u32 or .char: return "uint32_t"
+                case .u64 or .usize: return "uint64_t"
+                case .f32: return "float"
+                case .f64: return "double"
+                case .bool: return "bool"
+                case .string: return "byn_str"
+                default: return "void"
+            }
+        // One error type for the program: every set converts to every union of sets without changing its bits.
+        case .errorSet or .errorUnion: return named(ref cc, from: ref c, for: t, as: "byn_err")
+        case .enumType: return $"byn_{c.modules[c.enums[i].module].cName}_{c.enums[i].name}"
+        case .unionType:
+            let typeArgs = t2Copy(in c.unions[i].typeArgs)
+            let args = t2TypeArgs(ref c, for: in typeArgs)
+            return named(ref cc, from: ref c, for: t, as: $"byn_{c.modules[c.unions[i].module].cName}_{c.unions[i].name}{args}")
+        case .builtin:
+            switch semantics.builtinKindOf(i) {
+                case .arena: return "byn_arena*"
+                case .strBuf: return "byn_writer"
+                case .ioStream or .ioInput: return "int32_t"
+                case .processResult: return "byn_process"
+                case .panic: return "byn_panic_info"
+                case .formatSpec: return "byn_format_spec"
+                case .symbol: return "byn_sym"
+                default: return named(ref cc, from: ref c, for: t, as: null)
+            }
+        case .textView: return "byn_text_view"
+        // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
+        case .owned: return $"{cType(ref cc, from: ref c, for: c.ownedTypes[i])}*"
+        case .untrusted: return cType(ref cc, from: ref c, for: c.untrustedTypes[i])
+        // A state type is stored as its struct, which carries the tag.
+        case .state: return cType(ref cc, from: ref c, for: semantics.makeType(.structType, at: c.stateTypes[i].s))
+        // `dyn ref readonly I` shares the C type of `dyn ref I`.
+        case .dynRef:
+            let k = key(ref c, for: semantics.makeType(.interfaceType, at: c.dynRefTypes[i].iface))
+            return named(ref cc, from: ref c, for: t, as: $"byn_dyn_{k}")
+        case .range: return cType(ref cc, from: ref c, for: semantics.rangeLayout(ref c, by: t))
+        default: return named(ref cc, from: ref c, for: t, as: null)
+    }
+}
+
+/// CEmitter.cs:441 `ErrorCType`: the C type of every error, and of what a failing function returns.
+public string errorCType(ref CCtx cc, from ref Ctx c) uses alloc {
+    let sets = List<semantics.ErrorSetId>()
+    let excluded = List<semantics.VariantId>()
+    return cType(ref cc, from: ref c, for: semantics.errorUnionOf(ref c, for: in sets, as: in excluded))
+}
+
+/// CEmitter.cs:444 `Key`: an identifier fragment naming a type, for generated type and helper names.
+public string key(ref Ctx c, for Type t) uses alloc {
+    let i = i64(t & 0xFFFFFFFF)
+    switch semantics.kindOf(t) {
+        case .primitive:
+            let p = semantics.primKindOf(i)
+            return p == .string ? "str" : semantics.primitiveName(p)
+        case .errorSet or .errorUnion: return "err"
+        case .builtin:
+            switch semantics.builtinKindOf(i) {
+                case .arena: return "arena"
+                case .strBuf: return "strbuf"
+                case .processResult: return "process"
+                case .panic: return "panic"
+                case .formatSpec: return "formatspec"
+                case .symbol: return "sym"
+                default: return "iostream"
+            }
+        case .structType:
+            let typeArgs = t2Copy(in c.structs[i].typeArgs)
+            let args = t2TypeArgs(ref c, for: in typeArgs)
+            return $"{c.modules[c.structs[i].module].cName}__{c.structs[i].name}{args}"
+        case .enumType: return $"{c.modules[c.enums[i].module].cName}__{c.enums[i].name}"
+        case .unionType:
+            let typeArgs = t2Copy(in c.unions[i].typeArgs)
+            let args = t2TypeArgs(ref c, for: in typeArgs)
+            return $"{c.modules[c.unions[i].module].cName}__{c.unions[i].name}{args}"
+        case .interfaceType:
+            let typeArgs = t2Copy(in c.interfaces[i].typeArgs)
+            let args = t2TypeArgs(ref c, for: in typeArgs)
+            return $"{c.modules[c.interfaces[i].module].cName}__{c.interfaces[i].name}{args}"
+        case .dynRef: return $"dyn_{key(ref c, for: semantics.makeType(.interfaceType, at: c.dynRefTypes[i].iface))}"
+        case .optional: return $"opt_{key(ref c, for: c.optionalTypes[i])}"
+        case .result: return $"res_{key(ref c, for: c.resultTypes[i].value)}"
+        case .span: return $"span_{key(ref c, for: c.spanTypes[i].element)}"
+        case .textView: return "textview"
+        case .list: return $"list_{key(ref c, for: c.listTypes[i])}"
+        case .owned: return $"own_{key(ref c, for: c.ownedTypes[i])}"
+        case .untrusted: return key(ref c, for: c.untrustedTypes[i])
+        case .state: return key(ref c, for: semantics.makeType(.structType, at: c.stateTypes[i].s))
+        case .map: return $"map_{key(ref c, for: c.mapTypes[i].key)}_{key(ref c, for: c.mapTypes[i].value)}"
+        case .array: return $"arr{c.arrayTypes[i].length}_{key(ref c, for: c.arrayTypes[i].element)}"
+        case .tuple:
+            var types = List<Type>()
+            for f in c.tupleTypes[i] { types.append(f.type) }
+            var sb = StrBuf()
+            sb.append($"tup{types.length}_")
+            for k in 0..types.length {
+                if k > 0 { sb.append("_") }
+                sb.append(key(ref c, for: types[k]))
+            }
+            return $"{sb.finish()}"
+        case .range: return key(ref c, for: semantics.rangeLayout(ref c, by: t))
+        // The fails and uses markers come before the return key, so a nested function type cannot share a key with an outer one.
+        case .function:
+            var parameters = List<Type>()
+            for p in c.functionTypes[i].parameters { parameters.append(p) }
+            var effects = List<string>()
+            for u in c.functionTypes[i].effects { effects.append(u) }
+            let failing = c.functionTypes[i].errorSets.length > 0
+            let ret = c.functionTypes[i].ret
+            var sb = StrBuf()
+            sb.append($"fn{parameters.length}")
+            if failing { sb.append("f") }
+            if effects.length > 0 { sb.append($"u{effects.length}") }
+            sb.append("_")
+            for p in parameters { sb.append($"{key(ref c, for: p)}_") }
+            for u in effects { sb.append($"{u}_") }
+            sb.append(key(ref c, for: ret))
+            return $"{sb.finish()}"
+        default: panic($"no C type for {semantics.typeDisplay(ref c, by: t)}")
+    }
+}
+
+/// CEmitter.cs:471 `Named`: registers `t` under `name` (default `bynt_` + its key) on first sight.
+string named(ref CCtx cc, from ref Ctx c, for Type t, as string? name) uses alloc {
+    let n = name ?? $"bynt_{key(ref c, for: t)}"
+    unless cc.types.contains(n) {
+        cc.types[n] = t
+        cc.typeOrder.append(n)
+    }
+    return n
+}
+
+/// CEmitter.cs:372 `TypeArgs` (T6's range, needed by `CType`/`Key`; Q766): `__` + each argument's key.
+string t2TypeArgs(ref Ctx c, for in List<Type> args) uses alloc {
+    var sb = StrBuf()
+    for a in args { sb.append($"__{key(ref c, for: a)}") }
+    return $"{sb.finish()}"
+}
+
+/// A copy of `xs`, so `c` can be passed by `ref` beside it.
+List<Type> t2Copy(in List<Type> xs) uses alloc {
+    var r = List<Type>()
+    for x in xs { r.append(x) }
+    return r
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// CEmitter.cs:591 `Helper` (D5): registers helper `name` once through `helperReserve` and `helperFill`. `body` is
+/// already built, so a caller whose body registers other helpers calls the pair itself (Q763).
+public string helper(ref CCtx cc, for string name, from string proto, as string body) uses alloc {
+    if helperReserve(ref cc, for: name, from: proto) { let _ = helperFill(ref cc, for: name, from: proto, as: body) }
+    return name
+}
+
+// ── Lines ────────────────────────────────────────────────────────────────────
+
+/// CEmitter.cs:1237 `Line`: `text` indented by `f.indent`, on its own line.
+public void line(ref StrBuf sb, by in CFunc f, for string text) {
+    for k in 0..f.indent * 4 { sb.append(" ") }
+    sb.append(text)
+    sb.append("\n")
+}
+
+/// The offsets at which each line of `c.files[file]` starts (the `SourceText` line starts `GetLinePosition` searches, `ensureLineStarts`, selfhost/lexer/source.byn:32-38; `ComputeLineStarts`, SourceText.cs:67-75).
+public List<i64> lineStartsOf(in Ctx c, for semantics.FileId file) uses alloc {
+    var starts = List<i64>()
+    starts.append(0)
+    for k in 0..c.files[file].text.length {
+        if c.files[file].text[k] == 10 { starts.append(k + 1) }
+    }
+    return starts
+}
+
+/// CEmitter.cs:1239 `LineOf`: the 1-based line `span` starts on in `f`'s file, 0 when it has none. `f.lineStarts` holds the file's line
+/// starts (`emitFunction` lends them; a frame built by hand sets them with `lineStartsOf`); the line is the count of starts <= `span.start`
+/// (selfhost/lexer/source.byn:44-55).
+public i64 lineOf(in Ctx c, by in CFunc f, at semantics.TextSpan span) {
+    let file = c.functions[f.fn].file
+    // coverage-exempt: Q827
+    if file == -1 { return 0 }
+    var lo: i64 = 0
+    var hi = f.lineStarts.length
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2
+        if f.lineStarts[mid] <= span.start {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    return lo
+}
+
+/// CEmitter.cs:1241 `Loc`: `file, line` for a runtime call.
+public string loc(in Ctx c, by in CFunc f, at semantics.TextSpan span) uses alloc => $"{f.file}, {lineOf(in c, by: in f, at: span)}"
+
+/// CEmitter.cs:1244 `MapLine`: `#line N "file.byn"`, so debuggers and C compiler messages name the Bayan line of the
+/// code that follows. `sb.length` counts bytes where C# counts UTF-16 units; it is only compared with itself.
+public void mapLine(ref StrBuf sb, from in Ctx c, through ref CFunc f, at semantics.TextSpan span) {
+    let path = f.linePath ?? return
+    let n = lineOf(in c, by: in f, at: span)
+    if n == f.lastLine && sb.length == f.lastLineEnd { return }
+    f.lastLine = n
+    sb.append($"#line {n} {path}\n")
+    f.lastLineEnd = sb.length
+}
+
+/// CEmitter.cs:593-595 `Helper` (D5, Q840): reserves helper `name` before its body is built; false when it is registered.
+public bool helperReserve(ref CCtx cc, for string name, from string proto) uses alloc {
+    if cc.helpers.contains(name) { return false }
+    cc.helpers[name] = CHelper { proto: proto, body: "" }
+    cc.helperOrder.append(name)
+    return true
+}
+
+/// CEmitter.cs:596-597 `Helper` (D5, Q840): fills reserved helper `name` with `body` and returns its name.
+public string helperFill(ref CCtx cc, for string name, from string proto, as string body) uses alloc {
+    cc.helpers[name] = CHelper { proto: proto, body: $"{proto} {body}" }
+    return name
+}

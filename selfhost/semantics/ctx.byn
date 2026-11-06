@@ -10,122 +10,122 @@
 import lexer
 import parser
 
-type TextSpan = lexer.TextSpan
-type CompilationUnit = parser.CompilationUnit
+public type TextSpan = lexer.TextSpan
+public type CompilationUnit = parser.CompilationUnit
 
 // ── Handles ─────────────────────────────────────────────────────────────────────
 
 /// A `Ctx.files` index.
-type FileId = i64
+public type FileId = i64
 /// A `Ctx.modules` index.
-type ModId = i64
-type StructId = i64
-type InterfaceId = i64
-type ErrorSetId = i64
-type EnumId = i64
-type UnionId = i64
-type FuncId = i64
-type LocalId = i64
-type ConstId = i64
-type TypeParamId = i64
-type FieldId = i64
-type PropertyId = i64
-type VariantId = i64
-type TestId = i64
-type ConformanceId = i64
-type AliasId = i64
-type EnumFieldId = i64
-type EnumMemberId = i64
+public type ModId = i64
+public type StructId = i64
+public type InterfaceId = i64
+public type ErrorSetId = i64
+public type EnumId = i64
+public type UnionId = i64
+public type FuncId = i64
+public type LocalId = i64
+public type ConstId = i64
+public type TypeParamId = i64
+public type FieldId = i64
+public type PropertyId = i64
+public type VariantId = i64
+public type TestId = i64
+public type ConformanceId = i64
+public type AliasId = i64
+public type EnumFieldId = i64
+public type EnumMemberId = i64
 /// `(TypeKind << 32) | index`; canonical, so C#'s structural equality is handle equality.
-type Type = i64
+public type Type = i64
 /// `(BoundKind << 32) | index` into T4's bound arenas.
-type BExpr = i64
-type BStmt = i64
-type BPattern = i64
+public type BExpr = i64
+public type BStmt = i64
+public type BPattern = i64
 
 // ── Files and modules ───────────────────────────────────────────────────────────
 
 /// One source the checker reads: a `.byn` file, a parsed `"<builtin>"` source, or `"package.byn"`.
 /// The C# `FileContext`: one file's tree and the imports visible in it (Q521).
-struct SourceFile {
+public struct SourceFile {
     /// The path the loader opened.
-    string path
+    public string path
     /// The path diagnostics print, relative to the project root.
-    string displayPath
+    public string displayPath
     /// The bytes the parser read.
-    List<u8> text
-    CompilationUnit unit
+    public List<u8> text
+    public CompilationUnit unit
     /// The module whose files this one belongs to.
-    ModId module = -1
+    public ModId module = -1
     /// The entry module's files, which hold `main` or the top-level statements.
-    bool isEntry = false
+    public bool isEntry = false
     /// A `tests/*.test.byn` file; the C# `FileContext.IsTestFile`.
-    bool isTestFile = false
+    public bool isTestFile = false
     /// The modules this file imports, by the name it uses (the C# `FileContext.Imports`).
-    Map<string, ModId> imports
+    public Map<string, ModId> imports
 }
 
 /// A directory of files that one `import` names.
-struct Mod {
-    string name
-    List<FileId> files
+public struct Mod {
+    public string name
+    public List<FileId> files
     /// The directory the module's files came from (the C# `ModuleSymbol.Directory`).
-    string directory = ""
+    public string directory = ""
     /// The name used in emitted C identifiers (the C# `ModuleSymbol.CName`).
-    string cName = ""
+    public string cName = ""
     /// Named types by their declared name (the C# `ModuleSymbol.Types`).
-    Map<string, Type> types = []
+    public Map<string, Type> types = []
     /// Functions by name; one name may be overloaded (the C# `ModuleSymbol.Functions`).
-    Map<string, List<FuncId>> functions = []
+    public Map<string, List<FuncId>> functions = []
     /// Constants by name (the C# `ModuleSymbol.Constants`).
-    Map<string, ConstId> constants = []
-    List<StructId> structs = List<StructId>()
-    List<ErrorSetId> errorSets = List<ErrorSetId>()
-    List<EnumId> enums = List<EnumId>()
-    List<UnionId> unions = List<UnionId>()
-    List<InterfaceId> interfaces = List<InterfaceId>()
-    List<FuncId> allFunctions = List<FuncId>()
-    List<TestId> tests = List<TestId>()
-    List<ConstId> allConstants = List<ConstId>()
+    public Map<string, ConstId> constants = []
+    public List<StructId> structs = List<StructId>()
+    public List<ErrorSetId> errorSets = List<ErrorSetId>()
+    public List<EnumId> enums = List<EnumId>()
+    public List<UnionId> unions = List<UnionId>()
+    public List<InterfaceId> interfaces = List<InterfaceId>()
+    public List<FuncId> allFunctions = List<FuncId>()
+    public List<TestId> tests = List<TestId>()
+    public List<ConstId> allConstants = List<ConstId>()
     /// The implicit `main` built from top-level statements, or an explicit `main`; -1 when absent.
-    FuncId main = -1
+    public FuncId main = -1
 }
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────────
 
 /// A secondary span under a diagnostic, underlined with `---` (the C# `RelatedSpan`).
-struct Related {
-    TextSpan span
-    string label
+public struct Related {
+    public TextSpan span
+    public string label
 }
 
 /// A compiler diagnostic (the C# `Diagnostic`): a code, a place, an optional fix and related spans.
 /// An empty `label` or `help` is C#'s `null`; `file` is -1 for a diagnostic with no location.
-struct Diag {
-    string code = ""
-    FileId file = -1
-    TextSpan span
-    string message
-    string label = ""
-    string help = ""
-    bool isWarning = false
-    bool hasFix = false
-    TextSpan fixSpan
-    string fixReplacement = ""
-    List<Related> related
+public struct Diag {
+    public string code = ""
+    public FileId file = -1
+    public TextSpan span
+    public string message
+    public string label = ""
+    public string help = ""
+    public bool isWarning = false
+    public bool hasFix = false
+    public TextSpan fixSpan
+    public string fixReplacement = ""
+    public List<Related> related
 }
 
 /// A nested diagnostic sink (the C# `PushBag`): its items and the bag it was pushed over.
-struct DiagBag {
-    List<Diag> items
+public struct DiagBag {
+    public List<Diag> items
     /// The `Ctx.bags` index of the enclosing bag, or -1 for the outermost.
-    i64 previous = -1
+    public i64 previous = -1
 }
 
 // ── Deferred work ──────────────────────────────────────────────────────────────
 
 /// What T11's `drain` does with a `Work` item.
-enum WorkKind {
+public enum WorkKind {
     /// A `where` clause to check; drained by `declare`.
     where
     keyCheck
@@ -139,103 +139,103 @@ enum WorkKind {
 }
 
 /// One deferred check (the C# `Work` record): a kind, the type it is about and where it came from.
-struct Work {
-    WorkKind kind
-    Type subject = -1
-    List<Type> args
+public struct Work {
+    public WorkKind kind
+    public Type subject = -1
+    public List<Type> args
     /// The instantiated function a `bindFunction` item binds, or -1.
-    FuncId instance = -1
-    FileId file = -1
-    TextSpan span
-    i64 declIndex = -1
-    i64 memberIndex = -1
+    public FuncId instance = -1
+    public FileId file = -1
+    public TextSpan span
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
     /// C# `AfterMembersDeclared` wraps the check in `Instantiating(site, span, check)` when `_instantiationSite` is
     /// set (Compilation.cs:1550): `atSite` says it was, `siteFile`/`siteSpan` hold that site (Q716, dispatcher 2026-10-31).
-    bool atSite = false
-    FileId siteFile = -1
-    TextSpan siteSpan = TextSpan { start: 0, length: 0 }
+    public bool atSite = false
+    public FileId siteFile = -1
+    public TextSpan siteSpan = TextSpan { start: 0, length: 0 }
 }
 
 /// A `break`/`continue` target: a label if it has one, and whether it belongs to a loop.
-struct JumpTarget {
-    string? label = null
-    bool isLoop = false
-    i64 id = -1
+public struct JumpTarget {
+    public string? label = null
+    public bool isLoop = false
+    public i64 id = -1
 }
 
 // ── The 128-bit integer ────────────────────────────────────────────────────────
 
 /// A 128-bit two's-complement integer, as `lo` (low 64 bits) and `hi` (high 64 bits). Bayan has no
 /// `i128`, and `PrimitiveType.Range` returns one (Q540); T5 owns the operations.
-struct Big {
-    u64 lo
-    u64 hi
+public struct Big {
+    public u64 lo
+    public u64 hi
 }
 
 /// A parsed `Big`, or why it is not one: `ok` is false for a syntax error, `overflow` for a value
 /// outside the 128-bit range.
-struct BigParse {
-    Big value
-    bool ok = false
-    bool overflow = false
+public struct BigParse {
+    public Big value
+    public bool ok = false
+    public bool overflow = false
 }
 
 // ── Constructed-type data (T3) ────────────────────────────────────────────────
 
 /// The parts of a `Span<T>` / `ReadOnlySpan<T>`.
-struct SpanData {
-    Type element
-    bool readOnly
+public struct SpanData {
+    public Type element
+    public bool readOnly
 }
 
 /// The parts of a `dyn ref [readonly] I`.
-struct DynRefData {
-    InterfaceId iface
-    bool readOnly
+public struct DynRefData {
+    public InterfaceId iface
+    public bool readOnly
 }
 
 /// The key and value of a `Map<K, V>`.
-struct MapData {
-    Type key
-    Type value
+public struct MapData {
+    public Type key
+    public Type value
 }
 
 /// The element and length of a `T[N]`.
-struct ArrayData {
-    Type element
-    i64 length
+public struct ArrayData {
+    public Type element
+    public i64 length
 }
 
 /// One field of a tuple type; `name` is null for an unnamed element.
-struct TupleField {
-    string? name = null
-    Type type
+public struct TupleField {
+    public string? name = null
+    public Type type
 }
 
 /// The parts of a function type `(A, B) -> R fails E uses net`.
-struct FunctionData {
-    List<Type> parameters
-    Type ret
-    List<ErrorSetId> errorSets
-    List<string> effects
+public struct FunctionData {
+    public List<Type> parameters
+    public Type ret
+    public List<ErrorSetId> errorSets
+    public List<string> effects
 }
 
 /// The value and error of a `Result<T, E>`.
-struct ResultData {
-    Type value
-    Type error
+public struct ResultData {
+    public Type value
+    public Type error
 }
 
 /// The struct and known states of a state type.
-struct StateData {
-    StructId s
-    List<VariantId> states
+public struct StateData {
+    public StructId s
+    public List<VariantId> states
 }
 
 /// The sets and excluded variants of an error union.
-struct ErrorUnionData {
-    List<ErrorSetId> sets
-    List<VariantId> excluded
+public struct ErrorUnionData {
+    public List<ErrorSetId> sets
+    public List<VariantId> excluded
 }
 
 // ── The checker's state ────────────────────────────────────────────────────────
@@ -244,275 +244,282 @@ struct ErrorUnionData {
 /// arenas; one owner per field.
 /// Where a piece of syntax lives, for state the C# keeps as syntax references (Q714): `c.files[file].unit.members[declIndex]`,
 /// then member `memberIndex`, item `itemIndex` and sub-item `subIndex` as the owning task documents; -1 where unused.
-struct SyntaxRef {
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    i64 itemIndex = -1
-    i64 subIndex = -1
+public struct SyntaxRef {
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public i64 itemIndex = -1
+    public i64 subIndex = -1
 }
 
 /// C# `_exitCodes` entry: a variant and its `@exitCode` attribute (Q714).
-struct ExitCodeRef {
-    VariantId variant = -1
-    SyntaxRef attribute
+public struct ExitCodeRef {
+    public VariantId variant = -1
+    public SyntaxRef attribute
 }
 
 /// C# `_testBodies` value: the test's declaration and, for a `@cases` test, the case whose values it binds (Q714).
-struct TestBody {
-    SyntaxRef decl
-    bool hasValues = false
-    SyntaxRef values
+public struct TestBody {
+    public SyntaxRef decl
+    public bool hasValues = false
+    public SyntaxRef values
 }
 
-struct Ctx {
-    List<SourceFile> files
-    List<Mod> modules
-    List<Diag> diagnostics
+public struct Ctx {
+    public List<SourceFile> files
+    public List<Mod> modules
+    public List<Diag> diagnostics
     /// Nested sinks; empty for the outermost.
-    List<DiagBag> bags
+    public List<DiagBag> bags
     /// The bag index new diagnostics go to, or -1 for `diagnostics`.
-    i64 sink = -1
+    public i64 sink = -1
     /// Whether diagnostics are dropped rather than kept (the C# `_quiet`).
-    bool quiet = false
+    public bool quiet = false
     /// A library has no `main`, so none is required.
-    bool library = false
+    public bool library = false
     /// The package's `capabilities`, the upper bound on its effects (§13); null for no bound.
-    List<string>? capabilities = null
+    public List<string>? capabilities = null
     /// The package's name, for BYN6004; empty when there is none.
-    string packageName = ""
+    public string packageName = ""
 
     // ── T3: symbol arenas (one per `Symbols.cs` class plus `AliasPlaceholder`) ──
-    List<StructSymbol> structs = List<StructSymbol>()
-    List<FieldSymbol> fields = List<FieldSymbol>()
-    List<PropertySymbol> properties = List<PropertySymbol>()
-    List<FunctionSymbol> functions = List<FunctionSymbol>()
-    List<InterfaceSymbol> interfaces = List<InterfaceSymbol>()
-    List<Conformance> conformances = List<Conformance>()
-    List<LocalSymbol> locals = List<LocalSymbol>()
-    List<ConstSymbol> consts = List<ConstSymbol>()
-    List<ErrorSetSymbol> errorSets = List<ErrorSetSymbol>()
-    List<ErrorVariantSymbol> errorVariants = List<ErrorVariantSymbol>()
-    List<TestSymbol> tests = List<TestSymbol>()
-    List<EnumSymbol> enums = List<EnumSymbol>()
-    List<EnumFieldSymbol> enumFields = List<EnumFieldSymbol>()
-    List<EnumMemberSymbol> enumMembers = List<EnumMemberSymbol>()
-    List<UnionSymbol> unions = List<UnionSymbol>()
-    List<UnionVariantSymbol> unionVariants = List<UnionVariantSymbol>()
-    List<TypeParam> typeParams = List<TypeParam>()
-    List<AliasPlaceholder> aliases = List<AliasPlaceholder>()
+    public List<StructSymbol> structs = List<StructSymbol>()
+    public List<FieldSymbol> fields = List<FieldSymbol>()
+    public List<PropertySymbol> properties = List<PropertySymbol>()
+    public List<FunctionSymbol> functions = List<FunctionSymbol>()
+    public List<InterfaceSymbol> interfaces = List<InterfaceSymbol>()
+    public List<Conformance> conformances = List<Conformance>()
+    public List<LocalSymbol> locals = List<LocalSymbol>()
+    public List<ConstSymbol> consts = List<ConstSymbol>()
+    public List<ErrorSetSymbol> errorSets = List<ErrorSetSymbol>()
+    public List<ErrorVariantSymbol> errorVariants = List<ErrorVariantSymbol>()
+    public List<TestSymbol> tests = List<TestSymbol>()
+    public List<EnumSymbol> enums = List<EnumSymbol>()
+    public List<EnumFieldSymbol> enumFields = List<EnumFieldSymbol>()
+    public List<EnumMemberSymbol> enumMembers = List<EnumMemberSymbol>()
+    public List<UnionSymbol> unions = List<UnionSymbol>()
+    public List<UnionVariantSymbol> unionVariants = List<UnionVariantSymbol>()
+    public List<TypeParam> typeParams = List<TypeParam>()
+    public List<AliasPlaceholder> aliases = List<AliasPlaceholder>()
 
     // ── T3: constructed-type arenas (one per constructed kind) ──
-    List<Type> optionalTypes = List<Type>()
-    List<SpanData> spanTypes = List<SpanData>()
-    List<DynRefData> dynRefTypes = List<DynRefData>()
-    List<Type> listTypes = List<Type>()
-    List<MapData> mapTypes = List<MapData>()
-    List<Type> ownedTypes = List<Type>()
-    List<Type> untrustedTypes = List<Type>()
-    List<ArrayData> arrayTypes = List<ArrayData>()
-    List<Type> rangeTypes = List<Type>()
-    List<List<TupleField>> tupleTypes = List<List<TupleField>>()
-    List<FunctionData> functionTypes = List<FunctionData>()
-    List<ResultData> resultTypes = List<ResultData>()
-    List<StateData> stateTypes = List<StateData>()
-    List<ErrorUnionData> errorUnionTypes = List<ErrorUnionData>()
+    public List<Type> optionalTypes = List<Type>()
+    public List<SpanData> spanTypes = List<SpanData>()
+    public List<DynRefData> dynRefTypes = List<DynRefData>()
+    public List<Type> listTypes = List<Type>()
+    public List<MapData> mapTypes = List<MapData>()
+    public List<Type> ownedTypes = List<Type>()
+    public List<Type> untrustedTypes = List<Type>()
+    public List<ArrayData> arrayTypes = List<ArrayData>()
+    public List<Type> rangeTypes = List<Type>()
+    public List<List<TupleField>> tupleTypes = List<List<TupleField>>()
+    public List<FunctionData> functionTypes = List<FunctionData>()
+    public List<ResultData> resultTypes = List<ResultData>()
+    public List<StateData> stateTypes = List<StateData>()
+    public List<ErrorUnionData> errorUnionTypes = List<ErrorUnionData>()
 
     // ── T3: interning caches (one `Map` per constructed kind) ──
-    Map<string, i64> optionalIntern = []
-    Map<string, i64> spanIntern = []
-    Map<string, i64> dynRefIntern = []
-    Map<string, i64> listIntern = []
-    Map<string, i64> mapIntern = []
-    Map<string, i64> ownedIntern = []
-    Map<string, i64> untrustedIntern = []
-    Map<string, i64> arrayIntern = []
-    Map<string, i64> rangeIntern = []
-    Map<string, i64> tupleIntern = []
-    Map<string, i64> functionIntern = []
-    Map<string, i64> resultIntern = []
-    Map<string, i64> stateIntern = []
-    Map<string, i64> errorUnionIntern = []
+    public Map<string, i64> optionalIntern = []
+    public Map<string, i64> spanIntern = []
+    public Map<string, i64> dynRefIntern = []
+    public Map<string, i64> listIntern = []
+    public Map<string, i64> mapIntern = []
+    public Map<string, i64> ownedIntern = []
+    public Map<string, i64> untrustedIntern = []
+    public Map<string, i64> arrayIntern = []
+    public Map<string, i64> rangeIntern = []
+    public Map<string, i64> tupleIntern = []
+    public Map<string, i64> functionIntern = []
+    public Map<string, i64> resultIntern = []
+    public Map<string, i64> stateIntern = []
+    public Map<string, i64> errorUnionIntern = []
 
     /// While set, declared types display with their module (`a.Point`); the C# `[ThreadStatic] QualifyModules`.
-    bool qualifyModules = false
+    public bool qualifyModules = false
     /// Effect/verb/noun/adjective names (T6 fills them).
-    List<string> lexiconVerbs = List<string>()
-    List<string> lexiconNouns = List<string>()
-    List<string> lexiconAdjectives = List<string>()
+    public List<string> lexiconVerbs = List<string>()
+    public List<string> lexiconNouns = List<string>()
+    public List<string> lexiconAdjectives = List<string>()
 
     // ── T3+: shared caches (the owner task fills them) ──
     /// T5: template handle -> instance handle.
-    Map<i64, i64> instances = []
+    public Map<i64, i64> instances = []
     /// T5: the instantiation worklist.
-    List<Work> instantiationWork = List<Work>()
-    List<Work> pendingKeys = List<Work>()
-    List<Work> pendingConstraints = List<Work>()
-    Map<i64, i64> states = []
-    Map<i64, i64> distinct = []
-    Map<i64, i64> positional = []
-    Map<i64, i64> invokeSymbols = []
-    Map<i64, i64> validationErrors = []
-    Map<i64, i64> conformancesChecked = []
+    public List<Work> instantiationWork = List<Work>()
+    public List<Work> pendingKeys = List<Work>()
+    public List<Work> pendingConstraints = List<Work>()
+    public Map<i64, i64> states = []
+    public Map<i64, i64> distinct = []
+    public Map<i64, i64> positional = []
+    public Map<i64, i64> invokeSymbols = []
+    public Map<i64, i64> validationErrors = []
+    public Map<i64, i64> conformancesChecked = []
 
     // ── Bound arenas (T4): one per node struct of bound.byn, in `BoundKind` order ──
-    List<BLiteral> bLiterals = List<BLiteral>()
-    List<BSymbolLiteral> bSymbolLiterals = List<BSymbolLiteral>()
-    List<BDefault> bDefaults = List<BDefault>()
-    List<BLocal> bLocals = List<BLocal>()
-    List<BThis> bThises = List<BThis>()
-    List<BField> bFields = List<BField>()
-    List<BTupleElement> bTupleElements = List<BTupleElement>()
-    List<BCall> bCalls = List<BCall>()
-    List<BBuiltinCall> bBuiltinCalls = List<BBuiltinCall>()
-    List<BUnary> bUnaries = List<BUnary>()
-    List<BBinary> bBinaries = List<BBinary>()
-    List<BConversion> bConversions = List<BConversion>()
-    List<BTryFrom> bTryFroms = List<BTryFrom>()
-    List<BConditional> bConditionals = List<BConditional>()
-    List<BCoalesce> bCoalesces = List<BCoalesce>()
-    List<BStructLiteral> bStructLiterals = List<BStructLiteral>()
-    List<BWith> bWiths = List<BWith>()
-    List<BTuple> bTuples = List<BTuple>()
-    List<BCollection> bCollections = List<BCollection>()
-    List<BSpread> bSpreads = List<BSpread>()
-    List<BIndex> bIndexes = List<BIndex>()
-    List<BSlice> bSlices = List<BSlice>()
-    List<BRange> bRanges = List<BRange>()
-    List<BIs> bIses = List<BIs>()
-    List<BSwitchExpr> bSwitchExprs = List<BSwitchExpr>()
-    List<BInterpolated> bInterpolateds = List<BInterpolated>()
-    List<BMove> bMoves = List<BMove>()
-    List<BTry> bTries = List<BTry>()
-    List<BCatch> bCatches = List<BCatch>()
-    List<BJump> bJumps = List<BJump>()
-    List<BBlockExpr> bBlockExprs = List<BBlockExpr>()
-    List<BErrorVariant> bErrorVariants = List<BErrorVariant>()
-    List<BEnumMember> bEnumMembers = List<BEnumMember>()
-    List<BUnionNew> bUnionNews = List<BUnionNew>()
-    List<BEnumValues> bEnumValues = List<BEnumValues>()
-    List<BStaticArray> bStaticArrays = List<BStaticArray>()
-    List<BStackalloc> bStackallocs = List<BStackalloc>()
-    List<BErrorExpr> bErrorExprs = List<BErrorExpr>()
-    List<BTypeRef> bTypeRefs = List<BTypeRef>()
-    List<BModuleRef> bModuleRefs = List<BModuleRef>()
-    List<BLambda> bLambdas = List<BLambda>()
-    List<BFunctionRef> bFunctionRefs = List<BFunctionRef>()
-    List<BBlock> bBlocks = List<BBlock>()
-    List<BLocalDecl> bLocalDecls = List<BLocalDecl>()
-    List<BExprStmt> bExprStmts = List<BExprStmt>()
-    List<BAssign> bAssigns = List<BAssign>()
-    List<BReturn> bReturns = List<BReturn>()
-    List<BFail> bFails = List<BFail>()
-    List<BBecome> bBecomes = List<BBecome>()
-    List<BBreak> bBreaks = List<BBreak>()
-    List<BContinue> bContinues = List<BContinue>()
-    List<BIf> bIfs = List<BIf>()
-    List<BWhile> bWhiles = List<BWhile>()
-    List<BDoWhile> bDoWhiles = List<BDoWhile>()
-    List<BFor> bFors = List<BFor>()
-    List<BSwitch> bSwitches = List<BSwitch>()
-    List<BDefer> bDefers = List<BDefer>()
-    List<BAssert> bAsserts = List<BAssert>()
-    List<BErrdefer> bErrdefers = List<BErrdefer>()
-    List<BPanicDefer> bPanicDefers = List<BPanicDefer>()
-    List<BSetOnPanic> bSetOnPanics = List<BSetOnPanic>()
-    List<BContext> bContexts = List<BContext>()
-    List<BErrorStmt> bErrorStmts = List<BErrorStmt>()
-    List<BConstantPattern> bConstantPatterns = List<BConstantPattern>()
-    List<BRelationalPattern> bRelationalPatterns = List<BRelationalPattern>()
-    List<BRangePattern> bRangePatterns = List<BRangePattern>()
-    List<BBindPattern> bBindPatterns = List<BBindPattern>()
-    List<BNotPattern> bNotPatterns = List<BNotPattern>()
-    List<BBinaryPattern> bBinaryPatterns = List<BBinaryPattern>()
-    List<BPropertyPattern> bPropertyPatterns = List<BPropertyPattern>()
-    List<BUnionField> bUnionFields = List<BUnionField>()
-    List<BUnionPattern> bUnionPatterns = List<BUnionPattern>()
-    List<BErrorField> bErrorFields = List<BErrorField>()
-    List<BErrorPattern> bErrorPatterns = List<BErrorPattern>()
-    List<BMethodGroup> bMethodGroups = List<BMethodGroup>()
-    List<BVariantGroup> bVariantGroups = List<BVariantGroup>()
-    List<BBuiltinGroup> bBuiltinGroups = List<BBuiltinGroup>()
+    public List<BLiteral> bLiterals = List<BLiteral>()
+    public List<BSymbolLiteral> bSymbolLiterals = List<BSymbolLiteral>()
+    public List<BDefault> bDefaults = List<BDefault>()
+    public List<BLocal> bLocals = List<BLocal>()
+    public List<BThis> bThises = List<BThis>()
+    public List<BField> bFields = List<BField>()
+    public List<BTupleElement> bTupleElements = List<BTupleElement>()
+    public List<BCall> bCalls = List<BCall>()
+    public List<BBuiltinCall> bBuiltinCalls = List<BBuiltinCall>()
+    public List<BUnary> bUnaries = List<BUnary>()
+    public List<BBinary> bBinaries = List<BBinary>()
+    public List<BConversion> bConversions = List<BConversion>()
+    public List<BTryFrom> bTryFroms = List<BTryFrom>()
+    public List<BConditional> bConditionals = List<BConditional>()
+    public List<BCoalesce> bCoalesces = List<BCoalesce>()
+    public List<BStructLiteral> bStructLiterals = List<BStructLiteral>()
+    public List<BWith> bWiths = List<BWith>()
+    public List<BTuple> bTuples = List<BTuple>()
+    public List<BCollection> bCollections = List<BCollection>()
+    public List<BSpread> bSpreads = List<BSpread>()
+    public List<BIndex> bIndexes = List<BIndex>()
+    public List<BSlice> bSlices = List<BSlice>()
+    public List<BRange> bRanges = List<BRange>()
+    public List<BIs> bIses = List<BIs>()
+    public List<BSwitchExpr> bSwitchExprs = List<BSwitchExpr>()
+    public List<BInterpolated> bInterpolateds = List<BInterpolated>()
+    public List<BMove> bMoves = List<BMove>()
+    public List<BTry> bTries = List<BTry>()
+    public List<BCatch> bCatches = List<BCatch>()
+    public List<BJump> bJumps = List<BJump>()
+    public List<BBlockExpr> bBlockExprs = List<BBlockExpr>()
+    public List<BErrorVariant> bErrorVariants = List<BErrorVariant>()
+    public List<BEnumMember> bEnumMembers = List<BEnumMember>()
+    public List<BUnionNew> bUnionNews = List<BUnionNew>()
+    public List<BEnumValues> bEnumValues = List<BEnumValues>()
+    public List<BStaticArray> bStaticArrays = List<BStaticArray>()
+    public List<BStackalloc> bStackallocs = List<BStackalloc>()
+    public List<BErrorExpr> bErrorExprs = List<BErrorExpr>()
+    public List<BTypeRef> bTypeRefs = List<BTypeRef>()
+    public List<BModuleRef> bModuleRefs = List<BModuleRef>()
+    public List<BLambda> bLambdas = List<BLambda>()
+    public List<BFunctionRef> bFunctionRefs = List<BFunctionRef>()
+    public List<BBlock> bBlocks = List<BBlock>()
+    public List<BLocalDecl> bLocalDecls = List<BLocalDecl>()
+    public List<BExprStmt> bExprStmts = List<BExprStmt>()
+    public List<BAssign> bAssigns = List<BAssign>()
+    public List<BReturn> bReturns = List<BReturn>()
+    public List<BFail> bFails = List<BFail>()
+    public List<BBecome> bBecomes = List<BBecome>()
+    public List<BBreak> bBreaks = List<BBreak>()
+    public List<BContinue> bContinues = List<BContinue>()
+    public List<BIf> bIfs = List<BIf>()
+    public List<BWhile> bWhiles = List<BWhile>()
+    public List<BDoWhile> bDoWhiles = List<BDoWhile>()
+    public List<BFor> bFors = List<BFor>()
+    public List<BSwitch> bSwitches = List<BSwitch>()
+    public List<BDefer> bDefers = List<BDefer>()
+    public List<BAssert> bAsserts = List<BAssert>()
+    public List<BErrdefer> bErrdefers = List<BErrdefer>()
+    public List<BPanicDefer> bPanicDefers = List<BPanicDefer>()
+    public List<BSetOnPanic> bSetOnPanics = List<BSetOnPanic>()
+    public List<BContext> bContexts = List<BContext>()
+    public List<BErrorStmt> bErrorStmts = List<BErrorStmt>()
+    public List<BConstantPattern> bConstantPatterns = List<BConstantPattern>()
+    public List<BRelationalPattern> bRelationalPatterns = List<BRelationalPattern>()
+    public List<BRangePattern> bRangePatterns = List<BRangePattern>()
+    public List<BBindPattern> bBindPatterns = List<BBindPattern>()
+    public List<BNotPattern> bNotPatterns = List<BNotPattern>()
+    public List<BBinaryPattern> bBinaryPatterns = List<BBinaryPattern>()
+    public List<BPropertyPattern> bPropertyPatterns = List<BPropertyPattern>()
+    public List<BUnionField> bUnionFields = List<BUnionField>()
+    public List<BUnionPattern> bUnionPatterns = List<BUnionPattern>()
+    public List<BErrorField> bErrorFields = List<BErrorField>()
+    public List<BErrorPattern> bErrorPatterns = List<BErrorPattern>()
+    public List<BMethodGroup> bMethodGroups = List<BMethodGroup>()
+    public List<BVariantGroup> bVariantGroups = List<BVariantGroup>()
+    public List<BBuiltinGroup> bBuiltinGroups = List<BBuiltinGroup>()
     /// `break`/`continue` targets; `BBreak.target` and the loop/switch `target` fields index it.
-    List<JumpTarget> jumpTargets = List<JumpTarget>()
+    public List<JumpTarget> jumpTargets = List<JumpTarget>()
     /// C# `BoundExpr.Constant`, by expression handle.
-    Map<i64, Constant> constants = []
+    public Map<i64, Constant> constants = []
     /// The `syntax…` bits of bound.byn (what C# reads from `BoundNode.Syntax`), by node handle.
-    Map<i64, i64> syntaxFlags = []
+    public Map<i64, i64> syntaxFlags = []
+    /// C# `BoundNode.Syntax` when it is an `Expr` (T21, Q850): the recorded syntax nodes, and each bound node's handle into them.
+    public List<ExprSyntax> exprSyntaxNodes = List<ExprSyntax>()
+    public Map<i64, i64> exprSyntaxOf = []
     /// C# `Compilation.Checks`: each struct's `requires` check; `checksOf` maps a `StructId` to its index.
-    List<StructChecks> checks = List<StructChecks>()
-    Map<StructId, i64> checksOf = []
+    public List<StructChecks> checks = List<StructChecks>()
+    public Map<StructId, i64> checksOf = []
 
     // ── Shared state (Q714): written by one task, read by another; only the dispatcher adds fields here.
     /// C# `_exitCodes` (T12 fills it in `declareVariants`, T13 `bindAll` binds each).
-    List<ExitCodeRef> exitCodes = List<ExitCodeRef>()
+    public List<ExitCodeRef> exitCodes = List<ExitCodeRef>()
     /// C# `_mainStatements` (T11 fills it in `declareFile`, T13 `bindFunction` binds them): the synthesized `main`, or -1,
     /// and its top-level statements in order.
-    FuncId mainStatementsFn = -1
-    List<SyntaxRef> mainStatements = List<SyntaxRef>()
+    public FuncId mainStatementsFn = -1
+    public List<SyntaxRef> mainStatements = List<SyntaxRef>()
     /// C# `_testBodies` (T11 fills it in `declareFile`, T13 `bindFunction` binds each).
-    Map<FuncId, TestBody> testBodies = []
+    public Map<FuncId, TestBody> testBodies = []
     /// C# `Options.IncludeTests` and `Options.SkipOwnershipCheck` (T11 sets them when it creates the compilation).
-    bool includeTests = false
-    bool skipOwnershipCheck = false
+    public bool includeTests = false
+    public bool skipOwnershipCheck = false
     /// C# `_associatedBindings` (T12 fills it in `declareMembers`, T14 reads it): `"{s} {name}"` to the resolved `type name = …;`.
-    Map<string, Type> associatedBindings = []
+    public Map<string, Type> associatedBindings = []
     /// C# `_baseSpans` (T12 fills it in `declareMembers`, T14 reads it): `"{s} {i}"` to where the base is listed.
-    Map<string, TextSpan> baseSpans = []
+    public Map<string, TextSpan> baseSpans = []
+    /// C# `Builtins.Panic` (Q858; `Builtins` constructor fills it, T3 of spec 011 `lowerIf` reads it): the built-in `panic` function.
+    public FuncId builtinPanic = -1
+    /// C# `Builtins.StrBufGrow` (Q861; `Builtins` constructor fills it, T4/T5 of spec 011 read it): the built-in growable `StrBuf()`.
+    public FuncId builtinStrBufGrow = -1
 
     // ── Per-task state (Q710). A task adds the C# fields it needs, with defaults, only under its own marker.
     // ── T10 state
     // ── T11 state
     /// C# `PackageRoot`: imports resolve under it.
-    string packageRoot = ""
+    public string packageRoot = ""
     /// C# `DisplayRoot`: imported files are named relative to it.
-    string displayRoot = ""
+    public string displayRoot = ""
     /// C# `Modules`: every loaded module, dependencies before dependents (`modules` also holds the builtin module).
-    List<ModId> moduleOrder = List<ModId>()
+    public List<ModId> moduleOrder = List<ModId>()
     /// C# `EntryModule`.
-    ModId entryModule = -1
+    public ModId entryModule = -1
     /// C# `OnPanic`: the function `Panic.onPanic` is set to in `main`; -1 for none (T36 sets it).
-    FuncId onPanic = -1
+    public FuncId onPanic = -1
     /// C# `_modulesByDir` and `_loading`.
-    Map<string, ModId> modulesByDir = []
-    List<ModId> loading = List<ModId>()
+    public Map<string, ModId> modulesByDir = []
+    public List<ModId> loading = List<ModId>()
     /// C# `ParseTime` and `CheckTime`, in nanoseconds.
-    i64 parseTime = 0
-    i64 checkTime = 0
+    public i64 parseTime = 0
+    public i64 checkTime = 0
     /// C# `_aliases`: the aliases `addType` accepted, in declaration order.
-    List<AliasId> aliasOrder = List<AliasId>()
+    public List<AliasId> aliasOrder = List<AliasId>()
     /// C# `_testCases`: the accepted cases of each test with `@cases`, by `declKey(file, declIndex)`.
-    Map<i64, TestCases> testCases = []
+    public Map<i64, TestCases> testCases = []
     /// C# `_wheres` and `_associatedTypes` (key `"<owner> <name>"`).
-    List<Work> wheres = List<Work>()
-    Map<string, TypeParamId> associatedTypes = []
+    public List<Work> wheres = List<Work>()
+    public Map<string, TypeParamId> associatedTypes = []
     /// C# `MembersDeclared`.
-    bool membersDeclared = false
+    public bool membersDeclared = false
     // ── T12 state
     // ── T13 state
     /// C# `_instances` (Q581): `t13Key` of `(Generic, Args)` to the instance (a `FuncId` or a `Type`).
-    Map<string, i64> instanceKeys = []
+    public Map<string, i64> instanceKeys = []
     /// C# `_instantiating`: depth of `Instantiating` calls.
-    i64 instantiating = 0
+    public i64 instantiating = 0
     /// C# `_instantiationSite`: whether it is set, and its file and span.
-    bool hasInstantiationSite = false
-    FileId instantiationSiteFile = -1
-    TextSpan instantiationSiteSpan = TextSpan { start: 0, length: 0 }
+    public bool hasInstantiationSite = false
+    public FileId instantiationSiteFile = -1
+    public TextSpan instantiationSiteSpan = TextSpan { start: 0, length: 0 }
     /// C# `_instantiationErrors`: what instantiation reported that is not the user's.
-    List<Diag> instantiationErrors = List<Diag>()
+    public List<Diag> instantiationErrors = List<Diag>()
     /// C# `_instanceAnalysisSeen` (a set): `code|file|start|length` of each instance-analysis diagnostic kept.
-    Map<string, i64> instanceAnalysisSeen = []
+    public Map<string, i64> instanceAnalysisSeen = []
     /// C# `_firstPass`: a `firstPasses` index, or -1 for null.
-    i64 firstPass = -1
-    List<FirstPass> firstPasses = List<FirstPass>()
+    public i64 firstPass = -1
+    public List<FirstPass> firstPasses = List<FirstPass>()
     /// C# `RequiresChecks`.
-    List<RequiresCheck> requiresChecks = List<RequiresCheck>()
+    public List<RequiresCheck> requiresChecks = List<RequiresCheck>()
     /// C# `_interfaceMembersDeclared` and `_pendingInterfaces` (`Work { kind: .interfaceMembers }`).
-    bool interfaceMembersDeclared = false
-    List<Work> pendingInterfaces = List<Work>()
+    public bool interfaceMembersDeclared = false
+    public List<Work> pendingInterfaces = List<Work>()
     // ── T14 state
     /// C# `_conformancesChecked` (Q709).
-    bool checkedConformances = false
+    public bool checkedConformances = false
     // ── T15 state
     // ── T16 state
     // ── T17 state
@@ -523,21 +530,21 @@ struct Ctx {
     // ── T22 state
     // ── T23 state
     /// C# `((CatchExpr)c.Syntax).Variant.Span` (FlowAnalysis.cs:314), by the `catchExpr` handle; the catch binder fills it (Q632).
-    Map<BExpr, TextSpan> catchVariantSpans = []
+    public Map<BExpr, TextSpan> catchVariantSpans = []
     // ── T24 state
     // ── T25 state
     // ── T26 state
     /// C# `CliApp.Compiled.Manifest`: the project's manifest, null outside a project (read by `programName`).
-    Manifest? manifest = null
+    public Manifest? manifest = null
     // ── T27 state
     // ── T28 state
     /// The text of each name `for try` synthesizes (Binder.cs:1113-1115), by `-1 - span.start` (Q679).
-    List<string> syntheticNames = List<string>()
+    public List<string> syntheticNames = List<string>()
     /// C# `_unobservable` and `_unobservableSeen` (a set): `file|start|length|op` of each mark kept.
-    List<UnobservableMark> unobservable = List<UnobservableMark>()
-    Map<string, i64> unobservableSeen = []
+    public List<UnobservableMark> unobservable = List<UnobservableMark>()
+    public Map<string, i64> unobservableSeen = []
     /// C# `Compilation.MutationChecks`: calls of methods through a receiver, checked once every body is bound.
-    List<MutationCheck> mutationChecks = List<MutationCheck>()
+    public List<MutationCheck> mutationChecks = List<MutationCheck>()
     // ── T29 state
     // ── T30 state
     // ── T31 state
@@ -548,39 +555,39 @@ struct Ctx {
     // ── T36 state
     // ── T37 state
     /// C# `Compilation.ChangedFields`: the fields each `ref this` method changes structurally, as a set in insertion order.
-    Map<FuncId, List<FieldId>> changedFields = []
+    public Map<FuncId, List<FieldId>> changedFields = []
     // ── T38 state
     /// C# `_inReportedCycle`: structs and unions already reported as part of a cycle.
-    List<Type> inReportedCycle = List<Type>()
+    public List<Type> inReportedCycle = List<Type>()
     // ── T39 state
     /// C# `Compilation.ThisWrites`: the first write to `this` in each method not declared `ref this` (Q694).
-    Map<FuncId, T39ThisWrite> thisWrites = []
+    public Map<FuncId, T39ThisWrite> thisWrites = []
     // ── T40 state
     /// The C# span of each `for try` synthetic name (Binder.cs:1110-1115, `f.Iterable.Span`), beside `syntheticNames`.
-    List<TextSpan> syntheticSpans = List<TextSpan>()
+    public List<TextSpan> syntheticSpans = List<TextSpan>()
     // ── T41 state
     /// C# `Compilation.StoreSummaries`: for each template with a body, what it may store from a parameter (or `this`, -1)
     /// into a `ref`/`out` parameter (or its `ref this` receiver), with the first place it does, in insertion order.
-    Map<FuncId, List<StorePair>> storeSummaries = []
+    public Map<FuncId, List<StorePair>> storeSummaries = []
     /// C# `Compilation.ReturnSummaries`: for each template with a body, the parameters (or `this`, -1) its result may borrow.
-    Map<FuncId, List<i64>> returnSummaries = []
+    public Map<FuncId, List<i64>> returnSummaries = []
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
 
 /// C# `_calleeOf` (BinderExpressions.cs:920), as what T18's renamed-call readers use (Q731): a parser node is
 /// unique, so the binder keeps the call's spans and argument shape instead. Spans are zero-length where absent.
-struct CalleeOf {
-    TextSpan span
+public struct CalleeOf {
+    public TextSpan span
     /// The callee is a `.memberExpr`; `member` and `target` are its member and target spans.
-    bool isMember = false
-    TextSpan member = TextSpan { start: 0, length: 0 }
-    TextSpan target = TextSpan { start: 0, length: 0 }
-    i64 argCount = 0
+    public bool isMember = false
+    public TextSpan member = TextSpan { start: 0, length: 0 }
+    public TextSpan target = TextSpan { start: 0, length: 0 }
+    public i64 argCount = 0
     /// The first two arguments are both unnamed with modifier `.none`.
-    bool firstTwoPlain = false
-    TextSpan arg0 = TextSpan { start: 0, length: 0 }
-    TextSpan arg1 = TextSpan { start: 0, length: 0 }
+    public bool firstTwoPlain = false
+    public TextSpan arg0 = TextSpan { start: 0, length: 0 }
+    public TextSpan arg1 = TextSpan { start: 0, length: 0 }
 }
 
 CalleeOf calleeOfCall(parser.CallExpr call) {
@@ -601,87 +608,87 @@ CalleeOf calleeOfCall(parser.CallExpr call) {
 }
 
 /// C# `_covered` entry (BinderCalls.cs:14), as what ReportUnhandled (BinderCalls.cs:944) reads (Q731).
-struct CoveredCall {
-    TextSpan span
-    string name
-    bool structLiteral
+public struct CoveredCall {
+    public TextSpan span
+    public string name
+    public bool structLiteral
 }
 
 /// The C# `Binder`'s per-body state: the file and function being bound, the scopes, the jump targets
 /// and the narrowing facts. Every field is a T1 handle or a parser type.
-struct Binder {
-    FileId file = -1
-    FuncId fn = -1
-    StructId owner = -1
+public struct Binder {
+    public FileId file = -1
+    public FuncId fn = -1
+    public StructId owner = -1
     /// The receiver's type for `this`, or -1.
-    Type thisType = -1
-    i64 nextLocalId = 0
+    public Type thisType = -1
+    public i64 nextLocalId = 0
     /// The open scopes, innermost last.
-    List<Map<string, LocalId>> scopes
+    public List<Map<string, LocalId>> scopes
     /// The enclosing loops and labeled statements.
-    List<JumpTarget> targets
-    i64 deferDepth = 0
-    bool inPanicHandler = false
+    public List<JumpTarget> targets
+    public i64 deferDepth = 0
+    public bool inPanicHandler = false
     /// The first statement of the body being bound, or -1.
-    i64 firstStatement = -1
-    bool onPanicSet = false
+    public i64 firstStatement = -1
+    public bool onPanicSet = false
     /// A lambda's captured parameters, by the function it belongs to.
-    List<(FuncId, List<BExpr>)> lambdas
-    Map<FuncId, i64> lambdaCount
-    i64 itDepth = 0
-    i64 held = 0
+    public List<(FuncId, List<BExpr>)> lambdas
+    public Map<FuncId, i64> lambdaCount
+    public i64 itDepth = 0
+    public i64 held = 0
     /// C# `_seeds`: the locals a re-bind starts from (`bindFunction`'s second pass), and their types.
-    List<(i64, Type)> seeds
+    public List<(i64, Type)> seeds
     /// Flow facts keyed by the `LocalDecl` span start.
-    Map<i64, i64> pending
-    Map<i64, i64> constraints
-    Map<i64, i64> peers
+    public Map<i64, i64> pending
+    public Map<i64, i64> constraints
+    public Map<i64, i64> peers
     /// Locals known to be non-null, and their span start.
-    List<(i64, LocalId)> nonNull
-    List<(i64, LocalId, Type)> stateFacts
+    public List<(i64, LocalId)> nonNull
+    public List<(i64, LocalId, Type)> stateFacts
     /// The variant a local's error value was narrowed to.
-    Map<LocalId, VariantId> errorNarrowed
+    public Map<LocalId, VariantId> errorNarrowed
 
     // ── Per-task binder state (Q710), as in `Ctx`.
     // ── T15 state
     /// The C# constructor's `typeArgs`, which `_types` resolves with before the function's or struct's map; null for none.
-    Map<string, Type>? typeArgs = null
+    public Map<string, Type>? typeArgs = null
     /// The C# `_it`: the field whose own rule is being bound, or -1.
-    FieldId itField = -1
+    public FieldId itField = -1
     /// The C# `_thisFacts`: the fact key for `this`, made on first use; null until then.
-    LocalId? thisFacts = null
+    public LocalId? thisFacts = null
     /// The C# `_types` map (see `typeArgs`), taken once by T15's `t15CaptureTypes`; `typesCaptured` says whether it was.
-    Map<string, Type> types = []
-    bool typesCaptured = false
+    public Map<string, Type> types = []
+    public bool typesCaptured = false
     /// The C# `Scope` identities, parallel to `scopes` (innermost last); facts keyed by a scope compare these (Q715).
-    List<i64> scopeIds = []
+    public List<i64> scopeIds = []
     /// The identity the next opened scope takes.
-    i64 nextScopeId = 0
+    public i64 nextScopeId = 0
     /// The C# `_firstStatement`, by its file and full span (Q719); `firstStatementFile` is -1 for none.
-    FileId firstStatementFile = -1
-    TextSpan firstStatementSpan = TextSpan { start: 0, length: 0 }
+    public FileId firstStatementFile = -1
+    public TextSpan firstStatementSpan = TextSpan { start: 0, length: 0 }
     // ── T16 state
     /// The C# `_handled` (BinderCalls.cs:11): the span (in `file`) of the call a `try`, `catch` or `assert … fails` handles; null for none.
-    TextSpan? handled = null
+    public TextSpan? handled = null
     // ── T17 state
     /// The C# `_caught` (BinderCalls.cs:17): the local `caught` reads in a `catch` handler, or -1.
-    LocalId caught = -1
+    public LocalId caught = -1
     /// The C# `_printArgument` (BinderCalls.cs:193): an argument of `print` is being converted.
-    bool printArgument = false
+    public bool printArgument = false
     /// The C# `_sinkArgument` (BinderCalls.cs:196): the sink parameter an argument is converted to, or null.
-    string? sinkArgument = null
+    public string? sinkArgument = null
     // ── T18 state
-    CalleeOf? calleeOf = null
-    Map<LocalId, VariantId> narrowed = []
+    public CalleeOf? calleeOf = null
+    public Map<LocalId, VariantId> narrowed = []
     // ── T19 state
     // ── T20 state
     /// The C# `_prebound` (BinderCalls.cs:248), keyed by the argument's span start in `file` for its identity (Q617).
-    Map<i64, BExpr> prebound = []
+    public Map<i64, BExpr> prebound = []
     /// The C# `_covered` (BinderCalls.cs:14): while a `try` operand is bound, the failing calls it does not handle; null outside one.
-    List<CoveredCall>? covered = null
+    public List<CoveredCall>? covered = null
     // ── T21 state
     /// The C# `_patternOwns` (BinderCalls.cs:906): the patterns being bound are on a `switch move x` subject, so their bindings own their parts.
-    bool patternOwns = false
+    public bool patternOwns = false
     // ── T22 state
     // ── T23 state
     // ── T24 state

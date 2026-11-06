@@ -21,7 +21,7 @@
 // ── Kinds ──────────────────────────────────────────────────────────────────────
 
 /// The kind word of a `Type`; the ordinals are fixed.
-enum TypeKind {
+public enum TypeKind {
     primitive
     error
     nullType
@@ -50,7 +50,7 @@ enum TypeKind {
 }
 
 /// The C# `PrimitiveKind`; `never` is a keyword, so `Never` is `neverKind`.
-enum PrimitiveKind {
+public enum PrimitiveKind {
     i8
     i16
     i32
@@ -71,7 +71,7 @@ enum PrimitiveKind {
 }
 
 /// The C# `TextViewKind`.
-enum TextViewKind {
+public enum TextViewKind {
     runes
     utf16
     lines
@@ -79,7 +79,7 @@ enum TextViewKind {
 }
 
 /// The C# `BuiltinKind`.
-enum BuiltinKind {
+public enum BuiltinKind {
     arena
     strBuf
     io
@@ -91,13 +91,14 @@ enum BuiltinKind {
     panic
     formatSpec
     symbol
+    path
 }
 
 // ── Handles ─────────────────────────────────────────────────────────────────────
 
-Type makeType(TypeKind kind, at i64 index) => (i64(kind.ordinal) << 32) | index
+public Type makeType(TypeKind kind, at i64 index) => (i64(kind.ordinal) << 32) | index
 
-TypeKind kindOf(Type t) {
+public TypeKind kindOf(Type t) {
     switch t >> 32 {
         case 0: return .primitive
         case 1: return .error
@@ -127,7 +128,7 @@ TypeKind kindOf(Type t) {
     }
 }
 
-PrimitiveKind primKindOf(i64 i) {
+public PrimitiveKind primKindOf(i64 i) {
     switch i {
         case 0: return .i8
         case 1: return .i16
@@ -149,7 +150,7 @@ PrimitiveKind primKindOf(i64 i) {
     }
 }
 
-TextViewKind textViewKindOf(i64 i) {
+public TextViewKind textViewKindOf(i64 i) {
     switch i {
         case 0: return .runes
         case 1: return .utf16
@@ -158,7 +159,7 @@ TextViewKind textViewKindOf(i64 i) {
     }
 }
 
-BuiltinKind builtinKindOf(i64 i) {
+public BuiltinKind builtinKindOf(i64 i) {
     switch i {
         case 0: return .arena
         case 1: return .strBuf
@@ -170,7 +171,8 @@ BuiltinKind builtinKindOf(i64 i) {
         case 7: return .processResult
         case 8: return .panic
         case 9: return .formatSpec
-        default: return .symbol
+        case 10: return .symbol
+        default: return .path
     }
 }
 
@@ -192,19 +194,19 @@ bool listContainsString(in List<string> xs, by string x) {
 
 i64 typeIndex(Type t) => t & 0xFFFFFFFF
 
-bool typeEquals(Type a, as Type b) => a == b
+public bool typeEquals(Type a, as Type b) => a == b
 
 // ── Non-arena types ────────────────────────────────────────────────────────────
 
-Type prim(PrimitiveKind k) => makeType(.primitive, at: k.ordinal)
+public Type prim(PrimitiveKind k) => makeType(.primitive, at: k.ordinal)
 
-Type errorType() => makeType(.error, at: 0)
+public Type errorType() => makeType(.error, at: 0)
 
-Type nullType() => makeType(.nullType, at: 0)
+public Type nullType() => makeType(.nullType, at: 0)
 
-Type textViewType(TextViewKind k) => makeType(.textView, at: k.ordinal)
+public Type textViewType(TextViewKind k) => makeType(.textView, at: k.ordinal)
 
-Type builtinType(BuiltinKind k) => makeType(.builtin, at: k.ordinal)
+public Type builtinType(BuiltinKind k) => makeType(.builtin, at: k.ordinal)
 
 /// The C# `PrimitiveType.ByName` (all 29 names), or null.
 Type? primitiveByName(string name) {
@@ -243,7 +245,7 @@ Type? primitiveByName(string name) {
 }
 
 /// The C# `PrimitiveType.Name`.
-string primitiveName(PrimitiveKind k) {
+public string primitiveName(PrimitiveKind k) {
     switch k {
         case .i8: return "i8"
         case .i16: return "i16"
@@ -266,7 +268,7 @@ string primitiveName(PrimitiveKind k) {
 }
 
 /// The C# `PrimitiveType.Bits`.
-i64 primitiveBits(PrimitiveKind k) {
+public i64 primitiveBits(PrimitiveKind k) {
     switch k {
         case .i8: return 8
         case .i16: return 16
@@ -290,40 +292,40 @@ i64 primitiveBits(PrimitiveKind k) {
 
 // ── Predicates ─────────────────────────────────────────────────────────────────
 
-bool isError(Type t) => kindOf(t) == .error
+public bool isError(Type t) => kindOf(t) == .error
 
-bool isNever(Type t) => t == prim(.neverKind)
+public bool isNever(Type t) => t == prim(.neverKind)
 
-bool isVoid(Type t) => t == prim(.void)
+public bool isVoid(Type t) => t == prim(.void)
 
-bool isBool(Type t) => t == prim(.bool)
+public bool isBool(Type t) => t == prim(.bool)
 
-bool isString(Type t) => t == prim(.string)
+public bool isString(Type t) => t == prim(.string)
 
-bool isInteger(Type t) {
+public bool isInteger(Type t) {
     if kindOf(t) != .primitive { return false }
     let i = typeIndex(t)
     return i >= 0 && i <= 9
 }
 
-bool isFloat(Type t) {
+public bool isFloat(Type t) {
     if kindOf(t) != .primitive { return false }
     let i = typeIndex(t)
     return i == 10 || i == 11
 }
 
-bool isNumeric(Type t) => isInteger(t) || isFloat(t)
+public bool isNumeric(Type t) => isInteger(t) || isFloat(t)
 
-bool isSignedInteger(Type t) {
+public bool isSignedInteger(Type t) {
     if kindOf(t) != .primitive { return false }
     let i = typeIndex(t)
     return i == 0 || i == 1 || i == 2 || i == 3 || i == 8
 }
 
-bool isUnsignedInteger(Type t) => isInteger(t) && !isSignedInteger(t)
+public bool isUnsignedInteger(Type t) => isInteger(t) && !isSignedInteger(t)
 
 /// The C# `TypeSymbol.IsBorrow` (every override in `Types.cs`; the symbol classes do not override it).
-bool isBorrow(ref Ctx c, by Type t) {
+public bool isBorrow(ref Ctx c, by Type t) {
     switch kindOf(t) {
         case .span: return true
         case .textView: return true
@@ -344,13 +346,13 @@ bool isBorrow(ref Ctx c, by Type t) {
 // ── Primitive ranges ───────────────────────────────────────────────────────────
 
 /// The C# `PrimitiveType.Range`; a non-integer kind is a caller bug.
-struct TypeRange {
-    Big min
-    Big max
+public struct TypeRange {
+    public Big min
+    public Big max
 }
 
 /// The smallest and largest value of an integer kind, via T5's `bigMin`/`bigMax`.
-TypeRange range(PrimitiveKind k) {
+public TypeRange range(PrimitiveKind k) {
     switch k {
         case .i8: return TypeRange { min: bigMin(8, signed: true), max: bigMax(8, signed: true) }
         case .i16: return TypeRange { min: bigMin(16, signed: true), max: bigMax(16, signed: true) }
@@ -419,7 +421,7 @@ string tupleKey(in List<TupleField> fields) {
 
 // ── Interning ──────────────────────────────────────────────────────────────────
 
-Type internOptional(ref Ctx c, by Type inner) {
+public Type internOptional(ref Ctx c, by Type inner) uses alloc {
     let key = string(inner)
     let found = c.optionalIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.optional, at: id) }
@@ -429,7 +431,7 @@ Type internOptional(ref Ctx c, by Type inner) {
     return makeType(.optional, at: id)
 }
 
-Type internSpan(ref Ctx c, by Type element, bool readOnly) {
+public Type internSpan(ref Ctx c, by Type element, bool readOnly) uses alloc {
     let key = $"{element},{readOnly}"
     let found = c.spanIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.span, at: id) }
@@ -439,7 +441,7 @@ Type internSpan(ref Ctx c, by Type element, bool readOnly) {
     return makeType(.span, at: id)
 }
 
-Type internDynRef(ref Ctx c, by InterfaceId iface, bool readOnly) {
+public Type internDynRef(ref Ctx c, by InterfaceId iface, bool readOnly) uses alloc {
     let key = $"{iface},{readOnly}"
     let found = c.dynRefIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.dynRef, at: id) }
@@ -449,7 +451,7 @@ Type internDynRef(ref Ctx c, by InterfaceId iface, bool readOnly) {
     return makeType(.dynRef, at: id)
 }
 
-Type internList(ref Ctx c, by Type element) {
+public Type internList(ref Ctx c, by Type element) uses alloc {
     let key = string(element)
     let found = c.listIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.list, at: id) }
@@ -459,7 +461,7 @@ Type internList(ref Ctx c, by Type element) {
     return makeType(.list, at: id)
 }
 
-Type internMap(ref Ctx c, by Type key, to Type value) {
+public Type internMap(ref Ctx c, by Type key, to Type value) uses alloc {
     let k = $"{key},{value}"
     let found = c.mapIntern.tryGet(at: k)
     if (found is { } id) { return makeType(.map, at: id) }
@@ -469,7 +471,7 @@ Type internMap(ref Ctx c, by Type key, to Type value) {
     return makeType(.map, at: id)
 }
 
-Type internOwned(ref Ctx c, by Type inner) {
+public Type internOwned(ref Ctx c, by Type inner) uses alloc {
     let key = string(inner)
     let found = c.ownedIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.owned, at: id) }
@@ -479,7 +481,7 @@ Type internOwned(ref Ctx c, by Type inner) {
     return makeType(.owned, at: id)
 }
 
-Type internUntrusted(ref Ctx c, by Type inner) {
+public Type internUntrusted(ref Ctx c, by Type inner) uses alloc {
     let key = string(inner)
     let found = c.untrustedIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.untrusted, at: id) }
@@ -489,7 +491,7 @@ Type internUntrusted(ref Ctx c, by Type inner) {
     return makeType(.untrusted, at: id)
 }
 
-Type internArray(ref Ctx c, by Type element, at i64 length) {
+public Type internArray(ref Ctx c, by Type element, at i64 length) uses alloc {
     let key = $"{element},{length}"
     let found = c.arrayIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.array, at: id) }
@@ -499,7 +501,7 @@ Type internArray(ref Ctx c, by Type element, at i64 length) {
     return makeType(.array, at: id)
 }
 
-Type internRange(ref Ctx c, by Type element) {
+public Type internRange(ref Ctx c, by Type element) uses alloc {
     let key = string(element)
     let found = c.rangeIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.range, at: id) }
@@ -509,7 +511,7 @@ Type internRange(ref Ctx c, by Type element) {
     return makeType(.range, at: id)
 }
 
-Type internTuple(ref Ctx c, for in List<TupleField> fields) {
+public Type internTuple(ref Ctx c, for in List<TupleField> fields) uses alloc {
     let key = tupleKey(in fields)
     let found = c.tupleIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.tuple, at: id) }
@@ -519,7 +521,7 @@ Type internTuple(ref Ctx c, for in List<TupleField> fields) {
     return makeType(.tuple, at: id)
 }
 
-Type internFunction(ref Ctx c, for in List<Type> parameters, to Type ret, by in List<ErrorSetId> errorSets, as in List<string> effects) {
+public Type internFunction(ref Ctx c, for in List<Type> parameters, to Type ret, by in List<ErrorSetId> errorSets, as in List<string> effects) uses alloc {
     var sortedFails = copyIds(in errorSets)
     sortedFails.sort()
     var sortedUses = copyStrings(in effects)
@@ -534,7 +536,7 @@ Type internFunction(ref Ctx c, for in List<Type> parameters, to Type ret, by in 
     return makeType(.function, at: id)
 }
 
-Type internResult(ref Ctx c, by Type value, to Type error) {
+public Type internResult(ref Ctx c, by Type value, to Type error) uses alloc {
     let key = $"{value},{error}"
     let found = c.resultIntern.tryGet(at: key)
     if (found is { } id) { return makeType(.result, at: id) }
@@ -544,7 +546,7 @@ Type internResult(ref Ctx c, by Type value, to Type error) {
     return makeType(.result, at: id)
 }
 
-Type internState(ref Ctx c, by StructId s, for in List<VariantId> states) {
+public Type internState(ref Ctx c, by StructId s, for in List<VariantId> states) uses alloc {
     var distinct = List<VariantId>()
     for v in states {
         if !listContains(in distinct, by: v) { distinct.append(v) }
@@ -560,7 +562,7 @@ Type internState(ref Ctx c, by StructId s, for in List<VariantId> states) {
 }
 
 /// The C# `ErrorUnionType.Of`: one set and no exclusions returns the set itself.
-Type errorUnionOf(ref Ctx c, for in List<ErrorSetId> sets, as in List<VariantId> excluded) {
+public Type errorUnionOf(ref Ctx c, for in List<ErrorSetId> sets, as in List<VariantId> excluded) uses alloc {
     if sets.length == 1 && excluded.length == 0 { return errorSetTypeOf(sets[0]) }
     let key = $"{joinIds(in sets)}|{joinIds(in excluded)}"
     let found = c.errorUnionIntern.tryGet(at: key)
@@ -596,7 +598,8 @@ string builtinName(BuiltinKind k) {
         case .processResult: return "ProcessResult"
         case .panic: return "Panic"
         case .formatSpec: return "FormatSpec"
-        default: return "Symbol"
+        case .symbol: return "Symbol"
+        default: return "Path"
     }
 }
 
@@ -693,7 +696,7 @@ string errorUnionDisplay(ref Ctx c, by i64 idx) {
 }
 
 /// The C# `TypeSymbol.DisplayName` for every kind.
-string typeDisplay(ref Ctx c, by Type t) {
+public string typeDisplay(ref Ctx c, by Type t) uses alloc {
     switch kindOf(t) {
         case .primitive: return primitiveName(primKindOf(typeIndex(t)))
         case .error: return "?"
@@ -738,7 +741,7 @@ string typeDisplay(ref Ctx c, by Type t) {
 // ── Tuple/range/map views ──────────────────────────────────────────────────────
 
 /// The C# `MapType.Entry`: `(K key, V value)`.
-Type mapEntry(ref Ctx c, by Type map) {
+public Type mapEntry(ref Ctx c, by Type map) uses alloc {
     let m = c.mapTypes[typeIndex(map)]
     var fields = List<TupleField>()
     fields.append(TupleField { name: "key", type: m.key })
@@ -747,7 +750,7 @@ Type mapEntry(ref Ctx c, by Type map) {
 }
 
 /// The C# `RangeType.Layout`: `(element, element, bool)`.
-Type rangeLayout(ref Ctx c, by Type range) {
+public Type rangeLayout(ref Ctx c, by Type range) uses alloc {
     let e = c.rangeTypes[typeIndex(range)]
     var fields = List<TupleField>()
     fields.append(TupleField { name: null, type: e })
@@ -757,7 +760,7 @@ Type rangeLayout(ref Ctx c, by Type range) {
 }
 
 /// The C# `TextViewType.Element`.
-Type textViewElement(TextViewKind k) {
+public Type textViewElement(TextViewKind k) {
     switch k {
         case .runes: return prim(.char)
         case .utf16: return prim(.u16)
@@ -768,7 +771,7 @@ Type textViewElement(TextViewKind k) {
 // ── Keys, occurs, tuple index ─────────────────────────────────────────────────
 
 /// The C# `MapType.IsValidKey` with an empty path.
-bool isValidKey(ref Ctx c, by Type t) {
+public bool isValidKey(ref Ctx c, by Type t) uses alloc {
     var path = List<i64>()
     return isValidKeyInner(ref c, by: t, for: ref path)
 }
@@ -804,9 +807,9 @@ bool isValidKeyInner(ref Ctx c, by Type t, for ref List<i64> path) {
 }
 
 /// The C# `MapType.InvalidKeyPart`'s result.
-struct InvalidKeyPart {
-    string part
-    Type type
+public struct InvalidKeyPart {
+    public string part
+    public Type type
 }
 
 string fieldPartName(in TupleField f, at i64 i) {

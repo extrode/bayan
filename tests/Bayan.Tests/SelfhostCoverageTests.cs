@@ -135,6 +135,35 @@ public sealed class SelfhostCoverageTests
         Assert.Equal("""[{"span":[1,3],"lines":[0,1],"branches":[0,0]}]""", spans[other]!.ToJsonString());
     }
 
+    /// <summary>
+    /// An imported module's file (<c>m/lib.byn</c>, compiled under a path relative to the compilation's <c>DisplayRoot</c>)
+    /// is named by its full path in <c>bayan-quality.json</c>, in <c>functions.json</c> and in its listing, so the guard's
+    /// coverage gate finds it in git. Break-test: store the counters' and functions' paths unresolved.
+    /// </summary>
+    [Fact]
+    public void AnImportedModuleIsReportedByItsFullPath()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-coverage-import");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(Path.Combine(dir, "src", "m"));
+        var lib = Path.Combine(dir, "src", "m", "lib.byn");
+        File.WriteAllText(lib, "public i64 f(i64 a) {\n    return a + 1\n}\n");
+        var main = SourceText.FromString(Path.Combine(dir, "src", "main.byn"), "import m\nprint($\"{m.f(2)}\")\n");
+        var c = Compilation.Create([main], Path.Combine(dir, "src"));
+        Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
+        Assert.Contains(c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path), p => p is { } s && !Path.IsPathRooted(s));
+        var outDir = Path.Combine(dir, "out");
+        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal) { main.Path }, null, outDir, null);
+        Assert.True(build.Succeeded, build.Errors);
+        Assert.Equal("3\n", SelfhostParserTests.Run(build.ExecutablePath!).Out);
+        SelfhostSemanticsHarness.WriteCoverage(outDir);
+        var file = Assert.Single(JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "bayan-quality.json")))!["files"]!.AsArray())!;
+        Assert.Equal(lib, (string?)file["path"]);
+        Assert.Equal([lib], JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "functions.json")))!["files"]!.AsObject().Select(p => p.Key));
+        Assert.True(File.Exists(Path.Combine(outDir, CliApp.ListingName(Path.GetRelativePath(Golden.RepoRoot, lib)) + ".cov.txt")), "no listing for the imported file");
+    }
+
     /// <summary>A <c>BAYAN_COVERAGE_FILES</c> entry matching no compiled source throws, as <c>BAYAN_SNAPSHOT_FILES</c> does;
     /// <c>BAYAN_SNAPSHOT</c> with <c>BAYAN_COVERAGE</c> is refused. Break-tests: drop the <c>variable</c> argument; drop
     /// the both-set check.</summary>

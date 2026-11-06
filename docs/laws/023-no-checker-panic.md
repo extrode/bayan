@@ -1,12 +1,12 @@
 ---
 id: L023
 title: The Bayan checker never panics and keeps every diagnostic span inside its file
-status: proposed
+status: enacted
 kind: property
 scope: selfhost/semantics/
 proof: tests/Bayan.Tests/SelfhostSemanticsNoPanicLawTests.cs
 check: dotnet test -v q --filter "Law=L023"
-timeout: 1800
+timeout: 300
 ---
 
 ## Statement
@@ -50,7 +50,7 @@ case's `main.byn`), asserting exit 0 or 1, no `panic:` and no span line.
 `BareReturnInTestCatchMatchesCSharp` checks Q661's reproducer (a bare `return` in a test's `catch` block)
 with `--golden --tests` against the C# rendering of the same file compiled with tests (CliApp.cs:598).
 
-Measured 2026-11-03, after 010 T44 (the two facts 71 s; the corpus part 69.0 s, the CLI part 2.8 s):
+Measured 2026-11-03, after 010 T45 (Q874) (the two facts 71 s; the corpus part 69.0 s, the CLI part 2.8 s):
 
 | | inputs | compared | no lexer/parser diagnostic | panicked | C# throws (replaced) | C# span outside file | rendered as C# |
 |---|---|---|---|---|---|---|---|
@@ -66,15 +66,21 @@ On 2026-11-01 (T32) the same proof replaced 5 random inputs on which C# threw; s
 `DiagnosticRenderer.RenderAll`; it is reported, not asserted (L022 owns parity).
 
 On this corpus the self-hosted checker never panics and keeps every diagnostic span inside its file, and since
-010 T44 nothing is replaced: `KnownCSharpThrows` is empty. Until then the law had one C# counterexample (Q662):
+010 T45 (Q874) nothing is replaced: `KnownCSharpThrows` is empty. The law is `enacted` (2026-11-02, user-approved,
+spec 011 plan D11; it stayed `proposed` after T32, Q663). Until T45 it had one C# counterexample (Q662):
 random inputs made the C# parser throw `ArgumentOutOfRangeException` in `SourceText.GetText` from
 `Parser.ReportBraceless` (the L018 crash, Q486), 5 of them when T32 measured (`01145.byn`, `01358.byn`,
 `02510.byn`, `03889.byn`, `07234.byn`) and 4 as the corpus last stood (`00800.byn`, `04393.byn`, `05382.byn`,
-`07933.byn`); each was replaced by an empty input and pinned. C# was fixed in 517d1c9 and the port in 010 T44,
-which removes the counterexample Q663 kept the law `proposed` for. The status stays `proposed` until it is
-enacted at the start of 011 (Q744).
+`07933.byn`); each was replaced by an empty input and pinned. C# was fixed in 517d1c9 and the port in 010 T45.
 
 T32 (2026-11-01) re-ran the proof on the 010 base after T29–T31 landed: `dotnet test -v q --filter "Law=L023"` 2 passed, 56 s test time (64 s wall, `bayan-check` rebuilt first, shared machine). Enacting then waited on Q663, whose C# fix has since landed (above).
+
+Tiers (`BAYAN_LAW_TIER`, Q744, Q748): unset is the quick tier, every golden, the seeds and the CLI path, plus the first
+N = 1,000 of the 10,000 random inputs (the seeded generator writes the same prefix whatever the corpus size, and
+`KnownCSharpThrows` is asserted for the random inputs below N only); `full` is the whole corpus. Measured 2026-11-03 on
+the Mac: quick 32 s and full 54 s together with L018's fact (L023 alone, full: 74 s). N is one tenth of the corpus, from
+Q744's 30-minute full proof and 3-minute quick target; on the Mac the full tier is already under 3 minutes, so N is not
+time-limited here (Q748).
 
 Neither checker bounds its recursion, so the proof does not exercise stack overflow (as Q508 for L018).
 

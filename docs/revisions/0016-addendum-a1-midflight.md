@@ -67,7 +67,7 @@ interface ICCompiler {
 
 **K4. Route libc through the runtime (012).** Emitted code calls `rt` functions, never libc directly, and the runtime keeps a list of the libc functions it uses. That list is the size of the job when Bayān later ships its own sysroot or a no-libc target.
 
-**K5. Make `bootstrap/bayan.c` build with any C11 compiler (012).** Stage 1 must build with plain `cc bootstrap/bayan.c`, without Zig. This is the first concrete step to toolchain independence.
+**K5. Make `bootstrap/bayan.c` build with any C11 compiler (012).** Stage 1 must build without Zig with `cc -fwrapv -ffp-contract=off bootstrap/bayan.c bootstrap/bayan-rt.c -lm`, where `bootstrap/bayan-rt.{h,c}` are copies of `src/runtime/bayan-rt.{h,c}` that a CI check keeps byte-identical (wording changed by the user 2026-11-04, spec 012 Q6). This is the first concrete step to toolchain independence.
 
 **K6. Keep output reproducible (012).** No timestamps or absolute paths in emitted C or `#line` directives. Stage 2 and stage 3 must already be byte-identical, so this mostly writes down what 012 needs anyway.
 

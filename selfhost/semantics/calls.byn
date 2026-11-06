@@ -51,7 +51,7 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fro
                             let over = t9Function(ref c, for: "StrBuf.over")
                             let ps = copyIds(in c.functions[over].parameters)
                             let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: over, enforceNames: false, displayName: "StrBuf.over")
-                            return addCall(ref c, from: BCall { span: call.span, function: over, receiver: -1, arguments: move args, type: builtinType(.strBuf) })
+                            return recordSyntax(ref c, for: addCall(ref c, from: BCall { span: call.span, function: over, receiver: -1, arguments: move args, type: builtinType(.strBuf) }), from: in syntax)
                         }
                         // `Log.debug(…)` on an undeclared `Log` names the level where the act should be (BYN5007, Question 271).
                         let logLevel = typeIndex(t9Type(ref c, for: "LogLevel"))
@@ -64,7 +64,7 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fro
                                 help: $"call `log` and pass the level `as: .{member}`",
                                 hasFix: plain, fixSpan: plain ? call.span : null, fixReplacement: plain ? $"log({text}, as: .{member})" : "")
                             bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-                            return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+                            return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax)
                         }
                     default:
                         break
@@ -117,18 +117,18 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fro
         let fields = copyIds(in c.unionVariants[v].fields)
         let variantName = c.unionVariants[v].name
         let payload = bindArguments(ref b, through: ref c, for: in call, by: in fields, as: -1, enforceNames: false, displayName: variantName)
-        return addUnionNew(ref c, from: BUnionNew { span: call.span, variant: v, payload: move payload })
+        return recordSyntax(ref c, for: addUnionNew(ref c, from: BUnionNew { span: call.span, variant: v, payload: move payload }), from: in syntax)
     }
     if kind == .unionNew && c.bUnionNews[i].payload.length == 0 {
         let v = c.bUnionNews[i].variant
         report(ref b, through: ref c, for: .variantHasNoPayload, at: call.span, by: (c.unionVariants[v].name, "", "", "", ""),
             help: $"write `{c.unions[c.unionVariants[v].owner].name}.{c.unionVariants[v].name}` without parentheses")
         bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax)
     }
     if kind == .errorExpr {
         bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax)
     }
     // A call through a function value: the value is the receiver of its type's invoke symbol (R9).
     let type = exprType(in c, for: callee)
@@ -137,7 +137,7 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fro
     }
     report(ref b, through: ref c, for: .notCallable, at: parser.exprSpan(in call.callee), by: (typeDisplay(ref c, by: type), "", "", "", ""))
     bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-    return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax)
 }
 
 /// `c.Args.Any(a => a.Name?.Text == name)`.
@@ -217,17 +217,17 @@ BExpr bindTryFrom(ref Binder b, through ref Ctx c, for in parser.CallExpr call, 
     if call.args.length != 1 || call.args[0].name is not null {
         report(ref b, through: ref c, for: .tooManyArguments, at: parser.exprSpan(in call.callee), by: ($"{typeDisplay(ref c, by: prim(target))}.tryFrom", "1", "", "", ""))
         bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
     }
     let operand = bindExpr(ref b, through: ref c, for: in call.args[0].value)
     let type = exprType(in c, for: operand)
-    if isError(type) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    if isError(type) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     if !isNumeric(type) {
         report(ref b, through: ref c, for: .invalidCast, at: parser.exprSpan(in call.args[0].value), by: (typeDisplay(ref c, by: type), typeDisplay(ref c, by: prim(target)), "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
     }
     let optional = internOptional(ref c, by: prim(target))
-    return addTryFrom(ref c, from: BTryFrom { span: call.span, operand: operand, target: prim(target), type: optional })
+    return recordSyntaxNode(ref c, for: addTryFrom(ref c, from: BTryFrom { span: call.span, operand: operand, target: prim(target), type: optional }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:146 BindTryParse: `i64.tryParse(text, as: radix)`, an integer read from text in a `Radix`, `.decimal` by
@@ -240,17 +240,18 @@ BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call,
     if call.args.length >= 2 { ps.append(asParam) }
     @unobservable because "Q619: enforceNames reads only a parameter's Param syntax or a bool type, which these parameters lack; the mutant is equivalent"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
-    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    // coverage-exempt: Q853
+    if args.length == 0 { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     for a in args {
-        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+        if isError(exprType(in c, for: a)) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     }
     var radix = args.length > 1 ? args[1] : -1
     if args.length <= 1 {
         let decimal = findEnumMember(ref c, by: typeIndex(radixType), for: "decimal")
-        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
+        radix = recordSyntaxNode(ref c, for: addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal }), at: syntaxOfCall(ref c, from: in call))
     }
     let optional = internOptional(ref c, by: prim(target))
-    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intTryParse, receiver: args[0], arguments: [radix], type: optional })
+    return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intTryParse, receiver: args[0], arguments: [radix], type: optional }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:160 BindFloatTryParse: `f64.tryParse(text)`, a float read from text in the literal form without `_`, or
@@ -260,12 +261,13 @@ BExpr bindFloatTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr 
     ps.append(newLocal(ref c, by: LocalSymbol { name: "text", type: prim(.string), kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
     @unobservable because "Q619: enforceNames reads only a parameter's Param syntax or a bool type, which these parameters lack; the mutant is equivalent"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
-    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    // coverage-exempt: Q853
+    if args.length == 0 { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     for a in args {
-        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+        if isError(exprType(in c, for: a)) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     }
     let optional = internOptional(ref c, by: prim(target))
-    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .floatTryParse, receiver: args[0], arguments: [], type: optional })
+    return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .floatTryParse, receiver: args[0], arguments: [], type: optional }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:168 BindParse: `i64.parse(text, as: radix)`, as `tryParse`, but fails `ParseError` with the offset of the
@@ -278,17 +280,18 @@ BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fr
     for i in 0..take { ps.append(all[i]) }
     let name = $"{typeDisplay(ref c, by: prim(target))}.parse"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: name)
-    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    // coverage-exempt: Q853
+    if args.length == 0 { return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax) }
     for a in args {
-        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+        if isError(exprType(in c, for: a)) { return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax) }
     }
     var radix = args.length > 1 ? args[1] : -1
     if args.length <= 1 {
         let decimal = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Radix")), for: "decimal")
-        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
+        radix = recordSyntax(ref c, for: addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal }), from: in syntax)
     }
     if !((b.handled is { } h) && h == call.span) { t20Unhandled(ref b, through: ref c, at: call.span, by: name) }
-    return addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: [args[0], radix], type: c.functions[fn].returnType })
+    return recordSyntax(ref c, for: addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: [args[0], radix], type: c.functions[fn].returnType }), from: in syntax)
 }
 
 /// BinderCalls.cs:174-178, :239-243: inside a `try` operand an unhandled failing call is collected in `covered` (Q731),
@@ -344,7 +347,7 @@ BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr c
         }
         if instance == -1 {
             bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-            return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+            return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), from: in syntax)
         }
         target = instance
     }
@@ -407,7 +410,7 @@ BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr c
     }
     if c.functions[target].hasFails && !((b.handled is { } h) && h == call.span) { t20Unhandled(ref b, through: ref c, at: call.span, by: name) }
     let type = recv == -1 ? c.functions[target].returnType : returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: recv), by: target)
-    return addCall(ref c, from: BCall { span: call.span, function: target, receiver: recv, arguments: move args, type: type })
+    return recordSyntax(ref c, for: addCall(ref c, from: BCall { span: call.span, function: target, receiver: recv, arguments: move args, type: type }), from: in syntax)
 }
 
 /// C# `fn.Decl`'s `Requires.Length > 0` (`expects`) and `Becomes`, read from the function's declaration where `t12Params` finds it.
@@ -598,11 +601,14 @@ bool t20Unify(ref Binder b, through ref Ctx c, for Type p, as Type a, by ref Map
 
 /// BinderCalls.cs:366 BindArguments.
 List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") =>
-    bindArgumentList(ref b, through: ref c, for: in call.args, at: call.span, by: in ps, as: fn, enforceNames: enforceNames, displayName: displayName)
+    t21BindArgumentList(ref b, through: ref c, for: in call.args, at: call.span, by: in ps, as: fn, enforceNames: enforceNames, displayName: displayName, syntax: syntaxOfCall(ref c, from: in call))
 
 /// C# `BindArguments` on the arguments `args` of a call spanning `span`: `bindArguments` reads nothing else of its `CallExpr`, and
 /// `bindBecome` has no `CallExpr` to pass (C# builds one around `b.Args`, BinderStates.cs:14; Q656).
-List<BExpr> bindArgumentList(ref Binder b, through ref Ctx c, for in List<parser.Argument> args, at TextSpan span, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") {
+List<BExpr> bindArgumentList(ref Binder b, through ref Ctx c, for in List<parser.Argument> args, at TextSpan span, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") => t21BindArgumentList(ref b, through: ref c, for: in args, at: span, by: in ps, as: fn, enforceNames: enforceNames, displayName: displayName, syntax: -1)
+
+/// `bindArgumentList` where `syntax` is the recorded `CallExpr` (`syntaxNode`) the nodes it builds take as their C# `Syntax` (Q849).
+List<BExpr> t21BindArgumentList(ref Binder b, through ref Ctx c, for in List<parser.Argument> args, at TextSpan span, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "", i64 syntax = -1) {
     let name = displayName != "" ? displayName : fn != -1 ? c.functions[fn].name : "?"
     // An instantiation follows its template's rule, so a `T` parameter is not a `bool` one at `T = bool`.
     let template = fn != -1 ? c.functions[fn].template : -1
@@ -683,7 +689,7 @@ List<BExpr> bindArgumentList(ref Binder b, through ref Ctx c, for in List<parser
         given[o] = true
     }
     if rest != -1 && !given[c.locals[rest].ordinal] {
-        result[c.locals[rest].ordinal] = t20BindRestTail(ref b, through: ref c, for: in args, at: span, by: rest, from: tail)
+        result[c.locals[rest].ordinal] = t20BindRestTail(ref b, through: ref c, for: in args, at: span, by: rest, from: tail, to: syntax)
         given[c.locals[rest].ordinal] = true
     }
     var missing = List<string>()
@@ -691,21 +697,21 @@ List<BExpr> bindArgumentList(ref Binder b, through ref Ctx c, for in List<parser
         if given[i] { continue }
         let p = ps[i]
         if (t20Param(c, for: p).syntax is { } x) && x.hasDefault && fn != -1 {
-            result[i] = parameterDefault(ref c, for: fn, by: p) ?? addErrorExpr(ref c, from: BErrorExpr { span: span })
+            result[i] = parameterDefault(ref c, for: fn, by: p) ?? recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
             continue
         }
         if fn != -1 && c.functions[fn].builtin == .log && c.locals[p].ordinal == 1 {
             let info = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "LogLevel")), for: "info")
-            result[i] = addEnumMember(ref c, from: BEnumMember { span: span, member: info })
+            result[i] = recordSyntaxNode(ref c, for: addEnumMember(ref c, from: BEnumMember { span: span, member: info }), at: syntax)
             continue
         }
         if fn != -1 && c.functions[fn].builtin == .print && c.locals[p].ordinal == 1 {
             let stdout = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Stream")), for: "stdout")
-            result[i] = addEnumMember(ref c, from: BEnumMember { span: span, member: stdout })
+            result[i] = recordSyntaxNode(ref c, for: addEnumMember(ref c, from: BEnumMember { span: span, member: stdout }), at: syntax)
             continue
         }
         missing.append(label(ref c, for: p))
-        result[i] = addErrorExpr(ref c, from: BErrorExpr { span: span })
+        result[i] = recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
     if missing.length > 0 && !mismatched {
         report(ref b, through: ref c, for: .missingArgument, at: span, by: (missing.joined(by: "`, `"), name, "", "", ""))
@@ -716,7 +722,7 @@ List<BExpr> bindArgumentList(ref Binder b, through ref Ctx c, for in List<parser
 /// BinderCalls.cs:467 BindRestTail: the arguments of a `rest` tail (indexes into `call.args`) as a span literal, which
 /// lowers to stack slots in the caller (J62). A lone `..x` passes the span of collection `x`; on anything else it stays a
 /// range (J63).
-BExpr t20BindRestTail(ref Binder b, through ref Ctx c, for in List<parser.Argument> args, at TextSpan span, by LocalId p, from List<i64> tail) {
+BExpr t20BindRestTail(ref Binder b, through ref Ctx c, for in List<parser.Argument> args, at TextSpan span, by LocalId p, from List<i64> tail, to i64 syntax) {
     let type = c.locals[p].type
     if tail.length == 1 && args[tail[0]].name is null && args[tail[0]].modifier == .none {
         switch args[tail[0]].value {
@@ -738,7 +744,7 @@ BExpr t20BindRestTail(ref Binder b, through ref Ctx c, for in List<parser.Argume
     let element = c.spanTypes[typeIndex(type)].element
     var elements = List<BExpr>()
     for i in tail { elements.append(t20BindArgumentValue(ref b, through: ref c, for: args[i], as: element)) }
-    return addCollection(ref c, from: BCollection { span: span, type: type, elements: move elements })
+    return recordSyntaxNode(ref c, for: addCollection(ref c, from: BCollection { span: span, type: type, elements: move elements }), at: syntax)
 }
 
 /// C# `p.Syntax` with `Label(p)`: read from the declaration of the function whose parameter `p` is (Q713); a parameter
@@ -799,7 +805,7 @@ BExpr t20BindArgument(ref Binder b, through ref Ctx c, for parser.Argument arg, 
         // callee supplies a new value, so its state is no longer known.
         if boundKind(place) == .local && knownState(ref b, for: c.bLocals[boundIndex(place)].local) != -1 {
             let local = c.bLocals[boundIndex(place)].local
-            place = addLocal(ref c, from: BLocal { span: c.bLocals[boundIndex(place)].span, local: local })
+            place = shareSyntax(ref c, for: addLocal(ref c, from: BLocal { span: c.bLocals[boundIndex(place)].span, local: local }), from: place)
             if wanted == .outKeyword { forgetState(ref b, for: local) }
         } else if boundKind(place) == .thisRef && wanted == .outKeyword {
             forgetState(ref b, for: t15ThisFacts(ref b, through: ref c))
@@ -809,7 +815,7 @@ BExpr t20BindArgument(ref Binder b, through ref Ctx c, for parser.Argument arg, 
         if placeType != ptype {
             report(ref b, through: ref c, for: .typeMismatch, at: valueSpan, by: (typeDisplay(ref c, by: placeType), typeDisplay(ref c, by: ptype), "", "", ""),
                 help: "give a `ref` or `out` argument exactly the parameter's type")
-            return addErrorExpr(ref c, from: BErrorExpr { span: valueSpan })
+            return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: valueSpan }), from: in arg.value)
         }
         // An `out` argument writes a whole value: a `ref` parameter or `this` keeps its state only when its type names one (BYN7012).
         let isLocal = boundKind(place) == .local
@@ -844,7 +850,7 @@ BExpr t20BindArgumentValue(ref Binder b, through ref Ctx c, for parser.Argument 
     }
     if arg.modifier == .moveKeyword { value = bindMove(ref b, through: ref c, at: arg.span, for: value) }
     if (callee is { } who) && type != -1 && kindOf(type) == .state && reportWrongState(ref b, through: ref c, for: who, by: value, as: type, at: valueSpan) {
-        return addErrorExpr(ref c, from: BErrorExpr { span: valueSpan })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: valueSpan }), from: in arg.value)
     }
     // A type argument inferred from the value is not a typed use of it.
     if type == -1 { return value }
@@ -858,13 +864,13 @@ BExpr t20BindIt(ref Binder b, through ref Ctx c, for parser.Expr e, by TextSpan 
         // Outside any lambda, the `it` in scope is a `requires` rule's checked value.
         report(ref b, through: ref c, for: .nestedIt, at: it, by: ("", "", "", "", ""),
             help: b.lambdas.length == 0 ? "name the lambda's parameter: `x => …`" : "name the inner lambda's parameter: `x => …`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: parser.exprSpan(in e) })
+        return recordSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: parser.exprSpan(in e) }), from: in e)
     }
     b.itDepth += 1
     var ps = List<TextSpan>()
     ps.append(it)
     let noBlock: parser.BlockStmt? = null
-    let lambda = bindLambda(ref b, through: ref c, at: parser.exprSpan(in e), for: in ps, from: in e, by: in noBlock, to: type)
+    let lambda = recordSyntaxNode(ref c, for: bindLambda(ref b, through: ref c, at: parser.exprSpan(in e), for: in ps, from: in e, by: in noBlock, to: type), at: syntaxNode(ref c, from: in e))
     b.itDepth -= 1
     return lambda
 }

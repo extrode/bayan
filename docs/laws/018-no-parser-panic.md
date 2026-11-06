@@ -1,12 +1,12 @@
 ---
 id: L018
 title: The Bayan parser never panics and keeps every span inside the input and its parent
-status: proposed
+status: enacted
 kind: property
 scope: selfhost/parser/parser.byn
 proof: tests/Bayan.Tests/SelfhostParserNoPanicLawTests.cs
 check: dotnet test -v q --filter "Law=L018"
-timeout: 1800
+timeout: 300
 ---
 
 ## Statement
@@ -47,13 +47,21 @@ child-within-parent half is false of C# itself, so it cannot hold for a port tha
   (`7320697320436972636C65207B7D0A20202020696620287320697320436972636C20C3C820`): `Parser.ReportBraceless`
   threw `ArgumentOutOfRangeException` on a braceless body that took no token (Q486), and the port panicked
   identically (`slice out of range` at `lexer/source.byn:80`), so the generator replaced both with empty
-  inputs. C# was fixed in 517d1c9 and the port in 010 T44; both inputs are now in the no-panic corpus, and
+  inputs. C# was fixed in 517d1c9 and the port in 010 T45 (Q874); both inputs are now in the no-panic corpus, and
   both are among the 1,085 child-outside-parent inputs below. The generator still replaces a candidate that
   crashes C#, and logs the count.
 
-The no-panic clause and the "node span within the input" half now hold on every input of both corpora,
-with nothing replaced. The child-within-parent half is still false of C# itself (the span bugs above), so
-the law stays `proposed` on that count (Q509); enactment is scheduled for the start of 011 (Q744).
+Enacted 2026-11-02 (user-approved, spec 011 plan D11; was `proposed` under Q509, Q510).
+
+Since the C# fix 517d1c9 and its port (010 T45, Q874) the no-panic clause and the "node span within the input" half
+hold on every input of both corpora, with nothing replaced. The child-within-parent half is still false of C# itself
+(the span bugs above).
+
+Tiers (`BAYAN_LAW_TIER`, Q744, Q748): unset is the quick tier, the 128 corrupted seeds plus the first N = 400 of the
+4,000 random inputs (the seeded generator writes the same prefix whatever the corpus size, so a failure reproduces);
+`full` is the whole corpus. Measured 2026-11-03 on the Mac: quick 32 s and full 54 s together with L023's two facts
+(L018 alone: full 10 s). N is one tenth of the corpus, from Q744's 30-minute full proof and 3-minute quick target;
+on the Mac the full tier is already under 3 minutes, so N is not time-limited here (Q748).
 
 The generator caps block/expression nesting at `SelfhostParserGenerator.NestingCap` (8); the random
 corpus caps its own nesting the same way. Both `Parser.cs` and the port recurse without a limit, so a

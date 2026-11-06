@@ -1,11 +1,14 @@
 #!/bin/bash
 # guard.sh — run in a writer worktree before finishing. Prints GUARD PASS or GUARD FAIL + the items to fix.
-#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]]
+#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]] [--spec <nnn>] [--scope-only]
+# --spec picks the row of specs.tsv (default 010): its shared-state files are allowed in scope, its test-class prefix names the task;
+# --scope-only stops after check 1 and 2 (land.sh --check-scope).
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
 # 3 build 0 warnings, 4 tests pass with 0 skipped, and coverage (spec 013 T26): when the branch changes selfhost .byn files the
 # tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
 # holds a line added or changed against the merge base with --base; a new function counts) must be covered, each missed one
-# named (coverage-gate.py); each file's other functions get one info line, never a FAIL. The guard makes no baseline check of
+# named (coverage-gate.py; `// coverage-exempt:` for code dead in the C#, `// coverage-blocked: Qnnn T<k> <fn>` for code
+# behind sibling T<k>'s stub while T<k> is open and not --task); each file's other functions get one info line, never a FAIL; a file under another specs.tsv row's bydir (an 011 task editing selfhost/semantics) has only its changed lines gated (Q871), while files outside every bydir (selfhost/parser) keep the touched-function rule; a changed file the report has no entry for is one (Q820). The guard makes no baseline check of
 # coverage: it leaves the report at tmp/guard-run/coverage/bayan-quality.json, and land.sh records it (raise-only) in
 # tests/quality-baseline.json. 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
 # mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
@@ -18,11 +21,14 @@
 # FAIL item naming its input, never a silent pass.
 set -u
 export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0  # no MSBuild worker or build server outlives the run
-BASE=""; ALLOW=""; FILTER=""; TASK=""; MUTATE=""
+BASE=""; ALLOW=""; FILTER=""; TASK=""; MUTATE=""; SPEC=010; SCOPEONLY=0
 while [ $# -gt 0 ]; do case "$1" in
   --base) BASE=$2; shift 2;; --allow) ALLOW=$2; shift 2;; --filter) FILTER=$2; shift 2;; --task) TASK=$2; shift 2;;
-  --mutate) MUTATE=$2; shift 2;; *) echo "unknown arg $1"; exit 2;; esac; done
+  --mutate) MUTATE=$2; shift 2;; --spec) SPEC=$2; shift 2;; --scope-only) SCOPEONLY=1; shift;; *) echo "unknown arg $1"; exit 2;; esac; done
 [ -n "$BASE" ] && [ -n "$FILTER" ] || { echo "need --base and --filter"; exit 2; }
+ROW=$(awk -F'\t' -v s="$SPEC" 'NR>1 && $1==s' "$(dirname "$0")/specs.tsv")
+[ -n "$ROW" ] || { echo "no row for spec $SPEC in specs.tsv"; exit 2; }
+IFS=$'\t' read -r _ SDIR STASKS _ _ SHARED BYDIR PREFIX _ <<< "$ROW"
 FAIL=(); note() { FAIL+=("$1"); }
 mkdir -p "$PWD/tmp/guard-run"; LOG=$PWD/tmp/guard-run
 
@@ -30,12 +36,17 @@ mkdir -p "$PWD/tmp/guard-run"; LOG=$PWD/tmp/guard-run
 CHANGED=$( { git diff --name-only "$BASE"...HEAD; git diff --name-only; git ls-files --others --exclude-standard; } | sort -u)
 while IFS= read -r f; do
   [ -n "$f" ] || continue
-  ok=0; case "$f" in docs/bayan-handoff.md|work/todo.md|docs/specs/*/*-tasks.md|docs/specs/*/reviews/*.md|selfhost/semantics/ctx.byn) ok=1;; esac
+  ok=0; case "$f" in docs/bayan-handoff.md|work/todo.md|docs/specs/*/*-tasks.md|docs/specs/*/reviews/*.md) ok=1;; esac
+  IFS=',' read -ra SH <<< "$SHARED"; for p in "${SH[@]}"; do [ "$f" = "$p" ] && ok=1; done
   IFS=',' read -ra PATS <<< "$ALLOW"; for p in "${PATS[@]}"; do [[ "$f" == $p ]] && ok=1; done
   [ $ok = 1 ] || note "scope: $f is outside --allow ($ALLOW); revert it or record the need as a Question"
   b=$(basename "$f"); [[ "$b" != *.* ]] && note "junk: $f has no extension (stray run-case output?); delete it"
   [ -f "$f" ] && ! grep -Iq . "$f" 2>/dev/null && [ -s "$f" ] && note "junk: $f is binary; delete it"
 done <<< "$CHANGED"
+if [ $SCOPEONLY = 1 ]; then
+  if [ ${#FAIL[@]} = 0 ]; then echo "GUARD PASS"; exit 0; fi
+  echo "GUARD FAIL (${#FAIL[@]} items):"; for x in "${FAIL[@]}"; do echo "- $x"; done; exit 1
+fi
 # the changed selfhost .byn files still present: the files coverage is measured over
 COVER=$(while IFS= read -r f; do case "$f" in selfhost/*.byn) [ -f "$f" ] && echo "$f";; esac; done <<< "$CHANGED" | tr '\n' ',' | sed 's/,$//')
 rm -f "$LOG/quality-"*.json  # a mutation report left by an earlier run must not reach this run's baseline check
@@ -64,7 +75,13 @@ if [ $TX = 0 ] && [ -n "$COVER" ]; then
   if [ ! -f "$COV/bayan-quality.json" ]; then
     note "coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter '$FILTER' builds a selfhost program with $COVER"
   else
-    out=$(python3 -I "$(dirname "$0")/coverage-gate.py" "$(git merge-base "$BASE" HEAD)" "$COV/bayan-quality.json" "$COV/functions.json" 2> "$LOG/coverage-gate.txt") \
+    # a changed file no build under --filter compiles has no entry in the report, so none of its functions is checked (Q820);
+    # a malformed report fails in coverage-gate.py below, naming it
+    miss=$(python3 -I -c 'import json, os, sys; p = {os.path.realpath(f["path"]) for f in json.load(open(sys.argv[1]))["files"]}; print("\n".join(f for f in sys.argv[2].split(",") if os.path.realpath(f) not in p))' \
+      "$COV/bayan-quality.json" "$COVER" 2> /dev/null) || miss=""
+    while read -r f; do [ -n "$f" ] && note "coverage: $f is in no build under --filter '$FILTER' (no entry in tmp/guard-run/coverage/bayan-quality.json), so its touched functions are unchecked"; done <<< "$miss"
+    out=$(python3 -I "$(dirname "$0")/coverage-gate.py" "$(git merge-base "$BASE" HEAD)" "$COV/bayan-quality.json" "$COV/functions.json" \
+      "$SDIR/$STASKS" "$TASK" "$BYDIR" 2> "$LOG/coverage-gate.txt") \
       || note "coverage: $(tail -1 "$LOG/coverage-gate.txt")"
     while read -r l; do case "$l" in "- "*) note "${l#- }";; ?*) echo "$l";; esac; done <<< "$out"
   fi
@@ -78,12 +95,12 @@ while IFS= read -r f; do case "$f" in *.byn) [ -f "$f" ] || continue
 while read -r l; do [ -n "$l" ] && note "$l"; done < "$LOG/banned.txt"
 
 # 7 content checks (before mutations: they are cheap)
-# the task comes from --task, else from a SelfhostSemanticsT<n>Tests class in --filter (T26/T27 test classes carry no number)
-[ -n "$TASK" ] || TASK=$(echo "$FILTER" | grep -oE 'SelfhostSemanticsT[0-9]+Tests' | head -1 | sed -E 's/SelfhostSemantics(T[0-9]+)Tests/\1/')
+# the task comes from --task, else from a <prefix><n>Tests class in --filter (the row's test-class prefix; T26/T27 test classes carry no number)
+[ -n "$TASK" ] || TASK=$(echo "$FILTER" | grep -oE "${PREFIX}[0-9]+Tests" | head -1 | sed -E "s/${PREFIX%T}(T[0-9]+)Tests/\1/")
 if [ -n "$TASK" ]; then
-  out=$(python3 -I "$(dirname "$0")/guard-checks.py" "$BASE" "$TASK" "$ALLOW" 2> "$LOG/checks.txt") || note "checks: guard-checks.py failed: $(tail -1 "$LOG/checks.txt")"
+  out=$(python3 -I "$(dirname "$0")/guard-checks.py" "$BASE" "$TASK" "$ALLOW" "$SPEC" 2> "$LOG/checks.txt") || note "checks: guard-checks.py failed: $(tail -1 "$LOG/checks.txt")"
   while read -r l; do [ -n "$l" ] && note "$l"; done <<< "$out"
-else note "checks: no --task and --filter names no SelfhostSemanticsT<n>Tests class, so the content checks cannot run"; fi
+else note "checks: no --task and --filter names no ${PREFIX}<n>Tests class, so the content checks cannot run"; fi
 
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
 # the recording and the per-build runs are mutation-step.sh (shared with mutate-batch.sh); the reports are copied to

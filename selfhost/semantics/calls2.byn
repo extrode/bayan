@@ -2,9 +2,6 @@
 
 import parser
 
-/// The syntax `bindConversion` takes for the C# `c` of `BindConversion(c, p, arg.Value)`, which reads only its span (Q620).
-type T21ErrorExpr = parser.ErrorExpr
-
 // The C# `BindSwitchSubject`'s result and its `out bool owns`.
 struct SwitchSubjectResult {
     BExpr value
@@ -32,8 +29,8 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
                 checkAccess(ref b, through: ref c, for: c.functions[ctor].access, from: s, by: c.structs[s].module, at: calleeSpan)
                 let ps = copyIds(in c.functions[ctor].parameters)
                 let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: ctor, enforceNames: true)
-                let built = addCall(ref c, from: BCall { span: call.span, function: ctor, receiver: -1, arguments: move args, type: type })
-                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built)
+                let built = recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: ctor, receiver: -1, arguments: move args, type: type }), at: syntaxOfCall(ref c, from: in call))
+                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built, from: syntaxOfCall(ref c, from: in call))
             }
             if c.distinct.contains(s) {
                 // `Email(raw)` wraps the value; with `requires`, the wrapper is checked like a literal.
@@ -42,8 +39,8 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
                 ps.append(newLocal(ref c, by: LocalSymbol { name: c.fields[value].name, nameSpan: c.fields[value].nameSpan, span: c.fields[value].nameSpan, type: c.fields[value].type, kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
                 let display = c.structs[s].name
                 let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: display)
-                let built = addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move args })
-                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built)
+                let built = recordSyntaxNode(ref c, for: addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move args }), at: syntaxOfCall(ref c, from: in call))
+                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built, from: syntaxOfCall(ref c, from: in call))
             }
             if c.positional.contains(declKey(c.structs[s].file, at: c.structs[s].declIndex)) {
                 // `Point(3, 4)` is `Point { x: 3, y: 4 }`: every field in declaration order, checked like the literal.
@@ -55,15 +52,15 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
                 }
                 let display = c.structs[s].name
                 let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: display)
-                let built = addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move args })
-                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built)
+                let built = recordSyntaxNode(ref c, for: addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move args }), at: syntaxOfCall(ref c, from: in call))
+                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built, from: syntaxOfCall(ref c, from: in call))
             }
             let states = statesOf(ref c, for: s)
             if states != -1 {
                 report(ref b, through: ref c, for: .stateLiteralNeedsState, at: calleeSpan, by: (c.structs[s].name, c.unionVariants[c.unions[states].variants[0]].name, "", "", ""),
                     help: "name the state the value starts in")
                 bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-                return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
             }
             let fields = copyIds(in c.structs[s].fields)
             if call.args.length > 0 {
@@ -75,7 +72,7 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
                 report(ref b, through: ref c, for: .noConstructor, at: calleeSpan, by: (c.structs[s].name, "", "", "", ""),
                     help: $"set the fields with a struct literal: `{c.structs[s].name} {{ {shown.finish()} }}`")
                 bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-                return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
             }
             var missing = List<string>()
             for f in fields {
@@ -89,20 +86,20 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
                 }
                 report(ref b, through: ref c, for: .missingFields, at: call.span, by: (c.structs[s].name, missing.joined(by: "`, `"), "", "", ""),
                     help: $"set {missing.length == 1 ? "it" : "them"}: `{c.structs[s].name} {{ {sets.finish()} }}`")
-                return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
             }
             var values = List<BExpr>()
             for f in fields {
                 let d = fieldDefault(ref c, for: s, by: f, from: b.file, at: call.span)
-                values.append(d != -1 ? d : addErrorExpr(ref c, from: BErrorExpr { span: call.span }))
+                values.append(d != -1 ? d : recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)))
             }
-            return addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move values })
+            return recordSyntaxNode(ref c, for: addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move values }), at: syntaxOfCall(ref c, from: in call))
         case .list or .map:
             if call.args.length > 0 {
                 report(ref b, through: ref c, for: .tooManyArguments, at: call.args[0].span, by: (typeDisplay(ref c, by: type), "0", "", "", ""))
                 bindArgumentsForRecovery(ref b, through: ref c, for: in call)
             }
-            return addCollection(ref c, from: BCollection { span: call.span, type: type })
+            return recordSyntaxNode(ref c, for: addCollection(ref c, from: BCollection { span: call.span, type: type }), at: syntaxOfCall(ref c, from: in call))
         case .owned:
             return bindOwned(ref b, through: ref c, for: in call, as: c.ownedTypes[typeIndex(type)])
         case .builtin:
@@ -110,31 +107,30 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
                 let fn = t9Function(ref c, for: "Arena")
                 let ps = copyIds(in c.functions[fn].parameters)
                 let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: fn, enforceNames: false, displayName: "Arena")
-                return addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: move args, type: type })
+                return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: move args, type: type }), at: syntaxOfCall(ref c, from: in call))
             }
             if type == builtinType(.strBuf) {
                 if call.args.length == 0 {
-                    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "StrBuf"), receiver: -1, type: type })
+                    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "StrBuf"), receiver: -1, type: type }), at: syntaxOfCall(ref c, from: in call))
                 }
                 // `StrBuf(capacity: n)` grows from `context.allocator` like `StrBuf()`, starting with room for n bytes.
                 if call.args.length == 1 && t21Named(in c, from: b.file, for: in call.args[0], by: "capacity") {
                     var ps = List<LocalId>()
                     ps.append(t21Param(ref c, by: "capacity", as: prim(.i64), at: 0))
                     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "StrBuf")
-                    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "StrBuf"), receiver: -1, arguments: move args, type: type })
+                    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "StrBuf"), receiver: -1, arguments: move args, type: type }), at: syntaxOfCall(ref c, from: in call))
                 }
                 let fn = t9Function(ref c, for: "StrBuf(buffer)")
                 let ps = copyIds(in c.functions[fn].parameters)
                 let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: fn, enforceNames: false, displayName: "StrBuf")
-                return addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: move args, type: type })
+                return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: move args, type: type }), at: syntaxOfCall(ref c, from: in call))
             }
         case .error:
             bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-            return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+            return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
         case .primitive:
             if (isNumeric(type) || type == prim(.char)) && call.args.length == 1 && call.args[0].name is null {
-                let e = parser.Expr.errorExpr(Owned(T21ErrorExpr { span: call.span }))
-                return bindConversion(ref b, through: ref c, for: in e, to: type, from: in call.args[0].value)
+                return t21BindConversion(ref b, through: ref c, at: call.span, to: type, from: in call.args[0].value, as: syntaxOfCall(ref c, from: in call))
             }
             if isString(type) && call.args.length > 0 && call.args[0].name is null {
                 return bindIntegerText(ref b, through: ref c, for: in call)
@@ -144,22 +140,22 @@ BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr c
     report(ref b, through: ref c, for: .notCallable, at: calleeSpan, by: (typeDisplay(ref c, by: type), "", "", "", ""),
         help: isNumeric(type) || type == prim(.char) ? $"convert one value: `{typeDisplay(ref c, by: type)}(x)`" : "")
     bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-    return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:689 BindIntegerText: `string(n, as: radix)`, an integer as text in a `Radix`, `.decimal` by default (spec §3.2, §6.2).
 BExpr bindIntegerText(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
     let value = bindExpr(ref b, through: ref c, for: in call.args[0].value)
     let vt = exprType(in c, for: value)
-    if isError(vt) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    if isError(vt) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     if kindOf(vt) == .span && c.spanTypes[typeIndex(vt)].element == prim(.u8) && call.args.length == 1 {
-        return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .bytesToString, receiver: value, type: prim(.string) })
+        return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .bytesToString, receiver: value, type: prim(.string) }), at: syntaxOfCall(ref c, from: in call))
     }
     if !isInteger(vt) {
         // `string(x)` as the `Display` conversion of every type is step 5.4a's later chunk.
         report(ref b, through: ref c, for: .unsupported, at: parser.exprSpan(in call.callee), by: ($"`string(x)` of a `{typeDisplay(ref c, by: vt)}`", "", "", "", ""))
         bindArgumentsForRecovery(ref b, through: ref c, for: in call)
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
     }
     let radixType = t9Type(ref c, for: "Radix")
     var ps = List<LocalId>()
@@ -171,9 +167,9 @@ BExpr bindIntegerText(ref Binder b, through ref Ctx c, for in parser.CallExpr ca
     var radix = args.length > 1 ? args[1] : -1
     if args.length <= 1 {
         let decimal = findEnumMember(ref c, by: typeIndex(radixType), for: "decimal")
-        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
+        radix = recordSyntaxNode(ref c, for: addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal }), at: syntaxOfCall(ref c, from: in call))
     }
-    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intToString, receiver: args[0], arguments: [radix], type: prim(.string) })
+    return recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intToString, receiver: args[0], arguments: [radix], type: prim(.string) }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:714 BindOwned: `Owned(value)` or `Owned<T>(value)`; the value's type comes from `inner`, else from the argument.
@@ -189,9 +185,10 @@ BExpr bindOwned(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as
         var ps = List<LocalId>()
         ps.append(t21Param(ref c, by: "value", as: t != -1 ? t : errorType(), at: 0))
         value = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "Owned")[0]
-        if t == -1 || isError(t) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+        // coverage-exempt: Q853
+        if t == -1 || isError(t) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     }
-    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Owned"), receiver: -1, arguments: [value], type: internOwned(ref c, by: t) })
+    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Owned"), receiver: -1, arguments: [value], type: internOwned(ref c, by: t) }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:734 BindUntrusted: `Untrusted(value)`; the value's type comes from the argument, or from the expected `Untrusted<T>`.
@@ -207,9 +204,10 @@ BExpr bindUntrusted(ref Binder b, through ref Ctx c, for in parser.CallExpr call
         var ps = List<LocalId>()
         ps.append(t21Param(ref c, by: "value", as: t != -1 ? t : errorType(), at: 0))
         value = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "Untrusted")[0]
-        if t == -1 || isError(t) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+        // coverage-exempt: Q853
+        if t == -1 || isError(t) { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call)) }
     }
-    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Untrusted"), receiver: -1, arguments: [value], type: internUntrusted(ref c, by: t) })
+    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Untrusted"), receiver: -1, arguments: [value], type: internUntrusted(ref c, by: t) }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:754 BindTrust: `trust(value, reason: "…")`: `Untrusted<T>` to `T`, with a non-empty literal reason.
@@ -218,7 +216,7 @@ BExpr bindTrust(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
     if value == -1 || call.args.length != 2 || !t21Named(in c, from: b.file, for: in call.args[1], by: "reason") {
         bindArgumentsForRecovery(ref b, through: ref c, for: in call)
         report(ref b, through: ref c, for: .trustReason, at: call.span, by: ("", "", "", "", ""), help: "write `x.trustUnchecked() because \"why this value is safe\"`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
     }
     let _ = bindExpr(ref b, through: ref c, for: in call.args[1].value)
     var literal = false
@@ -234,9 +232,9 @@ BExpr bindTrust(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
     if isError(vt) { return value }
     if kindOf(vt) != .untrusted {
         let _ = convert(ref b, through: ref c, for: value, to: internUntrusted(ref c, by: vt), at: parser.exprSpan(in call.args[0].value), argument: true)
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
     }
-    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "trust"), receiver: -1, arguments: [value], type: c.untrustedTypes[typeIndex(vt)] })
+    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "trust"), receiver: -1, arguments: [value], type: c.untrustedTypes[typeIndex(vt)] }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:780 BindTrustUnchecked: `x.trustUnchecked() because "…"`: `Untrusted<T>` to `T`, the canonical form of
@@ -247,9 +245,9 @@ BExpr bindTrustUnchecked(ref Binder b, through ref Ctx c, for in parser.CallExpr
     if isError(vt) { return value }
     if kindOf(vt) != .untrusted {
         let _ = convert(ref b, through: ref c, for: value, to: internUntrusted(ref c, by: vt), at: parser.exprSpan(in callee.target), argument: true)
-        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: call.span }), at: syntaxOfCall(ref c, from: in call))
     }
-    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "trust"), receiver: -1, arguments: [value], type: c.untrustedTypes[typeIndex(vt)] })
+    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "trust"), receiver: -1, arguments: [value], type: c.untrustedTypes[typeIndex(vt)] }), at: syntaxOfCall(ref c, from: in call))
 }
 
 /// BinderCalls.cs:792 BindBuiltinMethodCall.
@@ -280,7 +278,7 @@ BExpr bindBuiltinMethodCall(ref Binder b, through ref Ctx c, for in parser.CallE
             }
             var parts = List<BInterpolationPart>()
             parts.append(BInterpolationPart { text: null, value: value })
-            value = addInterpolated(ref c, from: BInterpolated { span: parser.exprSpan(in call.args[0].value), parts: move parts })
+            value = recordSyntax(ref c, for: addInterpolated(ref c, from: BInterpolated { span: parser.exprSpan(in call.args[0].value), parts: move parts }), from: in call.args[0].value)
         }
         b.prebound[call.args[0].span.start] = value
     }
@@ -366,7 +364,7 @@ BExpr bindBuiltinMethodCall(ref Binder b, through ref Ctx c, for in parser.CallE
     } else if m.member == .ioReadAll {
         returns = internResult(ref c, by: m.returns, to: t9Type(ref c, for: "IoError"))
     }
-    let n = addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: m.member, receiver: target, arguments: move args, type: returns })
+    let n = recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: m.member, receiver: target, arguments: move args, type: returns }), at: syntaxOfCall(ref c, from: in call))
     setSyntaxFlags(ref c, for: n, to: syntaxCall)
     return n
 }
@@ -383,17 +381,20 @@ bool isDefaultable(ref Ctx c, for Type t) {
 // ── Ownership ────────────────────────────────────────────────────────────────
 
 /// BinderCalls.cs:869 BindMove: `move x` (or a `move` argument): only a local or a `move` parameter can be moved (spec §9.3).
-BExpr bindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr operand) {
+BExpr bindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr operand) => t21BindMove(ref b, through: ref c, at: span, for: operand, from: -1)
+
+/// `bindMove` that records `syntax` as the C# `Syntax` of the nodes it builds (Q849).
+BExpr t21BindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr operand, from i64 syntax) {
     if isError(exprType(in c, for: operand)) { return operand }
     // a narrowed local moves the underlying optional binding, still typed as the narrowed value
     if boundKind(operand) == .conversion {
         let n = c.bConversions[boundIndex(operand)]
         if n.kind == .narrow && boundKind(n.operand) == .local {
-            let inner = bindMove(ref b, through: ref c, at: span, for: n.operand)
-            return addConversion(ref c, from: BConversion { span: n.span, operand: inner, type: n.type, kind: .narrow })
+            let inner = t21BindMove(ref b, through: ref c, at: span, for: n.operand, from: syntax)
+            return shareSyntax(ref c, for: addConversion(ref c, from: BConversion { span: n.span, operand: inner, type: n.type, kind: .narrow }), from: operand)
         }
     }
-    if checkGuardWrite(ref b, through: ref c, for: operand, at: span, by: "it is moved") { return addMove(ref c, from: BMove { span: span, operand: operand }) }
+    if checkGuardWrite(ref b, through: ref c, for: operand, at: span, by: "it is moved") { return recordSyntaxNode(ref c, for: addMove(ref c, from: BMove { span: span, operand: operand }), at: syntax) }
     let k = boundKind(operand)
     let i = boundIndex(operand)
     let at = nodeSpan(in c, for: operand)
@@ -402,11 +403,11 @@ BExpr bindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr oper
         if c.locals[l].borrowsSubject && isUnique(ref c, for: c.locals[l].type) {
             report(ref b, through: ref c, for: .mutateBorrow, at: at, by: (c.locals[l].name, "", "", "", ""), label: "moving it would take the value out of what it borrows from",
                 help: "move or copy the value it was bound to instead")
-            return addMove(ref c, from: BMove { span: span, operand: operand })
+            return recordSyntaxNode(ref c, for: addMove(ref c, from: BMove { span: span, operand: operand }), at: syntax)
         }
         let lk = c.locals[l].kind
         if lk == .letKeyword || lk == .varKeyword || lk == .patternVariable || (c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword) || c.locals[l].borrowsSubject {
-            return addMove(ref c, from: BMove { span: span, operand: operand })
+            return recordSyntaxNode(ref c, for: addMove(ref c, from: BMove { span: span, operand: operand }), at: syntax)
         }
     }
     var what = "this expression"
@@ -440,7 +441,7 @@ BExpr bindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr oper
         help = "remove the `move`; a fresh value needs none"
     }
     report(ref b, through: ref c, for: .cannotMove, at: at, by: (what, "", "", "", ""), help: help)
-    return addMove(ref c, from: BMove { span: span, operand: operand })
+    return recordSyntaxNode(ref c, for: addMove(ref c, from: BMove { span: span, operand: operand }), at: syntax)
 }
 
 /// BinderCalls.cs:912 BindSwitchSubject: `move x` moves a local or `move` parameter into the switch, and `owns` says
@@ -466,7 +467,7 @@ SwitchSubjectResult t21SwitchSubject(ref Binder b, through ref Ctx c, for in par
                 let lk = c.locals[l].kind
                 if lk == .letKeyword || lk == .varKeyword || lk == .patternVariable || (c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword) {
                     let owns = !c.locals[l].borrowsSubject
-                    return SwitchSubjectResult { value: bindMove(ref b, through: ref c, at: m.value.span, for: operand), owns: owns }
+                    return SwitchSubjectResult { value: t21BindMove(ref b, through: ref c, at: m.value.span, for: operand, from: syntaxLeaf(ref c, as: .moveExpr, at: m.value.span)), owns: owns }
                 }
             }
             var what = "this expression"
@@ -521,13 +522,13 @@ BExpr checkedValue(ref Binder b, through ref Ctx c, for in parser.Expr syntax, b
         case .structLiteralExpr(_): literal = true
         default: {}
     }
-    return t21Checked(ref b, through: ref c, at: parser.exprSpan(in syntax), structLiteral: literal, by: value, changed: in changed)
+    return t21Checked(ref b, through: ref c, at: parser.exprSpan(in syntax), structLiteral: literal, by: value, from: syntaxNode(ref c, from: in syntax), changed: in changed)
 }
 
 /// `checkedValue` on the syntax's span, for `bindConstruction`, which holds a `parser.CallExpr` rather than a
 /// `parser.Expr` (Q620). A value just built of a struct with `requires` runs the struct's check and can fail with
 /// `ValidationError`; `changed` lists the fields a `with` sets (J19); built from constants, the rules are decided here (J38).
-BExpr t21Checked(ref Binder b, through ref Ctx c, at TextSpan span, bool structLiteral, by BExpr value, in List<FieldId>? changed = null) {
+BExpr t21Checked(ref Binder b, through ref Ctx c, at TextSpan span, bool structLiteral, by BExpr value, from i64 syntax, in List<FieldId>? changed = null) {
     // A state literal is checked as its struct and keeps its state type.
     let vt = exprType(in c, for: value)
     let st = kindOf(vt) == .state ? structTypeOf(c.stateTypes[typeIndex(vt)].s) : vt
@@ -548,7 +549,7 @@ BExpr t21Checked(ref Binder b, through ref Ctx c, at TextSpan span, bool structL
     if boundKind(value) == .structLiteral {
         let decided = checkConstant(ref b, through: ref c, at: span, by: value, for: ci)
         if decided == 1 { return value }
-        if decided == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: span }) }
+        if decided == 0 { return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax) }
     }
     var handled = false
     if (b.handled is { } h) { handled = h == span }
@@ -562,7 +563,7 @@ BExpr t21Checked(ref Binder b, through ref Ctx c, at TextSpan span, bool structL
             reportUnhandled(ref b, through: ref c, at: span, by: name, structLiteral: structLiteral)
         }
     }
-    return addCall(ref c, from: BCall { span: span, function: c.checks[ci].check, receiver: value, type: vt })
+    return recordSyntaxNode(ref c, for: addCall(ref c, from: BCall { span: span, function: c.checks[ci].check, receiver: value, type: vt }), at: syntax)
 }
 
 /// BinderCalls.cs:986 CheckConstant (J38): a literal whose fields are all constants is checked now; 1 when every rule

@@ -12,7 +12,14 @@ namespace Bayan.Tests;
 /// from <see cref="SelfhostParserTests"/>; the corpus generator reuses <see cref="SelfhostParserGenerator"/>.</summary>
 public sealed class SelfhostParserNoPanicLawTests(ITestOutputHelper output)
 {
-    private const int RandomCorpusSize = 4_000;
+    private const int FullRandomCorpusSize = 4_000;
+
+    /// <summary>The quick tier's random inputs (Q748): the first 400 of the full corpus, which the seeded generator
+    /// writes in the same order whatever its size. <c>BAYAN_LAW_TIER=full</c> runs all of <see cref="FullRandomCorpusSize"/>.</summary>
+    private const int QuickRandomCorpusSize = 400;
+
+    private static int RandomCorpusSize =>
+        Environment.GetEnvironmentVariable("BAYAN_LAW_TIER") == "full" ? FullRandomCorpusSize : QuickRandomCorpusSize;
 
     /// <summary>Law L018: on every corpus input <c>bayan-parse</c> exits 0 or 1, no node span leaves the
     /// input, and every child-outside-parent it reports is one the C# tree itself has (the port matches C#).</summary>

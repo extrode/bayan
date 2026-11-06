@@ -1,0 +1,6 @@
+// `Path.fileName` on Unix paths; `name` declares `alloc` for the copy it returns (the effect check is `diag/path-needs-alloc`).
+string name(string p) uses alloc => Path.fileName(p)
+
+for p in ["/a/b.txt", "a/b", "a//b", "file", "/", "a/", "/a/b/", "", ".", "..", "a/.", "a/..", "/dir/.hidden", "x y/z w.c", "/é/ü"] {
+    print($"[{p}] [{name(p)}]")
+}

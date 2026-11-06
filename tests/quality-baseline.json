@@ -1,6 +1,106 @@
 {
   "version": 1,
   "files": {
+    "selfhost/emitter/cprint/builtin.byn": {
+      "mutation": null,
+      "coverage": 0.9864,
+      "branches": 0.9922
+    },
+    "selfhost/emitter/cprint/cctx.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": null
+    },
+    "selfhost/emitter/cprint/common.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/cprint/data.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/cprint/expr.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/cprint/func.byn": {
+      "mutation": null,
+      "coverage": 0.9974,
+      "branches": 0.9906
+    },
+    "selfhost/emitter/cprint/helpers.byn": {
+      "mutation": null,
+      "coverage": 0.9957,
+      "branches": 0.9902
+    },
+    "selfhost/emitter/cprint/own.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/cprint/program.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 0.9902
+    },
+    "selfhost/emitter/cprint/types.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/lower.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 0.9892
+    },
+    "selfhost/emitter/lowerassert.byn": {
+      "mutation": null,
+      "coverage": 0.9976,
+      "branches": 0.9685
+    },
+    "selfhost/emitter/lowerexpr.byn": {
+      "mutation": null,
+      "coverage": 0.9518,
+      "branches": 0.953
+    },
+    "selfhost/emitter/lowerpat.byn": {
+      "mutation": null,
+      "coverage": 0.9921,
+      "branches": 0.9706
+    },
+    "selfhost/emitter/lowerstmt.byn": {
+      "mutation": null,
+      "coverage": 0.9871,
+      "branches": 0.939
+    },
+    "selfhost/emitter/main.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/emitter/powerassert.byn": {
+      "mutation": null,
+      "coverage": 1.0,
+      "branches": 1.0
+    },
+    "selfhost/parser/decls.byn": {
+      "mutation": null,
+      "coverage": 0.9659,
+      "branches": 0.8364
+    },
+    "selfhost/parser/decls2.byn": {
+      "mutation": null,
+      "coverage": 0.9655,
+      "branches": 0.7863
+    },
+    "selfhost/parser/parser.byn": {
+      "mutation": null,
+      "coverage": 0.9423,
+      "branches": 0.9348
+    },
     "selfhost/parser/recover.byn": {
       "mutation": null,
       "coverage": 0.8652,
@@ -11,25 +111,105 @@
       "coverage": 0.9206,
       "branches": 0.767
     },
+    "selfhost/semantics/binder.byn": {
+      "mutation": null,
+      "coverage": 0.9143,
+      "branches": 0.8442
+    },
+    "selfhost/semantics/binder2.byn": {
+      "mutation": null,
+      "coverage": 0.9248,
+      "branches": 0.9323
+    },
+    "selfhost/semantics/binder3.byn": {
+      "mutation": null,
+      "coverage": 0.9648,
+      "branches": 0.8092
+    },
     "selfhost/semantics/bound.byn": {
       "mutation": null,
-      "coverage": 0.7762,
-      "branches": 0.3864
+      "coverage": 0.991,
+      "branches": 0.9891
+    },
+    "selfhost/semantics/builtins.byn": {
+      "mutation": null,
+      "coverage": 0.9702,
+      "branches": 0.7679
+    },
+    "selfhost/semantics/calls.byn": {
+      "mutation": null,
+      "coverage": 0.8993,
+      "branches": 0.8206
     },
     "selfhost/semantics/calls2.byn": {
       "mutation": null,
-      "coverage": 0.8652,
-      "branches": 0.7282
+      "coverage": 0.9754,
+      "branches": 0.8811
+    },
+    "selfhost/semantics/calls3.byn": {
+      "mutation": null,
+      "coverage": 0.9032,
+      "branches": 0.8161
+    },
+    "selfhost/semantics/calls4.byn": {
+      "mutation": null,
+      "coverage": 0.959,
+      "branches": 0.8757
+    },
+    "selfhost/semantics/cli.byn": {
+      "mutation": null,
+      "coverage": 0.7445,
+      "branches": 0.6604
     },
     "selfhost/semantics/ctx.byn": {
       "mutation": null,
       "coverage": 1.0,
       "branches": 0.9167
     },
+    "selfhost/semantics/diag.byn": {
+      "mutation": null,
+      "coverage": 0.941,
+      "branches": 0.8394
+    },
+    "selfhost/semantics/effects.byn": {
+      "mutation": null,
+      "coverage": 0.8997,
+      "branches": 0.824
+    },
+    "selfhost/semantics/errorcases.byn": {
+      "mutation": null,
+      "coverage": 0.9892,
+      "branches": 0.9535
+    },
+    "selfhost/semantics/express.byn": {
+      "mutation": null,
+      "coverage": 0.9325,
+      "branches": 0.8984
+    },
+    "selfhost/semantics/express2.byn": {
+      "mutation": null,
+      "coverage": 0.9732,
+      "branches": 0.8931
+    },
+    "selfhost/semantics/express3.byn": {
+      "mutation": null,
+      "coverage": 0.9841,
+      "branches": 0.9126
+    },
+    "selfhost/semantics/express4.byn": {
+      "mutation": null,
+      "coverage": 0.9784,
+      "branches": 0.9282
+    },
     "selfhost/semantics/generics.byn": {
       "mutation": null,
       "coverage": 0.8576,
       "branches": 0.7886
+    },
+    "selfhost/semantics/ownership.byn": {
+      "mutation": null,
+      "coverage": 0.9429,
+      "branches": 0.8045
     },
     "selfhost/semantics/region.byn": {
       "mutation": null,
@@ -39,7 +219,22 @@
     "selfhost/semantics/region2.byn": {
       "mutation": null,
       "coverage": 0.9696,
-      "branches": 0.8782
+      "branches": 0.8798
+    },
+    "selfhost/semantics/states.byn": {
+      "mutation": null,
+      "coverage": 0.8525,
+      "branches": 0.8206
+    },
+    "selfhost/semantics/symbols.byn": {
+      "mutation": null,
+      "coverage": 0.6651,
+      "branches": 0.6406
+    },
+    "selfhost/semantics/types.byn": {
+      "mutation": null,
+      "coverage": 0.8626,
+      "branches": 0.8081
     }
   }
 }

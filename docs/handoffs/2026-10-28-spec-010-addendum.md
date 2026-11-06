@@ -72,7 +72,7 @@ git switch feat/010-self-hosted-semantics && bash scripts/selfhost/land.sh T13 f
 - **Mutations.**
   - Mutants that fail to compile are skipped instead of counted as killed.
   - One line per file may be exempted with `// mutation-exempt: Qnnn` on the line above it, only when the line's sole effect goes through a sibling's stub. Do not move code to dodge a mutant.
-- **Coverage.** A line that is dead in the C# too (an internal-error throw, a branch the C# never takes) may be exempted from the coverage gate with `// coverage-exempt: Qnnn` (or `… through N`) on the line above it. The Question cites the `.byn` line and the C# line that shows the path is dead. A Question that cites no line of the marker's span is a guard failure. Do not exempt a line that only lacks a test program.
+- **Coverage.** A line that is dead in the C# too (an internal-error throw, a branch the C# never takes) may be exempted from the coverage gate with `// coverage-exempt: Qnnn` (or `… through N`) on the line above it. The Question cites the `.byn` line and the C# line that shows the path is dead. A Question that cites no line of the marker's span is a guard failure. Do not exempt a line that only lacks a test program. A line that runs only once sibling task T<k> ports its stub `<fn>` takes `// coverage-blocked: Qnnn T<k> <fn>` (or `… through N`) instead, with the Question citing the `.byn` line and the stub (Q838). The guard accepts it while T<k> is open and is not the task under guard; T<k> covers those lines and removes the marker before it lands.
 
 How long the guard takes: about 20–40 minutes per task (8 mutants, each a build plus the task's tests).
 
@@ -123,7 +123,7 @@ The spec makes `in` optional, and a probe on 2026-10-28 confirms it.
 1. **Complete the C# state in one pass.** One agent should list every field of the C# `Compilation`, `Binder`, `Conformance` and `BinderExpressions` classes, then add each missing one to ctx.byn: shared fields where two tasks touch them, task sections otherwise. Writers then never invent state. This is the cheapest prevention left.
 2. **Port in dependency order rather than all in parallel.** Coupling through stubs is why so many paths cannot be tested against the C# yet (T15's `bindChecks` waits on T38, `bindEnumArguments` on T20; T13's second pass waits on T15–T17 and T20). Doing the declaration tasks, then the binder core, then expressions and calls lets later tasks test against real siblings.
 3. **Run the `in` cleanup now** (above).
-4. Mutation-exempt lines, coverage-exempt lines and `(blocked: Qnnn)` stubs are debts for T28. Grep for `mutation-exempt:`, `coverage-exempt:` and `blocked: Q` at integration time.
+4. Mutation-exempt lines, coverage-exempt lines and `(blocked: Qnnn)` stubs are debts for T28. Grep for `mutation-exempt:`, `coverage-exempt:` and `blocked: Q` at integration time; no `coverage-blocked:` marker may remain (Q838).
 
 ## Writer prompt for a redo (used this session; adapt T/paths)
 

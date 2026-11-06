@@ -11,6 +11,15 @@ on:
   # schedule:
   #   - cron: '0 3 * * *'
   workflow_dispatch:
+    inputs:
+      files:
+        description: 'Comma-separated selfhost .byn paths (mutate-batch.sh --files); empty = every file'
+        required: false
+        default: ''
+      tasks:
+        description: 'Tasks file whose task lines give each file its test filter (mutate-batch.sh --tasks)'
+        required: false
+        default: 'docs/specs/010-self-hosted-semantics/010-tasks.md'
 
 permissions:
   contents: read
@@ -51,7 +60,15 @@ jobs:
       - name: Mutate
         env:
           PINNED_BAYAN_REF: HEAD  # the dev commit this run checked out (no dev branch in a depth-1 checkout)
-        run: bash scripts/selfhost/mutate-batch.sh --shard ${{ matrix.shard }}/4
+          # Inputs reach the script through env, never spliced into the command; the schedule has none (empty files, 010 tasks).
+          MUTATE_FILES: ${{ inputs.files }}
+          MUTATE_TASKS: ${{ inputs.tasks || 'docs/specs/010-self-hosted-semantics/010-tasks.md' }}
+          SHARD: ${{ matrix.shard }}
+        shell: bash
+        run: |
+          args=(--shard "$SHARD/4" --tasks "$MUTATE_TASKS")
+          if [ -n "$MUTATE_FILES" ]; then args+=(--files "$MUTATE_FILES"); fi
+          bash scripts/selfhost/mutate-batch.sh "${args[@]}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -20,8 +20,7 @@ public CompilationUnit parseCompilationUnit(ref Parser p) uses alloc {
             let _ = p.advance()
             continue
         }
-        var structRules = List<RequiresRule>()
-        let decl = parseDeclaration(ref p, topLevel: true, for: null, to: ref structRules)
+        let decl = parseDeclaration(ref p, topLevel: true, for: null)
         unless decl is .none { members.append(move decl) }
         recoverIfNeeded(ref p, from: errors)
         if p.pos == start { let _ = p.advance() }
@@ -88,7 +87,7 @@ void rejectModifiers(ref Parser p, for Modifiers modifiers, by Modifiers allowed
 }
 
 /// `.none` is the C# `null`; `structName` is the enclosing struct's name, or null (Q448).
-Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan? structName, to ref List<RequiresRule> structRules) {
+Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan? structName) {
     let first = p.current()
     var doc = docOf(ref p, for: first)
     let startIndex = p.pos
@@ -196,7 +195,7 @@ Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan? structName, to 
         d.attributes = move attributes
         decl = Decl.functionDecl(Owned(move d))
     } else if structName is not null {
-        decl = parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, to: ref structRules, doc: doc)
+        decl = parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, doc: doc)
     } else if modifiers != modifierNone {
         let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a declaration after the modifiers", arg1: p.describe(p.current()))
     } else {
@@ -462,6 +461,9 @@ StructDecl parseStruct(ref Parser p, at i64 start, by Modifiers modifiers) {
     // The C# `ParseBody("struct", …)`, with the member callback inline.
     let open = p.expect(.openBrace)
     var members = List<Decl>()
+    // The fields `parseFieldOrProperty` left unwrapped (Q819), and the index in `members` each one takes.
+    var fieldDecls = List<FieldDecl>()
+    var fieldSlots = List<i64>()
     while p.kind() != .closeBrace && !p.atEnd() {
         let before = p.pos
         let errors = p.syntaxErrors
@@ -485,8 +487,16 @@ StructDecl parseStruct(ref Parser p, at i64 start, by Modifiers modifiers) {
             stateLines.append(UnionVariant { span: p.spanFrom(stateStart), name: stateName, fields: move payload, doc: stateDoc })
             expectEnd(ref p)
         } else if p.kind() != .requiresKeyword {
-            let member = parseDeclaration(ref p, topLevel: false, for: name, to: ref rules)
-            unless member is .none { members.append(move member) }
+            p.collectField = true
+            let member = parseDeclaration(ref p, topLevel: false, for: name)
+            p.collectField = false
+            if p.collectedFields.length > 0 {
+                fieldDecls.append(p.collectedFields.removeLast())
+                fieldSlots.append(members.length)
+                members.append(.none)
+            } else {
+                unless member is .none { members.append(move member) }
+            }
         } else {
             rules.append(parseRequiresRule(ref p))
             expectEnd(ref p)
@@ -497,29 +507,40 @@ StructDecl parseStruct(ref Parser p, at i64 start, by Modifiers modifiers) {
     expectClose(ref p, from: open, for: "struct")
     if stateLines.length > 0 { reportStateLines(ref p, from: in stateKeywords, for: in stateLines, by: hasStates) }
     // O3: a field's rule that names another field, or has `at .f`, belongs to the struct; one that also reads `it` is BYN3218.
-    // O3 (Q446): parseFieldOrProperty (decls2.byn) splits the `at .f` rules into structRules.
     var fields = List<string>()
-    for i in 0..members.length {
-        switch members[i] {
-            case .fieldDecl(let f):
-                fields.append(p.lexed.source.getText(f.value.name))
-            default:
-                continue
-        }
-    }
+    for f in fieldDecls { fields.append(p.lexed.source.getText(f.name)) }
     let itName = itName()
-    for i in 0..members.length {
-        switch members[i] {
-            case .fieldDecl(let f):
-                for k in 0..f.value.requiresKeyword.length {
-                    if namesAny(ref p, for: in f.value.requiresKeyword[k], from: in fields) && namesAny(ref p, for: in f.value.requiresKeyword[k], from: in itName) {
-                        let _ = p.report(.requiresMixesFields, at: f.value.requiresKeyword[k].span,
-                            help: "split it: an `it` rule under the field, and a struct-level rule with `at .field`")
-                    }
-                }
-            default:
-                continue
+    var fieldsLeft = List<FieldDecl>()
+    while fieldDecls.length > 0 { fieldsLeft.append(fieldDecls.removeLast()) }
+    for slot in fieldSlots {
+        var field = fieldsLeft.removeLast()
+        var pending = List<RequiresRule>()
+        while field.requiresKeyword.length > 0 { pending.append(field.requiresKeyword.removeLast()) }
+        while pending.length > 0 {
+            let rule = pending.removeLast()
+            let names = namesAny(ref p, for: in rule, from: in fields)
+            if names && namesAny(ref p, for: in rule, from: in itName) {
+                let _ = p.report(.requiresMixesFields, at: rule.span,
+                    help: "split it: an `it` rule under the field, and a struct-level rule with `at .field`")
+            } else if rule.at is null && !names {
+                field.requiresKeyword.append(move rule)
+            } else {
+                rules.append(move rule)
+            }
         }
+        members[slot] = Decl.fieldDecl(Owned(move field))
+    }
+    // The C# `rules.OrderBy(r => r.Span.Start)`: stable, so the earliest of equal starts first.
+    var sorted = List<RequiresRule>()
+    while rules.length > 0 {
+        var best: i64 = 0
+        for k in 1..rules.length {
+            if rules[k].span.start < rules[best].span.start { best = k }
+        }
+        var after = List<RequiresRule>()
+        while rules.length > best + 1 { after.append(rules.removeLast()) }
+        sorted.append(rules.removeLast())
+        while after.length > 0 { rules.append(after.removeLast()) }
     }
     // `states` then the state lines, in order.
     var reversed = List<UnionVariant>()
@@ -533,7 +554,7 @@ StructDecl parseStruct(ref Parser p, at i64 start, by Modifiers modifiers) {
         typeParams: move typeParams,
         bases: move bases,
         where: move where,
-        rules: move rules,
+        rules: move sorted,
         states: move states,
     }
 }

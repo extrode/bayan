@@ -1864,6 +1864,12 @@ internal sealed class FunctionEmitter
             }
             case BuiltinFunction.SymbolIntern:
                 return _c.SymbolIntern(Expr(c.Arguments[0]));
+            case BuiltinFunction.PathIsRooted:
+                return $"byn_path_is_rooted({Expr(c.Arguments[0])})";
+            case BuiltinFunction.PathRelative:
+                return $"byn_path_relative({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, byn_context, {Loc(c.Syntax)})";
+            case BuiltinFunction.PathFileName:
+                return $"byn_path_file_name({Expr(c.Arguments[0])}, byn_context)";
             case BuiltinFunction.HexEncode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);

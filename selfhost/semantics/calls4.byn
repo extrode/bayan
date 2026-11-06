@@ -280,7 +280,7 @@ BStmt bindAssign(ref Binder b, through ref Ctx c, for in parser.AssignStmt a) {
     var target = bindExpr(ref b, through: ref c, for: in a.target)
     // A local whose state is known is written as its declared type; the value's state is what it is known to be after.
     if boundKind(target) == .local && knownState(ref b, for: c.bLocals[boundIndex(target)].local) != -1 {
-        target = addLocalNode(ref c, at: c.bLocals[boundIndex(target)].span, for: c.bLocals[boundIndex(target)].local)
+        target = shareSyntax(ref c, for: addLocalNode(ref c, at: c.bLocals[boundIndex(target)].span, for: c.bLocals[boundIndex(target)].local), from: target)
     }
     let op = compoundOperator(a.op)
     let targetSpan = parser.exprSpan(in a.target)
@@ -452,13 +452,13 @@ string? t39Invariant(ref Ctx c, for StructId s) {
 BExpr mapWriteTarget(ref Ctx c, for BExpr target) {
     if boundKind(target) != .builtinCall || c.bBuiltinCalls[boundIndex(target)].member != .mapIndex { return target }
     let i = boundIndex(target)
-    return addBuiltinCall(ref c, from: BBuiltinCall {
+    return shareSyntax(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall {
         span: c.bBuiltinCalls[i].span,
         member: .mapIndexSet,
         receiver: c.bBuiltinCalls[i].receiver,
         arguments: copyIds(in c.bBuiltinCalls[i].arguments),
         type: c.bBuiltinCalls[i].type,
-    })
+    }), from: target)
 }
 
 /// BYN2115 for a method that writes `this` at `span` first, with a fix inserting `ref this`. C# reports through the

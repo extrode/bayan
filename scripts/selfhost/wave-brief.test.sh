@@ -34,5 +34,44 @@ python3 -I scripts/selfhost/wave-brief.py . T33 > /dev/null
 grep -q "guard.sh --base [^ ]* --allow 'docs/bayan-handoff.md,CHANGELOG.md,work/todo.md,docs/specs/010-self-hosted-semantics/010-spec.md,docs/specs/010-self-hosted-semantics/010-tasks.md' --filter 'FullyQualifiedName~SelfhostSemanticsApiTests' --task T33" tmp/010-t33/prompt.md || { echo "FAIL: a docs task's guard lacks its root and spec files once each, or runs no test"; grep guard.sh tmp/010-t33/prompt.md; exit 1; }
 python3 -I scripts/selfhost/review-brief.py . T33 > /dev/null
 grep -q 'filter "FullyQualifiedName~SelfhostSemanticsApiTests"`' tmp/010-t33/review.md || { echo "FAIL: a docs task's review runs no test"; exit 1; }
+# Row 011 (specs.tsv): bare .byn names resolve under selfhost/emitter/, the guard line takes the row's base, test class and --spec, the brief goes to tmp/011-<t>/.
+python3 -I scripts/selfhost/wave-brief.py . T3 --spec 011 > /dev/null
+grep -q "^bash scripts/selfhost/guard.sh --base feat/011-self-hosted-emitter --allow 'selfhost/emitter/lowerstmt.byn,selfhost/emitter/lower.byn,tests/Bayan.Tests/SelfhostEmitterT3Tests.cs,docs/bayan-handoff.md,docs/specs/011-self-hosted-emitter/011-tasks.md' --filter 'FullyQualifiedName~SelfhostEmitterT3Tests' --task T3 --spec 011\$" tmp/011-t3/prompt.md || { echo "FAIL: the 011 guard line"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t3/prompt.md; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T3 --spec 011 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostEmitterT3Tests"`' tmp/011-t3/review.md || { echo "FAIL: the 011 review filter"; exit 1; }
+# every test class a 011 task owns is in its guard and review filter; T21 also runs the SelfhostSemantics* classes (Q870)
+python3 -I scripts/selfhost/wave-brief.py . T6 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t6/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostEmitterT6Tests|FullyQualifiedName~SelfhostEmitterT8Tests' " || { echo "FAIL: a second owned test class is not in the guard filter"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t6/prompt.md; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T6 --spec 011 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostEmitterT6Tests|FullyQualifiedName~SelfhostEmitterT8Tests"`' tmp/011-t6/review.md || { echo "FAIL: a second owned test class is not in the review filter"; exit 1; }
+python3 -I scripts/selfhost/wave-brief.py . T21 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t21/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostEmitterT21Tests|FullyQualifiedName~SelfhostSemantics' " || { echo "FAIL: the T21 guard does not count the SelfhostSemantics tests"; exit 1; }
+# T13 (integration) also runs every SelfhostEmitter* class (Q886); T14 owns law pages and tests, and every one of its test classes gates it
+python3 -I scripts/selfhost/wave-brief.py . T13 T14 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t13/prompt.md | grep -q -- "|FullyQualifiedName~SelfhostEmitter' " || { echo "FAIL: the T13 guard does not count every SelfhostEmitter class"; exit 1; }
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md | grep -q -- "--filter 'FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests' " || { echo "FAIL: a task with law pages and tests is not gated by every test class"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t14/prompt.md; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T14 --spec 011 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostEmitterEquivalenceLawTests|FullyQualifiedName~SelfhostEmitterNoPanicLawTests|FullyQualifiedName~SelfhostEmitterSpeedTests"`' tmp/011-t14/review.md || { echo "FAIL: the T14 review does not run every test class"; exit 1; }
+# a 011 law-enact task line without covers: (T17) still yields its law's proof as the guard filter.
+python3 -I scripts/selfhost/wave-brief.py . T17 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t17/prompt.md | grep -q -- "--allow 'docs/laws/024-emitter-equivalence.md,.* --filter 'Law=L024' " || { echo "FAIL: a task line without covers: has no guard line"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t17/prompt.md; exit 1; }
+# a .txt file in a task's files (T12's tests/windows-known-failures.txt) is in its allow list.
+python3 -I scripts/selfhost/wave-brief.py . T12 --spec 011 > /dev/null
+grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md | grep -q ",tests/windows-known-failures.txt," || { echo "FAIL: a .txt task file is not in the guard's allow list"; grep '^bash scripts/selfhost/guard.sh' tmp/011-t12/prompt.md; exit 1; }
+# Row 010 is byte-for-byte what it was before specs.tsv: the briefs of the commit before the row table (8dae45cc) against this tree's, for T43
+# (skipped when that commit is not in this clone, e.g. a depth-1 checkout).
+old=8dae45cc
+if git cat-file -e $old:scripts/selfhost/wave-brief.py 2> /dev/null; then
+  mkdir -p tmp/wave-brief-old
+  here="$PWD/scripts/selfhost"
+  git show $old:scripts/selfhost/wave-brief.py | sed "s|^HERE = .*|HERE = '$here'|" > tmp/wave-brief-old/wave-brief.py
+  git show $old:scripts/selfhost/review-brief.py > tmp/wave-brief-old/review-brief.py
+  python3 -I tmp/wave-brief-old/wave-brief.py . T43 > /dev/null; python3 -I tmp/wave-brief-old/review-brief.py . T43 > /dev/null
+  cp tmp/010-t43/prompt.md tmp/wave-brief-old/prompt.md; cp tmp/010-t43/review.md tmp/wave-brief-old/review.md
+  python3 -I scripts/selfhost/wave-brief.py . T43 > /dev/null; python3 -I scripts/selfhost/review-brief.py . T43 > /dev/null
+  cmp -s tmp/wave-brief-old/prompt.md tmp/010-t43/prompt.md || { echo "FAIL: the 010 T43 writer brief changed"; exit 1; }
+  cmp -s tmp/wave-brief-old/review.md tmp/010-t43/review.md || { echo "FAIL: the 010 T43 review brief changed"; exit 1; }
+  rm -rf tmp/wave-brief-old
+fi
 bash -n scripts/selfhost/guard.sh
 echo PASS

@@ -1,0 +1,553 @@
+// T2: Lowerer.cs 11-35 (`Lowerer.Lower`), 78-93 (`FunctionLowerer.Lower`), 95-351 (helpers, cleanup).
+//
+// `FunctionLowerer` is not an object: its fields are `LCtx`'s, reset by `lowerFunction` as `new FunctionLowerer`
+// would (D3: no `mutants`/`coverage`). A lowered handle has no `Type`/`Syntax` the semantics accessors know, so
+// `t2Type`/`t2Span` answer for both trees (Q763).
+
+import semantics
+import emitter.ltree
+
+type LFreeArena = ltree.LFreeArena
+type LPopPanicHandler = ltree.LPopPanicHandler
+type LReturn = ltree.LReturn
+type LSetContext = ltree.LSetContext
+type LUnionField = ltree.LUnionField
+type LUnionTag = ltree.LUnionTag
+type BAssign = semantics.BAssign
+type BBinary = semantics.BBinary
+type BBlock = semantics.BBlock
+type BDefault = semantics.BDefault
+type BExprStmt = semantics.BExprStmt
+type BIf = semantics.BIf
+type BLiteral = semantics.BLiteral
+type BLocal = semantics.BLocal
+type BStructLiteral = semantics.BStructLiteral
+type BThis = semantics.BThis
+type BUnary = semantics.BUnary
+type Big = semantics.Big
+type Constant = semantics.Constant
+type LocalSymbol = semantics.LocalSymbol
+
+/// Lowerer.cs:18 `Lowerer.Lower` (D3: no `mutants`/`coverage`). The arenas of the lowered nodes are on `l`.
+public LoweredProgram lower(ref Ctx c, to ref LCtx l) uses alloc {
+    for d in c.diagnostics {
+        if !d.isWarning { panic("cannot lower a compilation with errors") }
+    }
+    var functions = List<LoweredFunction>()
+    var tests = List<TestId>()
+    var testFunctions = List<LoweredFunction>()
+    for k in 0..c.moduleOrder.length {
+        let m = c.moduleOrder[k]
+        for i in 0..c.modules[m].allFunctions.length {
+            let fn = c.modules[m].allFunctions[i]
+            if c.functions[fn].body == -1 || c.functions[fn].kind == .testKeyword || semantics.functionIsGeneric(ref c, by: fn) { continue }
+            functions.append(lowerFunction(ref c, through: ref l, for: fn))
+        }
+        for i in 0..c.modules[m].tests.length {
+            let t = c.modules[m].tests[i]
+            tests.append(t)
+            testFunctions.append(lowerFunction(ref c, through: ref l, for: c.tests[t].function))
+        }
+    }
+    return LoweredProgram { functions: move functions, main: c.modules[c.entryModule].main, tests: move tests, testFunctions: move testFunctions }
+}
+
+/// Lowerer.cs:78 `FunctionLowerer.Lower`, after resetting `l`'s per-function fields (`new FunctionLowerer(fn, …)`).
+LoweredFunction lowerFunction(ref Ctx c, through ref LCtx l, for FuncId fn) uses alloc {
+    l.fn = fn
+    l.outs = List<List<BStmt>>()
+    l.outs.append(List<BStmt>())
+    l.locals = List<LocalId>()
+    l.seen = Map<LocalId, bool>()
+    l.scopes = List<LScope>()
+    l.targets = Map<i64, LTarget>()
+    l.labelCount = 0
+    l.contextSlots = 0
+    l.panicSlots = 0
+    l.showing = false
+    l.shown = Map<BExpr, BExpr>()
+    l.ran = Map<BExpr, LocalId>()
+    let body = c.functions[fn].body
+    let bodySpan = semantics.nodeSpan(in c, for: body)
+    l.scopes.append(LScope {})
+    if c.functions[fn].kind == .constructor {
+        let s = c.functions[fn].owner
+        var defaults = List<BExpr>()
+        for i in 0..c.structs[s].fields.length {
+            let f = c.structs[s].fields[i]
+            let d = c.fields[f].defaultValue
+            defaults.append(d != -1 ? d : semantics.addDefault(ref c, from: BDefault { span: bodySpan, type: c.fields[f].type }))
+        }
+        let structType = semantics.makeType(.structType, at: s)
+        let target = semantics.addThis(ref c, from: BThis { span: bodySpan, type: structType })
+        let value = semantics.addStructLiteral(ref c, from: BStructLiteral { span: bodySpan, structId: s, fields: move defaults, type: structType })
+        emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: bodySpan, target: target, value: value, op: null }))
+    }
+    let statements = copyStmts(in c.bBlocks[i64(body & 0xFFFFFFFF)].statements)
+    for s in statements { lowerStatement(ref c, through: ref l, for: s) }
+    emitCleanups(ref c, through: ref l, at: 0, for: -1)
+    l.scopes.remove(at: 0)
+    if c.functions[fn].kind == .constructor { emit(ref l, for: ltree.addLReturn(ref l.tree, from: LReturn { span: bodySpan, value: -1 })) }
+    let lowered = l.outs.removeLast()
+    var locals = List<LocalId>()
+    for x in l.locals { locals.append(x) }
+    let block = semantics.addBlock(ref c, from: BBlock { span: bodySpan, statements: move lowered })
+    return LoweredFunction { symbol: fn, locals: move locals, contextSlots: l.contextSlots, panicSlots: l.panicSlots, body: block }
+}
+
+/// A copy of `xs`, so the lowering can grow `c`'s arenas while it walks them.
+List<BStmt> copyStmts(in List<BStmt> xs) uses alloc {
+    var r = List<BStmt>()
+    for x in xs { r.append(x) }
+    return r
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Lowerer.cs:97 `Emit`.
+void emit(ref LCtx l, for BStmt s) uses alloc {
+    l.outs[l.outs.length - 1].append(s)
+}
+
+/// Lowerer.cs:99 `Note`.
+void note(ref Ctx c, through ref LCtx l, for LocalId local) uses alloc {
+    // A lambda reads its captures through its environment, not as locals of its own.
+    // Q1: round 4 redoes this (Lowerer.cs:102).
+    if c.locals[local].isParameter { return }
+    for x in c.functions[l.fn].captures {
+        if x == local { return }
+    }
+    unless l.seen.contains(local) {
+        l.seen[local] = true
+        l.locals.append(local)
+    }
+}
+
+/// Lowerer.cs:106 `NewTemp`.
+LocalId newTemp(ref Ctx c, through ref LCtx l, for Type type) uses alloc {
+    c.locals.append(LocalSymbol { name: "t", type: type, kind: .temp })
+    let t = c.locals.length - 1
+    note(ref c, through: ref l, for: t)
+    return t
+}
+
+/// Lowerer.cs:113 `NewLabel`.
+string newLabel(ref LCtx l, for string kind) uses alloc {
+    l.labelCount += 1
+    return $"{kind}_{l.labelCount}"
+}
+
+/// Lowerer.cs:116 `Capture` (D5): later output goes to a fresh list.
+public void captureBegin(ref LCtx l) uses alloc {
+    l.outs.append(List<BStmt>())
+}
+
+/// Lowerer.cs:116 `Capture` (D5): the list `captureBegin` started, with output going back to the one below.
+public List<BStmt> captureEnd(ref LCtx l) {
+    return l.outs.removeLast()
+}
+
+/// Lowerer.cs:131 `CaptureExpr` (D5): the lowered value, with the statements it needs first in `pre`.
+BExpr captureExpr(ref Ctx c, through ref LCtx l, for BExpr e, bool lvalue, to ref List<BStmt> pre) uses alloc {
+    captureBegin(ref l)
+    let value = lvalue ? lowerLvalue(ref c, through: ref l, for: e) : lowerExpr(ref c, through: ref l, for: e)
+    pre = captureEnd(ref l)
+    return value
+}
+
+/// Lowerer.cs:138 `Block`.
+BStmt block(ref Ctx c, at TextSpan span, for move List<BStmt> statements) uses alloc {
+    return semantics.addBlock(ref c, from: BBlock { span: span, statements: move statements })
+}
+
+/// Lowerer.cs:140 `Bool`.
+BExpr boolLiteral(ref Ctx c, at TextSpan span, by bool value) uses alloc {
+    let e = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.bool), value: Constant { kind: .flag, flag: value } })
+    semantics.setConstant(ref c, for: e, to: Constant { kind: .flag, flag: value })
+    return e
+}
+
+/// Lowerer.cs:142 `I64`.
+BExpr i64Literal(ref Ctx c, at TextSpan span, by i64 value) uses alloc {
+    let lo: u64 = value >= 0 ? u64(value) : ~u64(-(value + 1))
+    let hi: u64 = value >= 0 ? 0 : 0xFFFFFFFFFFFFFFFF
+    let e = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.i64), value: Constant { kind: .integer, integer: Big { lo: lo, hi: hi } } })
+    semantics.setConstant(ref c, for: e, to: Constant { kind: .integer, integer: Big { lo: lo, hi: hi } })
+    return e
+}
+
+/// Lowerer.cs:145 `Not`.
+BExpr notExpr(ref Ctx c, through in LCtx l, for BExpr e) uses alloc {
+    return semantics.addUnary(ref c, from: BUnary { span: t2Span(in c, through: in l, for: e), op: .notKeyword, operand: e, type: semantics.prim(.bool) })
+}
+
+/// Lowerer.cs:147 `And`.
+BExpr andExpr(ref Ctx c, through in LCtx l, for BExpr a, by BExpr b) uses alloc {
+    if isTrueLiteral(in c, for: a) { return b }
+    if isTrueLiteral(in c, for: b) { return a }
+    return semantics.addBinary(ref c, from: BBinary { span: t2Span(in c, through: in l, for: a), op: .logicalAnd, left: a, right: b, type: semantics.prim(.bool) })
+}
+
+/// `e is BoundLiteral { Value.Value: true }`.
+bool isTrueLiteral(in Ctx c, for BExpr e) {
+    if ltree.isLowered(e) || semantics.boundKind(e) != .literal { return false }
+    let v = c.bLiterals[i64(e & 0xFFFFFFFF)].value
+    return v.kind == .flag && v.flag
+}
+
+/// Lowerer.cs:150 `Or`.
+BExpr orExpr(ref Ctx c, through in LCtx l, for BExpr a, by BExpr b) uses alloc {
+    return semantics.addBinary(ref c, from: BBinary { span: t2Span(in c, through: in l, for: a), op: .logicalOr, left: a, right: b, type: semantics.prim(.bool) })
+}
+
+/// Lowerer.cs:152 `Local`.
+BExpr localExpr(ref Ctx c, at TextSpan span, for LocalId local) uses alloc {
+    // `semantics.addLocal` (bound.byn:1211) resolves to binder.byn:260's private `addLocal` here (BYN2005), so this is
+    // its body (Q763).
+    c.bLocals.append(BLocal { span: span, local: local, type: c.locals[local].type })
+    return semantics.makeBound(.local, at: c.bLocals.length - 1)
+}
+
+/// Lowerer.cs:154 `IsNever`.
+bool isNeverExpr(BExpr e) => ltree.isLowered(e) && ltree.lKindOf(e) == .neverValue
+
+/// `e is LVoid`.
+bool isVoidExpr(BExpr e) => ltree.isLowered(e) && ltree.lKindOf(e) == .voidValue
+
+/// `e.Type` for a bound or lowered expression (LoweredNodes.cs:83-127).
+Type t2Type(in Ctx c, through in LCtx l, for BExpr e) => ltree.typeOf(in c, through: in l.tree, for: e)
+
+/// `n.Syntax.Span` for a bound or lowered node.
+TextSpan t2Span(in Ctx c, through in LCtx l, for semantics.BNode n) => ltree.spanOf(in c, through: in l.tree, for: n)
+
+/// `BoundTree.Children(node)`: a lowered node has none there (its fields are walked by `anyNode`).
+List<semantics.BNode> t2Children(in Ctx c, for semantics.BNode n) uses alloc {
+    if ltree.isLowered(n) { return List<semantics.BNode>() }
+    return semantics.children(in c, for: n)
+}
+
+/// `n is BoundExpr`, for a bound or lowered node.
+bool t2IsExpr(semantics.BNode n) {
+    if ltree.isLowered(n) { return ltree.lKindOf(n).ordinal >= ltree.LKind.optionalHas.ordinal }
+    return semantics.isExprKind(semantics.boundKind(n))
+}
+
+/// Lowerer.cs:157 `IsTrivial`: cheap and free of effects, safe to evaluate more than once or later.
+bool isTrivial(in Ctx c, through in LCtx l, for BExpr e) {
+    if ltree.isLowered(e) {
+        let i = ltree.lIndexOf(e)
+        switch ltree.lKindOf(e) {
+            case .voidValue: return true
+            case .optionalValue: return isTrivial(in c, through: in l, for: l.tree.optionalValues[i].optional)
+            case .unionTag: return isTrivial(in c, through: in l, for: l.tree.unionTags[i].unionValue)
+            case .unionField: return isTrivial(in c, through: in l, for: l.tree.unionFields[i].unionValue)
+            case .errorCode: return isTrivial(in c, through: in l, for: l.tree.errorCodes[i].error)
+            case .errorField: return isTrivial(in c, through: in l, for: l.tree.errorFields[i].error)
+            default: return false
+        }
+    }
+    let i = i64(e & 0xFFFFFFFF)
+    switch semantics.boundKind(e) {
+        case .errorVariant:
+            for p in c.bErrorVariants[i].payload {
+                unless isTrivial(in c, through: in l, for: p) { return false }
+            }
+            return true
+        case .literal or .symbolLiteral or .defaultValue or .local or .thisRef or .enumMember or .enumValues or .staticArray: return true
+        case .field: return isTrivial(in c, through: in l, for: c.bFields[i].receiver)
+        case .tupleElement: return isTrivial(in c, through: in l, for: c.bTupleElements[i].receiver)
+        case .moveExpr: return isTrivial(in c, through: in l, for: c.bMoves[i].operand)
+        default: return false
+    }
+}
+
+/// Lowerer.cs:173 `IsRepeatable`: trivial and free of `move`, since a move records its slot.
+bool isRepeatable(in Ctx c, through in LCtx l, for BExpr e) {
+    if ltree.isLowered(e) {
+        let i = ltree.lIndexOf(e)
+        switch ltree.lKindOf(e) {
+            case .optionalValue: return isRepeatable(in c, through: in l, for: l.tree.optionalValues[i].optional)
+            case .unionTag: return isRepeatable(in c, through: in l, for: l.tree.unionTags[i].unionValue)
+            case .unionField: return isRepeatable(in c, through: in l, for: l.tree.unionFields[i].unionValue)
+            case .errorCode: return isRepeatable(in c, through: in l, for: l.tree.errorCodes[i].error)
+            case .errorField: return isRepeatable(in c, through: in l, for: l.tree.errorFields[i].error)
+            default: return isTrivial(in c, through: in l, for: e)
+        }
+    }
+    let i = i64(e & 0xFFFFFFFF)
+    switch semantics.boundKind(e) {
+        case .moveExpr: return false
+        case .field: return isRepeatable(in c, through: in l, for: c.bFields[i].receiver)
+        case .tupleElement: return isRepeatable(in c, through: in l, for: c.bTupleElements[i].receiver)
+        case .errorVariant:
+            for p in c.bErrorVariants[i].payload {
+                unless isRepeatable(in c, through: in l, for: p) { return false }
+            }
+            return true
+        default: return isTrivial(in c, through: in l, for: e)
+    }
+}
+
+/// Lowerer.cs:187 `IsLvalue`.
+bool isLvalue(in Ctx c, through in LCtx l, for BExpr e) {
+    if ltree.isLowered(e) {
+        switch ltree.lKindOf(e) {
+            case .indexUnchecked: return true
+            case .optionalValue: return isLvalue(in c, through: in l, for: l.tree.optionalValues[ltree.lIndexOf(e)].optional)
+            default: return false
+        }
+    }
+    let i = i64(e & 0xFFFFFFFF)
+    switch semantics.boundKind(e) {
+        case .local or .thisRef or .index or .staticArray: return true
+        case .builtinCall: return c.bBuiltinCalls[i].member == .mapIndexSet || c.bBuiltinCalls[i].member == .mapSlot
+        case .field: return isLvalue(in c, through: in l, for: c.bFields[i].receiver)
+        case .tupleElement: return isLvalue(in c, through: in l, for: c.bTupleElements[i].receiver)
+        default: return false
+    }
+}
+
+/// Lowerer.cs:197 `HasEffects`.
+bool hasEffects(in Ctx c, through in LCtx l, for BExpr e) uses alloc {
+    if ltree.isLowered(e) {
+        switch ltree.lKindOf(e) {
+            case .assignExpr or .sequence or .nextChar: return true
+            default: break
+        }
+    } else {
+        switch semantics.boundKind(e) {
+            case .call or .builtinCall: return true
+            default: break
+        }
+    }
+    unless isTrivial(in c, through: in l, for: e) {
+        for x in t2Children(in c, for: e) {
+            if t2IsExpr(x) && hasEffects(in c, through: in l, for: x) { return true }
+        }
+    }
+    return ltree.isLowered(e) && ltree.lKindOf(e) == .optionalValue && hasEffects(in c, through: in l, for: l.tree.optionalValues[ltree.lIndexOf(e)].optional)
+}
+
+/// Lowerer.cs:203 `Spill`.
+BExpr spill(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
+    if isNeverExpr(e) || isVoidExpr(e) { return e }
+    let t = newTemp(ref c, through: ref l, for: t2Type(in c, through: in l, for: e))
+    let span = t2Span(in c, through: in l, for: e)
+    emitAssign(ref c, through: ref l, to: localExpr(ref c, at: span, for: t), as: e)
+    return localExpr(ref c, at: span, for: t)
+}
+
+/// Lowerer.cs:215 `Become`: stores the payload in the state's part of `this`, then the tag. The payload is evaluated
+/// into temporaries first, since it may read the old state's fields from the same storage.
+void lowerBecome(ref Ctx c, through ref LCtx l, for BStmt b) uses alloc {
+    let i = i64(b & 0xFFFFFFFF)
+    let span = c.bBecomes[i].span
+    let state = c.bBecomes[i].state
+    var payload = List<BExpr>()
+    for p in c.bBecomes[i].payload { payload.append(p) }
+    var lowered = List<BExpr>()
+    unless operands(ref c, through: ref l, for: in payload, as: in List<bool>(), to: ref lowered) { return }
+    var values = List<BExpr>()
+    for v in lowered { values.append(semantics.exprConstant(in c, for: v) is null ? spill(ref c, through: ref l, for: v) : v) }
+    let self = semantics.addThis(ref c, from: BThis { span: span, type: semantics.makeType(.structType, at: c.functions[l.fn].owner) })
+    for k in 0..values.length {
+        let field = ltree.addLUnionField(ref l.tree, from: LUnionField { span: span, unionValue: self, variant: state, index: k })
+        emitAssign(ref c, through: ref l, to: field, as: values[k])
+    }
+    let tag = c.unionVariants[state].tag
+    let lo: u64 = tag >= 0 ? u64(tag) : ~u64(-(tag + 1))
+    let hi: u64 = tag >= 0 ? 0 : 0xFFFFFFFFFFFFFFFF
+    let tagValue = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.i32), value: Constant { kind: .integer, integer: Big { lo: lo, hi: hi } } })
+    semantics.setConstant(ref c, for: tagValue, to: Constant { kind: .integer, integer: Big { lo: lo, hi: hi } })
+    emitAssign(ref c, through: ref l, to: ltree.addLUnionTag(ref l.tree, from: LUnionTag { span: span, unionValue: self }), as: tagValue)
+}
+
+/// Lowerer.cs:226 `EmitAssign`: stores `value` in `target`, or just evaluates it when it does not complete.
+void emitAssign(ref Ctx c, through ref LCtx l, to BExpr target, as BExpr value) uses alloc {
+    if isNeverExpr(value) { return }
+    if semantics.isNever(t2Type(in c, through: in l, for: value)) || isVoidExpr(value) {
+        emitEffect(ref c, through: ref l, for: value)
+        return
+    }
+    emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: t2Span(in c, through: in l, for: value), target: target, value: value, op: null }))
+}
+
+/// Lowerer.cs:237 `EmitEffect`.
+void emitEffect(ref Ctx c, through ref LCtx l, for BExpr value) uses alloc {
+    if isNeverExpr(value) || isVoidExpr(value) || isTrivial(in c, through: in l, for: value) { return }
+    emit(ref l, for: semantics.addExprStmt(ref c, from: BExprStmt { span: t2Span(in c, through: in l, for: value), expr: value }))
+}
+
+/// Lowerer.cs:248 `Operands`: lowers operands so they are evaluated left to right: when a later operand needs
+/// statements first, or two operands have effects (C leaves their order unspecified), earlier operands are stored in
+/// temporaries. Operand `i` stays addressable when `lvalues[i]` is true (C#'s `lvalues?.Invoke(i) ?? false`; an
+/// empty list is C#'s null). Returns false for C#'s null, with `values` the lowered operands otherwise.
+bool operands(ref Ctx c, through ref LCtx l, for in List<BExpr> ops, as in List<bool> lvalues, to ref List<BExpr> values) uses alloc {
+    let n = ops.length
+    var pres = List<List<BStmt>>()
+    for i in 0..n {
+        var pre = List<BStmt>()
+        values.append(captureExpr(ref c, through: ref l, for: ops[i], lvalue: i < lvalues.length && lvalues[i], to: ref pre))
+        pres.append(move pre)
+    }
+    var barrier: i64 = -1
+    for i in 0..n {
+        if pres[i].length > 0 { barrier = i }
+    }
+    var effects = List<i64>()
+    for i in 0..n {
+        if hasEffects(in c, through: in l, for: values[i]) { effects.append(i) }
+    }
+    if effects.length >= 2 && effects[effects.length - 1] > barrier { barrier = effects[effects.length - 1] }
+    // An operand moving a local a later operand reads happens first, as its own statement, so the read sees the local moved.
+    var movedFirst = List<bool>()
+    for i in 0..n {
+        var moved = false
+        for j in i + 1..n {
+            if anyNode(in c, through: in l, for: values[j], by: .readsLocalMovedBy(values[i])) {
+                moved = true
+                break
+            }
+            for s in pres[j] {
+                if anyNode(in c, through: in l, for: s, by: .readsLocalMovedBy(values[i])) {
+                    moved = true
+                    break
+                }
+            }
+            if moved { break }
+        }
+        movedFirst.append(moved)
+    }
+    for i in 0..n {
+        for s in pres[i] { emit(ref l, for: s) }
+        if isNeverExpr(values[i]) { return false }
+        let lvalue = i < lvalues.length && lvalues[i]
+        // coverage-exempt: Q774
+        if (i < barrier && !isTrivial(in c, through: in l, for: values[i]) || movedFirst[i]) && !lvalue && !isVoidExpr(values[i]) {
+            values[i] = spill(ref c, through: ref l, for: values[i])
+        }
+    }
+    return true
+}
+
+/// The `test` lambdas `Any` is called with (Lowerer.cs:262-263, 291), since a lambda cannot read `c` (Q763).
+union T2AnyTest {
+    /// `x => x is BoundMove { Operand: BoundLocal r } && r.Local == l` (`Moves`).
+    movesLocal(LocalId local)
+    /// `x => x is BoundLocal r && Moves(mover, r.Local)` (`Operands`).
+    readsLocalMovedBy(BExpr mover)
+}
+
+bool t2Passes(in Ctx c, through in LCtx l, for semantics.BNode x, by T2AnyTest probe) uses alloc {
+    if ltree.isLowered(x) { return false }
+    let i = i64(x & 0xFFFFFFFF)
+    switch probe {
+        case .movesLocal(let local):
+            if semantics.boundKind(x) != .moveExpr { return false }
+            let operand = c.bMoves[i].operand
+            return !ltree.isLowered(operand) && semantics.boundKind(operand) == .local && c.bLocals[i64(operand & 0xFFFFFFFF)].local == local
+        case .readsLocalMovedBy(let mover):
+            return semantics.boundKind(x) == .local && moves(in c, through: in l, for: mover, by: c.bLocals[i].local)
+    }
+}
+
+/// Lowerer.cs:275 `Any`: whether `node` or a node inside it passes `test`.
+bool anyNode(in Ctx c, through in LCtx l, for semantics.BNode node, by T2AnyTest probe) uses alloc {
+    if t2Passes(in c, through: in l, for: node, by: probe) { return true }
+    if ltree.isLowered(node) {
+        let i = ltree.lIndexOf(node)
+        switch ltree.lKindOf(node) {
+            case .optionalHas: return anyNode(in c, through: in l, for: l.tree.optionalHass[i].optional, by: probe)
+            case .optionalValue: return anyNode(in c, through: in l, for: l.tree.optionalValues[i].optional, by: probe)
+            case .unionTag: return anyNode(in c, through: in l, for: l.tree.unionTags[i].unionValue, by: probe)
+            case .unionField: return anyNode(in c, through: in l, for: l.tree.unionFields[i].unionValue, by: probe)
+            case .errorCode: return anyNode(in c, through: in l, for: l.tree.errorCodes[i].error, by: probe)
+            case .errorField: return anyNode(in c, through: in l, for: l.tree.errorFields[i].error, by: probe)
+            case .assignExpr:
+                return anyNode(in c, through: in l, for: l.tree.assignExprs[i].target, by: probe) || anyNode(in c, through: in l, for: l.tree.assignExprs[i].value, by: probe)
+            case .sequence:
+                for e in l.tree.sequences[i].effects {
+                    if anyNode(in c, through: in l, for: e, by: probe) { return true }
+                }
+                return anyNode(in c, through: in l, for: l.tree.sequences[i].value, by: probe)
+            case .failingCall: return anyNode(in c, through: in l, for: l.tree.failingCalls[i].call, by: probe)
+            default: return false
+        }
+    }
+    if semantics.boundKind(node) == .local { return false }
+    for x in t2Children(in c, for: node) {
+        if anyNode(in c, through: in l, for: x, by: probe) { return true }
+    }
+    return false
+}
+
+/// Lowerer.cs:291 `Moves`: whether `node` moves local `local`.
+bool moves(in Ctx c, through in LCtx l, for semantics.BNode node, by LocalId local) uses alloc => anyNode(in c, through: in l, for: node, by: .movesLocal(local))
+
+// ── Cleanup ──────────────────────────────────────────────────────────────────
+
+/// Lowerer.cs:296 `CaptureGuard`: a guarded defer body (`defer stmt if c`) with its condition read now, at registration (J20).
+BStmt captureGuard(ref Ctx c, through ref LCtx l, for BStmt body) uses alloc {
+    if ltree.isLowered(body) || semantics.boundKind(body) != .ifStmt { return body }
+    let i = i64(body & 0xFFFFFFFF)
+    // coverage-exempt: Q765
+    if !c.bIfs[i].guarded || c.bIfs[i].elseBranch != -1 { return body }
+    let read = c.bIfs[i].condition
+    let condition = spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: read))
+    return semantics.addIf(ref c, from: BIf {
+        span: c.bIfs[i].span,
+        condition: condition,
+        then: c.bIfs[i].then,
+        elseBranch: c.bIfs[i].elseBranch,
+        isNever: c.bIfs[i].isNever,
+        guarded: c.bIfs[i].guarded,
+    })
+}
+
+/// Lowerer.cs:300 `EmitCleanups`: the cleanups of scopes `depth` and deeper, innermost first; errdefers only when
+/// failing with `error` (-1 is C#'s null).
+void emitCleanups(ref Ctx c, through ref LCtx l, at i64 depth, for LocalId error) uses alloc {
+    var i = l.scopes.length - 1
+    while i >= depth {
+        var j = l.scopes[i].cleanups.length - 1
+        while j >= 0 {
+            emitCleanup(ref c, through: ref l, at: i, for: l.scopes[i].cleanups[j], by: error)
+            j -= 1
+        }
+        i -= 1
+    }
+}
+
+/// Lowerer.cs:311 `EmitCleanup`.
+void emitCleanup(ref Ctx c, through ref LCtx l, at i64 scopeIndex, for LCleanup cleanup, by LocalId error) uses alloc {
+    switch cleanup {
+        case .deferCleanup(let body):
+            lowerOutside(ref c, through: ref l, at: scopeIndex, for: body)
+        case .errdeferCleanup(let binding, let body):
+            if error == -1 { return }
+            if binding != -1 {
+                note(ref c, through: ref l, for: binding)
+                let span = t2Span(in c, through: in l, for: body)
+                let target = localExpr(ref c, at: span, for: binding)
+                let value = localExpr(ref c, at: span, for: error)
+                emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: target, value: value, op: null }))
+            }
+            lowerOutside(ref c, through: ref l, at: scopeIndex, for: body)
+        case .restoreContext(let span, let slot):
+            emit(ref l, for: ltree.addLSetContext(ref l.tree, from: LSetContext { span: span, arena: -1, slot: slot }))
+        case .freeArena(let span, let arena):
+            let value = localExpr(ref c, at: span, for: arena)
+            emit(ref l, for: ltree.addLFreeArena(ref l.tree, from: LFreeArena { span: span, arena: value }))
+        case .popPanicHandler(let span, let slot):
+            emit(ref l, for: ltree.addLPopPanicHandler(ref l.tree, from: LPopPanicHandler { span: span, slot: slot }))
+    }
+}
+
+/// Lowerer.cs:338 `LowerOutside`: lowers a cleanup body as if its own scope and everything inside it had already ended.
+void lowerOutside(ref Ctx c, through ref LCtx l, at i64 scopeIndex, for BStmt body) uses alloc {
+    // `saved` holds the removed scopes innermost first; they go back outermost first, as `AddRange(saved)`.
+    var saved = List<LScope>()
+    while l.scopes.length > scopeIndex { saved.append(l.scopes.removeLast()) }
+    lowerStatement(ref c, through: ref l, for: body)
+    while saved.length > 0 { l.scopes.append(saved.removeLast()) }
+}

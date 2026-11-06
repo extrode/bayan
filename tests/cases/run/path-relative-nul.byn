@@ -1,0 +1,3 @@
+// `Path.relative` panics on a path with a NUL byte, where .NET's `Path.GetRelativePath` throws `ArgumentException`.
+print(Path.relative(from: "/a", to: "/a/b"))
+print(Path.relative(from: "/a", to: "/a/b\0c"))

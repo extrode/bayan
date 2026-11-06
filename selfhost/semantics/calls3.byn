@@ -39,7 +39,7 @@ BExpr t34Try(ref Binder b, through ref Ctx c, for in parser.TryExpr t, from in p
                     case .nameExpr(let conversion):
                         report(ref b, through: ref c, for: .renamedMember, at: conversion.value.span, by: ("try string(bytes)", "try Utf8.decode(bytes)", "", "", ""),
                             label: "the old name", help: "write `Utf8.decode`", hasFix: true, fixSpan: conversion.value.span, fixReplacement: "Utf8.decode")
-                        return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
+                        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: t.span }), at: syntaxLeaf(ref c, as: .tryExpr, at: t.span))
                     default: {}
                 }
             default: {}
@@ -47,7 +47,7 @@ BExpr t34Try(ref Binder b, through ref Ctx c, for in parser.TryExpr t, from in p
     }
     if handles(in inner) && boundKind(operand) == .call && c.functions[c.bCalls[boundIndex(operand)].function].hasFails {
         for k in covered { reportUnhandled(ref b, through: ref c, at: k.span, by: k.name, structLiteral: k.structLiteral) }
-        return addTry(ref c, from: BTry { span: t.span, operand: operand, type: exprType(in c, for: operand) })
+        return recordSyntaxNode(ref c, for: addTry(ref c, from: BTry { span: t.span, operand: operand, type: exprType(in c, for: operand) }), at: syntaxLeaf(ref c, as: .tryExpr, at: t.span))
     }
     if covered.length > 0 {
         reportTryCoversMore(ref b, through: ref c, for: in t, at: covered[0].span)
@@ -110,7 +110,7 @@ BExpr t34Catch(ref Binder b, through ref Ctx c, for in parser.CatchExpr e, from 
         }
         let _ = bindExpr(ref b, through: ref c, for: in e.handler)
         popScope(ref b)
-        return addErrorExpr(ref c, from: BErrorExpr { span: e.span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: e.span }), at: syntaxLeaf(ref c, as: .catchExpr, at: e.span))
     }
     let fn = c.bCalls[boundIndex(operand)].function
     let sets = errorSetsOf(ref c, for: fn)
@@ -181,7 +181,7 @@ BExpr t34Catch(ref Binder b, through ref Ctx c, for in parser.CatchExpr e, from 
                 switch block.value.block {
                     case .blockStmt(let bs):
                         let stmt = bindBlock(ref b, through: ref c, for: in bs.value)
-                        handler = addBlockExpr(ref c, from: BBlockExpr { span: block.value.span, block: stmt, type: prim(.neverKind) })
+                        handler = recordSyntaxNode(ref c, for: addBlockExpr(ref c, from: BBlockExpr { span: block.value.span, block: stmt, type: prim(.neverKind) }), at: syntaxLeaf(ref c, as: .blockExpr, at: block.value.span))
                     default: {}
                 }
             default: {}
@@ -192,7 +192,7 @@ BExpr t34Catch(ref Binder b, through ref Ctx c, for in parser.CatchExpr e, from 
     }
     b.caught = savedCaught
     popScope(ref b)
-    let result = addCatch(ref c, from: BCatch { span: e.span, operand: operand, binding: binding, variant: variant, handler: handler, type: resultType })
+    let result = recordSyntaxNode(ref c, for: addCatch(ref c, from: BCatch { span: e.span, operand: operand, binding: binding, variant: variant, handler: handler, type: resultType }), at: syntaxLeaf(ref c, as: .catchExpr, at: e.span))
     if hasVariant { c.catchVariantSpans[result] = parser.exprSpan(in e.variant) }
     return result
 }
@@ -236,7 +236,7 @@ BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s
                         case .blockStmt(let bs):
                             blockArm = true
                             let stmt = bindBlock(ref b, through: ref c, for: in bs.value)
-                            result = addBlockExpr(ref c, from: BBlockExpr { span: block.value.span, block: stmt, type: prim(.neverKind) })
+                            result = recordSyntaxNode(ref c, for: addBlockExpr(ref c, from: BBlockExpr { span: block.value.span, block: stmt, type: prim(.neverKind) }), at: syntaxLeaf(ref c, as: .blockExpr, at: block.value.span))
                         default: {}
                     }
                 }
@@ -266,7 +266,7 @@ BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s
             if type == -1 {
                 report(ref b, through: ref c, for: .branchTypeMismatch, at: nodeSpan(in c, for: a.value),
                     by: (typeDisplay(ref c, by: exprType(in c, for: arms[0].value)), typeDisplay(ref c, by: at), "", "", ""))
-                return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
+                return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: s.span }), at: syntaxLeaf(ref c, as: .switchExpr, at: s.span))
             }
         }
         if type == -1 {
@@ -296,7 +296,7 @@ BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s
     } else {
         let _ = checkExhaustive(ref b, through: ref c, at: parser.exprSpan(in s.value), as: valueType, by: in cases, statement: false)
     }
-    return addSwitchExpr(ref c, from: BSwitchExpr { span: s.span, value: value, arms: move arms, type: type })
+    return recordSyntaxNode(ref c, for: addSwitchExpr(ref c, from: BSwitchExpr { span: s.span, value: value, arms: move arms, type: type }), at: syntaxLeaf(ref c, as: .switchExpr, at: s.span))
 }
 
 // ── Patterns ─────────────────────────────────────────────────────────────────
@@ -788,7 +788,7 @@ BPattern bindConstantPattern(ref Binder b, through ref Ctx c, for in parser.Cons
                 if kindOf(input) != .optional && !isError(input) {
                     report(ref b, through: ref c, for: .patternMismatch, at: k.span, by: ("`null`", typeDisplay(ref c, by: input), "", "", ""))
                 }
-                let value = addDefault(ref c, from: BDefault { span: lit.value.span, type: input })
+                let value = recordSyntaxNode(ref c, for: addDefault(ref c, from: BDefault { span: lit.value.span, type: input }), at: syntaxLeaf(ref c, as: .literalExpr, at: lit.value.span))
                 return addConstantPattern(ref c, from: BConstantPattern { span: k.span, inputType: input, value: value })
             }
         case .targetMemberExpr(let tm):

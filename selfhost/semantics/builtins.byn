@@ -90,7 +90,7 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Enum(ref c, from: alignSource, by: m)
     let _ = t9Enum(ref c, from: comparisonSource, by: m)
     let _ = t9Make(ref c, by: m, for: "print", as: .print, to: prim(.void), from: t9Two("text", as: prim(.string), for: "to", to: enumTypeOf(stream)), at: "print")
-    let _ = t9Make(ref c, by: m, for: "panic", as: .panic, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "panic")
+    c.builtinPanic = t9Make(ref c, by: m, for: "panic", as: .panic, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "panic")
     let _ = t9Make(ref c, by: m, for: "todo", as: .todo, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "todo")
 
     let logLevel = t9Enum(ref c, from: logLevelSource, by: m)
@@ -98,7 +98,7 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Make(ref c, by: m, for: "Arena", as: .arenaNew, to: builtinType(.arena), from: List<BuiltinParameter>(), at: "Arena")
     let bufferSpan = internSpan(ref c, by: prim(.u8), readOnly: false)
     let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufNew, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf(buffer)")
-    let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufGrow, to: builtinType(.strBuf), from: List<BuiltinParameter>(), at: "StrBuf")
+    c.builtinStrBufGrow = t9Make(ref c, by: m, for: "StrBuf", as: .strBufGrow, to: builtinType(.strBuf), from: List<BuiltinParameter>(), at: "StrBuf")
     let _ = t9Make(ref c, by: m, for: "StrBuf.over", as: .strBufOver, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf.over")
     // The value's type varies: the binder types each call (see `BindOwned`).
     let _ = t9Make(ref c, by: m, for: "Owned", as: .ownedNew, to: errorType(), from: List<BuiltinParameter>(), at: "Owned")
@@ -133,6 +133,9 @@ ModId t9Create(ref Ctx c) {
     t9Fails(ref c, for: hexDecode, by: parseError)
     let _ = t9Make(ref c, by: m, for: "intern", as: .symbolIntern, to: builtinType(.symbol), from: t9One("text", as: prim(.string)), at: "Symbol.intern")
     let _ = t9Make(ref c, by: m, for: "invalidUtf8At", as: .stringInvalidUtf8At, to: internOptional(ref c, by: prim(.i64)), from: t9One("bytes", as: roBytes), at: "string.invalidUtf8At")
+    let _ = t9Make(ref c, by: m, for: "isRooted", as: .pathIsRooted, to: prim(.bool), from: t9One("path", as: prim(.string)), at: "Path.isRooted")
+    let _ = t9Make(ref c, by: m, for: "relative", as: .pathRelative, to: prim(.string), from: t9Two("from", as: prim(.string), for: "to", to: prim(.string)), at: "Path.relative")
+    let _ = t9Make(ref c, by: m, for: "fileName", as: .pathFileName, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fileName")
 
     // The iteration interfaces are declared from source too; the declare pass declares their members like a user interface's.
     let iteration = t9Parse(ref c, for: iterationSource, by: m)
@@ -270,6 +273,14 @@ InterfaceId findInterface(ref Ctx c, for string name) {
     switch name {
         case "IEnumerator": return typeIndex(t9Type(ref c, for: "IEnumerator"))
         case "IIndexable": return typeIndex(t9Type(ref c, for: "IIndexable"))
+    }
+    return -1
+}
+
+/// A static member of `Path`, or -1.
+FuncId findPath(ref Ctx c, for string name) {
+    switch name {
+        case "isRooted" or "relative" or "fileName": return t9Function(ref c, for: $"Path.{name}")
     }
     return -1
 }

@@ -1,0 +1,148 @@
+// T6: CEmitter.cs 1047-1147 (`Static`, `StaticArray`, `StringLiteral`, `Escape`, `Constant`, `FloatLiteral`).
+// `Static` takes a closure in C#; here `t6StaticReserve` registers the name and the caller fills the table in.
+
+import semantics
+
+// ── Static data ──────────────────────────────────────────────────────────────
+
+/// CEmitter.cs:1050 `Static`, first half: registers the file-scope table `name` once; false when it is registered.
+bool t6StaticReserve(ref CCtx cc, for string name) uses alloc {
+    if cc.statics.contains(name) { return false }
+    cc.statics[name] = ""
+    cc.staticOrder.append(name)
+    return true
+}
+
+/// CEmitter.cs:1060 `EnumNames` (Q845): the name of the static table of `e`'s member names, registering it.
+public string enumNames(ref CCtx cc, from ref Ctx c, for semantics.EnumId e) uses alloc {
+    let name = $"{cType(ref cc, from: ref c, for: semantics.enumTypeOf(e))}_names"
+    if !t6StaticReserve(ref cc, for: name) { return name }
+    var sb = StrBuf()
+    sb.append($"static const byn_str {cType(ref cc, from: ref c, for: semantics.enumTypeOf(e))}_names[] = {{\n")
+    for m in c.enums[e].members { sb.append($"    {stringLiteral(c.enumMembers[m].name)},\n") }
+    sb.append("};\n\n")
+    cc.statics[name] = $"{sb.finish()}"
+    return name
+}
+
+/// CEmitter.cs:1064 `EnumValues` (Q845): the name of the static table of `e`'s members in order, registering it.
+public string enumValues(ref CCtx cc, from ref Ctx c, for semantics.EnumId e) uses alloc {
+    let name = $"{cType(ref cc, from: ref c, for: semantics.enumTypeOf(e))}_values"
+    if !t6StaticReserve(ref cc, for: name) { return name }
+    var sb = StrBuf()
+    let type = cType(ref cc, from: ref c, for: semantics.enumTypeOf(e))
+    sb.append($"static const {type} {type}_values[] = {{")
+    var first = true
+    for m in c.enums[e].members {
+        if !first { sb.append(", ") }
+        first = false
+        sb.append($"{c.enumMembers[m].ordinal}")
+    }
+    sb.append("};\n\n")
+    cc.statics[name] = $"{sb.finish()}"
+    return name
+}
+
+/// CEmitter.cs:1068 `EnumField` (Q845): the name of the static table of data enum field `field`'s values by ordinal, registering it.
+public string enumField(ref CCtx cc, from ref Ctx c, for semantics.EnumFieldId field) uses alloc {
+    let owner = c.enumFields[field].owner
+    let fieldName = c.enumFields[field].name
+    let name = $"{cType(ref cc, from: ref c, for: semantics.enumTypeOf(owner))}_f_{fieldName}"
+    if !t6StaticReserve(ref cc, for: name) { return name }
+    var sb = StrBuf()
+    let fieldType = c.enumFields[field].type
+    sb.append($"static const {cType(ref cc, from: ref c, for: fieldType)} {cType(ref cc, from: ref c, for: semantics.enumTypeOf(owner))}_f_{fieldName}[] = {{\n")
+    let members = t6Copy(in c.enums[owner].members)
+    let index = c.enumFields[field].index
+    for m in members {
+        let value = c.enumMembers[m].values[index] ?? panic("an enum member has no value for a field")
+        sb.append($"    {constant(ref cc, from: ref c, for: value, as: fieldType)},\n")
+    }
+    sb.append("};\n\n")
+    cc.statics[name] = $"{sb.finish()}"
+    return name
+}
+
+/// CEmitter.cs:1073 `StaticArray` (Q845): the C expression that reads `const` array `k` in place, registering its table.
+public string staticArray(ref CCtx cc, from ref Ctx c, for semantics.ConstId k) uses alloc {
+    let at = cType(ref cc, from: ref c, for: c.consts[k].type)
+    let element = c.arrayTypes[c.consts[k].type & 0xFFFFFFFF].element
+    let name = $"byn_{c.modules[c.consts[k].module].cName}__{c.consts[k].name}"
+    if t6StaticReserve(ref cc, for: name) {
+        var sb = StrBuf()
+        sb.append($"static const {at} {name} = {{{{")
+        for i in 0..c.consts[k].elements.length {
+            if i % 8 == 0 { sb.append("\n   ") }
+            let value = c.consts[k].elements[i]
+            sb.append($" {constant(ref cc, from: ref c, for: value, as: element)},")
+        }
+        sb.append("\n}};\n\n")
+        cc.statics[name] = $"{sb.finish()}"
+    }
+    return $"(*({at}*)&{name})"
+}
+
+// ── Literals ─────────────────────────────────────────────────────────────────
+
+/// CEmitter.cs:1092 `CString` (Q845): `s` as a C string literal.
+public string cString(string s) uses alloc => $"\"{escape(s)}\""
+
+/// CEmitter.cs:1094 `StringLiteral` (Q845): `s` as a C `byn_str` value.
+public string stringLiteral(string s) uses alloc => $"BYN_STR(\"{escape(s)}\", {s.bytes.length})"
+
+/// CEmitter.cs:1100 `Escape`: `text` as the body of a C string literal.
+public string escape(string text) uses alloc {
+    var sb = StrBuf()
+    for i in 0..text.bytes.length {
+        let b = i64(text.bytes[i])
+        if b >= 0x20 && b < 0x7F && b != 34 && b != 92 && b != 63 {
+            sb.append(text[i..i + 1])
+        } else {
+            sb.append($"\\{b / 64}{b / 8 % 8}{b % 8}")
+        }
+    }
+    return $"{sb.finish()}"
+}
+
+/// CEmitter.cs:1111 `Constant` (Q845): the C text of constant `k` of type `type`.
+public string constant(ref CCtx cc, from ref Ctx c, for semantics.Constant k, as Type type) uses alloc {
+    switch k.kind {
+        case .flag: return k.flag ? "true" : "false"
+        case .text: return stringLiteral(k.text)
+        case .rune: return $"UINT32_C({k.rune})"
+        case .real: return t6FloatLiteral(k.real, by: type == semantics.prim(.f32))
+        case .integer:
+            if semantics.isFloat(type) { return t6FloatLiteral(semantics.bigToF64(k.integer), by: type == semantics.prim(.f32)) }
+            if semantics.kindOf(type) == .primitive {
+                switch semantics.primKindOf(i64(type & 0xFFFFFFFF)) {
+                    case .i64 or .isize:
+                        if k.integer.lo == 0x8000000000000000 && k.integer.hi == 0xFFFFFFFFFFFFFFFF { return "INT64_MIN" }
+                        return $"INT64_C({semantics.bigText(k.integer)})"
+                    case .u64 or .usize: return $"UINT64_C({semantics.bigText(k.integer)})"
+                    default: return $"(({cType(ref cc, from: ref c, for: type)}){semantics.bigText(k.integer)})"
+                }
+            }
+            return $"(({cType(ref cc, from: ref c, for: type)}){semantics.bigText(k.integer)})"
+    }
+}
+
+/// CEmitter.cs:1137 `FloatLiteral`.
+string t6FloatLiteral(f64 d, by bool single) uses alloc {
+    if d != d { return single ? "((float)NAN)" : "((double)NAN)" }
+    if d == 1.0 / 0.0 || d == -1.0 / 0.0 {
+        let head = d < 0.0 ? "(-" : "("
+        return single ? $"{head}(float)INFINITY)" : $"{head}(double)INFINITY)"
+    }
+    var text = semantics.realText(d)
+    if !text.contains(".") && !text.contains("E") { text = $"{text}.0" }
+    return single ? $"((float){text})" : $"({text})"
+}
+
+// ── Helpers for what `semantics` does not export ─────────────────────────────
+
+/// A copy of `xs`, so the loop over it does not borrow `c`.
+List<i64> t6Copy(in List<i64> xs) uses alloc {
+    var r = List<i64>()
+    for x in xs { r.append(x) }
+    return r
+}

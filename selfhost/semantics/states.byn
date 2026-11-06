@@ -102,7 +102,7 @@ BStmt bindBecome(ref Binder b, through ref Ctx c, for in parser.BecomeStmt s) {
     let decl = t22DeclFacts(ref c, for: fn)
     // A `becomes` without `ref this` is BYN7010 at the signature; its `become` reports nothing more (revision 0010).
     if !c.functions[fn].isStatic && decl.found && decl.becomes is not null && decl.refThis is null {
-        let _ = bindArgumentList(ref b, through: ref c, for: in s.args, at: s.span, by: in fields, as: -1, enforceNames: false, displayName: $".{stateName}")
+        let _ = t21BindArgumentList(ref b, through: ref c, for: in s.args, at: s.span, by: in fields, as: -1, enforceNames: false, displayName: $".{stateName}", syntax: syntaxAppend(ref c, from: ExprSyntax { kind: .callExpr, span: s.span, callee: syntaxLeaf(ref c, as: .nameExpr, at: s.state) }))
         return addErrorStmt(ref c, from: BErrorStmt { span: s.span })
     }
     let keyword = TextSpan { start: s.span.start, length: "become".length }
@@ -130,7 +130,7 @@ BStmt bindBecome(ref Binder b, through ref Ctx c, for in parser.BecomeStmt s) {
             report(ref b, through: ref c, for: .becomeUndeclared, at: keyword, by: (stateName, fnName, "", "", ""), help: help)
         }
     }
-    let payload = bindArgumentList(ref b, through: ref c, for: in s.args, at: s.span, by: in fields, as: -1, enforceNames: false, displayName: $".{stateName}")
+    let payload = t21BindArgumentList(ref b, through: ref c, for: in s.args, at: s.span, by: in fields, as: -1, enforceNames: false, displayName: $".{stateName}", syntax: syntaxAppend(ref c, from: ExprSyntax { kind: .callExpr, span: s.span, callee: syntaxLeaf(ref c, as: .nameExpr, at: s.state) }))
     // The payload reads the old state; after it, `this` is in the new one.
     let facts = t15ThisFacts(ref b, through: ref c)
     forgetState(ref b, for: facts)
@@ -253,7 +253,10 @@ i64 t22FieldIndex(Ctx c, for List<LocalId> fields, by string name) {
     return -1
 }
 
-BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, from UnionId states, by TextSpan member) {
+BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, from UnionId states, by TextSpan member) => t21BindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member, to: -1)
+
+/// `bindPayloadField` that records `syntax` as the C# `Syntax` of the nodes it builds (Q849).
+BExpr t21BindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, from UnionId states, by TextSpan member, to i64 syntax) {
     let name = t15Text(in c, from: b.file, at: member)
     var holder: VariantId = -1
     for v in copyIds(in c.unions[states].variants) {
@@ -290,7 +293,7 @@ BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BE
         }
     }
     // Every state holds the field after the same field types, so C reads it through any of them (a common initial sequence).
-    if same { return addUnionField(ref c, from: BUnionField { span: span, receiver: target, variant: known[0], index: index }) }
+    if same { return recordSyntaxNode(ref c, for: addUnionField(ref c, from: BUnionField { span: span, receiver: target, variant: known[0], index: index }), at: syntax) }
     var everywhere = index >= 0
     if everywhere {
         let type = c.locals[first[index]].type
@@ -308,13 +311,13 @@ BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BE
     if everywhere {
         report(ref b, through: ref c, for: .unsupported, at: span, by: ($"reading `{name}` from states that hold it at different places", "", "", "", ""),
             help: $"match one state with `is` or `switch` before reading `{name}`")
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+        return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
     }
     let what = isThis ? "this" : t15Text(in c, from: b.file, at: nodeSpan(in c, for: target))
     let holderName = c.unionVariants[holder].name
     report(ref b, through: ref c, for: .payloadNotInState, at: span, by: (name, holderName, what, "", ""),
         help: $"match `.{holderName}` with `is` or `switch` before reading `{name}`")
-    return addErrorExpr(ref c, from: BErrorExpr { span: span })
+    return recordSyntaxNode(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: span }), at: syntax)
 }
 
 /// C# `CheckStatesExhaustive` (BinderStates.cs:160). `span` is the switch's; C# `s is SwitchExpr e` is `valueEnd` (the end of

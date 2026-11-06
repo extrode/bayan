@@ -32,7 +32,7 @@ public sealed class SelfhostSemanticsT4Tests
         ["BoundStructLiteral"] = (new() { ["struct"] = "structId" }, ["type"]),
         ["BoundEnumValues"] = (new() { ["enum"] = "enumId" }, []),
         ["BoundStaticArray"] = (new() { ["const"] = "constId" }, ["type"]),
-        ["BoundIf"] = (new() { ["else"] = "elseBranch", ["never"] = "isNever" }, []),
+        ["BoundIf"] = (new() { ["else"] = "elseBranch", ["never"] = "isNever" }, ["guarded"]),
         ["BoundMemberStep"] = (new() { ["property"] = "propertyId" }, []),
         ["BoundLocal"] = (new(), ["type"]),
         ["BoundField"] = (new(), ["type"]),
@@ -607,7 +607,7 @@ public sealed class SelfhostSemanticsT4Tests
 
         // The Bayan structs, read from bound.byn's declarations.
         var source = File.ReadAllText(Path.Combine(SelfhostSemanticsHarness.SemanticsDir, "bound.byn"));
-        var structs = Regex.Matches(source, @"^struct (\w+) \{\n((?:    .*\n)*?)\}", RegexOptions.Multiline)
+        var structs = Regex.Matches(source, @"^(?:public )?struct (\w+) \{\n((?:    .*\n)*?)\}", RegexOptions.Multiline)
             .ToDictionary(m => m.Groups[1].Value, m => string.Join(' ', m.Groups[2].Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Where(l => !l.TrimStart().StartsWith("///", StringComparison.Ordinal))
                 .Select(l => l.Split(" = ")[0].Trim().Split(' ')[^1])));

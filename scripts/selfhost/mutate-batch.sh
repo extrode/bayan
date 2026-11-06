@@ -5,10 +5,10 @@
 # A file's filter is derived from --tasks (default docs/specs/010-self-hosted-semantics/010-tasks.md): every task line whose
 # `files:` list names the file contributes the *Tests.cs classes of that same list, as FullyQualifiedName~<Class> joined by `|`;
 # a glob class name such as SelfhostSemanticsT*Tests.cs is skipped (no FQN substring), and only classes of the file's own family are kept
-# (selfhost/semantics: SelfhostSemantics*, parser: SelfhostParser*, lexer: SelfhostLexer*: another build does not contain the file); a file with none left
-# uses SelfhostSemantics, SelfhostParser or SelfhostLexer; another directory fails. One group per family and shard (Q910):
-# its filter is the union of its files' filters, so the tests are recorded once per (shard, family). --list prints file -> group
-# filter and runs nothing; --shard k/n gives file i of each family to shard (i mod n)+1.
+# (selfhost/semantics: SelfhostSemantics*, parser: SelfhostParser*, lexer: SelfhostLexer*, emitter and its subdirectories cprint/, ltree/: SelfhostEmitter*: another build does not contain the file);
+# a file with none left uses SelfhostSemantics, SelfhostParser, SelfhostLexer or SelfhostEmitter; another directory fails. One group per family and shard (Q910):
+# its filter is the union of its files' filters, so the tests are recorded once per (shard, family); selfhost/emitter/ and its subdirectories are one family.
+# --list prints file -> group filter and runs nothing; --shard k/n gives file i of each family to shard (i mod n)+1.
 # Per group: reports and logs in tmp/mutate-batch/<group>/ (quality-<n>-<binary>.json), bayan mutate's summary printed. A group
 # whose CLI, recording or mutant 0 fails is named and fails the run. Then quality-baseline.py check over the reports: a score
 # below the baseline names the file with old and new score and exits 1 with the baseline untouched; else `update` raises it.
@@ -28,6 +28,8 @@ import fnmatch, glob, os, re, sys
 tasks, only, shard = sys.argv[1:4]
 files = sorted(glob.glob('selfhost/**/*.byn', recursive=True))
 defaults = {'selfhost/semantics': 'SelfhostSemantics', 'selfhost/parser': 'SelfhostParser', 'selfhost/lexer': 'SelfhostLexer'}
+def family(d):
+    return 'SelfhostEmitter' if d == 'selfhost/emitter' or d.startswith('selfhost/emitter/') else defaults.get(d)
 def expand(p):
     m = re.search(r'\{([^{}]*)\}', p)
     return [q for o in m.group(1).split(',') for q in expand(p[:m.start()] + o + p[m.end():])] if m else [p]
@@ -51,13 +53,14 @@ def names(f, p):
 rows = []
 for f in files:
     d = os.path.dirname(f)
-    if d not in defaults:
-        sys.exit(f'mutate-batch: {f}: the directory {d}/ has no test family (selfhost/semantics, parser, lexer)')
-    cls = {c for pats, classes in entries if any(names(f, p) for p in pats) for c in classes if c.startswith(defaults[d])} or {defaults[d]}
+    fam = family(d)
+    if not fam:
+        sys.exit(f'mutate-batch: {f}: the directory {d}/ has no test family (selfhost/semantics, parser, lexer, emitter)')
+    cls = {c for pats, classes in entries if any(names(f, p) for p in pats) for c in classes if c.startswith(fam)} or {fam}
     rows.append((f, '|'.join('FullyQualifiedName~' + c for c in sorted(cls))))
-fams = {}  # family dir -> files, in file order
+fams = {}  # family dir (selfhost/<family>) -> files, in file order
 for f, flt in rows:
-    fams.setdefault(os.path.dirname(f), []).append((f, flt))
+    fams.setdefault('/'.join(f.split('/')[:2]), []).append((f, flt))
 n = 1
 if shard:
     m = re.fullmatch(r'(\d+)/(\d+)', shard)

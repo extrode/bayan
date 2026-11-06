@@ -1,0 +1,771 @@
+// T3: Lowerer.cs 352-898 (`Statement`, `Provide`, `Assign`, `Return`, `If`, loops, `Switch`, `Lvalue`).
+//
+// D3 skips `:356-362` (coverage probes, mutants) and `:399` (`CountError`). A C# `Capture(() => …)` is
+// `captureBegin` … `captureEnd`; a C# tuple result is a named tuple. `_targets` is keyed by the `target` field of
+// the jump statement, which is the identity of the C# `JumpTarget` (D6).
+
+import parser
+import semantics
+import emitter.ltree
+
+type T3LGoto = ltree.LGoto
+type T3LIndexUnchecked = ltree.LIndexUnchecked
+type T3LLabel = ltree.LLabel
+type T3LLoop = ltree.LLoop
+type T3LNever = ltree.LNever
+type T3LNextChar = ltree.LNextChar
+type T3LPushPanicHandler = ltree.LPushPanicHandler
+type T3LReturnError = ltree.LReturnError
+type T3BBuiltinCall = semantics.BBuiltinCall
+type T3BCall = semantics.BCall
+type T3BCoalesce = semantics.BCoalesce
+type T3BConversion = semantics.BConversion
+type T3BField = semantics.BField
+type T3BIndex = semantics.BIndex
+type T3BTupleElement = semantics.BTupleElement
+type T3UserIteration = semantics.UserIteration
+
+/// Lowerer.cs:352 `Statement`: lowers `s`, appending to the current output list.
+public void lowerStatement(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let i = i64(s & 0xFFFFFFFF)
+    let span = semantics.nodeSpan(in c, for: s)
+    switch semantics.boundKind(s) {
+        case .block:
+            l.scopes.append(LScope {})
+            let statements = copyStmts(in c.bBlocks[i].statements)
+            for inner in statements { lowerStatement(ref c, through: ref l, for: inner) }
+            emitCleanups(ref c, through: ref l, at: l.scopes.length - 1, for: -1)
+            l.scopes.remove(at: l.scopes.length - 1)
+        case .localDecl:
+            let local = c.bLocalDecls[i].local
+            let initializer = c.bLocalDecls[i].initializer
+            note(ref c, through: ref l, for: local)
+            if initializer != -1 {
+                let target = localExpr(ref c, at: span, for: local)
+                let value = lowerExpr(ref c, through: ref l, for: initializer)
+                emitAssign(ref c, through: ref l, to: target, as: value)
+            }
+            if c.locals[local].isUsing && c.locals[local].type == semantics.builtinType(.arena) {
+                l.scopes[l.scopes.length - 1].cleanups.append(.freeArena(span, local))
+            }
+        case .exprStmt:
+            let value = lowerExpr(ref c, through: ref l, for: c.bExprStmts[i].expr)
+            emitEffect(ref c, through: ref l, for: value)
+        case .assertStmt:
+            // T5's `lowerAssert` reads the condition's syntax through T21's `exprSyntax` (Q778).
+            lowerAssert(ref c, through: ref l, for: s)
+        case .setOnPanic:
+            emit(ref l, for: s)
+        case .assign:
+            lowerAssign(ref c, through: ref l, for: s)
+        case .returnStmt:
+            lowerReturn(ref c, through: ref l, for: s)
+        case .failStmt:
+            let errorExpr = c.bFails[i].error
+            let code = lowerExpr(ref c, through: ref l, for: errorExpr)
+            if isNeverExpr(code) { break }
+            let error = newTemp(ref c, through: ref l, for: t2Type(in c, through: in l, for: errorExpr))
+            let target = localExpr(ref c, at: span, for: error)
+            emitAssign(ref c, through: ref l, to: target, as: code)
+            emitCleanups(ref c, through: ref l, at: 0, for: error)
+            let returned = localExpr(ref c, at: span, for: error)
+            emit(ref l, for: ltree.addLReturnError(ref l.tree, from: T3LReturnError { span: span, code: returned }))
+        case .breakStmt:
+            let target = l.targets[c.bBreaks[i].target]
+            emitCleanups(ref c, through: ref l, at: target.depth, for: -1)
+            emit(ref l, for: ltree.addLGoto(ref l.tree, from: T3LGoto { span: span, label: target.breakLabel }))
+        case .continueStmt:
+            let target = l.targets[c.bContinues[i].target]
+            emitCleanups(ref c, through: ref l, at: target.depth, for: -1)
+            emit(ref l, for: ltree.addLGoto(ref l.tree, from: T3LGoto { span: span, label: target.continueLabel ?? "" }))
+        case .ifStmt:
+            lowerIf(ref c, through: ref l, for: s)
+        case .whileStmt:
+            lowerWhile(ref c, through: ref l, for: s)
+        case .doWhile:
+            lowerDoWhile(ref c, through: ref l, for: s)
+        case .forStmt:
+            lowerFor(ref c, through: ref l, for: s)
+        case .switchStmt:
+            lowerSwitch(ref c, through: ref l, for: s)
+        case .deferStmt:
+            let body = captureGuard(ref c, through: ref l, for: c.bDefers[i].body)
+            l.scopes[l.scopes.length - 1].cleanups.append(.deferCleanup(body))
+        case .errdeferStmt:
+            let error = c.bErrdefers[i].error
+            let body = captureGuard(ref c, through: ref l, for: c.bErrdefers[i].body)
+            l.scopes[l.scopes.length - 1].cleanups.append(.errdeferCleanup(error, body))
+        case .panicDefer:
+            // The handler runs while a panic is in progress, in place of every cleanup: none of the scopes' cleanups apply in it.
+            let panicLocal = c.bPanicDefers[i].panic
+            let handler = c.bPanicDefers[i].body
+            if panicLocal != -1 { note(ref c, through: ref l, for: panicLocal) }
+            let slot = l.panicSlots
+            l.panicSlots += 1
+            captureBegin(ref l)
+            lowerOutside(ref c, through: ref l, at: 0, for: handler)
+            let lowered = captureEnd(ref l)
+            let body = block(ref c, at: semantics.nodeSpan(in c, for: handler), for: move lowered)
+            emit(ref l, for: ltree.addLPushPanicHandler(ref l.tree, from: T3LPushPanicHandler { span: span, slot: slot, panic: panicLocal, body: body }))
+            l.scopes[l.scopes.length - 1].cleanups.append(.popPanicHandler(span, slot))
+        case .contextStmt:
+            lowerProvide(ref c, through: ref l, for: s)
+        case .becomeStmt:
+            lowerBecome(ref c, through: ref l, for: s)
+        // coverage-exempt: Q769 through 117
+        default:
+            panic($"cannot lower {semantics.boundKind(s)}")
+    }
+}
+
+/// Lowerer.cs:460 `Provide`: `provide alloc: a { … }` sets the allocator for the body and restores the outer one on every exit.
+void lowerProvide(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let i = i64(s & 0xFFFFFFFF)
+    let span = c.bContexts[i].span
+    let arena = lowerExpr(ref c, through: ref l, for: c.bContexts[i].allocator)
+    if isNeverExpr(arena) { return }
+    let slot = l.contextSlots
+    l.contextSlots += 1
+    emit(ref l, for: ltree.addLSetContext(ref l.tree, from: LSetContext { span: span, arena: arena, slot: slot }))
+    l.scopes.append(LScope {})
+    l.scopes[l.scopes.length - 1].cleanups.append(.restoreContext(span, slot))
+    let statements = copyStmts(in c.bBlocks[i64(c.bContexts[i].body & 0xFFFFFFFF)].statements)
+    for inner in statements { lowerStatement(ref c, through: ref l, for: inner) }
+    emitCleanups(ref c, through: ref l, at: l.scopes.length - 1, for: -1)
+    l.scopes.remove(at: l.scopes.length - 1)
+}
+
+/// Lowerer.cs:473 `Assign`.
+void lowerAssign(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let i = i64(s & 0xFFFFFFFF)
+    let span = c.bAssigns[i].span
+    let aTarget = c.bAssigns[i].target
+    let aValue = c.bAssigns[i].value
+    let op = c.bAssigns[i].op
+    if op is null {
+        var ops = List<BExpr>()
+        ops.append(aTarget)
+        ops.append(aValue)
+        var lvalues = List<bool>()
+        lvalues.append(true)
+        var parts = List<BExpr>()
+        unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) { return }
+        // C leaves `*at(xs, i) = f(&xs)` unsequenced: the value is computed first, so a call
+        // that grows the list cannot leave the store pointing at freed storage.
+        let assigned = isTrivial(in c, through: in l, for: parts[1]) ? parts[1] : spill(ref c, through: ref l, for: parts[1])
+        emitAssign(ref c, through: ref l, to: parts[0], as: assigned)
+        return
+    }
+    // `t op= v`: the target is evaluated once, so its index (if any) must be stable.
+    var target = lowerLvalue(ref c, through: ref l, for: aTarget)
+    if !ltree.isLowered(target) && semantics.boundKind(target) == .index {
+        let k = i64(target & 0xFFFFFFFF)
+        let index = c.bIndexes[k].index
+        if !isTrivial(in c, through: in l, for: index) {
+            let stable = spill(ref c, through: ref l, for: index)
+            target = semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[k].span, target: c.bIndexes[k].target, index: stable, fromEnd: c.bIndexes[k].fromEnd, type: c.bIndexes[k].type })
+        }
+    } else if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall
+        && (c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet
+        // coverage-exempt: Q780 through 172
+        || c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapSlot)
+        && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].arguments.length > 0 {
+        let k = i64(target & 0xFFFFFFFF)
+        let key = c.bBuiltinCalls[k].arguments[0]
+        if !isTrivial(in c, through: in l, for: key) {
+            var arguments = List<BExpr>()
+            arguments.append(spill(ref c, through: ref l, for: key))
+            for m in 1..c.bBuiltinCalls[k].arguments.length { arguments.append(c.bBuiltinCalls[k].arguments[m]) }
+            target = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: c.bBuiltinCalls[k].span, member: c.bBuiltinCalls[k].member, receiver: c.bBuiltinCalls[k].receiver, arguments: move arguments, type: c.bBuiltinCalls[k].type })
+        }
+    }
+    // The old value is read before `v` runs, which may change or move the target.
+    // `map[k] op= v` reads through the panicking index: only `slot` inserts a missing key.
+    var current: BExpr = -1
+    if !ltree.isLowered(target) && semantics.boundKind(target) == .builtinCall && c.bBuiltinCalls[i64(target & 0xFFFFFFFF)].member == .mapIndexSet {
+        let k = i64(target & 0xFFFFFFFF)
+        var arguments = List<BExpr>()
+        for m in 0..c.bBuiltinCalls[k].arguments.length { arguments.append(c.bBuiltinCalls[k].arguments[m]) }
+        let read = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: c.bBuiltinCalls[k].span, member: .mapIndex, receiver: c.bBuiltinCalls[k].receiver, arguments: move arguments, type: c.bBuiltinCalls[k].type })
+        current = spill(ref c, through: ref l, for: read)
+    } else if isTrivial(in c, through: in l, for: aValue) {
+        current = target
+    } else {
+        current = spill(ref c, through: ref l, for: target)
+    }
+    let targetType = t2Type(in c, through: in l, for: target)
+    if op == .coalesce {
+        // `t ??= v` is `t = t ?? v`: `v` runs only when `t` is null.
+        let right = semantics.addConversion(ref c, from: T3BConversion { span: span, operand: aValue, type: targetType, kind: .toOptional })
+        let coalesce = semantics.addCoalesce(ref c, from: T3BCoalesce { span: span, left: current, right: right, type: targetType })
+        let coalesced = lowerCoalesce(ref c, through: ref l, for: coalesce)
+        // coverage-exempt: Q777
+        if !isNeverExpr(coalesced) { emitAssign(ref c, through: ref l, to: target, as: coalesced) }
+        return
+    }
+    var value = lowerExpr(ref c, through: ref l, for: aValue)
+    if isNeverExpr(value) { return }
+    if !isTrivial(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
+    let combined = semantics.addBinary(ref c, from: BBinary { span: span, op: op, left: current, right: value, type: targetType })
+    emitAssign(ref c, through: ref l, to: target, as: combined)
+}
+
+/// Lowerer.cs:510 `Return`.
+void lowerReturn(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let i = i64(s & 0xFFFFFFFF)
+    let span = c.bReturns[i].span
+    let result = c.bReturns[i].value
+    var value: BExpr = -1
+    if result != -1 {
+        value = lowerExpr(ref c, through: ref l, for: result)
+        if isNeverExpr(value) { return }
+        // coverage-exempt: Q777 through 225
+        if semantics.isVoid(t2Type(in c, through: in l, for: value)) || isVoidExpr(value) {
+            emitEffect(ref c, through: ref l, for: value)
+            value = -1
+        } else if !t3IsPlainValue(in c, for: value) && t3AnyCleanups(in l) {
+            // Cleanups run after the value is read: a `defer` that changes a local must not change the result.
+            value = spill(ref c, through: ref l, for: value)
+        }
+    }
+    emitCleanups(ref c, through: ref l, at: 0, for: -1)
+    emit(ref l, for: ltree.addLReturn(ref l.tree, from: LReturn { span: span, value: value }))
+}
+
+/// `value is BoundLiteral or BoundDefault or BoundErrorVariant { Payload.Length: 0 } or BoundEnumMember`.
+bool t3IsPlainValue(in Ctx c, for BExpr value) {
+    if ltree.isLowered(value) { return false }
+    switch semantics.boundKind(value) {
+        case .literal or .defaultValue or .enumMember: return true
+        case .errorVariant: return c.bErrorVariants[i64(value & 0xFFFFFFFF)].payload.length == 0
+        default: return false
+    }
+}
+
+/// `_scopes.Any(s => s.Cleanups.Count > 0)`.
+bool t3AnyCleanups(in LCtx l) {
+    for scope in l.scopes {
+        if scope.cleanups.length > 0 { return true }
+    }
+    return false
+}
+
+/// Lowerer.cs:532 `If`.
+void lowerIf(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let i = i64(s & 0xFFFFFFFF)
+    let span = c.bIfs[i].span
+    let thenStmt = c.bIfs[i].then
+    let elseStmt = c.bIfs[i].elseBranch
+    let isNeverIf = c.bIfs[i].isNever
+    let condition = lowerExpr(ref c, through: ref l, for: c.bIfs[i].condition)
+    if isNeverExpr(condition) { return }
+    captureBegin(ref l)
+    if !isNeverIf {
+        lowerStatement(ref c, through: ref l, for: thenStmt)
+    } else {
+        // The panic is a cleanup of the block, so a `return`, `break`, `continue` or failure inside it still panics.
+        l.scopes.append(LScope {})
+        let message = semantics.addLiteral(ref c, from: BLiteral { span: span, type: semantics.prim(.string), value: Constant { kind: .text, text: "`if never` condition was true" } })
+        var arguments = List<BExpr>()
+        arguments.append(message)
+        let call = semantics.addCall(ref c, from: T3BCall { span: span, function: c.builtinPanic, receiver: -1, arguments: move arguments, type: semantics.prim(.neverKind) })
+        let panicStmt = semantics.addExprStmt(ref c, from: BExprStmt { span: span, expr: call })
+        l.scopes[l.scopes.length - 1].cleanups.append(.deferCleanup(panicStmt))
+        lowerStatement(ref c, through: ref l, for: thenStmt)
+        emitCleanups(ref c, through: ref l, at: l.scopes.length - 1, for: -1)
+        l.scopes.remove(at: l.scopes.length - 1)
+    }
+    let thenBody = captureEnd(ref l)
+    var otherwise = List<BStmt>()
+    if elseStmt != -1 {
+        captureBegin(ref l)
+        lowerStatement(ref c, through: ref l, for: elseStmt)
+        otherwise = captureEnd(ref l)
+    }
+    let thenBlock = block(ref c, at: semantics.nodeSpan(in c, for: thenStmt), for: move thenBody)
+    let elseBlock: BStmt = elseStmt == -1 ? -1 : block(ref c, at: semantics.nodeSpan(in c, for: elseStmt), for: move otherwise)
+    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: condition, then: thenBlock, elseBranch: elseBlock }))
+}
+
+/// Lowerer.cs:556 `EnterLoop`: fresh break and continue labels for `target`.
+(string brk, string cont) enterLoop(ref LCtx l, for i64 target) uses alloc {
+    let brk = newLabel(ref l, for: "break")
+    let cont = newLabel(ref l, for: "continue")
+    l.targets[target] = LTarget { breakLabel: brk, continueLabel: cont, depth: l.scopes.length }
+    return (brk: brk, cont: cont)
+}
+
+/// `Emit(new BoundIf(span, condition, Block(span, [new LGoto(span, label)]), null))`, which Lowerer.cs:569 and the loops write out.
+void t3GotoIf(ref Ctx c, through ref LCtx l, at TextSpan span, for BExpr condition, to string label) uses alloc {
+    var jump = List<BStmt>()
+    jump.append(ltree.addLGoto(ref l.tree, from: T3LGoto { span: span, label: label }))
+    let then = block(ref c, at: span, for: move jump)
+    emit(ref l, for: semantics.addIf(ref c, from: BIf { span: span, condition: condition, then: then }))
+}
+
+/// `Emit(new BoundIf(span, Not(condition), Block(span, [new LGoto(span, label)]), null))`.
+void t3GotoIfNot(ref Ctx c, through ref LCtx l, at TextSpan span, for BExpr condition, to string label) uses alloc {
+    let negated = notExpr(ref c, through: in l, for: condition)
+    t3GotoIf(ref c, through: ref l, at: span, for: negated, to: label)
+}
+
+/// `Emit(new LLabel(span, name))`.
+void t3Label(ref LCtx l, at TextSpan span, for string name) uses alloc {
+    emit(ref l, for: ltree.addLLabel(ref l.tree, from: T3LLabel { span: span, name: name }))
+}
+
+/// `Emit(new LLoop(span, Block(span, body)))`.
+void t3Loop(ref Ctx c, through ref LCtx l, at TextSpan span, for move List<BStmt> body) uses alloc {
+    let loopBody = block(ref c, at: span, for: move body)
+    emit(ref l, for: ltree.addLLoop(ref l.tree, from: T3LLoop { span: span, body: loopBody }))
+}
+
+/// Lowerer.cs:565 `ExitUnless`: `if (!condition) goto label;` with the condition's statements first.
+void exitUnless(ref Ctx c, through ref LCtx l, for BExpr condition, to string label) uses alloc {
+    let span = semantics.nodeSpan(in c, for: condition)
+    let lowered = lowerExpr(ref c, through: ref l, for: condition)
+    if isNeverExpr(lowered) { return }
+    t3GotoIfNot(ref c, through: ref l, at: span, for: lowered, to: label)
+}
+
+/// Lowerer.cs:572 `While`.
+void lowerWhile(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let i = i64(s & 0xFFFFFFFF)
+    let span = c.bWhiles[i].span
+    let condition = c.bWhiles[i].condition
+    let loopBody = c.bWhiles[i].body
+    let labels = enterLoop(ref l, for: c.bWhiles[i].target)
+    captureBegin(ref l)
+    exitUnless(ref c, through: ref l, for: condition, to: labels.brk)
+    lowerStatement(ref c, through: ref l, for: loopBody)
+    t3Label(ref l, at: span, for: labels.cont)
+    let body = captureEnd(ref l)
+    t3Loop(ref c, through: ref l, at: span, for: move body)
+    t3Label(ref l, at: span, for: labels.brk)
+}
+
+/// Lowerer.cs:585 `DoWhile`.
+void lowerDoWhile(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let i = i64(s & 0xFFFFFFFF)
+    let span = c.bDoWhiles[i].span
+    let condition = c.bDoWhiles[i].condition
+    let loopBody = c.bDoWhiles[i].body
+    let labels = enterLoop(ref l, for: c.bDoWhiles[i].target)
+    captureBegin(ref l)
+    lowerStatement(ref c, through: ref l, for: loopBody)
+    t3Label(ref l, at: span, for: labels.cont)
+    exitUnless(ref c, through: ref l, for: condition, to: labels.brk)
+    let body = captureEnd(ref l)
+    t3Loop(ref c, through: ref l, at: span, for: move body)
+    t3Label(ref l, at: span, for: labels.brk)
+}
+
+/// Lowerer.cs:598 `For`.
+void lowerFor(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let fi = i64(s & 0xFFFFFFFF)
+    let span = c.bFors[fi].span
+    let variableLocal = c.bFors[fi].variable
+    let iterableExpr = c.bFors[fi].iterable
+    let forBody = c.bFors[fi].body
+    let forTarget = c.bFors[fi].target
+    note(ref c, through: ref l, for: variableLocal)
+    let variable = localExpr(ref c, at: span, for: variableLocal)
+    if semantics.boundKind(iterableExpr) == .range {
+        let ri = i64(iterableExpr & 0xFFFFFFFF)
+        let start = c.bRanges[ri].start
+        let end = c.bRanges[ri].end
+        let inclusive = c.bRanges[ri].inclusive
+        var ops = List<BExpr>()
+        ops.append(start)
+        ops.append(end)
+        var bounds = List<BExpr>()
+        unless operands(ref c, through: ref l, for: in ops, as: in List<bool>(), to: ref bounds) { return }
+        let startType = t2Type(in c, through: in l, for: start)
+        let i = newTemp(ref c, through: ref l, for: startType)
+        let endLocal = newTemp(ref c, through: ref l, for: t2Type(in c, through: in l, for: end))
+        let iTarget = localExpr(ref c, at: span, for: i)
+        emitAssign(ref c, through: ref l, to: iTarget, as: bounds[0])
+        let endTarget = localExpr(ref c, at: span, for: endLocal)
+        emitAssign(ref c, through: ref l, to: endTarget, as: bounds[1])
+        let labels = enterLoop(ref l, for: forTarget)
+        let cmp: parser.BinaryOp = inclusive ? .le : .lt
+        captureBegin(ref l)
+        let iRead = localExpr(ref c, at: span, for: i)
+        let endRead = localExpr(ref c, at: span, for: endLocal)
+        let inRange = semantics.addBinary(ref c, from: BBinary { span: span, op: cmp, left: iRead, right: endRead, type: semantics.prim(.bool) })
+        t3GotoIfNot(ref c, through: ref l, at: span, for: inRange, to: labels.brk)
+        let iCurrent = localExpr(ref c, at: span, for: i)
+        emitAssign(ref c, through: ref l, to: variable, as: iCurrent)
+        lowerStatement(ref c, through: ref l, for: forBody)
+        t3Label(ref l, at: span, for: labels.cont)
+        if inclusive {
+            let left = localExpr(ref c, at: span, for: i)
+            let right = localExpr(ref c, at: span, for: endLocal)
+            let same = semantics.addBinary(ref c, from: BBinary { span: span, op: .eq, left: left, right: right, type: semantics.prim(.bool) })
+            t3GotoIf(ref c, through: ref l, at: span, for: same, to: labels.brk)
+        }
+        let stepTarget = localExpr(ref c, at: span, for: i)
+        let stepLeft = localExpr(ref c, at: span, for: i)
+        let stepOne = oneLiteral(ref c, at: span, for: startType)
+        let step = semantics.addBinary(ref c, from: BBinary { span: span, op: .addWrap, left: stepLeft, right: stepOne, type: startType })
+        emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: stepTarget, value: step, op: null }))
+        let body = captureEnd(ref l)
+        t3Loop(ref c, through: ref l, at: span, for: move body)
+        t3Label(ref l, at: span, for: labels.brk)
+        return
+    }
+
+    let userIteration = c.bFors[fi].userIteration
+    if userIteration is not null {
+        lowerUserFor(ref c, through: ref l, for: s, at: variable, by: userIteration)
+        return
+    }
+
+    let iterable = lowerExpr(ref c, through: ref l, for: iterableExpr)
+    if isNeverExpr(iterable) { return }
+    let iterableType = t2Type(in c, through: in l, for: iterable)
+    if semantics.isString(iterableType) {
+        let text = spill(ref c, through: ref l, for: iterable)
+        let pos = newTemp(ref c, through: ref l, for: semantics.prim(.i64))
+        let posTarget = localExpr(ref c, at: span, for: pos)
+        let zero = i64Literal(ref c, at: span, by: 0)
+        emitAssign(ref c, through: ref l, to: posTarget, as: zero)
+        let labels = enterLoop(ref l, for: forTarget)
+        captureBegin(ref l)
+        let length = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: span, member: .stringLength, receiver: text, arguments: List<BExpr>(), type: semantics.prim(.i64) })
+        let posRead = localExpr(ref c, at: span, for: pos)
+        let inside = semantics.addBinary(ref c, from: BBinary { span: span, op: .lt, left: posRead, right: length, type: semantics.prim(.bool) })
+        t3GotoIfNot(ref c, through: ref l, at: span, for: inside, to: labels.brk)
+        let nextChar = ltree.addLNextChar(ref l.tree, from: T3LNextChar { span: span, text: text, position: pos })
+        emitAssign(ref c, through: ref l, to: variable, as: nextChar)
+        lowerStatement(ref c, through: ref l, for: forBody)
+        t3Label(ref l, at: span, for: labels.cont)
+        let body = captureEnd(ref l)
+        t3Loop(ref c, through: ref l, at: span, for: move body)
+        t3Label(ref l, at: span, for: labels.brk)
+        return
+    }
+
+    if semantics.kindOf(iterableType) == .textView {
+        // The view is a copy the cursor functions advance; `parts` counts its limit down in it.
+        let copy = spill(ref c, through: ref l, for: iterable)
+        let pos = newTemp(ref c, through: ref l, for: semantics.prim(.i64))
+        let posTarget = localExpr(ref c, at: span, for: pos)
+        let zero = i64Literal(ref c, at: span, by: 0)
+        emitAssign(ref c, through: ref l, to: posTarget, as: zero)
+        let labels = enterLoop(ref l, for: forTarget)
+        captureBegin(ref l)
+        var moreArguments = List<BExpr>()
+        moreArguments.append(localExpr(ref c, at: span, for: pos))
+        let more = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: span, member: .textViewMore, receiver: copy, arguments: move moreArguments, type: semantics.prim(.bool) })
+        t3GotoIfNot(ref c, through: ref l, at: span, for: more, to: labels.brk)
+        var nextArguments = List<BExpr>()
+        nextArguments.append(localExpr(ref c, at: span, for: pos))
+        let element = semantics.textViewElement(semantics.textViewKindOf(iterableType & 0xFFFFFFFF))
+        let next = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: span, member: .textViewNext, receiver: copy, arguments: move nextArguments, type: element })
+        emitAssign(ref c, through: ref l, to: variable, as: next)
+        lowerStatement(ref c, through: ref l, for: forBody)
+        t3Label(ref l, at: span, for: labels.cont)
+        let body = captureEnd(ref l)
+        t3Loop(ref c, through: ref l, at: span, for: move body)
+        t3Label(ref l, at: span, for: labels.brk)
+        return
+    }
+
+    if semantics.kindOf(iterableType) == .map {
+        // Entries in insertion order; removed entries stay as tombstones until the next rehash.
+        let map = spill(ref c, through: ref l, for: iterable)
+        let slot = newTemp(ref c, through: ref l, for: semantics.prim(.i64))
+        let slotTarget = localExpr(ref c, at: span, for: slot)
+        let zero = i64Literal(ref c, at: span, by: 0)
+        emitAssign(ref c, through: ref l, to: slotTarget, as: zero)
+        let labels = enterLoop(ref l, for: forTarget)
+        captureBegin(ref l)
+        let count = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: span, member: .mapSlotCount, receiver: map, arguments: List<BExpr>(), type: semantics.prim(.i64) })
+        let slotRead = localExpr(ref c, at: span, for: slot)
+        let inside = semantics.addBinary(ref c, from: BBinary { span: span, op: .lt, left: slotRead, right: count, type: semantics.prim(.bool) })
+        t3GotoIfNot(ref c, through: ref l, at: span, for: inside, to: labels.brk)
+        var liveArguments = List<BExpr>()
+        liveArguments.append(localExpr(ref c, at: span, for: slot))
+        let live = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: span, member: .mapSlotLive, receiver: map, arguments: move liveArguments, type: semantics.prim(.bool) })
+        t3GotoIfNot(ref c, through: ref l, at: span, for: live, to: labels.cont)
+        var entryArguments = List<BExpr>()
+        entryArguments.append(localExpr(ref c, at: span, for: slot))
+        let entry = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: span, member: .mapSlotEntry, receiver: map, arguments: move entryArguments, type: c.locals[variableLocal].type })
+        emitAssign(ref c, through: ref l, to: variable, as: entry)
+        lowerStatement(ref c, through: ref l, for: forBody)
+        t3Label(ref l, at: span, for: labels.cont)
+        let stepTarget = localExpr(ref c, at: span, for: slot)
+        let stepLeft = localExpr(ref c, at: span, for: slot)
+        let stepOne = i64Literal(ref c, at: span, by: 1)
+        let step = semantics.addBinary(ref c, from: BBinary { span: span, op: .addWrap, left: stepLeft, right: stepOne, type: semantics.prim(.i64) })
+        emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: stepTarget, value: step, op: null }))
+        let body = captureEnd(ref l)
+        t3Loop(ref c, through: ref l, at: span, for: move body)
+        t3Label(ref l, at: span, for: labels.brk)
+        return
+    }
+
+    // Spans and lists are small headers: iterate over a copy. Arrays are iterated in place.
+    let sequence = semantics.kindOf(iterableType) == .array && isLvalue(in c, through: in l, for: iterable) ? iterable : spill(ref c, through: ref l, for: iterable)
+    var lengthMember: semantics.BuiltinMember = .arrayLength
+    var element: Type = -1
+    switch semantics.kindOf(iterableType) {
+        case .span:
+            lengthMember = .spanLength
+            element = c.spanTypes[iterableType & 0xFFFFFFFF].element
+        case .list:
+            lengthMember = .listLength
+            element = c.listTypes[iterableType & 0xFFFFFFFF]
+        default:
+            element = c.arrayTypes[iterableType & 0xFFFFFFFF].element
+    }
+    let index = newTemp(ref c, through: ref l, for: semantics.prim(.i64))
+    let indexTarget = localExpr(ref c, at: span, for: index)
+    let zero = i64Literal(ref c, at: span, by: 0)
+    emitAssign(ref c, through: ref l, to: indexTarget, as: zero)
+    let labels = enterLoop(ref l, for: forTarget)
+    captureBegin(ref l)
+    let length = semantics.addBuiltinCall(ref c, from: T3BBuiltinCall { span: span, member: lengthMember, receiver: sequence, arguments: List<BExpr>(), type: semantics.prim(.i64) })
+    let indexRead = localExpr(ref c, at: span, for: index)
+    let inside = semantics.addBinary(ref c, from: BBinary { span: span, op: .lt, left: indexRead, right: length, type: semantics.prim(.bool) })
+    t3GotoIfNot(ref c, through: ref l, at: span, for: inside, to: labels.brk)
+    let itemIndex = localExpr(ref c, at: span, for: index)
+    let item = ltree.addLIndexUnchecked(ref l.tree, from: T3LIndexUnchecked { span: span, target: sequence, index: itemIndex, type: element }) because "the loop condition bounds the index"
+    let converted = forItem(ref c, through: ref l, for: s, at: item)
+    emitAssign(ref c, through: ref l, to: variable, as: converted)
+    lowerStatement(ref c, through: ref l, for: forBody)
+    t3Label(ref l, at: span, for: labels.cont)
+    let stepTarget = localExpr(ref c, at: span, for: index)
+    let stepLeft = localExpr(ref c, at: span, for: index)
+    let stepOne = i64Literal(ref c, at: span, by: 1)
+    let step = semantics.addBinary(ref c, from: BBinary { span: span, op: .addWrap, left: stepLeft, right: stepOne, type: semantics.prim(.i64) })
+    emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: stepTarget, value: step, op: null }))
+    let loopBody = captureEnd(ref l)
+    t3Loop(ref c, through: ref l, at: span, for: move loopBody)
+    t3Label(ref l, at: span, for: labels.brk)
+}
+
+/// A getter's witness (Lowerer.cs:756 `Call`): a field is read, a function is called on `subject`.
+BExpr t3Witness(ref Ctx c, at TextSpan span, for BExpr subject, by FuncId function, to semantics.FieldId field, as move List<BExpr> arguments) uses alloc {
+    if field != -1 {
+        return semantics.addField(ref c, from: T3BField { span: span, receiver: subject, field: field, type: c.fields[field].type })
+    }
+    return semantics.addCall(ref c, from: T3BCall { span: span, function: function, receiver: subject, arguments: move arguments, type: c.functions[function].returnType })
+}
+
+/// Lowerer.cs:735 `UserFor`: `for` over an `IIndexable`: `count` is read once, then `get(i)` for each index below it.
+/// Over an `IEnumerator`: `moveNext()` until it returns false, reading `current` after each true.
+/// A place is walked in place; an rvalue enumerator goes to the binder's spill local, any other rvalue to a temporary.
+void lowerUserFor(ref Ctx c, through ref LCtx l, for BStmt s, at BExpr variable, by T3UserIteration user) uses alloc {
+    let fi = i64(s & 0xFFFFFFFF)
+    let span = c.bFors[fi].span
+    let iterableExpr = c.bFors[fi].iterable
+    let forBody = c.bFors[fi].body
+    let forTarget = c.bFors[fi].target
+    var subject: BExpr = -1
+    if user.spill != -1 {
+        note(ref c, through: ref l, for: user.spill)
+        let value = lowerExpr(ref c, through: ref l, for: iterableExpr)
+        if isNeverExpr(value) { return }
+        subject = localExpr(ref c, at: span, for: user.spill)
+        emitAssign(ref c, through: ref l, to: subject, as: value)
+    } else {
+        subject = isLvalueShape(ref c, through: ref l, for: iterableExpr) ? lowerLvalue(ref c, through: ref l, for: iterableExpr) : lowerExpr(ref c, through: ref l, for: iterableExpr)
+        if isNeverExpr(subject) { return }
+        subject = lowerStable(ref c, through: ref l, for: subject)
+        if !isLvalue(in c, through: in l, for: subject) { subject = spill(ref c, through: ref l, for: subject) }
+    }
+    if user.kind == .indexable {
+        let count = newTemp(ref c, through: ref l, for: semantics.prim(.i64))
+        let countTarget = localExpr(ref c, at: span, for: count)
+        let countValue = t3Witness(ref c, at: span, for: subject, by: user.advance, to: user.advanceField, as: List<BExpr>())
+        emitAssign(ref c, through: ref l, to: countTarget, as: countValue)
+        let index = newTemp(ref c, through: ref l, for: semantics.prim(.i64))
+        let indexTarget = localExpr(ref c, at: span, for: index)
+        let zero = i64Literal(ref c, at: span, by: 0)
+        emitAssign(ref c, through: ref l, to: indexTarget, as: zero)
+        let labels = enterLoop(ref l, for: forTarget)
+        captureBegin(ref l)
+        let indexRead = localExpr(ref c, at: span, for: index)
+        let countRead = localExpr(ref c, at: span, for: count)
+        let inside = semantics.addBinary(ref c, from: BBinary { span: span, op: .lt, left: indexRead, right: countRead, type: semantics.prim(.bool) })
+        t3GotoIfNot(ref c, through: ref l, at: span, for: inside, to: labels.brk)
+        var itemArguments = List<BExpr>()
+        itemArguments.append(localExpr(ref c, at: span, for: index))
+        let got = t3Witness(ref c, at: span, for: subject, by: user.item, to: user.itemField, as: move itemArguments)
+        let item = forItem(ref c, through: ref l, for: s, at: got)
+        emitAssign(ref c, through: ref l, to: variable, as: item)
+        lowerStatement(ref c, through: ref l, for: forBody)
+        t3Label(ref l, at: span, for: labels.cont)
+        let stepTarget = localExpr(ref c, at: span, for: index)
+        let stepLeft = localExpr(ref c, at: span, for: index)
+        let stepOne = i64Literal(ref c, at: span, by: 1)
+        let step = semantics.addBinary(ref c, from: BBinary { span: span, op: .addWrap, left: stepLeft, right: stepOne, type: semantics.prim(.i64) })
+        emit(ref l, for: semantics.addAssign(ref c, from: BAssign { span: span, target: stepTarget, value: step, op: null }))
+        let body = captureEnd(ref l)
+        t3Loop(ref c, through: ref l, at: span, for: move body)
+        t3Label(ref l, at: span, for: labels.brk)
+        return
+    }
+    let labels = enterLoop(ref l, for: forTarget)
+    captureBegin(ref l)
+    let advance = t3Witness(ref c, at: span, for: subject, by: user.advance, to: user.advanceField, as: List<BExpr>())
+    t3GotoIfNot(ref c, through: ref l, at: span, for: advance, to: labels.brk)
+    let got = t3Witness(ref c, at: span, for: subject, by: user.item, to: user.itemField, as: List<BExpr>())
+    let item = forItem(ref c, through: ref l, for: s, at: got)
+    emitAssign(ref c, through: ref l, to: variable, as: item)
+    lowerStatement(ref c, through: ref l, for: forBody)
+    t3Label(ref l, at: span, for: labels.cont)
+    let loopBody = captureEnd(ref l)
+    t3Loop(ref c, through: ref l, at: span, for: move loopBody)
+    t3Label(ref l, at: span, for: labels.brk)
+}
+
+/// Lowerer.cs:797 `ForItem`: `for T x in e` with `T` other than the element, e.g. `dyn ref I`: the item is held in a temporary and converted.
+/// A mutable `dyn ref` to an array or List element points at the element itself, so mutations through it persist.
+BExpr forItem(ref Ctx c, through ref LCtx l, for BStmt s, at BExpr item) uses alloc {
+    let fi = i64(s & 0xFFFFFFFF)
+    let span = c.bFors[fi].span
+    let variableType = c.locals[c.bFors[fi].variable].type
+    let itemType = t2Type(in c, through: in l, for: item)
+    if itemType == variableType { return item }
+    let converted = semantics.implicit(ref c, from: itemType, to: variableType)
+    // coverage-exempt: Q770
+    if converted is null { return item }
+    let kind = converted
+    // coverage-exempt: Q770
+    if ltree.isLowered(item) && ltree.lKindOf(item) == .indexUnchecked && semantics.kindOf(variableType) == .dynRef && !c.dynRefTypes[variableType & 0xFFFFFFFF].readOnly {
+        return semantics.addConversion(ref c, from: T3BConversion { span: span, operand: item, type: variableType, kind: kind })
+    }
+    let held = spill(ref c, through: ref l, for: item)
+    let conversion = semantics.addConversion(ref c, from: T3BConversion { span: span, operand: held, type: variableType, kind: kind })
+    return lowerExpr(ref c, through: ref l, for: conversion)
+}
+
+/// Lowerer.cs:805 `One`.
+BExpr oneLiteral(ref Ctx c, at TextSpan span, for Type type) uses alloc {
+    let e = semantics.addLiteral(ref c, from: BLiteral { span: span, type: type, value: Constant { kind: .integer, integer: Big { lo: 1, hi: 0 } } })
+    semantics.setConstant(ref c, for: e, to: Constant { kind: .integer, integer: Big { lo: 1, hi: 0 } })
+    return e
+}
+
+/// Lowerer.cs:808 `Switch`: sections test in order; the pattern-less section is the fallback, lowered last.
+void lowerSwitch(ref Ctx c, through ref LCtx l, for BStmt s) uses alloc {
+    let si = i64(s & 0xFFFFFFFF)
+    let span = c.bSwitches[si].span
+    var value = lowerExpr(ref c, through: ref l, for: c.bSwitches[si].value)
+    if isNeverExpr(value) { return }
+    if !isRepeatable(in c, through: in l, for: value) { value = spill(ref c, through: ref l, for: value) }
+    let end = newLabel(ref l, for: "switch_end")
+    l.targets[c.bSwitches[si].target] = LTarget { breakLabel: end, depth: l.scopes.length }
+    var fallback = -1
+    for k in 0..c.bSwitches[si].sections.length {
+        let pattern = c.bSwitches[si].sections[k].pattern
+        let sectionSpan = c.bSwitches[si].sections[k].span
+        if pattern == -1 {
+            fallback = k
+            continue
+        }
+        captureBegin(ref l)
+        lowerClaim(ref c, through: ref l, for: pattern)
+        l.scopes.append(LScope {})
+        let statements = copyStmts(in c.bSwitches[si].sections[k].body)
+        for inner in statements { lowerStatement(ref c, through: ref l, for: inner) }
+        emitCleanups(ref c, through: ref l, at: l.scopes.length - 1, for: -1)
+        l.scopes.remove(at: l.scopes.length - 1)
+        emit(ref l, for: ltree.addLGoto(ref l.tree, from: T3LGoto { span: sectionSpan, label: end }))
+        let body = captureEnd(ref l)
+        let match = lowerMatch(ref c, through: ref l, for: pattern, at: value)
+        let guardExpr = c.bSwitches[si].sections[k].guard
+        if guardExpr == -1 {
+            let bodyBlock = block(ref c, at: sectionSpan, for: move body)
+            emit(ref l, for: semantics.addIf(ref c, from: BIf { span: sectionSpan, condition: match, then: bodyBlock }))
+            continue
+        }
+        var pre = List<BStmt>()
+        let guard = captureExpr(ref c, through: ref l, for: guardExpr, lvalue: false, to: ref pre)
+        if pre.length == 0 {
+            let both = andExpr(ref c, through: in l, for: match, by: guard)
+            let bodyBlock = block(ref c, at: sectionSpan, for: move body)
+            emit(ref l, for: semantics.addIf(ref c, from: BIf { span: sectionSpan, condition: both, then: bodyBlock }))
+        } else {
+            let bodyBlock = block(ref c, at: sectionSpan, for: move body)
+            pre.append(semantics.addIf(ref c, from: BIf { span: sectionSpan, condition: guard, then: bodyBlock }))
+            let preBlock = block(ref c, at: sectionSpan, for: move pre)
+            emit(ref l, for: semantics.addIf(ref c, from: BIf { span: sectionSpan, condition: match, then: preBlock }))
+        }
+    }
+    if fallback != -1 {
+        l.scopes.append(LScope {})
+        let statements = copyStmts(in c.bSwitches[si].sections[fallback].body)
+        for inner in statements { lowerStatement(ref c, through: ref l, for: inner) }
+        emitCleanups(ref c, through: ref l, at: l.scopes.length - 1, for: -1)
+        l.scopes.remove(at: l.scopes.length - 1)
+    }
+    emit(ref l, for: ltree.addLLabel(ref l.tree, from: T3LLabel { span: span, name: end }))
+}
+
+/// Lowerer.cs:862 `Lvalue`: lowers an expression that must stay addressable (assignment target, `ref` argument, mutating receiver).
+public BExpr lowerLvalue(ref Ctx c, through ref LCtx l, for BExpr e) uses alloc {
+    // coverage-exempt: Q777
+    if ltree.isLowered(e) { return spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: e)) }
+    let i = i64(e & 0xFFFFFFFF)
+    switch semantics.boundKind(e) {
+        case .local:
+            note(ref c, through: ref l, for: c.bLocals[i].local)
+            return e
+        case .thisRef or .staticArray:
+            return e
+        case .field:
+            let receiver = c.bFields[i].receiver
+            let lowered = isLvalueShape(ref c, through: ref l, for: receiver) ? lowerLvalue(ref c, through: ref l, for: receiver) : spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: receiver))
+            return semantics.addField(ref c, from: T3BField { span: c.bFields[i].span, receiver: lowered, field: c.bFields[i].field, type: c.bFields[i].type })
+        case .tupleElement:
+            let receiver = c.bTupleElements[i].receiver
+            let lowered = isLvalueShape(ref c, through: ref l, for: receiver) ? lowerLvalue(ref c, through: ref l, for: receiver) : spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: receiver))
+            return semantics.addTupleElement(ref c, from: T3BTupleElement { span: c.bTupleElements[i].span, receiver: lowered, index: c.bTupleElements[i].index, type: c.bTupleElements[i].type })
+        case .index:
+            let indexTarget = c.bIndexes[i].target
+            let arrayTarget = semantics.kindOf(t2Type(in c, through: in l, for: indexTarget)) == .array
+            var ops = List<BExpr>()
+            ops.append(indexTarget)
+            ops.append(c.bIndexes[i].index)
+            var lvalues = List<bool>()
+            lvalues.append(arrayTarget && isLvalueShape(ref c, through: ref l, for: indexTarget))
+            var parts = List<BExpr>()
+            unless operands(ref c, through: ref l, for: in ops, as: in lvalues, to: ref parts) {
+                return ltree.addLNever(ref l.tree, from: T3LNever { span: c.bIndexes[i].span, type: c.bIndexes[i].type })
+            }
+            let target = arrayTarget && !isLvalue(in c, through: in l, for: parts[0]) ? spill(ref c, through: ref l, for: parts[0]) : parts[0]
+            return semantics.addIndex(ref c, from: T3BIndex { span: c.bIndexes[i].span, target: target, index: parts[1], fromEnd: c.bIndexes[i].fromEnd, type: c.bIndexes[i].type })
+        case .builtinCall:
+            if c.bBuiltinCalls[i].member == .mapIndexSet
+                // coverage-exempt: Q780
+                || c.bBuiltinCalls[i].member == .mapSlot {
+                return lowerBuiltinCall(ref c, through: ref l, for: e)
+            }
+            return spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: e))
+        default:
+            return spill(ref c, through: ref l, for: lowerExpr(ref c, through: ref l, for: e))
+    }
+}
+
+/// Lowerer.cs:890 `IsLvalueShape`.
+public bool isLvalueShape(ref Ctx c, through ref LCtx l, for BExpr e) {
+    // coverage-exempt: Q777
+    if ltree.isLowered(e) { return false }
+    let i = i64(e & 0xFFFFFFFF)
+    switch semantics.boundKind(e) {
+        case .local or .thisRef or .index or .staticArray:
+            return true
+        case .builtinCall:
+            return c.bBuiltinCalls[i].member == .mapIndexSet || c.bBuiltinCalls[i].member == .mapSlot
+        case .field:
+            return isLvalueShape(ref c, through: ref l, for: c.bFields[i].receiver)
+        case .tupleElement:
+            return isLvalueShape(ref c, through: ref l, for: c.bTupleElements[i].receiver)
+        default:
+            return false
+    }
+}
