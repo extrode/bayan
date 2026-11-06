@@ -4,7 +4,7 @@ title: Bootstrap fixpoint
 status: enacted
 kind: property
 scope: selfhost/driver/**, selfhost/emitter/**, selfhost/semantics/**, bootstrap/bayan.c
-proof: (written by 012 T12 via /prove, after T9)
+proof: tests/Bayan.Tests/BootstrapTests.cs
 check: dotnet test -v q --filter "Law=L027"
 timeout: 900
 ---
