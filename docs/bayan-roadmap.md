@@ -30,7 +30,7 @@ The 0.1.0 release also holds specs 001–010 and 013 (see the table below). Arch
 
 ### What 0.2.0 adds (unreleased)
 
-`CHANGELOG.md` has no 0.2.0 section yet. Its `[Unreleased]` block covers spec 014 and the memory bounds. Specs 011 and 012 are in the handoff, not the changelog.
+`CHANGELOG.md` `[0.2.0]` (from `chore/release-0.2.0`) covers specs 011, 012, 014 and the memory bounds.
 
 | Item | Measured result | Source |
 |---|---|---|
