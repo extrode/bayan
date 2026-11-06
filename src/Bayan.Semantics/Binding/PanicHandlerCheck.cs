@@ -68,7 +68,7 @@ internal static class PanicHandlerCheck
                     or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName or BuiltinFunction.PathDirectoryName
                     or BuiltinFunction.PathCombine or BuiltinFunction.PathCombineSpan or BuiltinFunction.PathFullPath or BuiltinFunction.EnvGet }:
                 case BoundBuiltinCall { Member: BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy
-                    or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy or BuiltinMember.IoReadAll or BuiltinMember.IntToString
+                    or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy or BuiltinMember.IoReadAll or BuiltinMember.IoReadAllBytes or BuiltinMember.IntToString
                     or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet
                     or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated or BuiltinMember.StringPadded or BuiltinMember.BytesToString
                     or BuiltinMember.StringJoined or BuiltinMember.Utf16Copy }:

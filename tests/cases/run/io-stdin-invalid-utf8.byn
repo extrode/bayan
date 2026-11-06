@@ -1,0 +1,7 @@
+// Standard input that is not UTF-8 fails `readAll` with `invalidUtf8`, as `Io.readText` does.
+let input = Io.stdin.readAll()
+if input.isOk {
+    print($"unexpected: {input.value.length} bytes")
+} else {
+    print($"{input.err == IoError.invalidUtf8} {input.err}")
+}

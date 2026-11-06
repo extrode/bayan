@@ -274,6 +274,11 @@ public string emitBuiltin(ref CCtx cc, for ref CFunc f, from ref Ctx c, through 
             let res = cType(ref cc, from: ref c, for: bType)
             let name = helper(ref cc, for: "bynh_io_read_all", from: $"static {res} bynh_io_read_all(int32_t fd)", as: $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err.code = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n")
             return $"{name}({t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)})"
+        case .ioReadAllBytes:
+            let res = cType(ref cc, from: ref c, for: bType)
+            let list = cType(ref cc, from: ref c, for: c.resultTypes[i64(bType & 0xFFFFFFFF)].value)
+            let name = helper(ref cc, for: "bynh_io_read_all_bytes", from: $"static {res} bynh_io_read_all_bytes(int32_t fd)", as: $"{{\n    (void)fd;\n    {res} r = {{0}};\n    uint8_t* p = NULL;\n    int64_t n = 0;\n    r.err.code = byn_io_read_stdin_bytes(&p, &n, byn_context);\n    if (r.err.code == 0) r.value = ({list}){{p, n, n, byn_context}};\n    return r;\n}}\n")
+            return $"{name}({t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)})"
         case .strBufAsString:
             return $"byn_strbuf_str({t11Expr(ref cc, for: ref f, from: ref c, through: in t, at: r)})"
         case .panicMessage:

@@ -1,10 +1,10 @@
-// `Io.stdin.readAll()` returns the bytes as they arrive: CRLF stays, invalid UTF-8 is not checked.
+// `Io.stdin.readAll()` returns the bytes as they arrive (CRLF stays) once they are checked to be UTF-8.
 let input = Io.stdin.readAll()
 if !input.isOk {
     print("read failed")
 } else {
     let text = input.value
-    print($"{text.length} bytes")
+    print($"{text.length} bytes, {text.runeCount} runes")
     var lines: i64 = 0
     for b in text.bytes {
         if b == 0x0A { lines += 1 }

@@ -7,7 +7,7 @@
 #define BAYAN_RT_H
 
 /* Bumped on every change to the runtime source. */
-#define BYN_RUNTIME_VERSION 1
+#define BYN_RUNTIME_VERSION 2
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -446,7 +446,9 @@ byn_str* byn_args(int* argc, char** argv);
 uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc);
 /* As byn_io_read, and the bytes must be UTF-8. `out` may be NULL. */
 uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc);
-/* `Io.stdin.readAll`: the rest of standard input, bytes as-is (not checked for UTF-8), from `alloc`. */
+/* `Io.stdin.readAllBytes`: the rest of standard input, bytes as-is (not checked for UTF-8), from `alloc`. */
+uint32_t byn_io_read_stdin_bytes(uint8_t** ptr, int64_t* len, byn_alloc* alloc);
+/* `Io.stdin.readAll`: the same bytes as text; `BYN_IO_INVALID_UTF8` if they are not UTF-8. */
 uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc);
 uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len);
 /* `Io.listDir`: entry names without `.` and `..`, sorted by byte order, allocated from `alloc`. */

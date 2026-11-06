@@ -2766,7 +2766,7 @@ uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc) {
     return 0;
 }
 
-uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc) {
+uint32_t byn_io_read_stdin_bytes(uint8_t** ptr, int64_t* len, byn_alloc* alloc) {
 #ifdef _WIN32
     /* Text mode would turn CRLF into LF and stop at Ctrl-Z. */
     _setmode(_fileno(stdin), _O_BINARY);
@@ -2785,7 +2785,18 @@ uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc) {
         if (got == 0) break;
     }
     if (ferror(stdin)) return byn_io_error(errno);
-    if (out) *out = (byn_str){buf, n};
+    *ptr = buf;
+    *len = n;
+    return 0;
+}
+
+uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc) {
+    uint8_t* p;
+    int64_t n;
+    uint32_t err = byn_io_read_stdin_bytes(&p, &n, alloc);
+    if (err != 0) return err;
+    if (!byn_utf8_valid(p, n)) return BYN_IO_INVALID_UTF8;
+    if (out) *out = (byn_str){p, n};
     return 0;
 }
 

@@ -37,12 +37,12 @@ i32 unreadable(string path) {
 public i32 parseOne(string path, by Keywords keywords) uses alloc, console, fs {
     var bytes = List<u8>()
     if path == "-" {
-        let input = Io.stdin.readAll()
+        let input = Io.stdin.readAllBytes()
         unless input.isOk {
             Io.stderr.write("bayan-parse: cannot read standard input\n")
             return exitInput
         }
-        for b in input.value.bytes { bytes.append(b) }
+        for b in input.value { bytes.append(b) }
     } else {
         bytes = Io.readFile(path) catch return unreadable(path)
     }

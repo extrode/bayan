@@ -537,7 +537,7 @@ List<string> t23Builtin(BuiltinFunction f) {
 
 List<string> t23Member(BuiltinMember m) {
     if m == .ioWrite { return ["console"] }
-    if m == .ioReadAll { return ["console", "alloc"] }
+    if m == .ioReadAll || m == .ioReadAllBytes { return ["console", "alloc"] }
     if m == .spanCopy || m == .stringCopy || m == .listCopy || m == .mapCopy || m == .strBufCopy || m == .intToString || m == .listAdd || m == .listReplace || m == .mapSlot || m == .mapIndexSet || m == .stringLowercased || m == .stringUppercased || m == .stringReplaced || m == .stringRepeated || m == .stringPadded || m == .bytesToString || m == .stringJoined || m == .utf16Copy { return ["alloc"] }
     return []
 }
