@@ -1,0 +1,12 @@
+// `.green` on its own line reads as an enum shorthand, but it joins the statement above as a member (BYN5103).
+enum Color {
+    red
+    green
+}
+
+Color pick() => Color.red
+
+var c = Color.red
+c = pick()
+.green
+print(c.name)
