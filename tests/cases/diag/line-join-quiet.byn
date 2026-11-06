@@ -1,0 +1,36 @@
+// Continuations indented deeper than their statement are quiet, and so is `catch` right after `}` (BYN5103).
+union error ParseError {
+    empty
+}
+
+struct Box {
+    string text
+}
+
+i64 digit(Box b) fails ParseError {
+    fail .empty if b.text.isEmpty
+    return 1
+}
+
+let s = "abc"
+let n = s
+    .trimmed()
+    .length
+let ok = n > 0
+    && n < 10
+    || n == 100
+let box = Box {
+    text: s,
+}
+let d = digit(Box {
+    text: s,
+})
+    catch -1
+print($"{n} {ok} {box.text} {d}")
+
+// `catch` after `}` at the statement's indentation: the lint is quiet, the checker still wants a call.
+i64 viaSwitch(i64 n) => n switch {
+    0 => 1,
+    _ => n,
+}
+catch -1

@@ -334,7 +334,7 @@ internal static class Format
                 else stderr.WriteLine(Messages.FormatRewriteAbandoned.Text(file));
                 return null;
             }
-            var fixes = tree.Diagnostics.Where(d => Applies(d) && d.Fix is not null).Select(d => d.Fix!).ToList();
+            var fixes = tree.Diagnostics.Where(d => Applies(d) && d.Fix is not null).Concat(tree.Lints).Select(d => d.Fix!).ToList();
             var next = fixes.Count > 0 ? ApplyFixes(bytes, fixes) : Restyle(file, bytes, tree, booleans, primitives, declared);
             if (RewriteHook is not null) next = RewriteHook(next);
             if (next.AsSpan().SequenceEqual(bytes))
