@@ -318,13 +318,60 @@ public sealed class LanguageServerLeakTests(ITestOutputHelper output) : IDisposa
     }
 
     [Fact]
-    public void MessagesOverTheLimitAreIgnoredAndLargeOnesStillParse()
+    public void MessagesOverTheLimitAreSkippedAndLargeOnesStillParse()
     {
         var text = new string('a', 300_000);
         var json = $"{{\"text\":\"{text}\"}}";
-        var t = new JsonRpcTransport(Raw($"Content-Length: {(64 << 20) + 1}\r\n\r\nContent-Length: {json.Length}\r\n\r\n{json}"), Stream.Null);
+        var t = new JsonRpcTransport(Raw($"Content-Length: 500000\r\n\r\n{new string(' ', 500_000)}Content-Length: {json.Length}\r\n\r\n{json}"), Stream.Null, maxMessage: 400_000);
         using var doc = t.Read();
         Assert.Equal(text, doc!.RootElement.GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void RewalkingAFolderDoesNotSpendTheDirectoryBound()
+    {
+        Touch("a/f.byn");
+        var ws = new Workspace(maxDirs: 1);
+        ws.IndexFolder(Path.Combine(_root, "a"));
+        for (int i = 0; i < 5; i++) ws.LoadFolder(Path.Combine(_root, "a"));
+        Touch("a/g.byn");
+        ws.LoadFolder(Path.Combine(_root, "a")); // already counted, so still walked
+        Assert.Equal(2, ws.Documents.Count());
+    }
+
+    [Fact]
+    public void RemovedFolderRefundsItsDirectories()
+    {
+        Touch("a/f.byn");
+        Touch("a/s/f.byn");
+        var ws = new Workspace(maxDirs: 2);
+        ws.IndexFolder(Path.Combine(_root, "a"));
+        ws.RemoveFolder(Uri(Path.Combine(_root, "a", "s")));
+        Touch("a/t/f.byn");
+        ws.LoadFolder(Path.Combine(_root, "a", "t"));
+        Assert.Equal(2, ws.Documents.Count());
+    }
+
+    [Fact]
+    public void TooLargeCountsUtf8BytesNotChars()
+    {
+        var ws = new Workspace(maxFileBytes: 100);
+        Assert.False(ws.TooLarge(new string('a', 100)));
+        Assert.False(ws.TooLarge(new string('\u00e9', 50)));
+        Assert.True(ws.TooLarge(new string('\u00e9', 60))); // 60 chars, 120 bytes
+    }
+
+    [Fact]
+    public void WatcherChangeDoesNotReloadATooLargeOpenBuffer()
+    {
+        var file = Touch("big.byn", "struct A {}\n");
+        var uri = Uri(file);
+        var msgs = RunServer(
+            Notify("textDocument/didOpen", new { textDocument = new { uri, languageId = "bayan", version = 1, text = new string('a', Workspace.DefaultMaxFileBytes > int.MaxValue ? 0 : (int)Workspace.DefaultMaxFileBytes + 1) } }),
+            Notify("workspace/didChangeWatchedFiles", new { changes = new[] { new { uri, type = 2 } } }),
+            Request(1, "textDocument/documentSymbol", new { textDocument = new { uri } }));
+        var res = Result(msgs, 1);
+        Assert.True(res.ValueKind == JsonValueKind.Null || res.GetArrayLength() == 0, res.ToString());
     }
 
     [Fact]

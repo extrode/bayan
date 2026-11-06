@@ -8,10 +8,11 @@ namespace Bayan.LanguageServer.Rpc;
 /// <summary>LSP base protocol: `Content-Length` framed JSON over a byte stream.</summary>
 public sealed class JsonRpcTransport
 {
-    const int MaxMessage = 64 * 1024 * 1024;
+    public const int DefaultMaxMessage = 64 * 1024 * 1024;
     const int Chunk = 64 * 1024;
     const int MaxRetainedBody = 1024 * 1024;
 
+    readonly int _maxMessage;
     readonly Stream _in;
     readonly Stream _out;
     readonly Lock _writeLock = new();
@@ -20,8 +21,9 @@ public sealed class JsonRpcTransport
     readonly byte[] _header = new byte[256];
     readonly byte[] _head = new byte[32];
 
-    public JsonRpcTransport(Stream input, Stream output)
+    public JsonRpcTransport(Stream input, Stream output, int maxMessage = DefaultMaxMessage)
     {
+        _maxMessage = maxMessage;
         // Console streams are unbuffered: ReadByte would be one syscall per header byte.
         _in = input is BufferedStream or MemoryStream ? input : new BufferedStream(input, 64 * 1024);
         _out = output;
@@ -34,7 +36,7 @@ public sealed class JsonRpcTransport
     {
         while (true)
         {
-            int contentLength = -1;
+            long contentLength = -1;
             while (true)
             {
                 int n = ReadLine(_header);
@@ -47,12 +49,29 @@ public sealed class JsonRpcTransport
                 var line = _header.AsSpan(0, n);
                 var key = "Content-Length:"u8;
                 if (line.Length > key.Length && Ascii.EqualsIgnoreCase(line[..key.Length], key)
-                    && int.TryParse(line[key.Length..].Trim((byte)' '), out int len) && len is >= 0 and <= MaxMessage)
+                    && long.TryParse(line[key.Length..].Trim((byte)' '), out long len) && len >= 0)
                     contentLength = len;
+            }
+            if (contentLength > _maxMessage)
+            {
+                // Discard the body in bounded chunks so the next header is read in sync.
+                Console.Error.WriteLine($"bayan-lsp: message of {contentLength} bytes dropped, over the {_maxMessage} byte limit");
+                var skip = new byte[Chunk];
+                try
+                {
+                    for (long left = contentLength; left > 0;)
+                    {
+                        int k = (int)Math.Min(left, Chunk);
+                        _in.ReadExactly(skip, 0, k);
+                        left -= k;
+                    }
+                }
+                catch (EndOfStreamException) { return null; }
+                continue;
             }
             // JsonDocument keeps a reference to the memory it parses, so the array is owned by the document.
             // The buffer grows as bytes arrive, so a lying header cannot allocate up front.
-            var buffer = new byte[Math.Min(contentLength, Chunk)];
+            var buffer = new byte[(int)Math.Min(contentLength, Chunk)];
             int read = 0;
             try
             {

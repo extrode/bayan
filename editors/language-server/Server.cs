@@ -134,6 +134,7 @@ public sealed class Server(JsonRpcTransport rpc)
                         else foreach (var r in _ws.RemoveFolder(uri)) PublishEmpty(r); // a folder delete or rename
                         continue;
                     }
+                    if (_tooLarge.Contains(uri)) continue; // the editor holds a buffer we dropped; disk text would be stale
                     try
                     {
                         if (new Uri(uri) is { IsFile: true } u)
