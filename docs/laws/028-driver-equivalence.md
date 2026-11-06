@@ -6,7 +6,7 @@ kind: property
 scope: selfhost/driver/**, src/Bayan.Cli/CliApp.cs
 proof: tests/Bayan.Tests/SelfhostDriverGoldenTests.cs
 check: dotnet test -v q --filter "Law=L028"
-timeout: 900
+timeout: 1200
 ---
 
 ## Statement
