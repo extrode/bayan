@@ -1,0 +1,4 @@
+error BYN2605: `catch` needs a call that can fail
+
+  32 │ i64 viaSwitch(i64 n) => n switch {
+     │                         ^^^^^^^^^^

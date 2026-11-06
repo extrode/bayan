@@ -237,6 +237,7 @@ enum SemaCode {
     unknownWord
     nounOnMutator
     boolWithoutPrefix
+    lineJoinIndent
     noallocRemoved
     effectNotDeclared
     unknownEffect
@@ -494,6 +495,7 @@ string codeText(SemaCode code) => code switch {
     .unknownWord => "BYN5014",
     .nounOnMutator => "BYN5101",
     .boolWithoutPrefix => "BYN5102",
+    .lineJoinIndent => "BYN5103",
     .noallocRemoved => "BYN6001",
     .effectNotDeclared => "BYN6002",
     .unknownEffect => "BYN6003",
@@ -751,6 +753,7 @@ string messageFormat(SemaCode code) => code switch {
     .unknownWord => "`{0}` is not a known verb or noun",
     .nounOnMutator => "`{0}` is a noun on a `ref this` member; name the action",
     .boolWithoutPrefix => "`{0}` is a `bool` state; prefix with `is`, `has` or `can`",
+    .lineJoinIndent => "a line starting with `{0}` joins the statement above; indent it deeper",
     .noallocRemoved => "`{0}` is removed; a function without `uses` is already pure",
     .effectNotDeclared => "`{0}` uses `{1}` but does not declare it",
     .unknownEffect => "`{0}` is not an effect",
@@ -780,7 +783,7 @@ string messageFormat(SemaCode code) => code switch {
 bool isWarning(SemaCode code) => code switch {
     .sameTypeShadowing or .spanParameterNeverWritten or .neverReassignedVar or
     .unreachableCode or .wildcardOnLocalUnion or .expectsSingleParameter or .unknownWord or
-    .nounOnMutator or .boolWithoutPrefix => true,
+    .nounOnMutator or .boolWithoutPrefix or .lineJoinIndent => true,
     _ => false,
 }
 
