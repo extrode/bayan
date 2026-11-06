@@ -17,7 +17,7 @@ namespace Bayan.Tests;
 /// exit code, stdout and stderr (elapsed seconds masked); the <c>.diag</c> files stay <c>DiagTests</c>'. The same ruling for <c>run</c>
 /// stderr: stage 2's equals the C# CLI's on the case, since both print the compile warnings before the program's own output.
 /// A <c>run/</c> input is left out when its file name ends in <c>.test.byn</c> (<c>RunTests</c> runs those with <c>bayan test -v</c>) or a
-/// <c>.stdin</c> file with the same name beside it exists (spec Q5: stage 2's <c>run</c> feeds no stdin). There are no skips.
+/// <c>.stdin</c> file with the same name beside it exists (spec Q5: stage 2's <c>run</c> feeds no stdin). The only skips are the two <c>diag/</c> cases in <see cref="DiagSkips"/> (Q1048).
 /// </summary>
 [Collection(nameof(ToolchainEnvironment))]
 [Trait("Law", "L028")]
@@ -37,7 +37,17 @@ public sealed class SelfhostDriverGoldenTests
     public static TheoryData<string> Lex => Rows("lex");
     public static TheoryData<string> Parse => Rows("parse");
     public static TheoryData<string> Typed => Rows("typed");
-    public static TheoryData<string> Diag => Rows("diag");
+    public static TheoryData<string> Diag => Rows("diag", name => !DiagSkips.ContainsKey(name));
+
+    /// <summary>
+    /// Listed skips of <c>diag/</c>: cases whose <c>.diag</c> holds a code that no C# CLI <c>check</c> invocation prints (Q1048), so comparing
+    /// stage 2 with the CLI would pass without covering it. <see cref="DiagSkipsAreGapsInTheCli"/> checks each is still such a gap.
+    /// </summary>
+    private static readonly Dictionary<string, string> DiagSkips = new()
+    {
+        ["diag/cases-type-mismatch.test.byn"] = "Q1048", // BYN2202 needs IncludeTests; `check` never sets it
+        ["diag/capability-exceeded/main.byn"] = "Q1048", // BYN6004 needs the manifest's capabilities; `check .` stops at the missing src/app, `--package` ignores package.byn
+    };
     /// <summary>
     /// <c>BAYAN_GOLDEN_SHARD=i/n</c> (0 &lt;= i &lt; n) keeps the <c>run/</c> cases whose index among the in-scope ones is i modulo n, so the slow
     /// theory can run in slices that each fit a time limit; unset keeps them all. Every case is built twice (stage 2 and the C# CLI).
@@ -104,11 +114,12 @@ public sealed class SelfhostDriverGoldenTests
         return work;
     }
 
-    private static string? Failure(string name, string extension, string actual, bool optional = false, bool update = true)
+    private static string? Failure(string name, string extension, string actual, bool optional = false)
     {
         var expected = Path.ChangeExtension(Path_(name), extension);
         if (optional && actual.Length == 0 && !File.Exists(expected)) return null;
-        return Golden.Compare(expected, actual, update && Golden.UpdateMode).Failure;
+        // Never updates, whatever BAYAN_UPDATE says: the goldens are the C# tests' to write, stage 2 must not (R10).
+        return Golden.Compare(expected, actual, update: false).Failure;
     }
 
     [Theory]
@@ -140,8 +151,13 @@ public sealed class SelfhostDriverGoldenTests
     {
         var path = Path_(name);
         var dir = Path.GetDirectoryName(path)!;
-        return name.Count(c => c == '/') > 1 ? (dir, ["check", "."]) : (dir, ["check", "--package", dir, Path.GetFileName(path)]);
+        // `--all` lifts the 20-diagnostic cap that hid map-copy's and input-paren-braceless-body's codes. A package directory without `src/`
+        // (the CLI stops at the missing entry module) is checked as its `main.byn` with `--package`, as DiagTests compiles it.
+        if (name.Count(c => c == '/') > 1) return Directory.Exists(Path.Combine(dir, "src")) ? (dir, ["check", "--all", "."]) : (dir, ["check", "--all", "--package", dir, "main.byn"]);
+        return (dir, ["check", "--all", "--package", dir, Path.GetFileName(path)]);
     }
+
+    private static HashSet<string> Codes(string text) => [.. Regex.Matches(text, @"BYN[0-9]+").Select(m => m.Value)];
 
     [Theory]
     [MemberData(nameof(Diag))]
@@ -153,9 +169,43 @@ public sealed class SelfhostDriverGoldenTests
         Assert.Equal(expected.Exit, actual.Exit);
         Assert.Equal(Mask(expected.Stdout), Mask(actual.Stdout));
         Assert.Equal(Mask(expected.Stderr), Mask(actual.Stderr));
+        var missing = Codes(File.ReadAllText(Path.ChangeExtension(Path_(name), ".diag"))).Except(Codes(expected.Stdout + expected.Stderr)).ToList();
+        Assert.True(missing.Count == 0, $"{name}: the C# CLI's check does not print {string.Join(", ", missing)} from its .diag");
     }
 
-    /// <summary>The usage, failure and <c>--diagnostics json</c> paths of <c>types</c> and <c>check</c>, against <c>CliApp.Run</c> in this process, through the harness build the coverage gate measures.</summary>
+    [Fact]
+    public void DiagSkipsAreGapsInTheCli()
+    {
+        foreach (var name in DiagSkips.Keys)
+        {
+            var (cwd, args) = DiagCommand(name);
+            var expected = CSharp(cwd, args);
+            Assert.NotEmpty(Codes(File.ReadAllText(Path.ChangeExtension(Path_(name), ".diag"))).Except(Codes(expected.Stdout + expected.Stderr)));
+        }
+    }
+
+    /// <summary>BAYAN_UPDATE=1 must not make a comparison write its expected file (R10).</summary>
+    [Fact]
+    public void ComparisonsNeverWriteGoldens()
+    {
+        var name = "lex/bad-chars.byn";
+        var golden = Path.ChangeExtension(Path_(name), ".tokens");
+        var before = File.ReadAllBytes(golden);
+        var saved = Environment.GetEnvironmentVariable("BAYAN_UPDATE");
+        Environment.SetEnvironmentVariable("BAYAN_UPDATE", "1");
+        try
+        {
+            Assert.True(Golden.UpdateMode);
+            Assert.NotNull(Failure(name, ".tokens", "not the tokens\n"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("BAYAN_UPDATE", saved);
+        }
+        Assert.Equal(before, File.ReadAllBytes(golden));
+    }
+
+    /// <summary>The usage, failure and <c>--diagnostics json</c> paths of <c>types</c> and <c>check</c>, against <c>CliApp.Run</c> in this process, through the harness build the coverage gate measures; exit code, stdout and stderr (the usage and failure rows write only to stderr).</summary>
     [Theory]
     [InlineData("types")]
     [InlineData("check")]
@@ -170,6 +220,7 @@ public sealed class SelfhostDriverGoldenTests
         var actual = SelfhostDriverHarness.Run(args);
         Assert.Equal(exit, actual.Exit);
         Assert.Equal(Mask(stdout.ToString().ReplaceLineEndings("\n")), Mask(actual.Out));
+        Assert.Equal(Mask(stderr.ToString().ReplaceLineEndings("\n")), Mask(actual.Err));
     }
 
     [Theory]
@@ -186,12 +237,11 @@ public sealed class SelfhostDriverGoldenTests
         if (File.Exists(argsFile)) args.AddRange(["--", .. File.ReadAllLines(argsFile)]);
         var r = Stage2(Work(name), [.. args]);
         var pending = File.Exists(Path.ChangeExtension(input, ".pending"));
-        var update = Golden.UpdateMode && !pending;
         var code = PanicExit.Portable(r.Exit);
         var failures = new[]
         {
-            Failure(name, ".stdout", r.Stdout, update: update),
-            Failure(name, ".exitcode", code == 0 ? "" : code + "\n", optional: true, update: update),
+            Failure(name, ".stdout", r.Stdout),
+            Failure(name, ".exitcode", code == 0 ? "" : code + "\n", optional: true),
         }.Where(f => f is not null).ToList();
         // The stderr ruling (Q1048): the C# CLI's `run` on the same case.
         var expected = CSharp(Work(name), [.. args]);

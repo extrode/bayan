@@ -81,7 +81,7 @@ i32 typesCommand(in List<string> kept, by in DCtx d) {
     return exitOk
 }
 
-/// CliApp.cs:448 `Check`.
+/// CliApp.cs `Check` (src/Bayan.Cli/CliApp.cs:461).
 i32 checkCommand(in List<string> kept, by in DCtx d) {
     let clock = Io.monotonicNanos()
     let args = t2Rest(kept)
