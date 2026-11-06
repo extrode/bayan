@@ -142,6 +142,7 @@ There is no `;`. `bayan format` strips trailing semicolons and splits same-line 
 - **An unused non-void value is a compile error** (BYN3201), so every mis-split line is a diagnostic (`let x = a` newline `-b`). Discard on purpose with `_ = f()`.
 - `return`, `break`, `continue` and `fail` take their operand on the same line. A postfix modifier (`if`, `unless`) is on the same line as its statement (BYN1042).
 - `else` follows `}` on the same line; `else` on a new line is rejected with a fix-it (BYN1041).
+- A waṣl line is indented deeper than the line its statement starts on; one that is not draws a warning that `bayan format` fixes (BYN5103), except `catch` after a line ending in `}` and a struct-level `requires`.
 - Comment lines are transparent to continuation. Outside `( )` and `[ ]`, a blank line always ends a statement; inside them, blank lines are ignored like other newlines.
 - A struct literal in a control-flow head takes whole-condition parentheses (§7.2).
 - **Separators:** declarations (fields, union cases, enum entries, states) are separated by newlines; a signature may continue on the next line with a `where`, `expects`, `becomes`, `fails` or `uses` clause. A one-line `union U { a, b }` is rejected and `bayan format` rewrites it (BYN1053). Entries in literals and argument lists are separated by commas, with trailing commas per `docs/bayan-style.md`.
