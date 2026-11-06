@@ -1,0 +1,22 @@
+// A store summary through a `ref` parameter (Q745) that reaches a `ref this` map-field store (Q747) compiles when the borrower lives inside the arena block.
+struct Bag {
+    Map<i64, string> m
+
+    void put(ref this, string v) {
+        m[1] = v
+    }
+}
+
+void fill(string s, to ref Bag b) {
+    b.put(s)
+}
+
+void main() {
+    {
+        using let arena = Arena()
+        var b = Bag { m: Map<i64, string>() }
+        let name = "ann".copy(to: arena)
+        fill(name, to: ref b)
+        print(b.m[1])
+    }
+}

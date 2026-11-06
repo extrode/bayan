@@ -1,0 +1,25 @@
+// A `ref this` map-field store (Q747) and a store through an `out` parameter (Q745) in the same function: both are refused.
+struct Bag {
+    Map<i64, string> m
+
+    void put(ref this, string v) {
+        m[1] = v
+    }
+}
+
+void pass(string s, to out string g) {
+    g = s
+}
+
+void main() {
+    var b = Bag { m: Map<i64, string>() }
+    var kept = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        b.put(name)
+        pass(name, to: out kept)
+    }
+    print(b.m[1])
+    print(kept)
+}

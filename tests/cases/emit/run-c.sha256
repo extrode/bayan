@@ -219,6 +219,11 @@ a968def86b064488f3fdd38362a84f068fc996bba6a53bc67b6f64c6bbc47c12  run/provide-al
 fe1f0abcd32440ba970be77c9914cb1ddceb1a40d7a15ef49e89252462d41d32  run/ref-out-copy-only.byn
 cc81867a9c3fca2c28de223ff2d5baf85c190ef25309c2e2b10b3a52042635d6  run/ref-out-lambda-block.byn
 52d806c7be721a5ad3185fd07e44cc2722d5fa3a57ab88653113b7ebdc07df25  run/ref-this.byn
+0942fd7f4fe0e603fb209e15a4f43513240e5eb2eb8cf8cb2f2da92da854dc55  run/region-combo-all-three-in-time.byn
+a2e1a9a59eab55446ee450467eb6d17e246b369483a967e0c083725e4a237783  run/region-combo-ref-this-map-two-levels-in-time.byn
+4d39ea4da60c1bcd0b43438ca46aaf7e2972a7faf97d6c0b6fa4d7ca11b151b2  run/region-combo-store-ref-this-map-in-time.byn
+74f3388e9cdfe2ffaadc88694df3b20c95df59dc656da9ed2d2f46c054044051  run/region-combo-store-through-ref-this-map-in-time.byn
+e72f484015fb328ea98ae4df2f256c3afab893a6df9fbfeed6b6f54de6b4eef5  run/region-combo-store-two-levels-in-time.byn
 3385ec12e72b9636bd289cdd34c4b4bc6fab5343d0da4d57f5a257ef5195ce0e  run/requires-block.byn
 4d82b4ad821d3a7f69200d04f35cd48a1d97de0d7bc38bc9ab8a7dd23dd632b2  run/requires.byn
 24ffdd896658138d877c5fa39beeb7e803e9af8da23a9c607ba306e827a2a901  run/rest.byn
