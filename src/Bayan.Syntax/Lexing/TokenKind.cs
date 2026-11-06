@@ -182,13 +182,12 @@ public enum TokenKind : ushort
     ActorKeyword,
     MacroKeyword,
     SelectKeyword,
-    EnsuresKeyword,
 }
 
 public static class TokenKindFacts
 {
     public const TokenKind KeywordFirst = TokenKind.StructKeyword;
-    public const TokenKind KeywordLast = TokenKind.EnsuresKeyword;
+    public const TokenKind KeywordLast = TokenKind.SelectKeyword;
 
     public static bool IsKeyword(this TokenKind kind) => kind is >= KeywordFirst and <= KeywordLast;
 

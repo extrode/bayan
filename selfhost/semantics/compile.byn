@@ -248,6 +248,22 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
             })
             hasError = true
         }
+        // The line-join lint (BYN5103) is a warning the C# compilation adds after the tree's diagnostics.
+        for d in parser.lintLineJoins(ref p) {
+            addDiag(ref c, by: Diag {
+                code: d.code,
+                file: fileId,
+                span: d.span,
+                message: d.message,
+                label: d.label,
+                help: d.help,
+                isWarning: true,
+                hasFix: d.hasFix,
+                fixSpan: d.fixSpan,
+                fixReplacement: d.fixReplacement,
+                related: List<Related>(),
+            })
+        }
         c.files.append(SourceFile {
             path: path,
             displayPath: path,

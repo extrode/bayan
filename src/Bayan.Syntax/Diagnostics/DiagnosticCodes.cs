@@ -346,6 +346,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UnknownWord = Warning("BYN5014", "`{0}` is not a known verb or noun");
     public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
     public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
+    public static readonly DiagnosticDescriptor LineJoinIndent = Warning("BYN5103", "a line starting with `{0}` joins the statement above; indent it deeper");
 
     // ── Effects 6000–6999 ────────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor NoallocRemoved = Error("BYN6001", "`{0}` is removed; a function without `uses` is already pure");

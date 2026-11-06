@@ -3,6 +3,31 @@
 ## [Unreleased]
 
 ### Added
+- Lint BYN5103: a line starting with a joining token (`.`, `?.`, `??`, `&&`, `||`, `and`, `or`, `catch`, `fails`, …) must be indented deeper than its statement's first line; `bayan format` applies the fix.
+
+### Changed
+- `ensures` is no longer reserved and can be used as an identifier (revision 0019, round-4 batch 1); BYN0012 no longer fires on it.
+
+## [0.2.0] - 2026-11-06
+
+Bayan compiles itself: the self-hosted lexer, parser, checker, emitter and driver in `selfhost/` build a `bayan` that
+builds itself again, with byte-identical C at every stage. The released binary is still the C# compiler.
+
+### Known limits
+- The self-hosted driver ports `lex`, `parse`, `types`, `check`, `build`, `run`, `version` and `help`; `test`, `format`,
+  `dist`, `doctor`, `new`/`init`, `clean` and `bayan-lsp` are C# only.
+- The self-hosted `bayan run` fails on a program whose output is not UTF-8 (Q1065, until `Io.run` takes raw output).
+- Windows: one known failure, the 1 MB emitter speed test (`tests/windows-known-failures.txt`).
+- `bayan dist --target all` still fails on wasm32 (WASM is v0.3).
+
+### Added
+
+- Spec 011: the self-hosted C emitter (`selfhost/emitter/`). It emits the same C as the C# backend, byte for byte, on
+  every `run/` golden and on generated programs in each build mode (law L024), and never panics on checked input
+  (L025). One module writes C text, and the C it relies on beyond C11 is listed (`011-c-inventory.md`).
+- Spec 012: the self-hosted driver (`selfhost/driver/`) and the three-stage bootstrap: the C# compiler builds stage 1,
+  stage 1 builds stage 2, stage 2 builds stage 3, and their emitted C is identical. The golden suite runs against stage
+  2 (L028). `bootstrap/bayan.c` and its README build a compiler with only a C compiler, no Zig and no .NET.
 
 - Spec 016 T4: `import std.json`, the first std module: a pull reader (`JsonReader.over`, `next`, `JsonToken`), the tree `JsonValue` from `Json.parse` (`Untrusted`, fails `JsonError` with offset, line and column; nesting past 128 is `tooDeep`) and `Json.encode(v, indent:)` in the layout of Python's `json.dumps`.
 - Spec 014: `Path.combine` (two strings or a `span<string>`), `Path.directoryName` (`string?`, null for a root), `Path.fullPath` and the existing `Path.isRooted`, `Path.relative` and `Path.fileName` agree with .NET's `Path.*` on each OS (Law L026, `StdPathLawTests`); the self-hosted checker calls them, so `tests/windows-known-failures.txt` is empty. Questions 900–1006

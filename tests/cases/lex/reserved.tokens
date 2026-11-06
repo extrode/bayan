@@ -13,8 +13,7 @@
 4:5 LawKeyword `law`
 4:9 Equals `=`
 4:11 IntegerLiteral `3`
-5:1 Identifier `ensures`
-6:1 EndOfFile
+5:1 EndOfFile
 
 error BYN0012: `actor` is reserved and cannot be used as an identifier
 
@@ -34,12 +33,5 @@ error BYN0012: `select` is reserved and cannot be used as an identifier
 
   3 │ macro select become
     │       ^^^^^^ reserved for a future version of Bayan
-    │
-  help: choose another name
-
-error BYN0012: `ensures` is reserved and cannot be used as an identifier
-
-  5 │ ensures
-    │ ^^^^^^^ reserved for a future version of Bayan
     │
   help: choose another name
