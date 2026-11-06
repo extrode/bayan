@@ -23,6 +23,7 @@ STUB
 chmod +x "$tmp/aux/dotnet"
 export AUX="$tmp/aux" PATH="$tmp/aux:$PATH"
 unset PINNED_BAYAN PINNED_BAYAN_REF
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com  # CI runners have no git identity
 
 r="$tmp/repo"; mkdir -p "$r/src/Bayan.Cli"; cd "$r"
 git init -q -b dev; git config core.hooksPath /dev/null  # a scratch repo: the global hooks refuse commits on dev
