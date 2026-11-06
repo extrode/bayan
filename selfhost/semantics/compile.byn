@@ -146,13 +146,6 @@ public Ctx fromProject(string root, for string entryModule, by in CompilationOpt
 public Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, by in CompilationOptions options, string? displayRoot = null) uses alloc, clock, fs {
     var capabilities: List<string>? = null
     if (options.capabilities is { } caps) { capabilities = copyStrings(in caps) }
-    // C# `Options.Std ?? StdLibrary.Shipped`.
-    var std = StdLibrary {}
-    if (options.std is { } injected) {
-        std = stdLibraryCreate(from: in injected)
-    } else {
-        std = stdLibraryCreate(from: in stdShippedSources())
-    }
     var c = Ctx {
         files: List<SourceFile>(),
         modules: List<Mod>(),
@@ -166,10 +159,9 @@ public Ctx create(from move List<lexer.SourceText> entryFiles, at string package
         displayRoot: displayRoot ?? packageRoot,
         includeTests: options.includeTests,
         skipOwnershipCheck: options.skipOwnershipCheck,
-        std: move std,
     }
     var clock = Io.monotonicNanos()
-    c.entryModule = loadModule(ref c, for: "main", at: packageRoot, from: move entryFiles, by: -1)
+    c.entryModule = loadModuleStd(ref c, for: "main", at: packageRoot, from: move entryFiles, by: -1, stdSources: in options.std)
     t11OrderModules(ref c)
     for f in copyIds(in c.modules[c.entryModule].files) { c.files[f].isEntry = true }
     c.parseTime = Io.monotonicNanos() - clock
@@ -214,6 +206,11 @@ List<string> t11ModuleFiles(string dir, bool includeTests) {
 // ── Compilation.cs:125 LoadModule ───────────────────────────────────────────────
 
 ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer.SourceText> sources, by ModId importer) {
+    return loadModuleStd(ref c, for: name, at: dir, from: move sources, by: importer)
+}
+
+/// `loadModule` reading `import std.…` from `stdSources` (`CompilationOptions.std`; null for the shipped ones).
+ModId loadModuleStd(ref Ctx c, for string name, at string dir, from move List<lexer.SourceText> sources, by ModId importer, in List<StdSource>? stdSources = null) {
     c.modules.append(Mod { name: name, files: List<FileId>(), directory: dir, cName: t11CNameOf(name) })
     let module = c.modules.length - 1
     c.modulesByDir[dir] = module
@@ -270,7 +267,7 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
         for m in 0..c.files[f].unit.members.length {
             switch c.files[f].unit.members[m] {
                 case .importDecl(let node):
-                    resolveImport(ref c, from: f, for: in node.value)
+                    resolveImportStd(ref c, from: f, for: in node.value, stdSources: in stdSources)
                 default:
                     continue
             }
@@ -343,6 +340,11 @@ void t11OrderModules(ref Ctx c) {
 // ── Compilation.cs:146 ResolveImport ────────────────────────────────────────────
 
 void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
+    resolveImportStd(ref c, from: file, for: in decl)
+}
+
+/// `resolveImport` reading `import std.…` from `stdSources` (`CompilationOptions.std`; null for the shipped ones).
+void resolveImportStd(ref Ctx c, from FileId file, for in parser.ImportDecl decl, in List<StdSource>? stdSources = null) {
     var nameBuf = StrBuf()
     var parts = List<string>()
     parts.append(c.packageRoot)
@@ -383,28 +385,35 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
             return
         }
     } else if std {
-        let stdModule: i64 = decl.path.length > 1 && c.std.byPath.contains(stdPath) ? c.std.byPath[stdPath] : -1
+        // C# `Options.Std ?? StdLibrary.Shipped`.
+        var library = StdLibrary {}
+        if (stdSources is { } injected) {
+            library = stdLibraryCreate(from: in injected)
+        } else {
+            library = stdLibraryCreate(from: in stdShippedSources())
+        }
+        let stdModule: i64 = decl.path.length > 1 && library.byPath.contains(stdPath) ? library.byPath[stdPath] : -1
         if stdModule < 0 {
             var help = StrBuf()
-            if c.std.names.length == 0 {
+            if library.names.length == 0 {
                 help.append("remove the import: no std modules ship with this build")
             } else {
                 help.append("import one of ")
-                for i in 0..c.std.names.length {
+                for i in 0..library.names.length {
                     if i > 0 { help.append(", ") }
-                    help.append($"`{c.std.names[i]}`")
+                    help.append($"`{library.names[i]}`")
                 }
             }
             report(ref c, for: .unknownStdModule, from: file, at: span, by: (name, "", "", "", ""), help: $"{help.finish()}")
             return
         }
         var sources = List<lexer.SourceText>()
-        for f in c.std.modules[stdModule].files {
+        for f in library.modules[stdModule].files {
             var bytes = List<u8>()
             for b in f.text.bytes { bytes.append(b) }
             sources.append(lexer.SourceText.create($"{dir}/{f.file}", from: move bytes))
         }
-        module = loadModule(ref c, for: name, at: dir, from: move sources, by: c.files[file].module)
+        module = loadModuleStd(ref c, for: name, at: dir, from: move sources, by: c.files[file].module, stdSources: in stdSources)
     } else {
         var files = List<string>()
         if t11DirectoryExists(dir) { files = t11ModuleFiles(dir, includeTests: c.includeTests) }
@@ -415,7 +424,7 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
         }
         var sources = List<lexer.SourceText>()
         for f in files { sources.append(lexer.SourceText.create(t11RelativePath(c.displayRoot, to: f).replaced("\\", by: "/"), from: t11ReadAllBytes(f))) }
-        module = loadModule(ref c, for: name, at: dir, from: move sources, by: c.files[file].module)
+        module = loadModuleStd(ref c, for: name, at: dir, from: move sources, by: c.files[file].module, stdSources: in stdSources)
     }
     if c.files[file].imports.contains(alias) {
         report(ref c, for: .duplicateDeclaration, from: file, at: span, by: (alias, "", "", "", ""))
