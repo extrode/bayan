@@ -16,6 +16,67 @@ public struct CompilationOptions {
     public List<string>? capabilities = null
     public string? packageName = null
     public string? target = null
+    /// Test-only: the std files `import std.…` reads; null for the shipped ones (`stdShippedSources`, stdsource.byn).
+    public List<StdSource>? std = null
+}
+
+// ── StdLibrary.cs ───────────────────────────────────────────────────────────────
+
+/// A std file: its path under `std/` (`json/reader.byn`) and its text.
+public struct StdSource {
+    public string path
+    public string text
+}
+
+/// One file of a std module: its name and its text.
+public struct StdFile {
+    public string file
+    public string text
+}
+
+/// One std module: its path (`a/b` for `std.a.b`) and its files, in name order.
+public struct StdModule {
+    public string path
+    public List<StdFile> files
+}
+
+/// The C# `StdLibrary`: the std modules (spec 016), `byPath` indexing `modules`, and `names` every module's import name
+/// (`std.json`), sorted.
+public struct StdLibrary {
+    public List<StdModule> modules = List<StdModule>()
+    public Map<string, i64> byPath = []
+    public List<string> names = List<string>()
+}
+
+/// StdLibrary.cs:12 the constructor: a module is the files directly in one directory; tests are not part of it.
+StdLibrary stdLibraryCreate(from in List<StdSource> files) {
+    var library = StdLibrary {}
+    for f in files {
+        let slash = f.path.lastPosition("/") ?? -1
+        let file = $"{f.path[(slash + 1)..f.path.length]}"
+        if slash < 0 || !file.endsWith(".byn") || file.endsWith(".test.byn") { continue }
+        let module = $"{f.path[0..slash]}"
+        if !library.byPath.contains(module) {
+            library.byPath[module] = library.modules.length
+            library.modules.append(StdModule { path: module, files: List<StdFile>() })
+        }
+        library.modules[library.byPath[module]].files.append(StdFile { file: file, text: f.text })
+    }
+    for m in 0..library.modules.length {
+        let n = library.modules[m].files.length
+        for i in 1..n {
+            var j = i
+            while j > 0 && pathLess(library.modules[m].files[j].file, by: library.modules[m].files[j - 1].file) {
+                let t = library.modules[m].files[j]
+                library.modules[m].files[j] = library.modules[m].files[j - 1]
+                library.modules[m].files[j - 1] = t
+                j -= 1
+            }
+        }
+        library.names.append($"std.{library.modules[m].path.replaced("/", by: ".")}")
+    }
+    t11SortOrdinal(ref library.names)
+    return library
 }
 
 /// C# `HostTarget.Split` (HostTarget.cs): the `Target.os` and `Target.arch` of a target name; `wasm32` is `wasi`/`wasm32`.
@@ -98,6 +159,11 @@ public Ctx create(from move List<lexer.SourceText> entryFiles, at string package
         displayRoot: displayRoot ?? packageRoot,
         includeTests: options.includeTests,
         skipOwnershipCheck: options.skipOwnershipCheck,
+    }
+    if (options.std is { } injected) {
+        c.std = stdLibraryCreate(from: in injected)
+    } else {
+        c.std = stdLibraryCreate(from: in stdShippedSources())
     }
     var clock = Io.monotonicNanos()
     c.entryModule = loadModule(ref c, for: "main", at: packageRoot, from: move entryFiles, by: -1)
@@ -283,8 +349,16 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
         nameBuf.append(part)
         parts.append(part)
     }
-    let dir = Path.combine(parts.span)
     let name = $"{nameBuf.finish()}"
+    // `std.a.b` is the shipped module `a/b/` (spec 016); the package's own `std/` is never read for it.
+    let std = parts[1] == "std"
+    var stdPathBuf = StrBuf()
+    for i in 2..parts.length {
+        if i > 2 { stdPathBuf.append("/") }
+        stdPathBuf.append(parts[i])
+    }
+    let stdPath = $"{stdPathBuf.finish()}"
+    let dir = std ? $"<std>/{stdPath}" : Path.combine(parts.span)
     let span = TextSpan.fromBounds(decl.path[0].start, until: decl.path[decl.path.length - 1].end)
     let alias = t11Text(in c, from: file, at: decl.alias ?? decl.path[decl.path.length - 1])
     var module: ModId = -1
@@ -305,6 +379,30 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
                 help: "move the shared declarations into a module both can import")
             return
         }
+    } else if std {
+        // C# `Options.Std ?? StdLibrary.Shipped` is `c.std`, built once in `create`.
+        let stdModule: i64 = decl.path.length > 1 && c.std.byPath.contains(stdPath) ? c.std.byPath[stdPath] : -1
+        if stdModule < 0 {
+            var help = StrBuf()
+            if c.std.names.length == 0 {
+                help.append("remove the import: no std modules ship with this build")
+            } else {
+                help.append("import one of ")
+                for i in 0..c.std.names.length {
+                    if i > 0 { help.append(", ") }
+                    help.append($"`{c.std.names[i]}`")
+                }
+            }
+            report(ref c, for: .unknownStdModule, from: file, at: span, by: (name, "", "", "", ""), help: $"{help.finish()}")
+            return
+        }
+        var sources = List<lexer.SourceText>()
+        for f in c.std.modules[stdModule].files {
+            var bytes = List<u8>()
+            for b in f.text.bytes { bytes.append(b) }
+            sources.append(lexer.SourceText.create($"{dir}/{f.file}", from: move bytes))
+        }
+        module = loadModule(ref c, for: name, at: dir, from: move sources, by: c.files[file].module)
     } else {
         var files = List<string>()
         if t11DirectoryExists(dir) { files = t11ModuleFiles(dir, includeTests: c.includeTests) }

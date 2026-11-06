@@ -2,4 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="../Bayan.Syntax/Bayan.Syntax.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../lib/std/**/*.byn" LogicalName="std/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

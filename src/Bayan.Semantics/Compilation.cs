@@ -12,8 +12,9 @@ namespace Bayan.Semantics;
 /// <param name="Capabilities">The package's <c>capabilities</c>, the upper bound on its effects (§13); null for no bound.</param>
 /// <param name="PackageName">The package's name, for BYN6004.</param>
 /// <param name="Target">The build target <c>Target.os</c>/<c>Target.arch</c> name; null for the compiling host.</param>
+/// <param name="Std">Test-only: the std modules <c>import std.…</c> reads; null for <see cref="StdLibrary.Shipped"/>.</param>
 public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false,
-    IReadOnlyList<string>? Capabilities = null, string? PackageName = null, string? Target = null);
+    IReadOnlyList<string>? Capabilities = null, string? PackageName = null, string? Target = null, StdLibrary? Std = null);
 
 /// <summary>An <c>@unobservable</c> mark: the attributed statement's span, the operator it narrows to (null for all) and the reason.</summary>
 public sealed record UnobservableMark(string File, TextSpan Span, string? Operator, string Reason);
@@ -185,7 +186,10 @@ public sealed partial class Compilation
     {
         var name = string.Join(".", import.Path.Select(p => p.Text));
         var span = TextSpan.FromBounds(import.Path[0].Span.Start, import.Path[^1].Span.End);
-        var dir = Path.Combine([PackageRoot, .. import.Path.Select(p => p.Text)]);
+        // `std.a.b` is the shipped module `a/b/` (spec 016); the package's own `std/` is never read for it.
+        var std = import.Path[0].Text == "std";
+        var stdPath = string.Join("/", import.Path.Skip(1).Select(p => p.Text));
+        var dir = std ? "<std>/" + stdPath : Path.Combine([PackageRoot, .. import.Path.Select(p => p.Text)]);
         var alias = (import.Alias ?? import.Path[^1]).Text;
         ModuleSymbol? module;
         if (_modulesByDir.TryGetValue(dir, out module))
@@ -197,6 +201,19 @@ public sealed partial class Compilation
                     help: "move the shared declarations into a module both can import");
                 return;
             }
+        }
+        else if (std)
+        {
+            var library = Options.Std ?? StdLibrary.Shipped;
+            var stdFiles = import.Path.Length > 1 ? library.Module(stdPath) : null;
+            if (stdFiles is null)
+            {
+                Diagnostics.Report(DiagnosticCodes.UnknownStdModule, file.Source, span, [name],
+                    help: library.Names.Count == 0 ? "remove the import: no std modules ship with this build"
+                        : $"import one of {string.Join(", ", library.Names.Select(n => $"`{n}`"))}");
+                return;
+            }
+            module = LoadModule(name, dir, stdFiles.Select(f => new SourceText($"{dir}/{f.File}", f.Bytes)).ToList(), file.Module);
         }
         else
         {
