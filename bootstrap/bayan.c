@@ -10712,13 +10712,13 @@ int32_t byn_main__typesCommand(bynt_list_str p_kept, bynt_main__DCtx p_d);
 int32_t byn_main__checkCommand(bynt_list_str p_kept, bynt_main__DCtx p_d);
 bynt_main__DCtx byn_main__newDCtx(void);
 byn_str byn_main__versionLine(void);
+int32_t byn_main__run(bynt_span_str p_args, bynt_main__DCtx* p_d);
+bool byn_main__takeGlobalOptions(bynt_span_str p_args, bynt_list_str* p_kept, bynt_main__DCtx* p_d);
+bynt_main__DStyle byn_main__decideStyle(byn_str p_colorFlag, bool p_ascii, bool p_isTty, int64_t p_width);
 bool byn_main__t1FileExists(byn_str p_path);
 bool byn_main__t1IsScript(byn_str p_path);
-int32_t byn_main__refuse(byn_str p_what);
 bool byn_main__refuseLibrary(bynt_semantics__Ctx p_compiled, byn_str p_command);
-bynt_main__DStyle byn_main__decideStyle(byn_str p_colorFlag, bool p_ascii, bool p_isTty, int64_t p_width);
-bool byn_main__takeGlobalOptions(bynt_span_str p_args, bynt_list_str* p_kept, bynt_main__DCtx* p_d);
-int32_t byn_main__run(bynt_span_str p_args, bynt_main__DCtx* p_d);
+int32_t byn_main__refuse(byn_str p_what);
 int32_t byn_main__main(bynt_span_str p_args);
 bynt_main__NativeBuild byn_main__ZigOrCc__compile(bynt_main__ZigOrCc* self, byn_str p_dir, byn_str p_source, byn_str p_output, byn_str p_mode, bynt_opt_str p_target);
 
@@ -178598,12 +178598,12 @@ break_1:;
 #line 65 "driver/commands.byn"
         return ((int32_t)2);
     }
-#line 66 "driver/commands.byn"
+#line 67 "driver/commands.byn"
     if (l0_printAst) {
-#line 66 "driver/commands.byn"
-        return byn_parser__parseOne((*bynh_at_list_str(l1_rest, (int64_t)INT64_C(0), false, byn_file_82, 66)), byn_lexer__Keywords__build());
+#line 67 "driver/commands.byn"
+        return byn_parser__parseOne((byn_str_eq((*bynh_at_list_str(l1_rest, (int64_t)INT64_C(0), false, byn_file_82, 67)), BYN_STR("-", 1)) ? BYN_STR("./-", 3) : (*bynh_at_list_str(l1_rest, (int64_t)INT64_C(0), false, byn_file_82, 67))), byn_lexer__Keywords__build());
     }
-#line 68 "driver/commands.byn"
+#line 69 "driver/commands.byn"
     return byn_main__refuse(BYN_STR("parse", 5));
 }
 #line 178610 "main.c"
@@ -178618,38 +178618,38 @@ int32_t byn_main__typesCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
     bool l6_ok = {0};
     bynt_semantics__Ctx l7_c = {0};
     int32_t t8 = {0};
-#line 73 "driver/commands.byn"
+#line 74 "driver/commands.byn"
     l0_args = byn_main__t2Rest(p_kept);
-#line 74 "driver/commands.byn"
+#line 75 "driver/commands.byn"
     t2 = byn_main__t5ParseBuildOptions(l0_args, false, false);
-#line 74 "driver/commands.byn"
+#line 75 "driver/commands.byn"
     if (t2.has) {
-#line 74 "driver/commands.byn"
+#line 75 "driver/commands.byn"
         t3 = t2.value;
     } else {
-#line 74 "driver/commands.byn"
+#line 75 "driver/commands.byn"
         return ((int32_t)2);
     }
-#line 74 "driver/commands.byn"
-    l1_o = t3;
 #line 75 "driver/commands.byn"
-    l4_symbols = byn_semantics__t26Symbols(p_d.styleErr.ascii);
+    l1_o = t3;
 #line 76 "driver/commands.byn"
-    l5_reported = ((bynt_list_semantics__T26Reported){NULL, 0, 0, byn_context});
+    l4_symbols = byn_semantics__t26Symbols(p_d.styleErr.ascii);
 #line 77 "driver/commands.byn"
-    l6_ok = false;
+    l5_reported = ((bynt_list_semantics__T26Reported){NULL, 0, 0, byn_context});
 #line 78 "driver/commands.byn"
+    l6_ok = false;
+#line 79 "driver/commands.byn"
     l7_c = byn_main__t5Compile(l1_o, l4_symbols, &l5_reported, &l6_ok);
-#line 79 "driver/commands.byn"
+#line 80 "driver/commands.byn"
     if ((!l6_ok)) {
-#line 79 "driver/commands.byn"
+#line 80 "driver/commands.byn"
         return ((int32_t)1);
     }
-#line 80 "driver/commands.byn"
-    t8 = INT32_C(1);
-#line 80 "driver/commands.byn"
-    (void)byn_io_write(t8, byn_semantics__typedDump(&l7_c));
 #line 81 "driver/commands.byn"
+    t8 = INT32_C(1);
+#line 81 "driver/commands.byn"
+    (void)byn_io_write(t8, byn_semantics__typedDump(&l7_c));
+#line 82 "driver/commands.byn"
     return ((int32_t)0);
 }
 #line 178656 "main.c"
@@ -178666,45 +178666,45 @@ int32_t byn_main__checkCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
     bynt_semantics__Ctx l8_c = {0};
     byn_str l9_dot = {0};
     byn_str t10 = {0};
-#line 86 "driver/commands.byn"
-    l0_clock = byn_io_monotonic_nanos();
 #line 87 "driver/commands.byn"
+    l0_clock = byn_io_monotonic_nanos();
+#line 88 "driver/commands.byn"
     l1_args = byn_main__t2Rest(p_kept);
-#line 88 "driver/commands.byn"
+#line 89 "driver/commands.byn"
     t3 = byn_main__t5ParseBuildOptions(l1_args, false, false);
-#line 88 "driver/commands.byn"
+#line 89 "driver/commands.byn"
     if (t3.has) {
-#line 88 "driver/commands.byn"
+#line 89 "driver/commands.byn"
         t4 = t3.value;
     } else {
-#line 88 "driver/commands.byn"
+#line 89 "driver/commands.byn"
         return ((int32_t)2);
     }
-#line 88 "driver/commands.byn"
-    l2_o = t4;
 #line 89 "driver/commands.byn"
-    l5_symbols = byn_semantics__t26Symbols(p_d.styleErr.ascii);
+    l2_o = t4;
 #line 90 "driver/commands.byn"
-    l6_reported = ((bynt_list_semantics__T26Reported){NULL, 0, 0, byn_context});
+    l5_symbols = byn_semantics__t26Symbols(p_d.styleErr.ascii);
 #line 91 "driver/commands.byn"
-    l7_ok = false;
+    l6_reported = ((bynt_list_semantics__T26Reported){NULL, 0, 0, byn_context});
 #line 92 "driver/commands.byn"
+    l7_ok = false;
+#line 93 "driver/commands.byn"
     l8_c = byn_main__t5Compile(l2_o, l5_symbols, &l6_reported, &l7_ok);
-#line 93 "driver/commands.byn"
+#line 94 "driver/commands.byn"
     if ((!l7_ok)) {
-#line 93 "driver/commands.byn"
+#line 94 "driver/commands.byn"
         return byn_semantics__t26Failed(byn_main__t5T26(l2_o), l6_reported, l5_symbols);
     }
-#line 94 "driver/commands.byn"
-    if ((!l2_o.json)) {
 #line 95 "driver/commands.byn"
+    if ((!l2_o.json)) {
+#line 96 "driver/commands.byn"
         l9_dot = byn_semantics__t26Symbols(p_d.styleOut.ascii).dot;
-#line 96 "driver/commands.byn"
+#line 97 "driver/commands.byn"
         t10 = byn_semantics__programName(&l8_c, l2_o.path);
-#line 96 "driver/commands.byn"
-        (void)byn_print(((byn_builtin_Stream)0), byn_semantics__checkSummary(l9_dot, t10, byn_semantics__t26Seconds(byn_sub_i64(byn_io_monotonic_nanos(), l0_clock, byn_file_82, 96))));
+#line 97 "driver/commands.byn"
+        (void)byn_print(((byn_builtin_Stream)0), byn_semantics__checkSummary(l9_dot, t10, byn_semantics__t26Seconds(byn_sub_i64(byn_io_monotonic_nanos(), l0_clock, byn_file_82, 97))));
     }
-#line 98 "driver/commands.byn"
+#line 99 "driver/commands.byn"
     return ((int32_t)0);
 }
 #line 178711 "main.c"
@@ -178733,280 +178733,6 @@ byn_str byn_main__versionLine(void) {
 }
 #line 178735 "main.c"
 
-bool byn_main__t1FileExists(byn_str p_path) {
-    bynt_list_str l0__ = {0};
-    byn_err t1 = {0};
-    bynt_list_str t2 = {0};
-    bynt_list_u8 l3__ = {0};
-    byn_err t4 = {0};
-    bynt_list_u8 t5 = {0};
-#line 86 "driver/main.byn"
-    t1 = (byn_err){ .code = bynh_io_list_dir(p_path, &t2) };
-#line 86 "driver/main.byn"
-    if ((!(t1.code == ((uint32_t)0)))) {
-#line 87 "driver/main.byn"
-        t4 = (byn_err){ .code = bynh_io_read_file(p_path, &t5) };
-#line 87 "driver/main.byn"
-        if ((!(t4.code == ((uint32_t)0)))) {
-#line 87 "driver/main.byn"
-            return false;
-        }
-#line 87 "driver/main.byn"
-        l3__ = t5;
-#line 88 "driver/main.byn"
-        return true;
-    }
-#line 86 "driver/main.byn"
-    l0__ = t2;
-#line 90 "driver/main.byn"
-    return false;
-}
-#line 178765 "main.c"
-
-bool byn_main__t1IsScript(byn_str p_path) {
-    bynt_list_u8 l0_bytes = {0};
-    byn_err t1 = {0};
-    bynt_list_u8 t2 = {0};
-#line 95 "driver/main.byn"
-    if ((!byn_main__t1FileExists(p_path))) {
-#line 95 "driver/main.byn"
-        return false;
-    }
-#line 97 "driver/main.byn"
-    t1 = (byn_err){ .code = bynh_io_read_file(p_path, &t2) };
-#line 97 "driver/main.byn"
-    if ((!(t1.code == ((uint32_t)0)))) {
-#line 97 "driver/main.byn"
-        return false;
-    }
-#line 97 "driver/main.byn"
-    l0_bytes = t2;
-#line 98 "driver/main.byn"
-    return (((l0_bytes.len >= INT64_C(2)) && ((*bynh_at_list_u8(l0_bytes, (int64_t)INT64_C(0), false, byn_file_84, 98)) == ((uint8_t)35))) && ((*bynh_at_list_u8(l0_bytes, (int64_t)INT64_C(1), false, byn_file_84, 98)) == ((uint8_t)33)));
-}
-#line 178788 "main.c"
-
-int32_t byn_main__refuse(byn_str p_what) {
-    byn_writer t0 = {0};
-    int32_t t1 = {0};
-#line 103 "driver/main.byn"
-    t1 = INT32_C(2);
-#line 103 "driver/main.byn"
-    t0 = byn_strbuf_grow(byn_context);
-#line 103 "driver/main.byn"
-    {
-        byn_writer* w = &t0;
-        w->file = byn_file_84;
-        w->line = 103;
-        byn_w_str(w, BYN_STR("error: `", 8));
-        byn_w_str(w, p_what);
-        byn_w_str(w, BYN_STR("` is not available in the self-hosted compiler; use the C# `bayan`\012", 67));
-    }
-#line 103 "driver/main.byn"
-    (void)byn_io_write(t1, byn_strbuf_str(t0));
-#line 104 "driver/main.byn"
-    return ((int32_t)2);
-}
-#line 178811 "main.c"
-
-bool byn_main__refuseLibrary(bynt_semantics__Ctx p_compiled, byn_str p_command) {
-    byn_writer t0 = {0};
-    int32_t t1 = {0};
-#line 109 "driver/main.byn"
-    if ((!p_compiled.library)) {
-#line 109 "driver/main.byn"
-        return false;
-    }
-#line 110 "driver/main.byn"
-    t1 = INT32_C(2);
-#line 110 "driver/main.byn"
-    t0 = byn_strbuf_grow(byn_context);
-#line 110 "driver/main.byn"
-    {
-        byn_writer* w = &t0;
-        w->file = byn_file_84;
-        w->line = 110;
-        byn_w_str(w, BYN_STR("bayan: `", 8));
-        byn_w_str(w, p_compiled.packageName);
-        byn_w_str(w, BYN_STR("` is a library, so there is no program to ", 42));
-        byn_w_str(w, p_command);
-        byn_w_str(w, BYN_STR("; `bayan test` runs its tests\012", 30));
-    }
-#line 110 "driver/main.byn"
-    (void)byn_io_write(t1, byn_strbuf_str(t0));
-#line 111 "driver/main.byn"
-    return true;
-}
-#line 178841 "main.c"
-
-bynt_main__DStyle byn_main__decideStyle(byn_str p_colorFlag, bool p_ascii, bool p_isTty, int64_t p_width) {
-    bool l0_color = {0};
-#line 117 "driver/main.byn"
-    l0_color = false;
-#line 119 "driver/main.byn"
-    if (byn_str_eq(p_colorFlag, BYN_STR("always", 6))) {
-#line 120 "driver/main.byn"
-        l0_color = true;
-#line 119 "driver/main.byn"
-        goto switch_end_1;
-    }
-#line 121 "driver/main.byn"
-    if (byn_str_eq(p_colorFlag, BYN_STR("never", 5))) {
-#line 122 "driver/main.byn"
-        l0_color = false;
-#line 121 "driver/main.byn"
-        goto switch_end_1;
-    }
-#line 125 "driver/main.byn"
-    l0_color = p_isTty;
-switch_end_1:;
-#line 128 "driver/main.byn"
-    return ((bynt_main__DStyle){l0_color, p_ascii, ((p_isTty && (p_width > INT64_C(0))) ? p_width : INT64_C(100))});
-}
-#line 178867 "main.c"
-
-bool byn_main__takeGlobalOptions(bynt_span_str p_args, bynt_list_str* p_kept, bynt_main__DCtx* p_d) {
-    byn_str l0_color = {0};
-    bool l1_command = {0};
-    int64_t l2_i = {0};
-    bynt_opt_str l3_value = {0};
-    int64_t l4_k = {0};
-    int64_t t5 = {0};
-    int64_t t6 = {0};
-    bynt_opt_str t7 = {0};
-    byn_str t8 = {0};
-    int64_t t9 = {0};
-    bynt_opt_str t10 = {0};
-    bynt_opt_str t11 = {0};
-    byn_str l12_v = {0};
-    byn_writer t13 = {0};
-    int32_t t14 = {0};
-#line 134 "driver/main.byn"
-    l0_color = BYN_STR("auto", 4);
-#line 135 "driver/main.byn"
-    l1_command = false;
-#line 136 "driver/main.byn"
-    l2_i = INT64_C(0);
-#line 137 "driver/main.byn"
-    for (;;) {
-#line 137 "driver/main.byn"
-        if ((!(l2_i < p_args.len))) {
-#line 137 "driver/main.byn"
-            goto break_1;
-        }
-#line 138 "driver/main.byn"
-        l3_value = ((bynt_opt_str){0});
-#line 140 "driver/main.byn"
-        if ((byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 140)), BYN_STR("--", 2)) || ((((!l1_command) && (!byn_str_starts_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 140)), BYN_STR("-", 1)))) && byn_str_ends_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 140)), BYN_STR(".byn", 4))) && byn_main__t1FileExists((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 140)))))) {
-#line 141 "driver/main.byn"
-            t5 = l2_i;
-#line 141 "driver/main.byn"
-            t6 = p_args.len;
-#line 141 "driver/main.byn"
-            for (;;) {
-#line 141 "driver/main.byn"
-                if ((!(t5 < t6))) {
-#line 141 "driver/main.byn"
-                    goto break_3;
-                }
-#line 141 "driver/main.byn"
-                l4_k = t5;
-#line 141 "driver/main.byn"
-                (void)bynh_add_list_str(&(*p_kept), (*bynh_at_span_str(p_args, (int64_t)l4_k, false, byn_file_84, 141)));
-            continue_4:;
-#line 141 "driver/main.byn"
-                t5 = byn_addw_i64(t5, INT64_C(1));
-            }
-        break_3:;
-#line 142 "driver/main.byn"
-            goto break_1;
-        }
-#line 144 "driver/main.byn"
-        if ((!byn_str_starts_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 144)), BYN_STR("-", 1)))) {
-#line 144 "driver/main.byn"
-            l1_command = true;
-        }
-#line 145 "driver/main.byn"
-        if (byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 145)), BYN_STR("--ascii", 7))) {
-#line 146 "driver/main.byn"
-            (*p_d).ascii = true;
-#line 147 "driver/main.byn"
-            l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 147);
-#line 148 "driver/main.byn"
-            goto continue_2;
-        }
-#line 150 "driver/main.byn"
-        if ((byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 150)), BYN_STR("--color", 7)) && (byn_add_i64(l2_i, INT64_C(1), byn_file_84, 150) < p_args.len))) {
-#line 151 "driver/main.byn"
-            l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 151);
-#line 152 "driver/main.byn"
-            t7 = ((bynt_opt_str){true, (*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 152))});
-#line 152 "driver/main.byn"
-            l3_value = t7;
-        } else {
-#line 153 "driver/main.byn"
-            if (byn_str_starts_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 153)), BYN_STR("--color=", 8))) {
-#line 154 "driver/main.byn"
-                t8 = (*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 154));
-#line 154 "driver/main.byn"
-                t9 = BYN_STR("--color=", 8).len;
-#line 154 "driver/main.byn"
-                t10 = ((bynt_opt_str){true, bynh_slice_str(t8, (int64_t)t9, 0, (int64_t)(*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 154)).len, 0, false, byn_file_84, 154)});
-#line 154 "driver/main.byn"
-                l3_value = t10;
-            } else {
-#line 155 "driver/main.byn"
-                if (byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 155)), BYN_STR("--color", 7))) {
-#line 156 "driver/main.byn"
-                    t11 = ((bynt_opt_str){true, BYN_STR("", 0)});
-#line 156 "driver/main.byn"
-                    l3_value = t11;
-                }
-            }
-        }
-#line 158 "driver/main.byn"
-        if ((!(l3_value.has && ((l12_v = l3_value.value), true)))) {
-#line 159 "driver/main.byn"
-            (void)bynh_add_list_str(&(*p_kept), (*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 159)));
-#line 160 "driver/main.byn"
-            l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 160);
-#line 161 "driver/main.byn"
-            goto continue_2;
-        }
-#line 163 "driver/main.byn"
-        if ((((!byn_str_eq(l12_v, BYN_STR("auto", 4))) && (!byn_str_eq(l12_v, BYN_STR("always", 6)))) && (!byn_str_eq(l12_v, BYN_STR("never", 5))))) {
-#line 164 "driver/main.byn"
-            t14 = INT32_C(2);
-#line 164 "driver/main.byn"
-            t13 = byn_strbuf_grow(byn_context);
-#line 164 "driver/main.byn"
-            {
-                byn_writer* w = &t13;
-                w->file = byn_file_84;
-                w->line = 164;
-                byn_w_str(w, BYN_STR("bayan: unknown color setting `", 30));
-                byn_w_str(w, l12_v);
-                byn_w_str(w, BYN_STR("` (expected auto, always or never)\012", 35));
-            }
-#line 164 "driver/main.byn"
-            (void)byn_io_write(t14, byn_strbuf_str(t13));
-#line 165 "driver/main.byn"
-            return false;
-        }
-#line 167 "driver/main.byn"
-        l0_color = l12_v;
-#line 168 "driver/main.byn"
-        l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 168);
-    continue_2:;
-    }
-break_1:;
-#line 170 "driver/main.byn"
-    (*p_d).color = l0_color;
-#line 171 "driver/main.byn"
-    return true;
-}
-#line 179009 "main.c"
-
 int32_t byn_main__run(bynt_span_str p_args, bynt_main__DCtx* p_d) {
     bynt_list_str l0_kept = {0};
     bynt_main__DStyle t1 = {0};
@@ -179026,214 +178752,565 @@ int32_t byn_main__run(bynt_span_str p_args, bynt_main__DCtx* p_d) {
     int32_t t15 = {0};
     byn_writer t16 = {0};
     int32_t t17 = {0};
-#line 176 "driver/main.byn"
+#line 86 "driver/main.byn"
     l0_kept = ((bynt_list_str){NULL, 0, 0, byn_context});
-#line 177 "driver/main.byn"
+#line 87 "driver/main.byn"
     if ((!byn_main__takeGlobalOptions(p_args, &l0_kept, &(*p_d)))) {
-#line 177 "driver/main.byn"
+#line 87 "driver/main.byn"
         return ((int32_t)2);
     }
-#line 179 "driver/main.byn"
+#line 89 "driver/main.byn"
     t1 = byn_main__decideStyle((*p_d).color, (*p_d).ascii, false, INT64_C(0));
-#line 179 "driver/main.byn"
+#line 89 "driver/main.byn"
     (*p_d).styleOut = t1;
-#line 180 "driver/main.byn"
+#line 90 "driver/main.byn"
     t2 = byn_main__decideStyle((*p_d).color, (*p_d).ascii, false, INT64_C(0));
-#line 180 "driver/main.byn"
+#line 90 "driver/main.byn"
     (*p_d).styleErr = t2;
-#line 181 "driver/main.byn"
+#line 91 "driver/main.byn"
     (*p_d).stderrTty = false;
-#line 182 "driver/main.byn"
+#line 92 "driver/main.byn"
     if ((l0_kept.len == INT64_C(0))) {
-#line 183 "driver/main.byn"
+#line 93 "driver/main.byn"
         t4 = INT32_C(2);
-#line 183 "driver/main.byn"
+#line 93 "driver/main.byn"
         t3 = byn_strbuf_grow(byn_context);
-#line 183 "driver/main.byn"
+#line 93 "driver/main.byn"
         {
             byn_writer* w = &t3;
             w->file = byn_file_84;
-            w->line = 183;
+            w->line = 93;
             byn_w_str(w, BYN_STR("usage: bayan <command> [args]\012\012commands:\012  new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]\012  init [<dir>]         add a project's missing files to a directory (same options as new)\012  lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)\012  parse [--ast] <file> check syntax; with --ast print the syntax tree\012  types <path>         print each function's parameter and local types as JSON\012  check <path>         report diagnostics for a program (a file or directory)\012  build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]\012                       [-v: print each phase's time and the output path]\012  run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]\012  test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]\012                       [--json: print the results as JSON instead]\012                       [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]\012                       [--only <text>: only tests whose name contains <text>; repeatable]\012                       [-v: also list the passing and pending tests]\012                       [--mutate: run every mutant against the tests that reach it; with --run <cmd>, run <cmd> once\012                       per mutant instead, with BAYAN_MUTANT set (exit 0 survived, non-zero killed)]\012  mutate --binary <exe> --sites <map.json> -- <cmd>\012                       run <cmd> once per mutant site of a prebuilt --mutate binary, as test --mutate --run does\012  dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]\012                       [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]\012  clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]\012  cache stats          show the shared build cache's location and size\012  format <path>        rewrite input forms (those with a fix-it) in a `.byn` file or a directory of them,\012                       and booleans and primitives to `style` in `package.byn` [--check: list, don't write]\012  audit <path>         list every `because` bypass and `unsafe` or `extern` declaration, with its reason\012  features --used <path>\012                       print the syntax node kinds, builtins and diagnostics a build touched, as JSON\012  explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`\012  <script>.byn         run a script, so `#!/usr/bin/env bayan` works\012  doctor               check the C compiler, zig, git and the build cache, with fixes\012  --version            print the compiler version and the commit it was built from\012  --help               print this message\012\012check, types, build, run, test and features take a project directory (one with `package.byn`; the\012default inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.\012\012options for every command:\012  --color auto|always|never\012                       color for terminals (auto: on unless piped or NO_COLOR is set;\012                       FORCE_COLOR turns it on, TERM=dumb off)\012  --ascii              use ASCII symbols instead of \342\227\206 \342\234\227 \342\224\202 (also with TERM=dumb or a non-UTF-8 locale)\012\012options for check, types, build, run and test:\012  --all                show every error instead of the first 20 (JSON is never capped)\012  --diagnostics json   print each diagnostic to stderr as one JSON object per line\012                       (code, severity, file, span, message, label, help, fixes)\012\012exit codes:\012  0  success\012  1  compile errors\012  2  usage errors (unknown command or option, missing path)\012  3  test failures, or a coverage or mutation score below its minimum\012  4  toolchain problems (no C compiler, unwritable cache, C compiler failure)\012\012`bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code\012through unchanged, so it cannot tell a build failure from a program that exits 1. When that\012matters, run `bayan build` first or read `--diagnostics json`.", 4126));
             byn_w_str(w, BYN_STR("\012", 1));
         }
-#line 183 "driver/main.byn"
+#line 93 "driver/main.byn"
         (void)byn_io_write(t4, byn_strbuf_str(t3));
-#line 184 "driver/main.byn"
+#line 94 "driver/main.byn"
         return ((int32_t)2);
     }
-#line 186 "driver/main.byn"
-    l5_command = (*bynh_at_list_str(l0_kept, (int64_t)INT64_C(0), false, byn_file_84, 186));
-#line 188 "driver/main.byn"
+#line 96 "driver/main.byn"
+    l5_command = (*bynh_at_list_str(l0_kept, (int64_t)INT64_C(0), false, byn_file_84, 96));
+#line 98 "driver/main.byn"
     if ((byn_str_eq(l5_command, BYN_STR("--version", 9)) || byn_str_eq(l5_command, BYN_STR("version", 7)))) {
-#line 189 "driver/main.byn"
+#line 99 "driver/main.byn"
         t7 = INT32_C(1);
-#line 189 "driver/main.byn"
+#line 99 "driver/main.byn"
         t6 = byn_strbuf_grow(byn_context);
-#line 189 "driver/main.byn"
+#line 99 "driver/main.byn"
         {
             byn_writer* w = &t6;
             w->file = byn_file_84;
-            w->line = 189;
+            w->line = 99;
             byn_w_str(w, byn_main__versionLine());
             byn_w_str(w, BYN_STR("\012", 1));
         }
-#line 189 "driver/main.byn"
+#line 99 "driver/main.byn"
         (void)byn_io_write(t7, byn_strbuf_str(t6));
-#line 190 "driver/main.byn"
+#line 100 "driver/main.byn"
         return ((int32_t)0);
-#line 188 "driver/main.byn"
+#line 98 "driver/main.byn"
         goto switch_end_1;
     }
-#line 191 "driver/main.byn"
+#line 101 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("doctor", 6))) {
+#line 102 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 101 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 103 "driver/main.byn"
     if (((byn_str_eq(l5_command, BYN_STR("--help", 6)) || byn_str_eq(l5_command, BYN_STR("-h", 2))) || byn_str_eq(l5_command, BYN_STR("help", 4)))) {
-#line 192 "driver/main.byn"
+#line 104 "driver/main.byn"
         t9 = INT32_C(1);
-#line 192 "driver/main.byn"
+#line 104 "driver/main.byn"
         t8 = byn_strbuf_grow(byn_context);
-#line 192 "driver/main.byn"
+#line 104 "driver/main.byn"
         {
             byn_writer* w = &t8;
             w->file = byn_file_84;
-            w->line = 192;
+            w->line = 104;
             byn_w_str(w, BYN_STR("usage: bayan <command> [args]\012\012commands:\012  new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]\012  init [<dir>]         add a project's missing files to a directory (same options as new)\012  lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)\012  parse [--ast] <file> check syntax; with --ast print the syntax tree\012  types <path>         print each function's parameter and local types as JSON\012  check <path>         report diagnostics for a program (a file or directory)\012  build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]\012                       [-v: print each phase's time and the output path]\012  run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]\012  test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]\012                       [--json: print the results as JSON instead]\012                       [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]\012                       [--only <text>: only tests whose name contains <text>; repeatable]\012                       [-v: also list the passing and pending tests]\012                       [--mutate: run every mutant against the tests that reach it; with --run <cmd>, run <cmd> once\012                       per mutant instead, with BAYAN_MUTANT set (exit 0 survived, non-zero killed)]\012  mutate --binary <exe> --sites <map.json> -- <cmd>\012                       run <cmd> once per mutant site of a prebuilt --mutate binary, as test --mutate --run does\012  dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]\012                       [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]\012  clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]\012  cache stats          show the shared build cache's location and size\012  format <path>        rewrite input forms (those with a fix-it) in a `.byn` file or a directory of them,\012                       and booleans and primitives to `style` in `package.byn` [--check: list, don't write]\012  audit <path>         list every `because` bypass and `unsafe` or `extern` declaration, with its reason\012  features --used <path>\012                       print the syntax node kinds, builtins and diagnostics a build touched, as JSON\012  explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`\012  <script>.byn         run a script, so `#!/usr/bin/env bayan` works\012  doctor               check the C compiler, zig, git and the build cache, with fixes\012  --version            print the compiler version and the commit it was built from\012  --help               print this message\012\012check, types, build, run, test and features take a project directory (one with `package.byn`; the\012default inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.\012\012options for every command:\012  --color auto|always|never\012                       color for terminals (auto: on unless piped or NO_COLOR is set;\012                       FORCE_COLOR turns it on, TERM=dumb off)\012  --ascii              use ASCII symbols instead of \342\227\206 \342\234\227 \342\224\202 (also with TERM=dumb or a non-UTF-8 locale)\012\012options for check, types, build, run and test:\012  --all                show every error instead of the first 20 (JSON is never capped)\012  --diagnostics json   print each diagnostic to stderr as one JSON object per line\012                       (code, severity, file, span, message, label, help, fixes)\012\012exit codes:\012  0  success\012  1  compile errors\012  2  usage errors (unknown command or option, missing path)\012  3  test failures, or a coverage or mutation score below its minimum\012  4  toolchain problems (no C compiler, unwritable cache, C compiler failure)\012\012`bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code\012through unchanged, so it cannot tell a build failure from a program that exits 1. When that\012matters, run `bayan build` first or read `--diagnostics json`.", 4126));
             byn_w_str(w, BYN_STR("\012", 1));
         }
-#line 192 "driver/main.byn"
+#line 104 "driver/main.byn"
         (void)byn_io_write(t9, byn_strbuf_str(t8));
-#line 193 "driver/main.byn"
+#line 105 "driver/main.byn"
         return ((int32_t)0);
-#line 191 "driver/main.byn"
+#line 103 "driver/main.byn"
         goto switch_end_1;
     }
-#line 194 "driver/main.byn"
+#line 106 "driver/main.byn"
     if (byn_str_eq(l5_command, BYN_STR("lex", 3))) {
-#line 195 "driver/main.byn"
+#line 107 "driver/main.byn"
         return byn_main__lexCommand(l0_kept);
-#line 194 "driver/main.byn"
+#line 106 "driver/main.byn"
         goto switch_end_1;
     }
-#line 196 "driver/main.byn"
+#line 108 "driver/main.byn"
     if (byn_str_eq(l5_command, BYN_STR("parse", 5))) {
-#line 197 "driver/main.byn"
+#line 109 "driver/main.byn"
         return byn_main__parseCommand(l0_kept);
-#line 196 "driver/main.byn"
+#line 108 "driver/main.byn"
         goto switch_end_1;
     }
-#line 198 "driver/main.byn"
+#line 110 "driver/main.byn"
     if (byn_str_eq(l5_command, BYN_STR("types", 5))) {
-#line 199 "driver/main.byn"
+#line 111 "driver/main.byn"
         return byn_main__typesCommand(l0_kept, (*p_d));
-#line 198 "driver/main.byn"
+#line 110 "driver/main.byn"
         goto switch_end_1;
     }
-#line 200 "driver/main.byn"
-    if (byn_str_eq(l5_command, BYN_STR("check", 5))) {
-#line 201 "driver/main.byn"
-        return byn_main__checkCommand(l0_kept, (*p_d));
-#line 200 "driver/main.byn"
-        goto switch_end_1;
-    }
-#line 202 "driver/main.byn"
-    if (byn_str_eq(l5_command, BYN_STR("build", 5))) {
-#line 203 "driver/main.byn"
-        return byn_main__buildCommand(l0_kept, (*p_d));
-#line 202 "driver/main.byn"
-        goto switch_end_1;
-    }
-#line 204 "driver/main.byn"
-    if (byn_str_eq(l5_command, BYN_STR("run", 3))) {
-#line 205 "driver/main.byn"
-        return byn_main__runProgram(byn_main__t2Rest(l0_kept), (*p_d));
-#line 204 "driver/main.byn"
-        goto switch_end_1;
-    }
-#line 206 "driver/main.byn"
-    if ((((((((((((byn_str_eq(l5_command, BYN_STR("doctor", 6)) || byn_str_eq(l5_command, BYN_STR("format", 6))) || byn_str_eq(l5_command, BYN_STR("audit", 5))) || byn_str_eq(l5_command, BYN_STR("features", 8))) || byn_str_eq(l5_command, BYN_STR("explain", 7))) || byn_str_eq(l5_command, BYN_STR("test", 4))) || byn_str_eq(l5_command, BYN_STR("mutate", 6))) || byn_str_eq(l5_command, BYN_STR("new", 3))) || byn_str_eq(l5_command, BYN_STR("dist", 4))) || byn_str_eq(l5_command, BYN_STR("cache", 5))) || byn_str_eq(l5_command, BYN_STR("clean", 5))) || byn_str_eq(l5_command, BYN_STR("init", 4)))) {
-#line 207 "driver/main.byn"
+#line 112 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("format", 6))) {
+#line 113 "driver/main.byn"
         return byn_main__refuse(l5_command);
-#line 206 "driver/main.byn"
+#line 112 "driver/main.byn"
         goto switch_end_1;
     }
-#line 210 "driver/main.byn"
+#line 114 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("audit", 5))) {
+#line 115 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 114 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 116 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("features", 8))) {
+#line 117 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 116 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 118 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("explain", 7))) {
+#line 119 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 118 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 120 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("check", 5))) {
+#line 121 "driver/main.byn"
+        return byn_main__checkCommand(l0_kept, (*p_d));
+#line 120 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 122 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("build", 5))) {
+#line 123 "driver/main.byn"
+        return byn_main__buildCommand(l0_kept, (*p_d));
+#line 122 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 124 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("run", 3))) {
+#line 125 "driver/main.byn"
+        return byn_main__runProgram(byn_main__t2Rest(l0_kept), (*p_d));
+#line 124 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 126 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("test", 4))) {
+#line 127 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 126 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 128 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("mutate", 6))) {
+#line 129 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 128 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 130 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("new", 3))) {
+#line 131 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 130 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 132 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("dist", 4))) {
+#line 133 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 132 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 134 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("cache", 5))) {
+#line 135 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 134 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 136 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("clean", 5))) {
+#line 137 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 136 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 138 "driver/main.byn"
+    if (byn_str_eq(l5_command, BYN_STR("init", 4))) {
+#line 139 "driver/main.byn"
+        return byn_main__refuse(l5_command);
+#line 138 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 142 "driver/main.byn"
     if ((byn_str_ends_with(l5_command, BYN_STR(".byn", 4)) && byn_main__t1FileExists(l5_command))) {
-#line 211 "driver/main.byn"
+#line 143 "driver/main.byn"
         l10_script = ((bynt_list_str){NULL, 0, 0, byn_context});
-#line 212 "driver/main.byn"
+#line 144 "driver/main.byn"
         (void)bynh_add_list_str(&l10_script, l5_command);
-#line 213 "driver/main.byn"
+#line 145 "driver/main.byn"
         (void)bynh_add_list_str(&l10_script, BYN_STR("--", 2));
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
         t12 = byn_main__t2Rest(l0_kept);
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
         t13 = INT64_C(0);
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
         for (;;) {
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
             if ((!(t13 < t12.len))) {
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
                 goto break_2;
             }
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
             l11_a = t12.ptr[t13];
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
             (void)bynh_add_list_str(&l10_script, l11_a);
         continue_3:;
-#line 214 "driver/main.byn"
+#line 146 "driver/main.byn"
             t13 = byn_addw_i64(t13, INT64_C(1));
         }
     break_2:;
-#line 215 "driver/main.byn"
+#line 147 "driver/main.byn"
         return byn_main__runProgram(l10_script, (*p_d));
     }
-#line 217 "driver/main.byn"
+#line 149 "driver/main.byn"
     t15 = INT32_C(2);
-#line 217 "driver/main.byn"
+#line 149 "driver/main.byn"
     t14 = byn_strbuf_grow(byn_context);
-#line 217 "driver/main.byn"
+#line 149 "driver/main.byn"
     {
         byn_writer* w = &t14;
         w->file = byn_file_84;
-        w->line = 217;
+        w->line = 149;
         byn_w_str(w, BYN_STR("bayan: unknown command `", 24));
         byn_w_str(w, l5_command);
         byn_w_str(w, BYN_STR("`\012", 2));
     }
-#line 217 "driver/main.byn"
+#line 149 "driver/main.byn"
     (void)byn_io_write(t15, byn_strbuf_str(t14));
-#line 218 "driver/main.byn"
+#line 150 "driver/main.byn"
     if (byn_str_eq(l5_command, BYN_STR("fmt", 3))) {
-#line 218 "driver/main.byn"
+#line 150 "driver/main.byn"
         (void)byn_io_write(INT32_C(2), BYN_STR("the formatter is `bayan format`\012", 32));
     }
-#line 219 "driver/main.byn"
+#line 151 "driver/main.byn"
     t17 = INT32_C(2);
-#line 219 "driver/main.byn"
+#line 151 "driver/main.byn"
     t16 = byn_strbuf_grow(byn_context);
-#line 219 "driver/main.byn"
+#line 151 "driver/main.byn"
     {
         byn_writer* w = &t16;
         w->file = byn_file_84;
-        w->line = 219;
+        w->line = 151;
         byn_w_str(w, BYN_STR("usage: bayan <command> [args]\012\012commands:\012  new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]\012  init [<dir>]         add a project's missing files to a directory (same options as new)\012  lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)\012  parse [--ast] <file> check syntax; with --ast print the syntax tree\012  types <path>         print each function's parameter and local types as JSON\012  check <path>         report diagnostics for a program (a file or directory)\012  build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]\012                       [-v: print each phase's time and the output path]\012  run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]\012  test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]\012                       [--json: print the results as JSON instead]\012                       [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]\012                       [--only <text>: only tests whose name contains <text>; repeatable]\012                       [-v: also list the passing and pending tests]\012                       [--mutate: run every mutant against the tests that reach it; with --run <cmd>, run <cmd> once\012                       per mutant instead, with BAYAN_MUTANT set (exit 0 survived, non-zero killed)]\012  mutate --binary <exe> --sites <map.json> -- <cmd>\012                       run <cmd> once per mutant site of a prebuilt --mutate binary, as test --mutate --run does\012  dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]\012                       [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]\012  clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]\012  cache stats          show the shared build cache's location and size\012  format <path>        rewrite input forms (those with a fix-it) in a `.byn` file or a directory of them,\012                       and booleans and primitives to `style` in `package.byn` [--check: list, don't write]\012  audit <path>         list every `because` bypass and `unsafe` or `extern` declaration, with its reason\012  features --used <path>\012                       print the syntax node kinds, builtins and diagnostics a build touched, as JSON\012  explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`\012  <script>.byn         run a script, so `#!/usr/bin/env bayan` works\012  doctor               check the C compiler, zig, git and the build cache, with fixes\012  --version            print the compiler version and the commit it was built from\012  --help               print this message\012\012check, types, build, run, test and features take a project directory (one with `package.byn`; the\012default inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.\012\012options for every command:\012  --color auto|always|never\012                       color for terminals (auto: on unless piped or NO_COLOR is set;\012                       FORCE_COLOR turns it on, TERM=dumb off)\012  --ascii              use ASCII symbols instead of \342\227\206 \342\234\227 \342\224\202 (also with TERM=dumb or a non-UTF-8 locale)\012\012options for check, types, build, run and test:\012  --all                show every error instead of the first 20 (JSON is never capped)\012  --diagnostics json   print each diagnostic to stderr as one JSON object per line\012                       (code, severity, file, span, message, label, help, fixes)\012\012exit codes:\012  0  success\012  1  compile errors\012  2  usage errors (unknown command or option, missing path)\012  3  test failures, or a coverage or mutation score below its minimum\012  4  toolchain problems (no C compiler, unwritable cache, C compiler failure)\012\012`bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code\012through unchanged, so it cannot tell a build failure from a program that exits 1. When that\012matters, run `bayan build` first or read `--diagnostics json`.", 4126));
         byn_w_str(w, BYN_STR("\012", 1));
     }
-#line 219 "driver/main.byn"
+#line 151 "driver/main.byn"
     (void)byn_io_write(t17, byn_strbuf_str(t16));
-#line 220 "driver/main.byn"
+#line 152 "driver/main.byn"
     return ((int32_t)2);
 switch_end_1:;
 }
-#line 179228 "main.c"
+#line 179031 "main.c"
+
+bool byn_main__takeGlobalOptions(bynt_span_str p_args, bynt_list_str* p_kept, bynt_main__DCtx* p_d) {
+    byn_str l0_color = {0};
+    bool l1_command = {0};
+    int64_t l2_i = {0};
+    bynt_opt_str l3_value = {0};
+    int64_t l4_k = {0};
+    int64_t t5 = {0};
+    int64_t t6 = {0};
+    bynt_opt_str t7 = {0};
+    byn_str t8 = {0};
+    int64_t t9 = {0};
+    bynt_opt_str t10 = {0};
+    bynt_opt_str t11 = {0};
+    byn_str l12_v = {0};
+    byn_writer t13 = {0};
+    int32_t t14 = {0};
+#line 159 "driver/main.byn"
+    l0_color = BYN_STR("auto", 4);
+#line 160 "driver/main.byn"
+    l1_command = false;
+#line 161 "driver/main.byn"
+    l2_i = INT64_C(0);
+#line 162 "driver/main.byn"
+    for (;;) {
+#line 162 "driver/main.byn"
+        if ((!(l2_i < p_args.len))) {
+#line 162 "driver/main.byn"
+            goto break_1;
+        }
+#line 163 "driver/main.byn"
+        l3_value = ((bynt_opt_str){0});
+#line 165 "driver/main.byn"
+        if ((byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 165)), BYN_STR("--", 2)) || ((((!l1_command) && (!byn_str_starts_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 165)), BYN_STR("-", 1)))) && byn_str_ends_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 165)), BYN_STR(".byn", 4))) && byn_main__t1FileExists((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 165)))))) {
+#line 166 "driver/main.byn"
+            t5 = l2_i;
+#line 166 "driver/main.byn"
+            t6 = p_args.len;
+#line 166 "driver/main.byn"
+            for (;;) {
+#line 166 "driver/main.byn"
+                if ((!(t5 < t6))) {
+#line 166 "driver/main.byn"
+                    goto break_3;
+                }
+#line 166 "driver/main.byn"
+                l4_k = t5;
+#line 166 "driver/main.byn"
+                (void)bynh_add_list_str(&(*p_kept), (*bynh_at_span_str(p_args, (int64_t)l4_k, false, byn_file_84, 166)));
+            continue_4:;
+#line 166 "driver/main.byn"
+                t5 = byn_addw_i64(t5, INT64_C(1));
+            }
+        break_3:;
+#line 167 "driver/main.byn"
+            goto break_1;
+        }
+#line 169 "driver/main.byn"
+        if ((!byn_str_starts_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 169)), BYN_STR("-", 1)))) {
+#line 169 "driver/main.byn"
+            l1_command = true;
+        }
+#line 170 "driver/main.byn"
+        if (byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 170)), BYN_STR("--ascii", 7))) {
+#line 171 "driver/main.byn"
+            (*p_d).ascii = true;
+#line 172 "driver/main.byn"
+            l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 172);
+#line 173 "driver/main.byn"
+            goto continue_2;
+        }
+#line 175 "driver/main.byn"
+        if ((byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 175)), BYN_STR("--color", 7)) && (byn_add_i64(l2_i, INT64_C(1), byn_file_84, 175) < p_args.len))) {
+#line 176 "driver/main.byn"
+            l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 176);
+#line 177 "driver/main.byn"
+            t7 = ((bynt_opt_str){true, (*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 177))});
+#line 177 "driver/main.byn"
+            l3_value = t7;
+        } else {
+#line 178 "driver/main.byn"
+            if (byn_str_starts_with((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 178)), BYN_STR("--color=", 8))) {
+#line 179 "driver/main.byn"
+                t8 = (*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 179));
+#line 179 "driver/main.byn"
+                t9 = BYN_STR("--color=", 8).len;
+#line 179 "driver/main.byn"
+                t10 = ((bynt_opt_str){true, bynh_slice_str(t8, (int64_t)t9, 0, (int64_t)(*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 179)).len, 0, false, byn_file_84, 179)});
+#line 179 "driver/main.byn"
+                l3_value = t10;
+            } else {
+#line 180 "driver/main.byn"
+                if (byn_str_eq((*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 180)), BYN_STR("--color", 7))) {
+#line 181 "driver/main.byn"
+                    t11 = ((bynt_opt_str){true, BYN_STR("", 0)});
+#line 181 "driver/main.byn"
+                    l3_value = t11;
+                }
+            }
+        }
+#line 183 "driver/main.byn"
+        if ((!(l3_value.has && ((l12_v = l3_value.value), true)))) {
+#line 184 "driver/main.byn"
+            (void)bynh_add_list_str(&(*p_kept), (*bynh_at_span_str(p_args, (int64_t)l2_i, false, byn_file_84, 184)));
+#line 185 "driver/main.byn"
+            l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 185);
+#line 186 "driver/main.byn"
+            goto continue_2;
+        }
+#line 188 "driver/main.byn"
+        if ((((!byn_str_eq(l12_v, BYN_STR("auto", 4))) && (!byn_str_eq(l12_v, BYN_STR("always", 6)))) && (!byn_str_eq(l12_v, BYN_STR("never", 5))))) {
+#line 189 "driver/main.byn"
+            t14 = INT32_C(2);
+#line 189 "driver/main.byn"
+            t13 = byn_strbuf_grow(byn_context);
+#line 189 "driver/main.byn"
+            {
+                byn_writer* w = &t13;
+                w->file = byn_file_84;
+                w->line = 189;
+                byn_w_str(w, BYN_STR("bayan: unknown color setting `", 30));
+                byn_w_str(w, l12_v);
+                byn_w_str(w, BYN_STR("` (expected auto, always or never)\012", 35));
+            }
+#line 189 "driver/main.byn"
+            (void)byn_io_write(t14, byn_strbuf_str(t13));
+#line 190 "driver/main.byn"
+            return false;
+        }
+#line 192 "driver/main.byn"
+        l0_color = l12_v;
+#line 193 "driver/main.byn"
+        l2_i = byn_add_i64(l2_i, INT64_C(1), byn_file_84, 193);
+    continue_2:;
+    }
+break_1:;
+#line 195 "driver/main.byn"
+    (*p_d).color = l0_color;
+#line 196 "driver/main.byn"
+    return true;
+}
+#line 179173 "main.c"
+
+bynt_main__DStyle byn_main__decideStyle(byn_str p_colorFlag, bool p_ascii, bool p_isTty, int64_t p_width) {
+    bool l0_color = {0};
+#line 202 "driver/main.byn"
+    l0_color = false;
+#line 204 "driver/main.byn"
+    if (byn_str_eq(p_colorFlag, BYN_STR("always", 6))) {
+#line 205 "driver/main.byn"
+        l0_color = true;
+#line 204 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 206 "driver/main.byn"
+    if (byn_str_eq(p_colorFlag, BYN_STR("never", 5))) {
+#line 207 "driver/main.byn"
+        l0_color = false;
+#line 206 "driver/main.byn"
+        goto switch_end_1;
+    }
+#line 210 "driver/main.byn"
+    l0_color = p_isTty;
+switch_end_1:;
+#line 213 "driver/main.byn"
+    return ((bynt_main__DStyle){l0_color, p_ascii, ((p_isTty && (p_width > INT64_C(0))) ? p_width : INT64_C(100))});
+}
+#line 179199 "main.c"
+
+bool byn_main__t1FileExists(byn_str p_path) {
+    bynt_list_str l0__ = {0};
+    byn_err t1 = {0};
+    bynt_list_str t2 = {0};
+    bynt_list_u8 l3__ = {0};
+    byn_err t4 = {0};
+    bynt_list_u8 t5 = {0};
+#line 218 "driver/main.byn"
+    t1 = (byn_err){ .code = bynh_io_list_dir(p_path, &t2) };
+#line 218 "driver/main.byn"
+    if ((!(t1.code == ((uint32_t)0)))) {
+#line 219 "driver/main.byn"
+        t4 = (byn_err){ .code = bynh_io_read_file(p_path, &t5) };
+#line 219 "driver/main.byn"
+        if ((!(t4.code == ((uint32_t)0)))) {
+#line 219 "driver/main.byn"
+            return false;
+        }
+#line 219 "driver/main.byn"
+        l3__ = t5;
+#line 220 "driver/main.byn"
+        return true;
+    }
+#line 218 "driver/main.byn"
+    l0__ = t2;
+#line 222 "driver/main.byn"
+    return false;
+}
+#line 179229 "main.c"
+
+bool byn_main__t1IsScript(byn_str p_path) {
+    bynt_list_u8 l0_bytes = {0};
+    byn_err t1 = {0};
+    bynt_list_u8 t2 = {0};
+#line 227 "driver/main.byn"
+    if ((!byn_main__t1FileExists(p_path))) {
+#line 227 "driver/main.byn"
+        return false;
+    }
+#line 229 "driver/main.byn"
+    t1 = (byn_err){ .code = bynh_io_read_file(p_path, &t2) };
+#line 229 "driver/main.byn"
+    if ((!(t1.code == ((uint32_t)0)))) {
+#line 229 "driver/main.byn"
+        return false;
+    }
+#line 229 "driver/main.byn"
+    l0_bytes = t2;
+#line 230 "driver/main.byn"
+    return (((l0_bytes.len >= INT64_C(2)) && ((*bynh_at_list_u8(l0_bytes, (int64_t)INT64_C(0), false, byn_file_84, 230)) == ((uint8_t)35))) && ((*bynh_at_list_u8(l0_bytes, (int64_t)INT64_C(1), false, byn_file_84, 230)) == ((uint8_t)33)));
+}
+#line 179252 "main.c"
+
+bool byn_main__refuseLibrary(bynt_semantics__Ctx p_compiled, byn_str p_command) {
+    byn_writer t0 = {0};
+    int32_t t1 = {0};
+#line 235 "driver/main.byn"
+    if ((!p_compiled.library)) {
+#line 235 "driver/main.byn"
+        return false;
+    }
+#line 236 "driver/main.byn"
+    t1 = INT32_C(2);
+#line 236 "driver/main.byn"
+    t0 = byn_strbuf_grow(byn_context);
+#line 236 "driver/main.byn"
+    {
+        byn_writer* w = &t0;
+        w->file = byn_file_84;
+        w->line = 236;
+        byn_w_str(w, BYN_STR("bayan: `", 8));
+        byn_w_str(w, p_compiled.packageName);
+        byn_w_str(w, BYN_STR("` is a library, so there is no program to ", 42));
+        byn_w_str(w, p_command);
+        byn_w_str(w, BYN_STR("; `bayan test` runs its tests\012", 30));
+    }
+#line 236 "driver/main.byn"
+    (void)byn_io_write(t1, byn_strbuf_str(t0));
+#line 237 "driver/main.byn"
+    return true;
+}
+#line 179282 "main.c"
+
+int32_t byn_main__refuse(byn_str p_what) {
+    byn_writer t0 = {0};
+    int32_t t1 = {0};
+#line 242 "driver/main.byn"
+    t1 = INT32_C(2);
+#line 242 "driver/main.byn"
+    t0 = byn_strbuf_grow(byn_context);
+#line 242 "driver/main.byn"
+    {
+        byn_writer* w = &t0;
+        w->file = byn_file_84;
+        w->line = 242;
+        byn_w_str(w, BYN_STR("error: `", 8));
+        byn_w_str(w, p_what);
+        byn_w_str(w, BYN_STR("` is not available in the self-hosted compiler; use the C# `bayan`\012", 67));
+    }
+#line 242 "driver/main.byn"
+    (void)byn_io_write(t1, byn_strbuf_str(t0));
+#line 243 "driver/main.byn"
+    return ((int32_t)2);
+}
+#line 179305 "main.c"
 
 int32_t byn_main__main(bynt_span_str p_args) {
     bynt_main__DCtx l0_d = {0};
-#line 225 "driver/main.byn"
+#line 247 "driver/main.byn"
     l0_d = byn_main__newDCtx();
-#line 226 "driver/main.byn"
+#line 248 "driver/main.byn"
     return byn_main__run(p_args, &l0_d);
 }
-#line 179237 "main.c"
+#line 179314 "main.c"
 
 bynt_main__NativeBuild byn_main__ZigOrCc__compile(bynt_main__ZigOrCc* self, byn_str p_dir, byn_str p_source, byn_str p_output, byn_str p_mode, bynt_opt_str p_target) {
     bynt_list_str l0_compiler = {0};
@@ -179367,7 +179444,7 @@ break_1:;
 #line 219 "driver/cc.byn"
     return ((bynt_main__NativeBuild){true, BYN_STR("", 0), false});
 }
-#line 179371 "main.c"
+#line 179448 "main.c"
 
 int main(int argc, char** argv) {
     byn_err err = {0};

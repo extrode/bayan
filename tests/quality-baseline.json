@@ -14,7 +14,7 @@
     "selfhost/driver/commands.byn": {
       "mutation": null,
       "coverage": 0.9643,
-      "branches": 0.9643
+      "branches": 0.9667
     },
     "selfhost/driver/dctx.byn": {
       "mutation": null,
@@ -23,7 +23,7 @@
     },
     "selfhost/driver/main.byn": {
       "mutation": null,
-      "coverage": 0.9896,
+      "coverage": 0.9914,
       "branches": 1.0
     },
     "selfhost/emitter/cprint/builtin.byn": {
