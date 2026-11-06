@@ -78,7 +78,8 @@ grep -q "no commit for 'nope'" "$tmp/err" || fail "no unknown-ref message: $(cat
 if PINNED_BAYAN="$tmp/none" "$script" 2> "$tmp/err"; then fail "a missing PINNED_BAYAN was accepted"; fi
 grep -q "PINNED_BAYAN=$tmp/none is not an executable" "$tmp/err" || fail "no PINNED_BAYAN message"
 
-# After a build only the newest 3 commits stay, the new one among them; a recent build in progress is left alone.
+# After a build only the 3 most recently used commits stay, the new one among them; a recent build in progress is left alone.
+for d in "$r/.cache/bayan"/*/; do touch -t 202001010000 "$d"; done  # everything built so far is long unused
 for i in 1 2 3 4 5; do mkdir -p "$r/.cache/bayan/fake$i/bin"; touch -t 20200101000$i "$r/.cache/bayan/fake$i"; done
 mkdir -p "$r/.cache/bayan/.build-other-1"
 git checkout -q -b evict race; echo evict > src/Bayan.Cli/stamp; git commit -qam evict; evsha=$(git rev-parse evict)
@@ -87,6 +88,16 @@ PINNED_BAYAN_REF=evict "$script" > "$tmp/out" || fail "the eviction build failed
 [ ! -e "$r/.cache/bayan/$evsha/src" ] || fail "the build's src checkout was kept"
 [ "$(ls "$r/.cache/bayan" | wc -l | tr -d ' ')" -le 3 ] || fail "more than 3 cached commits remain: $(ls "$r/.cache/bayan")"
 [ -d "$r/.cache/bayan/.build-other-1" ] || fail "a recent build in progress was removed"
+git checkout -q feat/x
+
+# Resolving touches the pin, so eviction follows last use; a pin used within 2 hours survives even past the keep count.
+touch -t 202001010000 "$r/.cache/bayan/$evsha"
+PINNED_BAYAN_REF=evict "$script" > /dev/null || fail "resolving the cached pin failed"
+[ -n "$(find "$r/.cache/bayan/$evsha" -maxdepth 0 -mmin -5)" ] || fail "resolving did not touch the pin"
+for i in 1 2 3 4; do mkdir -p "$r/.cache/bayan/recent$i/bin"; done
+git checkout -q -b evict2 evict; echo evict2 > src/Bayan.Cli/stamp; git commit -qam evict2
+PINNED_BAYAN_REF=evict2 "$script" > /dev/null || fail "the second eviction build failed"
+for i in 1 2 3 4; do [ -d "$r/.cache/bayan/recent$i" ] || fail "a pin used within 2 hours was evicted"; done
 git checkout -q feat/x
 
 # Wiring: the mutation step runs the pinned bayan; CI's mutation run pins the commit it checked out.

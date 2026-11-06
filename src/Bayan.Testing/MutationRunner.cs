@@ -57,6 +57,9 @@ public static class MutationRunner
         var results = new List<MutantResult>();
         foreach (var site in schema.Sites)
         {
+            // Another process sweeps `bayan-mutate-*` directories idle for an hour; this one is in use.
+            try { Directory.SetLastWriteTimeUtc(workDir, DateTime.UtcNow); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
             var result = Mutant(executable, site, ran, reach, time, ref processes);
             results.Add(result);
             onMutant?.Invoke(result);

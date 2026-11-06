@@ -593,6 +593,13 @@ public static class CliApp
         return ExitOk;
     }
 
+    /// <summary>Removes a scratch directory; one another process already swept or that cannot be removed is not an error.</summary>
+    internal static void DeleteWorkDir(string dir)
+    {
+        try { Directory.Delete(dir, recursive: true); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>A test that runs longer than this (60 s, or <c>$BAYAN_TEST_TIMEOUT_MS</c>) is stopped and reported as timed out.</summary>
     private static TimeSpan TestTimeout =>
         int.TryParse(Environment.GetEnvironmentVariable("BAYAN_TEST_TIMEOUT_MS"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var ms) && ms > 0
@@ -742,7 +749,7 @@ public static class CliApp
         }
         finally
         {
-            if (coverageDir is not null) Directory.Delete(coverageDir, recursive: true);
+            if (coverageDir is not null) DeleteWorkDir(coverageDir);
         }
     }
 
@@ -843,7 +850,7 @@ public static class CliApp
         }
         finally
         {
-            work.Delete(recursive: true);
+            DeleteWorkDir(work.FullName);
         }
     }
 
@@ -980,7 +987,7 @@ public static class CliApp
         return lines;
     }
 
-    private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
+    internal sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
 
     private sealed record ChangedSet(bool All, HashSet<string> Directories);
 
@@ -1037,7 +1044,7 @@ public static class CliApp
         return dir;
     }
 
-    private static TestOutcome RunTest(string executable, int index, string? coveragePrefix = null)
+    internal static TestOutcome RunTest(string executable, int index, string? coveragePrefix = null)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(executable)
         {
@@ -1060,7 +1067,11 @@ public static class CliApp
             p.WaitForExit();
             // A grandchild may still hold the pipes open; do not wait for them forever.
             // What was read so far is kept either way.
-            Task.WaitAll([stdout.Completion, stderr.Completion], TimeSpan.FromSeconds(5));
+            try { Task.WaitAll([stdout.Completion, stderr.Completion], TimeSpan.FromSeconds(5)); }
+            catch (AggregateException) { }
+            // Closing our ends ends the readers still blocked on a pipe a grandchild holds open.
+            try { p.StandardOutput.Dispose(); p.StandardError.Dispose(); }
+            catch (Exception e) when (e is IOException or ObjectDisposedException) { }
             return new TestOutcome(-1, true, stdout.Snapshot(), stderr.Snapshot(), clock.Elapsed);
         }
         return new TestOutcome(p.ExitCode, false, stdout.Completion.Result, stderr.Completion.Result, clock.Elapsed);
