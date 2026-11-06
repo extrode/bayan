@@ -152,3 +152,19 @@ Unrelated issues seen while auditing:
   trap: an unparenthesized `!x is P` or `not x is P` is an error, with fix-its to `!(x is P)` and `x is not P`.
 - Superseded rows found while preparing the batch: `when` guards exist (SPEC :877); `dbg` is an error in release
   (SPEC :920). Still open: the payload size-ratio lint threshold (moves to batch 6, with the other numbers).
+
+### Batch 4 (user, 2026-11-06)
+- **R4.4 keyword budget:** first audit the reserved list (92 today, `Keywords.cs`) and drop reserved-but-unused words,
+  then GRAMMAR states the new count as the cap. The cap counts reserved keywords only; words that appear only in a
+  clause position become contextual wherever the parser allows. A new reserved word names what it replaces or why no
+  existing word fits, and arrives only through an edition.
+- **R4.2 spelling:** keep `extension` (SPEC :107, already a keyword); no `extend`.
+- **R4.3 `@deprecated(by:, until:)`:** accepted. The error from `until:` is keyed to the consuming package's edition.
+  A fix-it is offered only when `by:` names a same-shape replacement. Without `by:`, the attribute requires `because`.
+- **R4.5 beginner golden:** accepted for everyday features only; advanced features (typestate, `unsafe`, region refs,
+  `extern`) are listed as exempt.
+- **R4.8 `because` on every escape hatch:** accepted as written (`unsafe`, `@allow`, `@json(expose)`, `…Unchecked`
+  calls, `@unformatted`; BYN8001's list grows).
+- **Word order:** the guide gains one sentence on type-first declarations against name-first locals.
+- **§5 guardrails:** accepted: no `!` suppression (a trapping unwrap, if wanted, is spelled `?? panic "…"`); `return`
+  inside a lambda is local to it; inference never crosses the module.
