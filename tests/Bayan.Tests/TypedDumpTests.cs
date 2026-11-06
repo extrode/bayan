@@ -74,7 +74,15 @@ public sealed class TypedDumpTests
             var dir = Path.GetDirectoryName(copy)!;
             Directory.CreateDirectory(dir);
             if (isModule)
-                foreach (var f in Directory.EnumerateFiles(Path.GetDirectoryName(path)!)) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
+            {
+                var src = Path.GetDirectoryName(path)!;
+                foreach (var f in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
+                {
+                    var to = Path.Combine(dir, Path.GetRelativePath(src, f));
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.Copy(f, to);
+                }
+            }
             else
                 File.Copy(path, copy);
             var first = Dump(path, isModule);
