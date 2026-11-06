@@ -7,17 +7,16 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 gate="$root/scripts/release/memory-gate.sh"
 doc="$root/docs/memory-leaks.md"
 wf="$root/.github/workflows/release.yml"
-tmp="$root/tmp/memory-gate-test"
-rm -rf "$tmp"; mkdir -p "$tmp/bin"
+mkdir -p "$root/tmp"; tmp="$(mktemp -d "$root/tmp/memory-gate-test.XXXXXX")"; mkdir -p "$tmp/bin"
 trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # The doc's gate block, comments dropped, is the list the script must run.
-awk '/^## Release gate/{s=1} s&&/^```sh/{b=1;next} b&&/^```/{exit} b' "$doc" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//' \
+awk '/^## /{if(s)exit} /^## Release gate/{s=1} s&&/^```sh/{b=1;next} b&&/^```/{exit} b' "$doc" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//' \
   | grep -v '^$' > "$tmp/doc-cmds"
 [ -s "$tmp/doc-cmds" ] || fail "no command block under '## Release gate' in docs/memory-leaks.md"
 while IFS= read -r c; do
-  grep -qF "run $c" "$gate" || fail "memory-gate.sh does not run the documented gate command: $c"
+  grep -qxF "run $c" "$gate" || fail "memory-gate.sh does not run the documented gate command: $c"
 done < "$tmp/doc-cmds"
 [ "$(grep -c '^run ' "$gate")" = "$(wc -l < "$tmp/doc-cmds" | tr -d ' ')" ] || fail "memory-gate.sh runs commands the doc's gate block does not list"
 grep -q 'scripts/release/memory-gate.sh' "$doc" || fail "docs/memory-leaks.md does not name scripts/release/memory-gate.sh"
@@ -50,7 +49,7 @@ if FAIL_ON=pinned bash "$w/scripts/release/memory-gate.sh" > /dev/null 2> "$tmp/
 grep -q "FAILED: bash scripts/pinned-bayan.test.sh" "$tmp/err" || fail "the pinned-bayan failure was not named"
 
 # Wiring: release.yml runs the gate in its own job and the draft release needs it.
-grep -q 'bash scripts/release/memory-gate.sh' "$wf" || fail "release.yml does not run memory-gate.sh"
-awk '/^  release:/{r=1} r&&/needs:/{print; exit}' "$wf" | grep -q 'memory-gate' || fail "release.yml's release job does not need memory-gate"
 grep -q '^  memory-gate:' "$wf" || fail "release.yml has no memory-gate job"
+awk '/^  memory-gate:/{j=1;next} j&&/^  [^ ]/{exit} j' "$wf" | grep -qE '^ +run: bash scripts/release/memory-gate.sh$' || fail "release.yml's memory-gate job does not run memory-gate.sh"
+awk '/^  release:/{r=1} r&&/needs:/{print; exit}' "$wf" | grep -q 'memory-gate' || fail "release.yml's release job does not need memory-gate"
 echo PASS
