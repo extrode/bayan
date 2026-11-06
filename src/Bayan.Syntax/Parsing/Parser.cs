@@ -297,6 +297,18 @@ public sealed class Parser
                     break;
             }
         }
+        // Each line's first token, and the first token of the line its statement starts on, filled forward: the statement
+        // starts on the first line reached by stepping back over joined lines and bracketed groups, and every step goes back.
+        var first = new int[_count];
+        var statement = new int[_count];
+        for (var i = 0; i < _count; i++)
+        {
+            first[i] = i > 0 && !_tokens[i].HasNewlineBefore ? first[i - 1] : i;
+            statement[i] = i;
+            if (first[i] != i) continue;
+            if (opener[i] >= 0) statement[i] = statement[first[opener[i]]];
+            else if (i > 0 && JoinsLineBefore(i)) statement[i] = statement[first[i - 1]];
+        }
         for (var i = 1; i < _count; i++)
         {
             if (!BreaksLine(i) || HasBlankLineBefore(i) || !IsWasl(i)) continue;
@@ -305,14 +317,7 @@ public sealed class Parser
             if (KindAt(i) == TokenKind.CatchKeyword && KindAt(i - 1) == TokenKind.CloseBrace) continue;
             // At a field's indentation `requires` is a struct-level rule (O3, spec §2.5), so its indentation is meant.
             if (KindAt(i) == TokenKind.RequiresKeyword) continue;
-            // The statement starts on the first line reached by stepping back over joined lines and bracketed groups.
-            var start = LineFirst(i - 1);
-            while (true)
-            {
-                if (opener[start] >= 0) start = LineFirst(opener[start]);
-                else if (start > 0 && JoinsLineBefore(start)) start = LineFirst(start - 1);
-                else break;
-            }
+            var start = statement[first[i - 1]];
             var indent = IndentAt(_tokens[i].Start);
             var statementIndent = IndentAt(_tokens[start].Start);
             if (indent.Length > statementIndent.Length) continue;
@@ -323,13 +328,6 @@ public sealed class Parser
                 fix: new Fix(new TextSpan(lineStart, indent.Length), statementIndent + "    "));
         }
         return lints.Items;
-    }
-
-    /// <summary>The first token on the line of token <paramref name="index"/>.</summary>
-    private int LineFirst(int index)
-    {
-        while (index > 0 && !_tokens[index].HasNewlineBefore) index--;
-        return index;
     }
 
     /// <summary>Whether the line starting at token <paramref name="index"/> continues the line before: inside <c>()</c> or <c>[]</c>, waṣl, or after lā (not <c>{</c>, which opens a block).</summary>
