@@ -60,3 +60,22 @@ OS. Until a program can `import std.json` and get Bayān source shipped with the
 
 ## Open questions
 - None.
+
+## Decision for T4 (user, 2026-11-06): `std.json` members, tree and encode first
+The pull reader stays internal in this task (S7's layering kept inside the module). Public members:
+```
+enum JsonKind { null, bool, number, string, list, object }
+struct JsonValue  // kind and payload; a number keeps its f64 and its source text
+  JsonKind kind
+  bool asBool() fails JsonError
+  f64 asNumber() fails JsonError
+  i64 asInteger() fails JsonError        // a number with no fraction or exponent overflow
+  string asString() fails JsonError
+  List<JsonValue> items() fails JsonError
+  List<string> keys() fails JsonError    // in source order
+  JsonValue? get(string key)             // none: absent, or not an object
+  JsonValue at(i32 index) fails JsonError
+Untrusted<JsonValue> Json.parse(string text) fails JsonError   // the message carries line:col
+string Json.encode(JsonValue v, i32 indent = 0)                // indent 2 = Python json.dumps(indent=2)
+JsonValue Json.object(List<(string, JsonValue)>), Json.list, Json.number, Json.string, Json.bool, Json.null
+```
