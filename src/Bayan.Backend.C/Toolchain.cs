@@ -130,13 +130,13 @@ public static class Toolchain
         if (FindOnPath("clang") is { } clang) yield return [clang];
     }
 
-    /// <summary>Test seams: how long the probe waits for a candidate to compile, and for its program to run.</summary>
     /// <summary>How long one C compiler run may take: 10 minutes, or <c>$BAYAN_CC_TIMEOUT_S</c> seconds.</summary>
     private static TimeSpan CompileTimeout =>
         int.TryParse(Environment.GetEnvironmentVariable("BAYAN_CC_TIMEOUT_S"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var s) && s > 0
             ? TimeSpan.FromSeconds(s)
             : TimeSpan.FromMinutes(10);
 
+    /// <summary>Test seams: how long the probe waits for a candidate to compile, and for its program to run.</summary>
     internal static TimeSpan ProbeCompileTimeout { get; set; } = TimeSpan.FromSeconds(120);
 
     internal static TimeSpan ProbeRunTimeout { get; set; } = TimeSpan.FromSeconds(10);
@@ -404,24 +404,26 @@ public static class Toolchain
     /// <summary>
     /// Removes what an interrupted run left behind and nothing cleans up later: <c>bayan-coverage-*</c>,
     /// <c>bayan-mutate-*</c> and <c>bayan-asan-*</c> under <paramref name="tempRoot"/>, and everything in the cache's
-    /// staging directory, when last modified more than <paramref name="age"/> ago. Errors are ignored.
+    /// staging directory, when last modified more than <paramref name="age"/> ago (staging: more than max(<paramref name="age"/>,
+    /// compile timeout + 10 minutes), so a slow compile in progress is kept). Errors are ignored.
     /// </summary>
     internal static void SweepStale(string tempRoot, TimeSpan age)
     {
         var cutoff = DateTime.UtcNow - age;
-        var stale = new List<string>();
+        var stagingCutoff = DateTime.UtcNow - TimeSpan.FromTicks(Math.Max(age.Ticks, (CompileTimeout + TimeSpan.FromMinutes(10)).Ticks));
+        var stale = new List<(string Path, DateTime Cutoff)>();
         try
         {
             foreach (var pattern in new[] { "bayan-coverage-*", "bayan-mutate-*", "bayan-asan-*" })
-                if (Directory.Exists(tempRoot)) stale.AddRange(Directory.EnumerateDirectories(tempRoot, pattern));
-            if (Directory.Exists(Staging)) stale.AddRange(Directory.EnumerateFileSystemEntries(Staging));
+                if (Directory.Exists(tempRoot)) stale.AddRange(Directory.EnumerateDirectories(tempRoot, pattern).Select(d => (d, cutoff)));
+            if (Directory.Exists(Staging)) stale.AddRange(Directory.EnumerateFileSystemEntries(Staging).Select(d => (d, stagingCutoff)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-        foreach (var path in stale)
+        foreach (var (path, limit) in stale)
         {
             try
             {
-                if (Directory.GetLastWriteTimeUtc(path) >= cutoff) continue;
+                if (Directory.GetLastWriteTimeUtc(path) >= limit) continue;
                 if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
                 else File.Delete(path);
             }
