@@ -12,7 +12,7 @@ const exitTestFailure: i32 = 3
 const exitToolchain: i32 = 4
 
 /// Toolchain.CompilerVersion (Toolchain.cs:33).
-const version: string = "0.2.0-dev"
+const version: string = "0.2.0"
 
 /// Messages.Usage (Messages.cs:32), kept equal by SelfhostDriverTests.
 const usageText: string = """

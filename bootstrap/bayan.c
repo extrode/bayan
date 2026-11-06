@@ -178725,7 +178725,7 @@ byn_str byn_main__versionLine(void) {
         w->file = byn_file_84;
         w->line = 82;
         byn_w_str(w, BYN_STR("bayan ", 6));
-        byn_w_str(w, BYN_STR("0.2.0-dev", 9));
+        byn_w_str(w, BYN_STR("0.2.0", 5));
         byn_w_str(w, BYN_STR(" (selfhost)", 11));
     }
 #line 82 "driver/main.byn"
