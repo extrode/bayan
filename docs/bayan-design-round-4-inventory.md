@@ -112,3 +112,14 @@ Unrelated issues seen while auditing:
 7. **Toolchain and ecosystem.** TinyCC on ARM64, phase-3 licensing and libc size, registry hosting, tiers Q8, tiers Q2, `extern class`, `Rc`/`Arc`/`Pool` placement. Decision: per-target compiler, registry host, TLS backend, crypto scope.
 8. **Wait for evidence (after 012 or Sūq): set the triggers only.** R4D §3 rows 1–7, naming rules, `then`, comptime eval, HQ78, tiers Q12. Decision: confirm what evidence reopens each and when.
 9. **Large designs for v0.2+.** `law` syntax (restated in round-3 syntax), then the laws gate/CLI, `bayan verify`, `.par()`, format specifiers, QBE backend. Decision: syntax and scope per feature, scheduled after round 4.
+
+## Decisions
+
+### Batch 1 (user, 2026-11-06)
+- **f64 text form:** `1.0` keeps printing `1` (A001 stands). Ports compare floats as numbers (015 S8); `std.json` encodes
+  a parsed number from its source text. R4D §3 row 8 is closed.
+- **`ensures`:** unreserved. R4D §9 ("not adopted") wins; A002 §3 is superseded. Round 4 removes it from SPEC :123.
+- **GC:** no GC tier. R4D §8 wins. Round 4 removes the "future GC tier" from SPEC §9.8, :123 (`Gc`, `gc`), :382 and
+  :1661 (`.gc`), and checks whether BYN0012 still guards anything.
+- **Lockfile:** `package.lock.byn` (v0.3 packages plan S04). A001's `bayan.lock` line is superseded.
+- Still open from batch 1: HQ371 (unordered `HashMap`) and the stale tiers §2 :40 line; they move to batch 2.
