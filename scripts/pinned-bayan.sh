@@ -39,12 +39,15 @@ if [ ! -x "$cache/bin/$exe" ]; then
   [ -d "$build" ] && rm -rf "$build"
   [ -x "$cache/bin/$exe" ] || { echo "pinned-bayan: could not move $build to $cache" >&2; exit 1; }
   trap - INT TERM
-  # Keep the newest 3 commits (never the one just built); other builds' leftovers go only once an hour old.
+  # Keep the 3 most recently used commits (never the one just built, nor any used within 2 hours: another run may be
+  # executing it); other builds' leftovers go only once an hour old.
+  touch "$cache"
   n=0
   for d in $(ls -t "$main/.cache/bayan"); do
     case "$d" in .*) continue ;; esac
-    n=$((n+1)); [ "$n" -le 3 ] || [ "$d" = "$sha" ] || rm -rf "${main:?}/.cache/bayan/$d"
+    n=$((n+1)); [ "$n" -le 3 ] || [ "$d" = "$sha" ] || [ -n "$(find "$main/.cache/bayan/$d" -maxdepth 0 -mmin -120)" ] || rm -rf "${main:?}/.cache/bayan/$d"
   done
   find "$main/.cache/bayan" -maxdepth 1 -name '.build-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 fi
+touch "$cache"  # last-use order, which the eviction above follows
 echo "$cache/bin/$exe"

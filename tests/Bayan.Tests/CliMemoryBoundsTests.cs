@@ -321,4 +321,52 @@ public sealed class CliMemoryBoundsTests
                     Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), clock.Elapsed.ToString());
                 })));
     }
+
+    // ── Review fixes ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void F2_AWorkDirectoryAnotherProcessSweptIsDeletedWithoutAnException()
+    {
+        var dir = Path.Combine(Fresh("swept-work"), "gone");
+        CliApp.DeleteWorkDir(dir);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "f"), "x");
+        CliApp.DeleteWorkDir(dir);
+        Assert.False(Directory.Exists(dir));
+    }
+
+    [Fact]
+    public void F13_AStagingDirectoryLivesAsLongAsTheCompileTimeoutPlusTenMinutes()
+    {
+        var root = Fresh("staging-age");
+        WithEnv("BAYAN_CACHE", Path.Combine(root, "cache"), () =>
+            WithEnv("BAYAN_CC_TIMEOUT_S", "7200", () =>
+            {
+                var staging = Path.Combine(Toolchain.CacheData, "tmp");
+                var running = Path.Combine(staging, "key-running");
+                var dead = Path.Combine(staging, "key-dead");
+                foreach (var d in new[] { running, dead }) Directory.CreateDirectory(d);
+                Directory.SetLastWriteTimeUtc(running, DateTime.UtcNow.AddMinutes(-125));
+                Directory.SetLastWriteTimeUtc(dead, DateTime.UtcNow.AddHours(-3));
+                Toolchain.SweepStale(Path.Combine(root, "tmp"), TimeSpan.FromHours(1));
+                Assert.True(Directory.Exists(running));
+                Assert.False(Directory.Exists(dead));
+            }));
+    }
+
+    [Fact]
+    public void F10_ATimedOutTestWhoseGrandchildHoldsThePipeStillReportsTheTimeout()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var root = Fresh("grandchild");
+        var exe = Path.Combine(root, "child.sh");
+        File.WriteAllText(exe, "#!/bin/sh\n(sleep 30 &)\nsleep 30\n");
+        File.SetUnixFileMode(exe, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        WithEnv("BAYAN_TEST_TIMEOUT_MS", "2000", () =>
+        {
+            var outcome = CliApp.RunTest(exe, 0);
+            Assert.True(outcome.TimedOut);
+            Assert.Equal(-1, outcome.ExitCode);
+        });
+    }
 }
