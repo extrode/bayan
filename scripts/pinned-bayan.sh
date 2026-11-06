@@ -18,6 +18,10 @@ sha="$(git rev-parse -q --verify "$ref^{commit}")" || { echo "pinned-bayan: no c
 main="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"  # shared by every worktree of the repo
 cache="$main/.cache/bayan/$sha"
 exe=bayan; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exe=bayan.exe ;; esac
+# CACHEDIR.TAG marks .cache/bayan as a disposable cache (worktree removal, backups skip it): written under a temporary
+# name and moved into place, on every run, and never fatal.
+tag="$main/.cache/bayan/CACHEDIR.TAG"
+[ -f "$tag" ] || { mkdir -p "$(dirname "$tag")" && printf %s\\n "Signature: 8a477f597d28d172789f06886806bc55" "# This file is a cache directory tag created by pinned-bayan.sh." > "$tag.$$" && mv -f "$tag.$$" "$tag"; } 2>/dev/null || rm -f "$tag.$$" 2>/dev/null || true
 touch -c "$cache" 2>/dev/null || true  # mark the pin used before anything else can rank it for eviction
 if [ -e "$cache" ] && [ ! -x "$cache/bin/$exe" ]; then
   echo "pinned-bayan: $cache exists but holds no bin/$exe; remove it and rerun" >&2; exit 1
@@ -34,8 +38,6 @@ if [ ! -x "$cache/bin/$exe" ]; then
   fi
   rm -rf "$build/src"  # only bin/ is used (the version is stamped at build time); nothing reads the checkout afterwards
   mkdir -p "$(dirname "$cache")"
-  # CACHEDIR.TAG marks the directory as a disposable cache (worktree removal, backups skip it).
-  [ -f "$main/.cache/bayan/CACHEDIR.TAG" ] || printf %s\\n "Signature: 8a477f597d28d172789f06886806bc55" "# This file is a cache directory tag created by pinned-bayan.sh." > "$main/.cache/bayan/CACHEDIR.TAG"
   # A concurrent build of the same commit may have won: then mv nests ours inside the cache (exit 0), so drop it.
   mv "$build" "$cache" 2>/dev/null || true
   [ -d "$cache/$(basename "$build")" ] && rm -rf "${cache:?}/$(basename "$build")"
@@ -47,7 +49,7 @@ if [ ! -x "$cache/bin/$exe" ]; then
   touch "$cache"
   n=0
   for d in $(ls -t "$main/.cache/bayan"); do
-    case "$d" in .*|CACHEDIR.TAG) continue ;; esac
+    case "$d" in .*|CACHEDIR.TAG) continue ;; CACHEDIR.TAG.*) [ -n "$(find "$main/.cache/bayan/$d" -mmin -120)" ] || rm -f "$main/.cache/bayan/$d"; continue ;; esac
     n=$((n+1)); [ "$n" -le 3 ] || [ "$d" = "$sha" ] || [ -n "$(find "$main/.cache/bayan/$d" -maxdepth 0 -mmin -120)" ] || rm -rf "${main:?}/.cache/bayan/$d"
   done
   find "$main/.cache/bayan" -maxdepth 1 -name '.build-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true

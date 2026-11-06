@@ -60,6 +60,11 @@ while IFS= read -r s; do
   drop "$s"
 done < <(find "$t" -maxdepth 1 -name 'dotnet-diagnostic-*' 2>/dev/null)
 
+printf '== 6. root CACHEDIR.TAG written by dev 71d681cd (the tag now lives in v1/)\n'
+for p in tmp/cache/CACHEDIR.TAG "${BAYAN_CACHE:-}/CACHEDIR.TAG" "${XDG_CACHE_HOME:-$HOME/.cache}/bayan/CACHEDIR.TAG" "$HOME/Library/Caches/bayan/CACHEDIR.TAG"; do
+  [ -f "$p" ] && [ -d "$(dirname "$p")/v1" ] && grep -q "created by bayan" "$p" && drop "$p"
+done
+
 printf '== done: %s KB %s\n' "$total" "$([ "$execute" = 1 ] && [ "$scratch" = 1 ] && echo removed || echo 'would be removed (dry run; --execute --delete-scratch acts)')"
 if [ "$execute" = 1 ] && [ "$scratch" = 0 ]; then printf 'note: --execute alone deletes nothing here; add --delete-scratch.\n'; fi
 if [ "$execute" = 1 ] && [ "$failed" = 1 ]; then exit 1; fi

@@ -101,6 +101,28 @@ PINNED_BAYAN_REF=evict2 "$script" > /dev/null || fail "the second eviction build
 for i in 1 2 3 4; do [ -d "$r/.cache/bayan/recent$i" ] || fail "a pin used within 2 hours was evicted"; done
 git checkout -q feat/x
 
+# A cached pin still tags an untagged cache, and a cache that cannot be tagged is no failure.
+rm -f "$r/.cache/bayan/CACHEDIR.TAG"; nb=$(wc -l < "$AUX/builds.txt")
+PINNED_BAYAN_REF=evict "$script" > /dev/null || fail "resolving the cached pin failed"
+[ "$(wc -l < "$AUX/builds.txt")" = "$nb" ] || fail "the cached pin was rebuilt"
+head -1 "$r/.cache/bayan/CACHEDIR.TAG" | grep -qx "Signature: 8a477f597d28d172789f06886806bc55" || fail "a cache hit did not tag the cache"
+rm -f "$r/.cache/bayan/CACHEDIR.TAG"; chmod u-w "$r/.cache/bayan"
+[ ! -w "$r/.cache/bayan" ] || echo "note: running as root, the untaggable-cache case cannot be tested" >&2
+out=$(PINNED_BAYAN_REF=evict "$script") || { chmod u+w "$r/.cache/bayan"; fail "an untaggable cache made the script fail"; }
+chmod u+w "$r/.cache/bayan"
+[ "$out" = "$r/.cache/bayan/$evsha/bin/bayan" ] || fail "an untaggable cache printed '$out'"
+[ -z "$(ls -a "$r/.cache/bayan" | grep "^CACHEDIR.TAG\.")" ] || fail "a temporary tag was left behind"
+
+# A leftover temporary tag is not counted as a cached commit: a fresh one stays, a stale one goes.
+c="$r/.cache/bayan"; : > "$c/CACHEDIR.TAG.11111"; : > "$c/CACHEDIR.TAG.22222"; touch -t 202001010000 "$c/CACHEDIR.TAG.22222"
+for d in "$c"/*/; do touch -t 202001010000 "$d"; done
+git checkout -q -b evict3 evict; echo evict3 > src/Bayan.Cli/stamp; git commit -qam evict3
+PINNED_BAYAN_REF=evict3 "$script" > /dev/null || fail "the third eviction build failed"
+[ "$(ls "$c" | grep -v '^CACHEDIR' | wc -l | tr -d ' ')" = 3 ] || fail "a temporary tag took a cached commit's place: $(ls "$c")"
+[ -f "$c/CACHEDIR.TAG.11111" ] || fail "a fresh temporary tag was removed"
+[ ! -e "$c/CACHEDIR.TAG.22222" ] || fail "a stale temporary tag was kept"
+rm -f "$c/CACHEDIR.TAG.11111"; git checkout -q feat/x
+
 # Wiring: the mutation step runs the pinned bayan; CI's mutation run pins the commit it checked out.
 grep -q 'pinned-bayan.sh' "$root/scripts/selfhost/mutation-step.sh" || fail "mutation-step.sh does not use pinned-bayan.sh"
 ! grep -q 'bin/Debug/net10.0/bayan' "$root/scripts/selfhost/mutation-step.sh" || fail "mutation-step.sh still names the working-tree build"
