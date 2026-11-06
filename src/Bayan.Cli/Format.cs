@@ -159,7 +159,7 @@ internal static class Format
             }
             foreach (var name in subs.Select(Path.GetFileName))
             {
-                if (IsSkippedDirectory(name!)) continue;
+                if (IsSkippedDirectory(name!, at.Path == dir)) continue;
                 var sub = Path.Combine(at.Path, name!);
                 try
                 {
@@ -175,10 +175,13 @@ internal static class Format
         return [.. files];
     }
 
-    private static readonly HashSet<string> SkippedDirs = new(StringComparer.OrdinalIgnoreCase) { "node_modules", "bin", "obj", "dist", "tmp" };
+    private static readonly HashSet<string> SkippedDirs = new(StringComparer.OrdinalIgnoreCase) { "node_modules", "obj" };
 
-    /// <summary>The directories the language server skips: dot-directories and build or scratch output.</summary>
-    private static bool IsSkippedDirectory(string name) => name.StartsWith('.') || SkippedDirs.Contains(name);
+    private static readonly HashSet<string> SkippedRootDirs = new(StringComparer.OrdinalIgnoreCase) { "bin", "dist", "tmp" };
+
+    /// <summary>The directories skipped: dot-directories and node_modules or obj anywhere, bin, dist and tmp only directly under the walk root, where build output lands.</summary>
+    private static bool IsSkippedDirectory(string name, bool atRoot) =>
+        name.StartsWith('.') || SkippedDirs.Contains(name) || (atRoot && SkippedRootDirs.Contains(name));
 
     /// <summary>The most symlinks <see cref="RealPath"/> follows, as the kernel's own limit: 32 on macOS, 40 elsewhere.</summary>
     private static readonly int MaxLinks = OperatingSystem.IsMacOS() ? 32 : 40;
