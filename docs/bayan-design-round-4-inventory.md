@@ -188,3 +188,21 @@ Unrelated issues seen while auditing:
 - **Row 74 HQ342:** BYN7012 at the instantiating call stays; revisit with typestate scope.
 - Fixed on the way (docs/batch-5-fixes): SPEC :1953 called `finish()` "move this … no copy", contradicting :303 and revision 0018;
   inventory row 38 cited Q114 where the function-value decision is Q345.
+
+### Batch 6 (user, 2026-11-06)
+- **Row 25 P6 state-tag checks:** closed; SPEC :656-657 already makes typestate checks compile-time only.
+- **Row 52 arena default:** the SPEC :1274-1279 table stands; `main` stays on `General` under both `run` and `build`.
+  The script row (never-freed `Arena`) is unimplemented: the runtime defaults every program to `General`
+  (`bayan-rt.c` `byn_context = &byn_general`), filed in `work/todo.md`.
+- **Row 41 payload size lint:** warn when the largest union payload exceeds the second largest by at least 128 bytes
+  (64-bit); suppressed with `@allow(BYN…) because`; code reserved beside BYN1070/1071.
+- **Row 26 P7 compile-time budgets:** CI fails on a >10% regression of `--emit-c` and of the checker on the 1 MB
+  program against a stored baseline; absolute targets are set after P1/P3. C-compile time is excluded.
+- **Row 23 P4 niches:** pointer niches only (`string`, `Span`, `Owned<T>`), v0.2a, after P1 shows the gain;
+  `Result` niches wait.
+- **Row 24 P5 field reorder:** by alignment by default after 012; `extern`-reachable structs keep declared order,
+  `@layout(.declared)` opts out; emitted order deterministic; needs a C-interop golden.
+- **Row 59 R4.6 `restrict`:** deferred until P1 shows a gain, then enabled only after K2 with a law test that the
+  checker refuses every alias pair.
+- **Row 45 bounds-check report:** ships with P2 in v0.2, filed next to P2 in the v0.2a plan.
+- Noted on the way: R4D :143 names `Box<T>`; the SPEC's heap owner is `Owned<T>` (SPEC :1268).
