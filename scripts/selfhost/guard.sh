@@ -3,6 +3,8 @@
 #   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]] [--spec <nnn>] [--scope-only]
 # --spec picks the row of specs.tsv (default 010): its shared-state files are allowed in scope, its test-class prefix names the task;
 # --scope-only stops after check 1 and 2 (land.sh --check-scope).
+# Changed lib/std/**/*.byn files are treated like selfhost .byn files wherever the guard selects them (coverage, banned C#-isms),
+# and check 5 runs the pinned `bayan format --check` over lib/std/ (skipped on Windows, as SourcesAreFormatted).
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
 # 3 build 0 warnings, 4 tests pass with 0 skipped, and coverage (spec 013 T26): when the branch changes selfhost .byn files the
 # tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
@@ -48,7 +50,7 @@ if [ $SCOPEONLY = 1 ]; then
   echo "GUARD FAIL (${#FAIL[@]} items):"; for x in "${FAIL[@]}"; do echo "- $x"; done; exit 1
 fi
 # the changed selfhost .byn files still present: the files coverage is measured over
-COVER=$(while IFS= read -r f; do case "$f" in selfhost/*.byn) [ -f "$f" ] && echo "$f";; esac; done <<< "$CHANGED" | tr '\n' ',' | sed 's/,$//')
+COVER=$(while IFS= read -r f; do case "$f" in selfhost/*.byn|lib/std/*.byn) [ -f "$f" ] && echo "$f";; esac; done <<< "$CHANGED" | tr '\n' ',' | sed 's/,$//')
 rm -f "$LOG/quality-"*.json  # a mutation report left by an earlier run must not reach this run's baseline check
 COV="$LOG/coverage"; rm -f "$COV/bayan-quality.json" "$COV/functions.json"; TX=1
 
@@ -101,6 +103,15 @@ while IFS= read -r f; do case "$f" in *.byn) [ -f "$f" ] || continue
   grep -nE '[A-Za-z_)]\.[0-9]+\b' "$f" | grep -vE '"[^"]*\.[0-9]' | head -3 | while read -r l; do echo "banned: $f:${l%%:*} tuple field .N"; done
 ;; esac; done <<< "$CHANGED" > "$LOG/banned.txt"
 while read -r l; do [ -n "$l" ] && note "$l"; done < "$LOG/banned.txt"
+
+# 5 bayan format --check over lib/std/ (only when it holds a .byn file; skipped on Windows, where pinned-bayan.sh exits 127)
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *)
+  if [ -n "$(find lib/std -name '*.byn' 2> /dev/null | head -1)" ]; then
+    if CLI=$(bash "$(dirname "$0")/../pinned-bayan.sh" 2> "$LOG/pinned.txt" | tail -1) && [ -n "$CLI" ]; then
+      fmt=$("$CLI" format --check lib/std 2>&1) || note "format: bayan format --check lib/std failed: $(echo "$fmt" | grep -v '^\s*$' | head -5 | tr '\n' ' ')"
+    else note "format: no pinned bayan for the lib/std format check — $(tail -1 "$LOG/pinned.txt")"; fi
+  fi;;
+esac
 
 # 7 content checks (before mutations: they are cheap)
 # the task comes from --task, else from a <prefix><n>Tests class in --filter (the row's test-class prefix; T26/T27 test classes carry no number)
