@@ -1950,7 +1950,7 @@ buf.append($"order {order.id}: ")       // formats straight into the buffer
 buf.append(total)                        // any Display value
 buf.insert("!", at: 0)
 buf.clear()
-let text = buf.finish()                  // move this: the buffer becomes the string, no copy
+let text = buf.finish()                  // a loan on the buffer, no copy (revision 0018)
 ```
 
 **Conversions:** `string(x)` (`Display`), `string(n, as: .hex / .binary / .octal / .decimal)`, `T.parse(text)` / `T.tryParse(text)` with the same `as:`, and the codecs. Every binary-to-text conversion is a codec, like `Hex` and `Base64`; `string(x)` is only the `Display` conversion, for every type, including byte spans (`[104, 105]`):
