@@ -99,6 +99,13 @@ public sealed class BootstrapTests
         return true;
     }
 
+    /// <summary>Stage 2's absolute path, building the stages first when no test has (shared with <c>SelfhostDriverGoldenTests</c>).</summary>
+    internal static string Stage2Executable()
+    {
+        Assert.True(Built.Value);
+        return Path.Combine(Golden.RepoRoot, Exe(2));
+    }
+
     private static byte[] C(int n, string mode)
     {
         Assert.True(Built.Value);

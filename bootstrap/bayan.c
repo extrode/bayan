@@ -178610,9 +178610,9 @@ break_1:;
 
 int32_t byn_main__typesCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
     bynt_list_str l0_args = {0};
-    bynt_semantics__T26Options l1_o = {0};
-    bynt_opt_semantics__T26Options t2 = {0};
-    bynt_semantics__T26Options t3 = {0};
+    bynt_main__T5Options l1_o = {0};
+    bynt_opt_main__T5Options t2 = {0};
+    bynt_main__T5Options t3 = {0};
     bynt_semantics__T26Symbols l4_symbols = {0};
     bynt_list_semantics__T26Reported l5_reported = {0};
     bool l6_ok = {0};
@@ -178621,7 +178621,7 @@ int32_t byn_main__typesCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
 #line 73 "driver/commands.byn"
     l0_args = byn_main__t2Rest(p_kept);
 #line 74 "driver/commands.byn"
-    t2 = byn_semantics__t26ParseBuildOptions(l0_args, false);
+    t2 = byn_main__t5ParseBuildOptions(l0_args, false, false);
 #line 74 "driver/commands.byn"
     if (t2.has) {
 #line 74 "driver/commands.byn"
@@ -178639,7 +178639,7 @@ int32_t byn_main__typesCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
 #line 77 "driver/commands.byn"
     l6_ok = false;
 #line 78 "driver/commands.byn"
-    l7_c = byn_semantics__t26Compile(l1_o, l4_symbols, &l5_reported, &l6_ok, false);
+    l7_c = byn_main__t5Compile(l1_o, l4_symbols, &l5_reported, &l6_ok);
 #line 79 "driver/commands.byn"
     if ((!l6_ok)) {
 #line 79 "driver/commands.byn"
@@ -178657,9 +178657,9 @@ int32_t byn_main__typesCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
 int32_t byn_main__checkCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
     int64_t l0_clock = {0};
     bynt_list_str l1_args = {0};
-    bynt_semantics__T26Options l2_o = {0};
-    bynt_opt_semantics__T26Options t3 = {0};
-    bynt_semantics__T26Options t4 = {0};
+    bynt_main__T5Options l2_o = {0};
+    bynt_opt_main__T5Options t3 = {0};
+    bynt_main__T5Options t4 = {0};
     bynt_semantics__T26Symbols l5_symbols = {0};
     bynt_list_semantics__T26Reported l6_reported = {0};
     bool l7_ok = {0};
@@ -178671,7 +178671,7 @@ int32_t byn_main__checkCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
 #line 87 "driver/commands.byn"
     l1_args = byn_main__t2Rest(p_kept);
 #line 88 "driver/commands.byn"
-    t3 = byn_semantics__t26ParseBuildOptions(l1_args, false);
+    t3 = byn_main__t5ParseBuildOptions(l1_args, false, false);
 #line 88 "driver/commands.byn"
     if (t3.has) {
 #line 88 "driver/commands.byn"
@@ -178689,11 +178689,11 @@ int32_t byn_main__checkCommand(bynt_list_str p_kept, bynt_main__DCtx p_d) {
 #line 91 "driver/commands.byn"
     l7_ok = false;
 #line 92 "driver/commands.byn"
-    l8_c = byn_semantics__t26Compile(l2_o, l5_symbols, &l6_reported, &l7_ok, false);
+    l8_c = byn_main__t5Compile(l2_o, l5_symbols, &l6_reported, &l7_ok);
 #line 93 "driver/commands.byn"
     if ((!l7_ok)) {
 #line 93 "driver/commands.byn"
-        return byn_semantics__t26Failed(l2_o, l6_reported, l5_symbols);
+        return byn_semantics__t26Failed(byn_main__t5T26(l2_o), l6_reported, l5_symbols);
     }
 #line 94 "driver/commands.byn"
     if ((!l2_o.json)) {
