@@ -281,17 +281,22 @@ public sealed class CliMemoryBoundsTests
     }
 
     [Fact]
-    public void M5_ABuildTagsTheCacheRootAsACacheDirectory()
+    public void M5_ABuildTagsTheCacheDataItOwnsAsACacheDirectory()
     {
         var root = Fresh("cachedir-tag");
         WithEnv("BAYAN_CACHE", root, () =>
         {
             var build = Toolchain.Build("int main(void) { return 1; }\n", BuildMode.Safe);
             Assert.True(build.Succeeded, build.Errors);
-            var tag = Path.Combine(root, "CACHEDIR.TAG");
+            var tag = Path.Combine(root, "v1", "CACHEDIR.TAG");
             Assert.StartsWith("Signature: 8a477f597d28d172789f06886806bc55\n", File.ReadAllText(tag));
             Toolchain.RememberScript("s", build.Key!);
-            Assert.Single(Directory.GetFiles(root));
+            Assert.Empty(Directory.GetFiles(root));
+            Assert.Single(Directory.GetFiles(Path.Combine(root, "v1")));
+            File.Delete(tag);
+            var again = Toolchain.Build("int main(void) { return 1; }\n", BuildMode.Safe);
+            Assert.True(again.CacheHit);
+            Assert.True(File.Exists(tag));
         });
     }
 

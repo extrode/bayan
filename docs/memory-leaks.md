@@ -19,7 +19,7 @@ caches, buffers child output, recurses on input, or runs for longer than one com
    log one line, never keep going.
 2. **Every watcher filters like the walk.** An event for a path the walk would skip is ignored.
 3. **Every cache evicts.** It has a size or entry cap with LRU eviction, a sweep for staging
-   left by killed processes, and a `CACHEDIR.TAG` at its root.
+   left by killed processes, and a `CACHEDIR.TAG` in `v1/` (never the `$BAYAN_CACHE` root, which a user may share).
 4. **Child output is never buffered whole.** Keep a head and tail (`BoundedCapture`), or
    stream it. Waits after a kill have a timeout.
 5. **Recursion on input has a depth cap** (lexer, parser, type walks). Past the cap: a

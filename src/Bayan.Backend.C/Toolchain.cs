@@ -65,17 +65,24 @@ public static class Toolchain
     /// directory as a disposable cache, so the program cache under a checkout never blocks or bloats.</summary>
     internal const string CacheDirTag = "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by bayan.\n# For information about cache directory tags see https://bford.info/cachedir/\n";
 
-    /// <summary>Writes <c>CACHEDIR.TAG</c> at the cache root once; a cache that cannot be tagged still works.</summary>
+    /// <summary>Writes <c>CACHEDIR.TAG</c> in <see cref="CacheData"/> once: only the directory bayan owns, never the
+    /// <c>$BAYAN_CACHE</c> root a user may share, so `bayan clean --cache` removes the tag with the cache. Written to a temporary
+    /// name and moved into place, so no reader sees a partial tag; a cache that cannot be tagged still works.</summary>
     internal static void TagCacheDirectory()
     {
-        var tag = Path.Combine(CacheDirectory, "CACHEDIR.TAG");
+        var tag = Path.Combine(CacheData, "CACHEDIR.TAG");
         if (File.Exists(tag)) return;
+        var temp = tag + "." + Guid.NewGuid().ToString("N");
         try
         {
-            Directory.CreateDirectory(CacheDirectory);
-            File.WriteAllText(tag, CacheDirTag);
+            Directory.CreateDirectory(CacheData);
+            File.WriteAllText(temp, CacheDirTag);
+            File.Move(temp, tag, overwrite: false);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            try { File.Delete(temp); } catch (Exception d) when (d is IOException or UnauthorizedAccessException) { }
+        }
     }
 
     private static string Scripts => Path.Combine(CacheData, "scripts");
@@ -241,6 +248,7 @@ public static class Toolchain
                 return new NativeBuild(null, $"cannot run the C compiler `{string.Join(" ", compiler)}`: {e.Message}");
             }
         }
+        if (hit) TagCacheDirectory();
         var exe = Path.Combine(Programs, key, exeName);
         if (output is null) return new NativeBuild(exe, "", hit, key);
         ReplaceFile(output, temp => File.Copy(exe, temp));
