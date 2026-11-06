@@ -45,7 +45,7 @@ public sealed class SelfhostDriverGoldenTests
     /// </summary>
     private static readonly Dictionary<string, string> DiagSkips = new()
     {
-        ["diag/cases-type-mismatch.test.byn"] = "Q1048", // BYN2202 needs IncludeTests; `check` never sets it
+        ["diag/cases-type-mismatch.test.byn"] = "Q1048", // BYN2202 needs IncludeTests: `check` never sets it; C# `test --all` does, stage 2 refuses `test`
         ["diag/capability-exceeded/main.byn"] = "Q1048", // BYN6004 needs the manifest's capabilities; `check .` stops at the missing src/app, `--package` ignores package.byn
     };
     /// <summary>
@@ -182,6 +182,14 @@ public sealed class SelfhostDriverGoldenTests
             var expected = CSharp(cwd, args);
             Assert.NotEmpty(Codes(File.ReadAllText(Path.ChangeExtension(Path_(name), ".diag"))).Except(Codes(expected.Stdout + expected.Stderr)));
         }
+        // The C# `test --all` (CliApp.cs:617, IncludeTests) does print cases-type-mismatch's BYN2202, but stage 2 refuses `test` (main.byn:206).
+        var tests = Path_("diag/cases-type-mismatch.test.byn");
+        var dir = Path.GetDirectoryName(tests)!;
+        string[] testArgs = ["test", "--all", "--package", dir, Path.GetFileName(tests)];
+        var cs = CSharp(dir, testArgs);
+        Assert.Empty(Codes(File.ReadAllText(Path.ChangeExtension(tests, ".diag"))).Except(Codes(cs.Stdout + cs.Stderr)));
+        var s2 = Stage2(dir, testArgs);
+        Assert.Equal("error: `test` is not available in the self-hosted compiler; use the C# `bayan`\n", s2.Stderr);
     }
 
     /// <summary>BAYAN_UPDATE=1 must not make a comparison write its expected file (R10).</summary>
