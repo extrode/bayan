@@ -1,6 +1,6 @@
 # Bayān roadmap
 
-Bayān compiles itself, but the shipped compiler is still the C# one. The next steps are to ship the self-hosted compiler, retire the C# code and drop every non-Bayān tool. Goals below that no source plans are marked "(no plan yet)".
+Bayān compiles itself, but the shipped compiler is still the C# one (`CHANGELOG.md`, 0.1.0 Known limits). The next steps are to ship the self-hosted compiler, retire the C# code and drop every non-Bayān tool (`docs/bayan-handoff.md`, Target: zero dependencies). Goals below that no source plans are marked "(no plan yet)".
 
 ## Where we are
 
@@ -91,11 +91,11 @@ Only what the source documents already say.
 | Target | What the sources say | Source |
 |---|---|---|
 | Round 4 | One batch of syntax and checks after 012, with one migration of goldens and selfhost source. First commit: flip the clause order to `where → expects → uses → becomes → fails` and run `bayan format` | `docs/bayan-design-round-4-draft.md` §7, `docs/bayan-handoff.md` (Design inputs) |
-| v0.2a | `bayan check`, module cache, `bayan show c`, bounds-check removal, CI gates for benchmarks, `bayan test --fuzz`, property tests, `bayan verify`, TinyCC for `bayan run`, `@packed`, `@derive(Decode)` | `docs/plans/2026-11-05-001-v0.2a-loop.md`, `docs/bayan-design-round-4-draft.md` §7 |
-| v0.2b | IDE and syntax API; the language server | `docs/plans/2026-11-05-002-v0.2b-ide.md` |
-| v0.3 | Packages and supply chain: sandboxed generators, `package.lock.byn`, immutable versions, scoped names, `bayan dependencies --sbom`; before any public registry opens. The handoff's older v0.3 line lists fibers, networking, HTTP, TLS and WASM | `docs/plans/2026-11-05-003-v0.3-packages.md`, `docs/bayan-handoff.md` (After v0.1) |
-| v0.4 | Interop and targets; C-only interop, `bayan migrate cs` | `docs/plans/2026-11-05-004-v0.4-interop.md` |
-| 1.0 | Pre-1.0 gate: diagnostic renumbering with aliases, stability promise per edition | `docs/bayan-design-round-4-inventory.md` (renumbering and stability rows) |
+| v0.2 | Library and tooling: TinyCC in-process for `bayan run`, verified decoding (`@derive(Decode)`), `@packed` with endianness, bounds-check report, `InlineList<T, N>`, `Pair<T>`, `sum(as: .saturating)`, `then` stages, finish `law` blocks. The handoff adds the interpreter (comptime, scripts), generics, units, `Map`, iterators, `Io.Blocking`/`Threaded`, JSON/CSV, property and fuzz tests; the formatter, LSP, prose tool and packages land across v0.2–v0.4 | `docs/bayan-design-round-4-draft.md` §7, `docs/bayan-handoff.md` (After v0.1) |
+| v0.2 concurrency and views | Thread-per-core fibers, `scope`/`spawn`: spec in round 4, runtime in v0.2; `kit.web` and `kit.ui` views v0.2+ | `docs/bayan-handoff.md` (Design inputs), `docs/bayan-library-tiers.md` §13.2 |
+| v0.3 | Fibers and `Io.Evented`, networking, HTTP, TLS through a C wrapper, WASM; `.par()` parallel iterators. Later and on evidence only: compile-time evaluation of functions with empty `uses` (an interpreter inside the compiler), `@soa` layout | `docs/bayan-handoff.md` (After v0.1), `docs/bayan-design-round-4-draft.md` §7 |
+| v1.x and later | `bayan verify` for `requires`/`ensures` contracts (v1.x); `bayan migrate cs` post-v1; `bayan-concurrency.md` supersedes the handoff's v0.3 fiber line | `docs/bayan-handoff.md` (After v0.1), `docs/bayan-library-tiers.md` §13.2 |
+| 1.0 | (no plan yet): the three sources set no 1.0 scope or date | none |
 | Retire the C# compiler | Ship the selfhost: `cc bootstrap/bayan.c` builds the compiler. .NET leaves "when self-hosting replaces the C# compiler" | `docs/bayan-handoff.md` (Target: zero dependencies), `docs/bayan-design-round-4-draft.md` §6 |
 | Zero non-Bayān tooling | Port the scripts; Python, bash, Deno, PowerShell and Node dependencies each have a stated exit | `docs/specs/015-tooling/015-spec.md`, `docs/bayan-library-tiers.md` §12, `docs/bayan-handoff.md` |
 | Std library | Tier order P0–P4: `core`, `std` for scripts and CLIs, `std` services, `kit` | `docs/bayan-library-tiers.md` §9 |
