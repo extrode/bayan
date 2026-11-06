@@ -100,7 +100,7 @@ public sealed class SelfhostDriverT1Tests
         Directory.CreateDirectory(dir);
         var script = Path.Combine(dir, "tool.byn");
         File.WriteAllText(script, "print(\"hi\")\n");
-        // the script runs (T6); `--color bad` after it is its own argument (CliApp.cs:97, :315)
+        // the script runs (T6); `--color bad` after it is its own argument (CliApp.cs:97, :328)
         // (the C# program inherits the test process's stdout, so only the exit code is comparable)
         string[] runArgs = ["--ascii", script, "--color", "bad"];
         Assert.Equal(Oracle(runArgs).Exit, SelfhostDriverHarness.Run(runArgs).Exit);

@@ -1,5 +1,5 @@
 // bayan: the self-hosted compiler driver (spec 012). `Run` of CliApp.cs:37 with the global options of
-// `TakeGlobalOptions` (CliApp.cs:315); commands the driver does not port are refused (R3).
+// `TakeGlobalOptions` (CliApp.cs:328); commands the driver does not port are refused (R3).
 //
 //     bayan [--ascii] [--color auto|always|never] <command> [args]
 
@@ -153,7 +153,7 @@ i32 run(ReadOnlySpan<string> args, through ref DCtx d) {
     }
 }
 
-/// CliApp.cs:315 `TakeGlobalOptions`: `--color` and `--ascii` are removed from `args` into `kept` and `d`, before any `--`
+/// CliApp.cs:328 `TakeGlobalOptions`: `--color` and `--ascii` are removed from `args` into `kept` and `d`, before any `--`
 /// and before a script run without a command; false after reporting a bad colour value.
 bool takeGlobalOptions(ReadOnlySpan<string> args, to ref List<string> kept, through ref DCtx d) {
     var color = "auto"
@@ -222,7 +222,7 @@ bool t1FileExists(string path) {
     return false
 }
 
-/// CliApp.cs:362 `IsScript`: a file whose first two bytes are `#!`. A copy of `semantics/cli.byn` `t26IsScript` (private there); T28 merges copies.
+/// CliApp.cs:375 `IsScript`: a file whose first two bytes are `#!`. A copy of `semantics/cli.byn` `t26IsScript` (private there); T28 merges copies.
 bool t1IsScript(string path) {
     unless t1FileExists(path) { return false }
     // coverage-exempt: Q918 the catch is reached only if the file changes between the reads at :87 and :97 (a race no test can stage); the C# has no such branch
@@ -230,7 +230,7 @@ bool t1IsScript(string path) {
     return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
 }
 
-/// CliApp.cs:370 `RefuseLibrary`: a library has nothing to build or run; `command` is the refused verb (`build`, `run`).
+/// CliApp.cs:384 `RefuseLibrary`: a library has nothing to build or run; `command` is the refused verb (`build`, `run`).
 bool refuseLibrary(semantics.Ctx compiled, by string command) {
     unless compiled.library { return false }
     Io.stderr.write($"bayan: `{compiled.packageName}` is a library, so there is no program to {command}; `bayan test` runs its tests\n")
