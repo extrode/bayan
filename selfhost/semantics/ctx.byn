@@ -484,6 +484,8 @@ public struct Ctx {
     /// C# `_modulesByDir` and `_loading`.
     public Map<string, ModId> modulesByDir = []
     public List<ModId> loading = List<ModId>()
+    /// C# `Options.Std ?? StdLibrary.Shipped`: the std modules `import std.…` reads, built once in `create`.
+    public StdLibrary std = StdLibrary {}
     /// C# `ParseTime` and `CheckTime`, in nanoseconds.
     public i64 parseTime = 0
     public i64 checkTime = 0
