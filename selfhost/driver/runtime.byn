@@ -272,9 +272,15 @@ static inline void byn_slice_check(int64_t start, int64_t end, int64_t len, cons
 /* Resolves slice bounds: a mode of 0 is an offset from the start, 1 from the end, 2 absent. */
 static inline void byn_slice_range(int64_t len, int64_t start, int start_mode, int64_t end, int end_mode, bool inclusive,
                                    const char* file, int line, int64_t* from, int64_t* to) {
+    /* Out-of-range offsets are rejected before any arithmetic, so `len - start` and `e + 1` cannot overflow. */
+    if (BYN_UNLIKELY((start_mode == 1 && (uint64_t)start > (uint64_t)len) || (end_mode == 1 && (uint64_t)end > (uint64_t)len)))
+        bayan_trap_slice(file, line);
     int64_t s = start_mode == 2 ? 0 : start_mode == 1 ? len - start : start;
     int64_t e = end_mode == 2 ? len : end_mode == 1 ? len - end : end;
-    if (inclusive && end_mode != 2) e += 1;
+    if (inclusive && end_mode != 2) {
+        if (BYN_UNLIKELY(e == INT64_MAX)) bayan_trap_slice(file, line);
+        e += 1;
+    }
     byn_slice_check(s, e, len, file, line);
     *from = s;
     *to = e;
@@ -363,10 +369,11 @@ void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size,
 
 /* ── Maps ────────────────────────────────────────────────────────────────── */
 
-/* Seeds every key hash; `main` sets it (0 under `--test`, else time xor pid). */
+/* The 128-bit key of every key hash (low and high halves); `main` sets it (0 under `--test`, else from the OS CSPRNG). */
 extern uint64_t byn_hash_seed;
+extern uint64_t byn_hash_seed_hi;
 void byn_hash_seed_init(bool fixed);
-/* FNV-1a 64 over n bytes, starting from the seed. */
+/* SipHash-1-3 over n bytes, keyed by the seed. */
 uint64_t byn_hash_bytes(const void* p, int64_t n);
 
 /* The untyped part of `Map<K, V>`: entries are dense arrays in insertion order (keys and values live in the
@@ -397,7 +404,7 @@ void byn_map_clear(byn_map_hdr* h);
 void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void** dkeys, const void* vals, int64_t vsize,
                   void** dvals, byn_map_hdr* dst, byn_alloc* to);
 
-/* Folds `part` into the hash `h` (FNV-1a over its 8 bytes), for keys hashed part by part. */
+/* Folds `part` into the hash `h` (keyed SipHash-1-3 over both, 16 bytes), for keys hashed part by part. */
 uint64_t byn_hash_mix(uint64_t h, uint64_t part);
 
 /* ── Symbols ─────────────────────────────────────────────────────────────── */
@@ -589,6 +596,7 @@ const runtimeSource: string = """/* Bayan runtime implementation. See bayan-rt.h
 #endif
 #ifdef _WIN32
 #include <windows.h>
+#include <bcrypt.h>
 #include <shellapi.h>
 #include <fcntl.h>
 #include <io.h>
@@ -601,6 +609,12 @@ const runtimeSource: string = """/* Bayan runtime implementation. See bayan-rt.h
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/random.h>
+#else
+/* In <stdlib.h>, but hidden by _POSIX_C_SOURCE on macOS. */
+void arc4random_buf(void* buf, size_t n);
+#endif
 extern char** environ;
 #endif
 
@@ -1185,7 +1199,9 @@ bool byn_str_eq_caseless(byn_str a, byn_str b) {
 
 byn_str byn_str_replaced(byn_str s, byn_str x, byn_str y, byn_alloc* to, const char* file, int line) {
     if (x.len == 0) byn_panic("replaced with an empty string to find", file, line);
-    int64_t len = s.len + byn_str_count(s, x) * (y.len - x.len);
+    int64_t len;
+    if (__builtin_mul_overflow(byn_str_count(s, x), y.len - x.len, &len) || __builtin_add_overflow(s.len, len, &len))
+        byn_panic("replaced text is too long", file, line);
     if (len == 0) return (byn_str){NULL, 0};
     uint8_t* out = to->resize(to, NULL, 0, len);
     int64_t o = 0, i = 0;
@@ -1209,8 +1225,10 @@ byn_str byn_str_repeated(byn_str s, int64_t n, byn_alloc* to, const char* file, 
 }
 
 byn_str byn_str_joined(const byn_str* xs, int64_t n, byn_str sep, byn_alloc* to) {
-    int64_t len = n > 0 ? (n - 1) * sep.len : 0;
-    for (int64_t i = 0; i < n; i++) len += xs[i].len;
+    int64_t len = 0;
+    if (n > 0 && __builtin_mul_overflow(n - 1, sep.len, &len)) byn_panic("joined text is too long", NULL, 0);
+    for (int64_t i = 0; i < n; i++)
+        if (__builtin_add_overflow(len, xs[i].len, &len)) byn_panic("joined text is too long", NULL, 0);
     if (len == 0) return (byn_str){NULL, 0};
     uint8_t* out = to->resize(to, NULL, 0, len);
     int64_t o = 0;
@@ -1984,11 +2002,13 @@ struct byn_arena {
 };
 
 static void* byn_arena_take(byn_arena* a, int64_t n) {
+    /* Checked before rounding: n near INT64_MAX would round to a negative size and pass the room check. */
+    if (n < 0 || n > INT64_MAX - 15 - (int64_t)sizeof(byn_chunk)) byn_panic("arena allocation is too large", NULL, 0);
     n = (n + 15) & ~(int64_t)15;
     byn_chunk* c = a->chunks;
-    if (!c || c->used + n > c->size) {
+    if (!c || n > c->size - c->used) {
         int64_t size = n > 4096 ? n : 4096;
-        if (c && c->size * 2 > size) size = c->size * 2;
+        if (c && c->size <= (INT64_MAX - (int64_t)sizeof(byn_chunk)) / 2 && c->size * 2 > size) size = c->size * 2;
         c = (byn_chunk*)malloc(sizeof(byn_chunk) + (size_t)size);
         if (!c) byn_panic("out of memory", NULL, 0);
         c->next = a->chunks;
@@ -2867,12 +2887,14 @@ byn_str byn_path_full_path(byn_str s, byn_alloc* to, const char* file, int line)
 
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc) {
     if (need <= *cap) return;
-    int64_t grown = *cap < 4 ? 4 : *cap * 2;
+    int64_t grown = *cap < 4 ? 4 : *cap > INT64_MAX / 2 ? INT64_MAX : *cap * 2;
     if (grown < need) grown = need;
+    int64_t bytes;
+    if (__builtin_mul_overflow(grown, elem_size, &bytes)) byn_panic("list is too long", NULL, 0);
 #ifdef BYN_DEBUG
     void* old = *ptr;
 #endif
-    *ptr = alloc->resize(alloc, *ptr, *cap * elem_size, grown * elem_size);
+    *ptr = alloc->resize(alloc, *ptr, *cap * elem_size, bytes);
 #ifdef BYN_DEBUG
     byn_own_rekey(old, *ptr);
 #endif
@@ -2882,36 +2904,84 @@ void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size,
 /* ── Maps ────────────────────────────────────────────────────────────────── */
 
 uint64_t byn_hash_seed;
+uint64_t byn_hash_seed_hi;
+
+/* Fills p with n bytes from the operating system's CSPRNG. */
+static void byn_os_random(void* p, size_t n) {
+#ifdef _WIN32
+    /* Looked up at run time from System32, so programs link without -lbcrypt. */
+    typedef NTSTATUS WINAPI byn_gen_random_fn(BCRYPT_ALG_HANDLE alg, PUCHAR buf, ULONG len, ULONG flags);
+    HMODULE bcrypt = LoadLibraryExW(L"bcrypt.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    byn_gen_random_fn* byn_gen_random = bcrypt ? (byn_gen_random_fn*)(void (*)(void))GetProcAddress(bcrypt, "BCryptGenRandom") : NULL;
+    if (!byn_gen_random || byn_gen_random(NULL, (PUCHAR)p, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0)
+        byn_panic("cannot read the system random source", NULL, 0);
+#elif defined(__linux__)
+    uint8_t* b = (uint8_t*)p;
+    while (n > 0) {
+        ssize_t got = getrandom(b, n, 0);
+        if (got < 0) {
+            if (errno == EINTR) continue;
+            byn_panic("cannot read the system random source", NULL, 0);
+        }
+        b += got;
+        n -= (size_t)got;
+    }
+#else
+    arc4random_buf(p, n);
+#endif
+}
 
 void byn_hash_seed_init(bool fixed) {
-    if (fixed) {
-        byn_hash_seed = 0;
-        return;
+    uint64_t key[2] = {0, 0};
+    if (!fixed) byn_os_random(key, sizeof key);
+    byn_hash_seed = key[0];
+    byn_hash_seed_hi = key[1];
+}
+
+static inline uint64_t byn_rotl(uint64_t x, int b) {
+    return (x << b) | (x >> (64 - b));
+}
+
+static inline void byn_sip_round(uint64_t* v) {
+    v[0] += v[1], v[1] = byn_rotl(v[1], 13), v[1] ^= v[0], v[0] = byn_rotl(v[0], 32);
+    v[2] += v[3], v[3] = byn_rotl(v[3], 16), v[3] ^= v[2];
+    v[0] += v[3], v[3] = byn_rotl(v[3], 21), v[3] ^= v[0];
+    v[2] += v[1], v[1] = byn_rotl(v[1], 17), v[1] ^= v[2], v[2] = byn_rotl(v[2], 32);
+}
+
+/* SipHash-1-3 (one compression round, three finalization rounds) of n bytes under the key (k0, k1). */
+static uint64_t byn_siphash13(uint64_t k0, uint64_t k1, const uint8_t* b, int64_t n) {
+    uint64_t v[4] = {k0 ^ UINT64_C(0x736f6d6570736575), k1 ^ UINT64_C(0x646f72616e646f6d),
+                     k0 ^ UINT64_C(0x6c7967656e657261), k1 ^ UINT64_C(0x7465646279746573)};
+    int64_t end = n - n % 8;
+    for (int64_t i = 0; i < end; i += 8) {
+        uint64_t m = 0;
+        for (int j = 7; j >= 0; j--) m = m << 8 | b[i + j];
+        v[3] ^= m;
+        byn_sip_round(v);
+        v[0] ^= m;
     }
-#ifdef _WIN32
-    uint64_t pid = (uint64_t)GetCurrentProcessId();
-#else
-    uint64_t pid = (uint64_t)getpid();
-#endif
-    byn_hash_seed = (uint64_t)byn_io_monotonic_nanos() ^ (pid << 32 | pid);
+    uint64_t last = (uint64_t)n << 56;
+    for (int64_t j = n % 8 - 1; j >= 0; j--) last |= (uint64_t)b[end + j] << (8 * j);
+    v[3] ^= last;
+    byn_sip_round(v);
+    v[0] ^= last;
+    v[2] ^= 0xff;
+    for (int i = 0; i < 3; i++) byn_sip_round(v);
+    return v[0] ^ v[1] ^ v[2] ^ v[3];
 }
 
 uint64_t byn_hash_bytes(const void* p, int64_t n) {
-    const uint8_t* b = (const uint8_t*)p;
-    uint64_t h = UINT64_C(14695981039346656037) ^ byn_hash_seed;
-    for (int64_t i = 0; i < n; i++) {
-        h ^= b[i];
-        h *= UINT64_C(1099511628211);
-    }
-    return h;
+    return byn_siphash13(byn_hash_seed, byn_hash_seed_hi, (const uint8_t*)p, n);
 }
 
 uint64_t byn_hash_mix(uint64_t h, uint64_t part) {
+    uint8_t b[16];
     for (int i = 0; i < 8; i++) {
-        h ^= (uint8_t)(part >> (i * 8));
-        h *= UINT64_C(1099511628211);
+        b[i] = (uint8_t)(h >> (i * 8));
+        b[8 + i] = (uint8_t)(part >> (i * 8));
     }
-    return h;
+    return byn_siphash13(byn_hash_seed, byn_hash_seed_hi, b, 16);
 }
 
 int64_t byn_map_find(const byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq) {
