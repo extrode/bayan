@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "kind": "coverage",
+  "tool": "bayan test --coverage",
+  "timing": {
+    "build_s": 1.022605,
+    "total_s": 9.5043596
+  },
+  "files": [
+    {
+      "path": "/Users/sy/Developer/ikhbat.org/bayan/.worktrees/worker-016-t4/lib/std/json/json.test.byn",
+      "lines": {
+        "covered": 11,
+        "total": 12,
+        "missed": [
+          15
+        ],
+        "unknown": []
+      },
+      "branches": {
+        "covered": 0,
+        "total": 0,
+        "missed": [],
+        "unknown": []
+      },
+      "errorPaths": [
+        {
+          "function": "tree",
+          "variant": "JsonError.syntax",
+          "hit": false,
+          "origins": []
+        },
+        {
+          "function": "tree",
+          "variant": "JsonError.tooDeep",
+          "hit": false,
+          "origins": []
+        },
+        {
+          "function": "tokensOf",
+          "variant": "JsonError.syntax",
+          "hit": false,
+          "origins": []
+        },
+        {
+          "function": "tokensOf",
+          "variant": "JsonError.tooDeep",
+          "hit": false,
+          "origins": []
+        }
+      ]
+    },
+    {
+      "path": "/Users/sy/Developer/ikhbat.org/bayan/.worktrees/worker-016-t4/lib/std/json/reader.byn",
+      "lines": {
+        "covered": 164,
+        "total": 165,
+        "missed": [
+          196
+        ],
+        "unknown": []
+      },
+      "branches": {
+        "covered": 190,
+        "total": 190,
+        "missed": [],
+        "unknown": []
+      },
+      "errorPaths": [
+        {
+          "function": "JsonReader.next",
+          "variant": "JsonError.syntax",
+          "hit": true,
+          "origins": [
+            "fail 60:13",
+            "fail 63:9",
+            "fail 66:13",
+            "fail 72:13",
+            "fail 77:13",
+            "fail 82:9",
+            "fail 87:13",
+            "try 92:16"
+          ]
+        },
+        {
+          "function": "JsonReader.next",
+          "variant": "JsonError.tooDeep",
+          "hit": true,
+          "origins": [
+            "try 92:16"
+          ]
+        },
+        {
+          "function": "JsonReader.openContainer",
+          "variant": "JsonError.tooDeep",
+          "hit": true,
+          "origins": [
+            "fail 133:9"
+          ]
+        },
+        {
+          "function": "JsonReader.readValue",
+          "variant": "JsonError.syntax",
+          "hit": true,
+          "origins": [
+            "try 145:25",
+            "try 149:56",
+            "fail 162:9"
+          ]
+        },
+        {
+          "function": "JsonReader.readValue",
+          "variant": "JsonError.tooDeep",
+          "hit": true,
+          "origins": [
+            "try 142:30",
+            "try 143:30"
+          ]
+        },
+        {
+          "function": "JsonReader.readNumber",
+          "variant": "JsonError.syntax",
+          "hit": true,
+          "origins": [
+            "fail 178:13",
+            "fail 182:13",
+            "fail 186:13",
+            "fail 192:13"
+          ]
+        },
+        {
+          "function": "JsonReader.readString",
+          "variant": "JsonError.syntax",
+          "hit": true,
+          "origins": [
+            "fail 209:13",
+            "fail 217:13",
+            "try 247:26",
+            "fail 249:21",
+            "fail 252:21",
+            "fail 255:21",
+            "fail 259:17"
+          ]
+        },
+        {
+          "function": "JsonReader.readString",
+          "variant": "JsonError.tooDeep",
+          "hit": false,
+          "origins": []
+        },
+        {
+          "function": "JsonReader.hex4",
+          "variant": "JsonError.syntax",
+          "hit": true,
+          "origins": [
+            "fail 278:17"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/Users/sy/Developer/ikhbat.org/bayan/.worktrees/worker-016-t4/lib/std/json/value.byn",
+      "lines": {
+        "covered": 84,
+        "total": 86,
+        "missed": [
+          59,
+          66
+        ],
+        "unknown": []
+      },
+      "branches": {
+        "covered": 36,
+        "total": 36,
+        "missed": [],
+        "unknown": []
+      },
+      "errorPaths": [
+        {
+          "function": "treeOf",
+          "variant": "JsonError.syntax",
+          "hit": true,
+          "origins": [
+            "try 46:30",
+            "try 48:30",
+            "try 53:30",
+            "try 57:37"
+          ]
+        },
+        {
+          "function": "treeOf",
+          "variant": "JsonError.tooDeep",
+          "hit": true,
+          "origins": [
+            "try 46:30",
+            "try 48:30",
+            "try 57:37",
+            "try 58:71"
+          ]
+        },
+        {
+          "function": "Json.parse",
+          "variant": "JsonError.syntax",
+          "hit": true,
+          "origins": [
+            "try 25:22",
+            "try 26:21",
+            "try 27:17"
+          ]
+        },
+        {
+          "function": "Json.parse",
+          "variant": "JsonError.tooDeep",
+          "hit": true,
+          "origins": [
+            "try 26:21"
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "lines": {
+      "covered": 259,
+      "total": 263
+    },
+    "branches": {
+      "covered": 226,
+      "total": 226
+    },
+    "errorPaths": {
+      "covered": 12,
+      "total": 17
+    }
+  }
+}

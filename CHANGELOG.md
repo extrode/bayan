@@ -4,6 +4,7 @@
 
 ### Added
 
+- Spec 016 T4: `import std.json`, the first std module: a pull reader (`JsonReader.over`, `next`, `JsonToken`), the tree `JsonValue` from `Json.parse` (`Untrusted`, fails `JsonError` with offset, line and column; nesting past 128 is `tooDeep`) and `Json.encode(v, indent:)` in the layout of Python's `json.dumps`.
 - Spec 014: `Path.combine` (two strings or a `span<string>`), `Path.directoryName` (`string?`, null for a root), `Path.fullPath` and the existing `Path.isRooted`, `Path.relative` and `Path.fileName` agree with .NET's `Path.*` on each OS (Law L026, `StdPathLawTests`); the self-hosted checker calls them, so `tests/windows-known-failures.txt` is empty. Questions 900–1006
 
 ### Changed

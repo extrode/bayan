@@ -1,0 +1,287 @@
+  // std.json pull reader (spec 016 T4, 015 S7): RFC 8259 text as a stream of tokens, one per `next()`.
+  
+  /// One step of a JSON text: a container bound, an object key, or a scalar.
+  public union JsonToken {
+      startObject
+      endObject
+      startList
+      endList
+      key(string name)
+      text(string value)
+      number(f64 value, string text)
+      flag(bool value)
+      nothing
+  }
+  
+  /// Why a JSON text was refused: at a byte offset, with the 1-based line and column (in runes) of that offset.
+  public union error JsonError {
+      syntax(string message, i64 offset, i32 line, i32 column)
+      tooDeep(i64 offset, i32 line, i32 column)
+  }
+  
+  /// Lists and objects nest at most this deep: a deeper text is `tooDeep`, never a stack overflow in a caller that
+  /// recurses per level (docs/memory-leaks.md rule 5). 128 is the decoder default of spec §15.4.
+  const maxDepth: i64 = 128
+  
+  /// What the reader accepts next.
+  union ReadState {
+      begin
+      listFirst
+      listValue
+      listNext
+      objectFirst
+      objectKey
+      objectColon
+      objectValue
+      objectNext
+      done
+  }
+  
+  /// A pull reader over one JSON text: `next()` gives the next token, `null` after the value and its trailing
+  /// whitespace, and fails on the first byte that breaks RFC 8259.
+  public struct JsonReader {
+      string text
+      i64 pos = 0
+      i32 line = 1
+      i64 lineStart = 0
+      ReadState state = .begin
+      /// One entry per open container, `true` for an object.
+      List<bool> open
+  
+      /// A reader at the start of `text`.
+      public static JsonReader over(string text) uses alloc {
++         return JsonReader { text: text, open: List<bool>() }
+      }
+  
+      /// The next token, or `null` once the value has been read and only whitespace follows it.
+      public JsonToken? next(ref this) fails JsonError uses alloc {
++         skipSpace()
++         if state is .done {
++             fail .syntax(message: "unexpected content after the value", offset: pos, line: line, column: columnAt(pos)) if pos < text.length
++             return null
+          }
++         fail .syntax(message: "unexpected end of input", offset: pos, line: line, column: columnAt(pos)) if pos >= text.length
++         if state is .listNext {
++             if peek() == ']' { return close(as: .endList) }
++             fail .syntax(message: "expected `,` or `]`", offset: pos, line: line, column: columnAt(pos)) if peek() != ','
++             pos += 1
++             skipSpace()
++             state = .listValue
++         } else if state is .objectNext {
++             if peek() == '}' { return close(as: .endObject) }
++             fail .syntax(message: "expected `,` or `}`", offset: pos, line: line, column: columnAt(pos)) if peek() != ','
++             pos += 1
++             skipSpace()
++             state = .objectKey
++         } else if state is .objectColon {
++             fail .syntax(message: "expected `:`", offset: pos, line: line, column: columnAt(pos)) if peek() != ':'
++             pos += 1
++             skipSpace()
++             state = .objectValue
+          }
++         fail .syntax(message: "unexpected end of input", offset: pos, line: line, column: columnAt(pos)) if pos >= text.length
++         let b = peek()
++         if state is .listFirst && b == ']' { return close(as: .endList) }
++         if state is .objectFirst && b == '}' { return close(as: .endObject) }
++         if state is .objectFirst or .objectKey {
++             fail .syntax(message: "expected a string key", offset: pos, line: line, column: columnAt(pos)) if b != '"'
++             let name = try readString()
++             state = .objectColon
++             return .key(name: name)
+          }
++         return try readValue()
+      }
+  
+      /// The byte at `pos`, or 0 at the end.
+      u8 peek() => pos < text.length ? text.bytes[pos] : 0
+  
+      void skipSpace(ref this) {
++         while pos < text.length {
++             let b = text.bytes[pos]
++             if b == '\n' {
++                 line += 1
++                 lineStart = pos + 1
++             } else if b != ' ' && b != '\t' && b != '\r' {
++                 return
+              }
++             pos += 1
+          }
+      }
+  
+      /// The 1-based column of `at` on the current line, counted in runes.
+      i32 columnAt(i64 at) => i32(text[lineStart..at].runeCount + 1)
+  
+      /// After a value: what the enclosing container accepts next.
+      void finishValue(ref this) {
++         if open.length == 0 {
++             state = .done
++         } else if open[open.length - 1] {
++             state = .objectNext
+          } else {
++             state = .listNext
+          }
+      }
+  
+      JsonToken close(ref this, as JsonToken token) {
++         pos += 1
++         let _ = open.removeLast()
++         finishValue()
++         return token
+      }
+  
+      JsonToken openContainer(ref this, bool object) fails JsonError uses alloc {
++         fail .tooDeep(offset: pos, line: line, column: columnAt(pos)) if open.length >= maxDepth
++         pos += 1
++         open.append(object)
++         state = object ? .objectFirst : .listFirst
++         return object ? .startObject : .startList
+      }
+  
+      JsonToken readValue(ref this) fails JsonError uses alloc {
++         let b = peek()
++         if b == '{' { return try openContainer(object: true) }
++         if b == '[' { return try openContainer(object: false) }
++         if b == '"' {
++             let value = try readString()
++             finishValue()
++             return .text(value: value)
+          }
++         if b == '-' || (b >= '0' && b <= '9') { return try readNumber() }
++         if literal("true") {
++             finishValue()
++             return .flag(value: true)
+          }
++         if literal("false") {
++             finishValue()
++             return .flag(value: false)
+          }
++         if literal("null") {
++             finishValue()
++             return .nothing
+          }
++         fail .syntax(message: "expected a value", offset: pos, line: line, column: columnAt(pos))
+      }
+  
+      /// Whether `word` starts at `pos`; if so, steps over it.
+      bool literal(ref this, string word) {
++         if !text[pos..].startsWith(word) { return false }
++         pos += word.length
++         return true
+      }
+  
+      /// RFC 8259 §6: `-`? (`0` | [1-9] digits) (`.` digits)? ([eE] [+-]? digits)?
+      JsonToken readNumber(ref this) fails JsonError {
++         let start = pos
++         if peek() == '-' { pos += 1 }
++         if peek() == '0' {
++             pos += 1
++             fail .syntax(message: "leading zero in a number", offset: start, line: line, column: columnAt(start)) if isDigit(peek())
++         } else if isDigit(peek()) {
++             while isDigit(peek()) { pos += 1 }
+          } else {
++             fail .syntax(message: "invalid number", offset: start, line: line, column: columnAt(start))
+          }
++         if peek() == '.' {
++             pos += 1
++             fail .syntax(message: "invalid number", offset: start, line: line, column: columnAt(start)) if !isDigit(peek())
++             while isDigit(peek()) { pos += 1 }
+          }
++         if peek() == 'e' || peek() == 'E' {
++             pos += 1
++             if peek() == '+' || peek() == '-' { pos += 1 }
++             fail .syntax(message: "invalid number", offset: start, line: line, column: columnAt(start)) if !isDigit(peek())
++             while isDigit(peek()) { pos += 1 }
+          }
++         let digits = text[start..pos]
+-         let value = f64.tryParse(digits) ?? fail .syntax(message: "invalid number", offset: start, line: line, column: columnAt(start))
++         finishValue()
++         return .number(value: value, text: digits)
+      }
+  
+      /// The string at `pos` (its opening `"`), unescaped; a text without escapes is a slice of the input.
+      string readString(ref this) fails JsonError uses alloc {
++         let start = pos
++         pos += 1
++         var sb = StrBuf()
++         var escaped = false
++         var run = pos
++         while true {
++             fail .syntax(message: "unterminated string", offset: start, line: line, column: columnAt(start)) if pos >= text.length
++             let b = text.bytes[pos]
++             if b == '"' {
++                 pos += 1
++                 if !escaped { return text[run..pos - 1] }
++                 sb.append(text[run..pos - 1])
++                 return $"{sb.finish()}"
+              }
++             fail .syntax(message: "control character in a string", offset: pos, line: line, column: columnAt(pos)) if b < 0x20
++             if b != '\\' {
++                 pos += 1
++                 continue
+              }
++             escaped = true
++             sb.append(text[run..pos])
++             let at = pos
++             pos += 1
++             let e = peek()
++             if e == '"' || e == '\\' || e == '/' {
++                 sb.append(text[pos..pos + 1])
++                 pos += 1
++             } else if e == 'b' {
++                 sb.append("\u{8}")
++                 pos += 1
++             } else if e == 'f' {
++                 sb.append("\u{C}")
++                 pos += 1
++             } else if e == 'n' {
++                 sb.append("\n")
++                 pos += 1
++             } else if e == 'r' {
++                 sb.append("\r")
++                 pos += 1
++             } else if e == 't' {
++                 sb.append("\t")
++                 pos += 1
++             } else if e == 'u' {
++                 pos += 1
++                 var cp = try hex4(escapeAt: at)
++                 if cp >= 0xD800 && cp <= 0xDBFF {
++                     fail .syntax(message: "lone surrogate", offset: at, line: line, column: columnAt(at)) if !text[pos..].startsWith("\\u")
++                     pos += 2
++                     let low = try hex4(escapeAt: at)
++                     fail .syntax(message: "lone surrogate", offset: at, line: line, column: columnAt(at)) if low < 0xDC00 || low > 0xDFFF
++                     cp = 0x10000 + (cp - 0xD800) * 0x400 + (low - 0xDC00)
++                 } else if cp >= 0xDC00 && cp <= 0xDFFF {
++                     fail .syntax(message: "lone surrogate", offset: at, line: line, column: columnAt(at))
+                  }
++                 sb.append($"{rune(cp)}")
+              } else {
++                 fail .syntax(message: "invalid escape", offset: at, line: line, column: columnAt(at))
+              }
++             run = pos
+          }
+      }
+  
+      /// Four hex digits at `pos` as a code unit; `escapeAt` is the `\` of the escape, for the error.
+      u32 hex4(ref this, i64 escapeAt) fails JsonError {
++         var value: u32 = 0
++         for _ in 0..4 {
++             let b = peek()
++             var d: u32 = 0
++             if b >= '0' && b <= '9' {
++                 d = u32(b - '0')
++             } else if b >= 'a' && b <= 'f' {
++                 d = u32(b - 'a') + 10
++             } else if b >= 'A' && b <= 'F' {
++                 d = u32(b - 'A') + 10
+              } else {
++                 fail .syntax(message: "invalid \\u escape", offset: escapeAt, line: line, column: columnAt(escapeAt))
+              }
++             value = value * 16 + d
++             pos += 1
+          }
++         return value
+      }
+  }
+  
+  bool isDigit(u8 b) => b >= '0' && b <= '9'
