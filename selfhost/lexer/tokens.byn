@@ -183,14 +183,13 @@ public enum TokenKind {
     actorKeyword
     macroKeyword
     selectKeyword
-    ensuresKeyword
 }
 
 public bool isKeyword(TokenKind kind) =>
-    kind.ordinal >= TokenKind.structKeyword.ordinal && kind.ordinal <= TokenKind.ensuresKeyword.ordinal
+    kind.ordinal >= TokenKind.structKeyword.ordinal && kind.ordinal <= TokenKind.selectKeyword.ordinal
 
 bool isReservedKeyword(TokenKind kind) =>
-    kind.ordinal >= TokenKind.actorKeyword.ordinal && kind.ordinal <= TokenKind.ensuresKeyword.ordinal
+    kind.ordinal >= TokenKind.actorKeyword.ordinal && kind.ordinal <= TokenKind.selectKeyword.ordinal
 
 public bool isStringLiteral(TokenKind kind) => kind switch {
     .stringLiteral or .rawStringLiteral or .cStringLiteral or .u16StringLiteral => true,
@@ -320,7 +319,7 @@ public struct Keywords {
         var keywords = Keywords { byFirstByte: List<i32>(), bucketStart: List<i64>() }
         for letter in 0..26 {
             keywords.bucketStart.append(keywords.byFirstByte.length)
-            for ordinal in TokenKind.structKeyword.ordinal..=TokenKind.ensuresKeyword.ordinal {
+            for ordinal in TokenKind.structKeyword.ordinal..=TokenKind.selectKeyword.ordinal {
                 let kind = TokenKind.fromOrdinal(ordinal) ?? .identifier
                 if kind.name.bytes[0] - 0x61 == letter { keywords.byFirstByte.append(ordinal) }
             }
