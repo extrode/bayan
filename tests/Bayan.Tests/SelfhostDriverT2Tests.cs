@@ -98,6 +98,14 @@ public sealed class SelfhostDriverT2Tests
         AssertSameAsCs("types", Isolated("diag/ambiguous-variant.byn"));
     }
 
+    /// <summary>`Mask` leaves a line that looks like a version line alone; only `MaskVersion` (for `version` stdout) rewrites it.</summary>
+    [Fact]
+    public void MaskKeepsVersionLikeLinesOnOtherStreams()
+    {
+        Assert.Equal("bayan 1 (x)\n", Mask("bayan 1 (x)\n"));
+        Assert.Equal("bayan 1 (masked)\n", MaskVersion("bayan 1 (x)\n"));
+    }
+
     /// <summary>A file named `-` in the working directory is parsed, not stdin (CliApp.cs:128, :1107); both sides see the test process's cwd.</summary>
     [Fact]
     public void ParsesAFileNamedDash()

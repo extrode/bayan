@@ -13,7 +13,7 @@ List<string> t2Rest(in List<string> kept) {
     return rest
 }
 
-/// CliApp.cs:1094 `TryReadSingleFile`: one argument that is a file; false after the message.
+/// CliApp.cs:1107 `TryReadSingleFile`: one argument that is a file; false after the message.
 bool tryReadSingleFile(in List<string> args) {
     if args.length != 1 {
         Io.stderr.write("bayan: expected exactly one file\n")
