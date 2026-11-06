@@ -13,10 +13,16 @@ namespace Bayan.Tests;
 /// its <c>build --emit-c --mode &lt;m&gt; --package selfhost selfhost/driver</c>, kept as <c>stageN/driver.&lt;m&gt;.c</c> and
 /// compared as bytes. <c>bootstrap/bayan.c</c> is C1 in <c>safe</c>; <c>bootstrap/bayan-rt.{h,c}</c> are
 /// <c>src/runtime/</c>; <c>BAYAN_UPDATE=1</c> rewrites all three. The working directory is process-wide, so this runs alone.
+/// <c>BAYAN_LAW_TIER</c> unset builds stages 1 and 2 and compares C1 with C2; <c>full</c> adds stage 3 and C3 (Q8).
 /// </summary>
 [Collection(nameof(ToolchainEnvironment))]
+[Trait("Law", "L027")]
 public sealed class BootstrapTests
 {
+    private static bool Full => Environment.GetEnvironmentVariable("BAYAN_LAW_TIER") == "full";
+
+    private static int StageCount => Full ? 3 : 2;
+
     private static readonly string[] Modes = ["safe", "debug"];
 
     private static string StagesDir => Path.Combine(Golden.RepoRoot, "tmp", "bootstrap");
@@ -56,7 +62,7 @@ public sealed class BootstrapTests
 
     private static bool BuildStages()
     {
-        for (var n = 1; n <= 3; n++)
+        for (var n = 1; n <= StageCount; n++)
         {
             var dir = Path.Combine(StagesDir, $"stage{n}");
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
@@ -79,7 +85,7 @@ public sealed class BootstrapTests
         }
         Assert.True(exit == 0, $"stage 1 (C#): exit {exit}\n{stderr}");
         times.Append($"stage1 build {clock.Elapsed.TotalSeconds:F2}s\n");
-        for (var n = 1; n <= 3; n++)
+        for (var n = 1; n <= StageCount; n++)
         {
             if (n > 1)
             {
@@ -131,7 +137,30 @@ public sealed class BootstrapTests
         {
             var c1 = C(1, mode);
             Assert.Null(FirstDifference($"{mode}: stage1 vs stage2", c1, C(2, mode)));
-            Assert.Null(FirstDifference($"{mode}: stage1 vs stage3", c1, C(3, mode)));
+            if (Full) Assert.Null(FirstDifference($"{mode}: stage1 vs stage3", c1, C(3, mode)));
+        }
+    }
+
+    /// <summary>The C# compiler's <c>--emit-c</c> of the driver equals stage 1's in each mode (L027's first leg).</summary>
+    [Fact]
+    public void CSharpEmitEqualsStage1()
+    {
+        var saved = Environment.CurrentDirectory;
+        try
+        {
+            Environment.CurrentDirectory = Golden.RepoRoot;
+            foreach (var mode in Modes)
+            {
+                var stdout = new StringWriter();
+                var stderr = new StringWriter();
+                var exit = CliApp.Run(EmitArgs(mode), stdout, stderr);
+                Assert.True(exit == 0, $"C# --emit-c --mode {mode}: exit {exit}\n{stderr}");
+                Assert.Null(FirstDifference($"{mode}: C# vs stage1", Encoding.UTF8.GetBytes(stdout.ToString()), C(1, mode)));
+            }
+        }
+        finally
+        {
+            Environment.CurrentDirectory = saved;
         }
     }
 
