@@ -13,7 +13,7 @@ fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # The doc's gate block, comments dropped, is the list the script must run.
 awk '/^## /{if(s)exit} /^## Release gate/{s=1} s&&/^```sh/{b=1;next} b&&/^```/{exit} b' "$doc" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//' \
-  | grep -v '^$' > "$tmp/doc-cmds"
+  | sed '/^$/d' > "$tmp/doc-cmds"
 [ -s "$tmp/doc-cmds" ] || fail "no command block under '## Release gate' in docs/memory-leaks.md"
 while IFS= read -r c; do
   grep -qxF "run $c" "$gate" || fail "memory-gate.sh does not run the documented gate command: $c"
