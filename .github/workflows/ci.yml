@@ -48,6 +48,7 @@ jobs:
           bash scripts/ci/sdk-patch-check.test.sh
           bash scripts/ci/known-failures.test.sh
           bash scripts/release/package.test.sh
+          bash scripts/release/memory-gate.test.sh
           bash scripts/parity/run.test.sh
       - name: Test
         if: runner.os != 'Windows'

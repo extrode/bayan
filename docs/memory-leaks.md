@@ -107,6 +107,11 @@ dotnet test -v q --filter "FullyQualifiedName~CliMemoryBounds"    # CLI capture,
 bash scripts/pinned-bayan.test.sh                                  # pinned build cache eviction
 ```
 
+`bash scripts/release/memory-gate.sh` runs this block and names every failing command; `release.yml`'s
+`memory-gate` job runs it on Linux and macOS, and no draft release is made without it. The VS Code
+extension and `bayan-lsp` have no release workflow: run the script by hand before packaging them.
+`scripts/release/memory-gate.test.sh` fails when the script and this block drift apart.
+
 plus, for a release that changes the runtime or selfhost: `leaks --atExit` over the run goldens
 on macOS (2026-11-06: ≤ 3.6 KB per golden) and peak RSS of a selfhost build of `selfhost/`
 (record the number in the release notes; a rise over 20 % blocks until explained).
