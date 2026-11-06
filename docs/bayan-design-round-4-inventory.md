@@ -139,6 +139,7 @@ Unrelated issues seen while auditing:
 - **HQ371:** accepted on the user's condition that `Map` is an insertion-ordered hash with O(1) lookup and per-process
   seeded hashing. It is: SPEC :284 (insertion order) and `src/runtime/bayan-rt.c` `byn_hash_seed_init` (seed from time
   and pid, fixed under the test flag). The seed feeds FNV-1a, which is not flood-resistant: a security-audit item.
+  Now the runtime keys SipHash-1-3 from the OS CSPRNG (fix/runtime-security).
 - Still open from the tiers list: Q2 (crypto scope), Q6, Q8 (`kit.tls` backend), Q12, the "Proposed" catalog rows;
   tiers §2 :40 ("auto-imports `kit`") is stale since Q10 was dropped.
 

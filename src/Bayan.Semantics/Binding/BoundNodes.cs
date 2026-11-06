@@ -87,6 +87,7 @@ public enum BuiltinMember
     OwnedValue,
     IoWrite,
     IoReadAll,
+    IoReadAllBytes,
     EnumName, EnumOrdinal,
     /// <summary>A data-enum field; the argument is the field index.</summary>
     EnumField,

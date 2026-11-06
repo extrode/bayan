@@ -2280,6 +2280,15 @@ internal sealed class FunctionEmitter
                     $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err.code = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
                 return $"{name}({Expr(r)})";
             }
+            case BuiltinMember.IoReadAllBytes:
+            {
+                var res = _c.CType(b.Type);
+                var list = _c.CType(((ResultType)b.Type).Value);
+                var name = _c.Helper("bynh_io_read_all_bytes", $"static {res} bynh_io_read_all_bytes(int32_t fd)", () =>
+                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    uint8_t* p = NULL;\n    int64_t n = 0;\n    r.err.code = byn_io_read_stdin_bytes(&p, &n, byn_context);\n" +
+                    $"    if (r.err.code == 0) r.value = ({list}){{p, n, n, byn_context}};\n    return r;\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
             case BuiltinMember.StrBufAsString:
                 return $"byn_strbuf_str({Expr(r)})";
             case BuiltinMember.PanicMessage:

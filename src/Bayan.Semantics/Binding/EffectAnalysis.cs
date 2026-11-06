@@ -273,7 +273,7 @@ internal static class EffectAnalysis
     private static string[] Member(BuiltinMember m) => m switch
     {
         BuiltinMember.IoWrite => ["console"],
-        BuiltinMember.IoReadAll => ["console", "alloc"],
+        BuiltinMember.IoReadAll or BuiltinMember.IoReadAllBytes => ["console", "alloc"],
         BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
             or BuiltinMember.IntToString or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet
             or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated or BuiltinMember.StringPadded or BuiltinMember.BytesToString
