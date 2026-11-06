@@ -331,12 +331,13 @@ public sealed class LanguageServerLeakTests(ITestOutputHelper output) : IDisposa
     public void RewalkingAFolderDoesNotSpendTheDirectoryBound()
     {
         Touch("a/f.byn");
-        var ws = new Workspace(maxDirs: 1);
+        Touch("a/s/f.byn");
+        var ws = new Workspace(maxDirs: 3);
         ws.IndexFolder(Path.Combine(_root, "a"));
-        for (int i = 0; i < 5; i++) ws.LoadFolder(Path.Combine(_root, "a"));
-        Touch("a/g.byn");
-        ws.LoadFolder(Path.Combine(_root, "a")); // already counted, so still walked
-        Assert.Equal(2, ws.Documents.Count());
+        for (int i = 0; i < 5; i++) ws.LoadFolder(Path.Combine(_root, "a")); // 12 entries if re-walks counted
+        Touch("a/t/f.byn");
+        ws.LoadFolder(Path.Combine(_root, "a", "t"));
+        Assert.Equal(3, ws.Documents.Count());
     }
 
     [Fact]
