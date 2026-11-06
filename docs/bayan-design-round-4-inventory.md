@@ -228,3 +228,31 @@ Unrelated issues seen while auditing:
   SPEC :1529 `@replaced(by:, since:)` overlaps batch 4's `@deprecated(by:, until:)` (one spelling: decide which
   stays); roadmap :96 settles Q8 but roadmap :119 and tiers :405 still list it open; the batch 1-2 "stale tiers :40"
   note is resolved.
+
+### Batch 8 (user, 2026-11-06)
+Every trigger below is evaluated at a fixed point by a named owner: **at Sūq's first runnable release, by the round-5
+review** (kit/Sūq public-surface counts: every release).
+- **Row 1 region refs in structs:** kept; the row closes with a reopen trigger: any new region-ref soundness bug
+  reopens it. The 010 bugs (Q745 escapes, Q747 `ref this` map field, arena returned two levels) were each fixed by a
+  local rule, so compile-fail goldens are added that combine them (a `ref this` map field inside an arena with a
+  two-level return, plus a Q745-style escape), where local rules interact.
+- **Row 2 naming/particle rules (BYN5100/5101):** kept with the >5 `@allow`/renames per 10k lines trigger, measured on
+  the public surface of `kit` and Sūq each release (selfhost has little public API, so its zero count is not
+  evidence). Until that measurement exists the row is not "kept on evidence".
+- **Row 3 line-joining starters:** a lint fires when a joined line is not indented deeper than the start of the
+  statement it joins. The real risk is `.` (and enum shorthand `.foo`) after a line that is already a complete
+  statement; `&&`, `||`, `and`, `or`, `??` cannot start a statement. `catch` directly after a closing `}` is exempt.
+  The formatter's continuation indentation keeps it quiet on formatted code.
+- **Row 4 type-based overloads:** deferred; SPEC :1382 rule 1 is marked not in v0.1. Until overloads exist, two
+  same-name functions with different parameter types stay a hard BYN2006 duplicate-declaration error (never first- or
+  last-wins), with a golden, so the overload rules can land later without changing existing code's behaviour.
+- **Row 5 `$n` SQL placeholders:** kept; reopens with interpolation when ≥10% of Sūq queries have ≥5 arguments.
+- **Row 6 trust model:** stdin stays plain; reopens when Sūq averages >2 `trustUnchecked() because` per handler; the
+  total count is recorded beside the average.
+- **Row 7 typestate scope:** reopens when >20% of `states` blocks are not lifecycles; HQ342 reopens with it (batch 5).
+- **`then` stages:** reopens when ≥10% of call sites in Sūq + selfhost nest 3 or more calls deep. If adopted, `then`
+  is contextual (never reserved), joins the line above like the other starters, and is covered by the row 3 lint.
+- **`@replaced`:** removed; `bayan migrate` reads `@deprecated(by:)` when `by:` is same-shape. If anything consumes
+  `since:`, it becomes an optional field of `@deprecated`, not a second attribute.
+- **Contradiction pass:** one revision file, written against batches 1-8 (not the pre-round text), applied after
+  this batch is recorded.
