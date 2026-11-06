@@ -2,7 +2,7 @@
 {
   "package": "local/tally",
   "version": "0.1.0",
-  "compiler": "bayan 0.2.0-dev",
+  "compiler": "bayan 0.2.0",
   "mode": "safe",
   "targets": [
     "linux-x64",
@@ -23,7 +23,7 @@
 {
   "package": "local/tally",
   "version": "0.1.0",
-  "compiler": "bayan 0.2.0-dev",
+  "compiler": "bayan 0.2.0",
   "mode": "safe",
   "targets": [
     "linux-x64",
