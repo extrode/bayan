@@ -1,0 +1,8 @@
+// An arena refuses a size that would overflow when rounded, instead of handing out a tiny block (audit 2026-11-06).
+void main() {
+    using var arena = Arena()
+    provide allocator: arena {
+        let s = "x".repeated(9223372036854775807)
+        print($"{s.length}")
+    }
+}

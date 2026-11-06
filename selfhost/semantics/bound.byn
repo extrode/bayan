@@ -187,6 +187,7 @@ public enum BuiltinMember {
     ownedValue
     ioWrite
     ioReadAll
+    ioReadAllBytes
     enumName
     enumOrdinal
     enumField

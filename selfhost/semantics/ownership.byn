@@ -985,7 +985,7 @@ bool t24AllocatingFunction(BuiltinFunction b) {
 
 bool t24AllocatingMember(BuiltinMember m) {
     switch m {
-        case .spanCopy or .stringCopy or .listCopy or .mapCopy or .strBufCopy or .ioReadAll or .intToString or .listAdd or .listReplace or .mapSlot or .mapIndexSet or .stringLowercased or .stringUppercased or .stringReplaced or .stringRepeated or .stringPadded or .bytesToString or .stringJoined or .utf16Copy:
+        case .spanCopy or .stringCopy or .listCopy or .mapCopy or .strBufCopy or .ioReadAll or .ioReadAllBytes or .intToString or .listAdd or .listReplace or .mapSlot or .mapIndexSet or .stringLowercased or .stringUppercased or .stringReplaced or .stringRepeated or .stringPadded or .bytesToString or .stringJoined or .utf16Copy:
             return true
         default:
             return false

@@ -8,6 +8,17 @@
 ### Changed
 - `ensures` is no longer reserved and can be used as an identifier (revision 0019, round-4 batch 1); BYN0012 no longer fires on it.
 
+### Security
+
+- Runtime (audit `docs/security/2026-11-06-runtime-audit.md`): an arena allocation near `i64.max` bytes panics "arena
+  allocation is too large" instead of rounding to a negative size and returning a short block (heap overflow).
+- Map and `Symbol` hashing is SipHash-1-3 keyed by 128 bits from the OS CSPRNG (`arc4random_buf`, `getrandom`,
+  `BCryptGenRandom`), replacing FNV-1a seeded from the clock and pid; the fixed key under `--test` is zero.
+- Slice bounds `^n` and inclusive ends reject out-of-range values before computing, with no signed overflow; `replaced`,
+  `joined` and list growth check their size arithmetic and panic "too long".
+- `Io.stdin.readAll()` rejects input that is not UTF-8 (`invalidUtf8`), as `Io.readText` does; the new
+  `Io.stdin.readAllBytes()` returns the rest of stdin as `List<u8>`, unvalidated.
+
 ## [0.2.0] - 2026-11-06
 
 Bayan compiles itself: the self-hosted lexer, parser, checker, emitter and driver in `selfhost/` build a `bayan` that

@@ -35,10 +35,10 @@ i32 lexCommand(in List<string> kept) {
     var bytes = List<u8>()
     var name = "<stdin>"
     if args.length == 1 && args[0] == "-" {
-        let input = Io.stdin.readAll()
+        let input = Io.stdin.readAllBytes()
         // coverage-exempt: Q943 the C# `CopyTo` has no failure branch and no test can make stdin unreadable
         unless input.isOk { return exitFailure }
-        for b in input.value.bytes { bytes.append(b) }
+        for b in input.value { bytes.append(b) }
     } else {
         unless tryReadSingleFile(in args) { return exitUsage }
         name = args[0]

@@ -603,9 +603,10 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
                     }
                 case .ioStream:
                     if name == "write" { return BuiltinMethod { member: .ioWrite, parameters: t9One("text", as: prim(.string)), returns: prim(.void) } }
-                // The binder wraps the result in `Result<string, IoError>`.
+                // The binder wraps the result in `Result<string, IoError>` (`Result<List<u8>, IoError>` for `readAllBytes`).
                 case .ioInput:
                     if name == "readAll" { return BuiltinMethod { member: .ioReadAll, parameters: List<BuiltinParameter>(), returns: prim(.string) } }
+                    if name == "readAllBytes" { return BuiltinMethod { member: .ioReadAllBytes, parameters: List<BuiltinParameter>(), returns: internList(ref c, by: prim(.u8)) } }
                 default: return null
             }
         case .optional:
@@ -624,7 +625,7 @@ List<string> t9Candidates() => [
     "length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
     "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip",
     "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append",
-    "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message",
+    "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "readAllBytes", "name", "ordinal", "exitCode", "stdout", "stderr", "message",
     "radix", "debug", "width", "fill", "align", "digits",
 ]
 
