@@ -35,7 +35,7 @@ Every open design item across `docs/bayan-design-round-4-draft.md` (R4D), `docs/
 | R4D §7 `when` + HQ70 | `when` guards on arms. SPEC :1287 already has owning-switch guards (BYN2791 read-only); Q70 asks whether guards may mutate | syn | – | S | open |
 | HQ69 | `move x switch` parses `move (x switch)` vs `(move x) switch`. Current choice already in SPEC :1287 | syn | `when`/switch batch | S | open (confirm) |
 | R4D §7 final + rev 0016 | `final` states, BYN7013 | sem | – | M | open |
-| R4D §7 closures + §9 Q1 + rev 0016 | Closure escape rule + `fails` polymorphism (BYN2825). §9 Q1 (lowering) answered by 007 Q114 `{code, env}`, so this is checker-only | sem | – | L | Q1 superseded (007 Q114, Sūq response appendix); rule open |
+| R4D §7 closures + §9 Q1 + rev 0016 | Closure escape rule + `fails` polymorphism (BYN2825). §9 Q1 (lowering) answered by Q345 (was Q114) `{code, env}`, so this is checker-only | sem | – | L | Q1 superseded (007 Q114, Sūq response appendix); rule open |
 | R4D §7 dbg | `dbg(x)` is an error in release (`dbg` already in SPEC :920) | diag | – | S | open |
 | R4D §7 BYN1070 | `!(x is .s)` input form | diag | – | S | open |
 | R4D §7 + rev 0016 | Payload size-ratio lint: threshold | diag | – | S | lint itself decided (rev 0016); threshold open |
@@ -186,5 +186,5 @@ Unrelated issues seen while auditing:
 - **Row 71 HQ64:** BYN2788 stays; `T?` or per-field `take()` covers the use.
 - **Row 72 HQ68:** L006's wording narrows to "types that have `.copy`" (docs only).
 - **Row 74 HQ342:** BYN7012 at the instantiating call stays; revisit with typestate scope.
-- Noted on the way: SPEC :1953 still calls `finish()` "move this … no copy", contradicting :303 and revision 0018;
-  inventory row 38 cites "007 Q114" where the function-value decision is Q345.
+- Fixed on the way (docs/batch-5-fixes): SPEC :1953 called `finish()` "move this … no copy", contradicting :303 and revision 0018;
+  inventory row 38 cited Q114 where the function-value decision is Q345.
