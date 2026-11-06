@@ -13,11 +13,11 @@ namespace Bayan.Tests;
 /// bare file name as <c>Golden.Load</c> names it; <c>RunTests</c> <c>run --package DIR [--mode M] FILE [-- ARGS]</c> (<c>.stdout</c>,
 /// <c>.exitcode</c> and the optional <c>.stderr</c>). The comparison is <see cref="Golden.Compare"/> as in the C# tests.
 /// <c>DiagTests</c> renders with <c>RenderAll</c>, which no command prints (the CLI adds a path line and a summary), so the
-/// dispatcher's ruling (Q1048) is: stage 2's <c>check</c> and the C# CLI's (<c>dotnet bayan.dll</c>), same arguments and directory, agree on
+/// dispatcher's ruling (Q1052) is: stage 2's <c>check</c> and the C# CLI's (<c>dotnet bayan.dll</c>), same arguments and directory, agree on
 /// exit code, stdout and stderr (elapsed seconds masked); the <c>.diag</c> files stay <c>DiagTests</c>'. The same ruling for <c>run</c>
 /// stderr: stage 2's equals the C# CLI's on the case, since both print the compile warnings before the program's own output.
 /// A <c>run/</c> input is left out when its file name ends in <c>.test.byn</c> (<c>RunTests</c> runs those with <c>bayan test -v</c>) or a
-/// <c>.stdin</c> file with the same name beside it exists (spec Q5: stage 2's <c>run</c> feeds no stdin). The only skips are the two <c>diag/</c> cases in <see cref="DiagSkips"/> (Q1048).
+/// <c>.stdin</c> file with the same name beside it exists (spec Q5: stage 2's <c>run</c> feeds no stdin). The only skips are the two <c>diag/</c> cases in <see cref="DiagSkips"/> (Q1052).
 /// </summary>
 [Collection(nameof(ToolchainEnvironment))]
 [Trait("Law", "L028")]
@@ -40,13 +40,13 @@ public sealed class SelfhostDriverGoldenTests
     public static TheoryData<string> Diag => Rows("diag", name => !DiagSkips.ContainsKey(name));
 
     /// <summary>
-    /// Listed skips of <c>diag/</c>: cases whose <c>.diag</c> holds a code that no C# CLI <c>check</c> invocation prints (Q1048), so comparing
+    /// Listed skips of <c>diag/</c>: cases whose <c>.diag</c> holds a code that no C# CLI <c>check</c> invocation prints (Q1052), so comparing
     /// stage 2 with the CLI would pass without covering it. <see cref="DiagSkipsAreGapsInTheCli"/> checks each is still such a gap.
     /// </summary>
     private static readonly Dictionary<string, string> DiagSkips = new()
     {
-        ["diag/cases-type-mismatch.test.byn"] = "Q1048", // BYN2202 needs IncludeTests: `check` never sets it; C# `test --all` does, stage 2 refuses `test`
-        ["diag/capability-exceeded/main.byn"] = "Q1048", // BYN6004 needs the manifest's capabilities; `check .` stops at the missing src/app, `--package` ignores package.byn
+        ["diag/cases-type-mismatch.test.byn"] = "Q1052", // BYN2202 needs IncludeTests: `check` never sets it; C# `test --all` does, stage 2 refuses `test`
+        ["diag/capability-exceeded/main.byn"] = "Q1052", // BYN6004 needs the manifest's capabilities; `check .` stops at the missing src/app, `--package` ignores package.byn
     };
     /// <summary>
     /// <c>BAYAN_GOLDEN_SHARD=i/n</c> (0 &lt;= i &lt; n) keeps the <c>run/</c> cases whose index among the in-scope ones is i modulo n, so the slow
@@ -251,7 +251,7 @@ public sealed class SelfhostDriverGoldenTests
             Failure(name, ".stdout", r.Stdout),
             Failure(name, ".exitcode", code == 0 ? "" : code + "\n", optional: true),
         }.Where(f => f is not null).ToList();
-        // The stderr ruling (Q1048): the C# CLI's `run` on the same case.
+        // The stderr ruling (Q1052): the C# CLI's `run` on the same case.
         var expected = CSharp(Work(name), [.. args]);
         if (expected.Stderr != r.Stderr) failures.Add($"{name}: stderr differs from the C# CLI's\n--- C#\n{expected.Stderr}\n--- stage 2\n{r.Stderr}");
         if (pending)
