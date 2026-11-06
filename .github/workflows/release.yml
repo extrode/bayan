@@ -54,8 +54,35 @@ jobs:
           name: bayan-${{ matrix.rid }}
           path: dist/bayan-*
 
+  # The memory and disk release gate (docs/memory-leaks.md): a release waits for it on both hosts.
+  memory-gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          git init -q .
+          git fetch -q --depth=1 --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
+      - name: Install .NET SDK
+        shell: bash
+        run: |
+          dotnet_root="$(bash scripts/ci/install-dotnet.sh "$RUNNER_TEMP/dotnet")"
+          echo "DOTNET_ROOT=$dotnet_root" >> "$GITHUB_ENV"
+          echo "$dotnet_root" >> "$GITHUB_PATH"
+      - name: Install zig
+        shell: bash
+        run: bash scripts/ci/install-zig.sh "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+      - name: Memory gate
+        shell: bash
+        run: bash scripts/release/memory-gate.sh
+
   release:
-    needs: build
+    needs: [build, memory-gate]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

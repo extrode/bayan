@@ -65,6 +65,10 @@ for p in tmp/cache/CACHEDIR.TAG "${BAYAN_CACHE:-}/CACHEDIR.TAG" "${XDG_CACHE_HOM
   [ -f "$p" ] && [ -d "$(dirname "$p")/v1" ] && grep -q "created by bayan" "$p" && drop "$p"
 done
 
+printf '== 7. scratch left by the 2026-11-06 review and 012 landing session\n'
+for p in tmp/union-resolve.js tmp/pb.keep tmp/rv3-test-insert.sh tmp/wp1-t7.log tmp/preflight-land-t7.txt tmp/memory-gate-test; do [ -e "$p" ] && drop "$p"; done
+for p in /tmp/rl /tmp/mon-* /tmp/gen*; do [ -e "$p" ] && [ -O "$p" ] && drop "$p"; done
+
 printf '== done: %s KB %s\n' "$total" "$([ "$execute" = 1 ] && [ "$scratch" = 1 ] && echo removed || echo 'would be removed (dry run; --execute --delete-scratch acts)')"
 if [ "$execute" = 1 ] && [ "$scratch" = 0 ]; then printf 'note: --execute alone deletes nothing here; add --delete-scratch.\n'; fi
 if [ "$execute" = 1 ] && [ "$failed" = 1 ]; then exit 1; fi

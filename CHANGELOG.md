@@ -5,6 +5,7 @@
 ### Changed
 
 - The repository moved to `github.com/ikhbat-org/bayan` (Ikhbat Foundation); home page `https://bayan.run`.
+- A release now waits for the memory and disk gate of `docs/memory-leaks.md` (`scripts/release/memory-gate.sh`, run on Linux and macOS by `release.yml`).
 
 ### Fixed
 
