@@ -13,7 +13,6 @@ namespace Bayan.Tests;
 /// its <c>build --emit-c --mode &lt;m&gt; --package selfhost selfhost/driver</c>, kept as <c>stageN/driver.&lt;m&gt;.c</c> and
 /// compared as bytes. <c>bootstrap/bayan.c</c> is C1 in <c>safe</c>; <c>bootstrap/bayan-rt.{h,c}</c> are
 /// <c>src/runtime/</c>; <c>BAYAN_UPDATE=1</c> rewrites all three. The working directory is process-wide, so this runs alone.
-/// <c>BAYAN_LAW_TIER</c> unset builds stages 1 and 2 and compares C1 with C2; <c>full</c> adds stage 3 and C3 (Q8).
 /// </summary>
 [Collection(nameof(ToolchainEnvironment))]
 [Trait("Law", "L027")]
@@ -141,7 +140,6 @@ public sealed class BootstrapTests
         }
     }
 
-    /// <summary>The C# compiler's <c>--emit-c</c> of the driver equals stage 1's in each mode (L027's first leg).</summary>
     [Fact]
     public void CSharpEmitEqualsStage1()
     {

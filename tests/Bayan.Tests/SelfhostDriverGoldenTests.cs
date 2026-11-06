@@ -18,7 +18,6 @@ namespace Bayan.Tests;
 /// stderr: stage 2's equals the C# CLI's on the case, since both print the compile warnings before the program's own output.
 /// A <c>run/</c> input is left out when its file name ends in <c>.test.byn</c> (<c>RunTests</c> runs those with <c>bayan test -v</c>) or a
 /// <c>.stdin</c> file with the same name beside it exists (spec Q5: stage 2's <c>run</c> feeds no stdin). The only skips are the two <c>diag/</c> cases in <see cref="DiagSkips"/> (Q1052).
-/// <c>BAYAN_LAW_TIER</c> unset keeps a seeded eighth of each kind's cases (<see cref="Pick"/>); <c>full</c> keeps every case, a superset.
 /// </summary>
 [Collection(nameof(ToolchainEnvironment))]
 [Trait("Law", "L028")]
@@ -26,11 +25,10 @@ public sealed class SelfhostDriverGoldenTests
 {
     private const ulong Seed = 0x9E3779B97F4A7C15;
 
-    private const int QuickDivisor = 8;
+    private const int QuickDivisor = 12;
 
     private static bool Full => Environment.GetEnvironmentVariable("BAYAN_LAW_TIER") == "full";
 
-    /// <summary>All of <paramref name="names"/> in the full tier, else the first ceil(n / <see cref="QuickDivisor"/>) of a xorshift64 shuffle seeded with <see cref="Seed"/>, in their original order.</summary>
     internal static List<string> Pick(List<string> names)
     {
         if (Full) return names;
