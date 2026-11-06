@@ -128,7 +128,7 @@ public sealed class BootstrapTests
         return $"{label}, line {i + 1}\n  first:  {(i < a.Length ? a[i] : "<end>")}\n  second: {(i < b.Length ? b[i] : "<end>")}";
     }
 
-    /// <summary>C1 == C2 == C3 in <c>safe</c> and <c>debug</c> (R9).</summary>
+    /// <summary>C1 == C2 in <c>safe</c> and <c>debug</c>, and C1 == C3 with <c>BAYAN_LAW_TIER=full</c> (R9, Q8).</summary>
     [Fact]
     public void StagesReachAFixpoint()
     {
