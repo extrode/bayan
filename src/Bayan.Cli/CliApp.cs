@@ -682,7 +682,8 @@ public static class CliApp
                     4 => TestStatus.Pending,
                     _ => TestStatus.Panic,
                 };
-                var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) : (outcome.Stdout + outcome.Stderr).TrimEnd();
+                var captured = (outcome.Stdout + outcome.Stderr).TrimEnd();
+                var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) + (captured.Length > 0 ? "\n" + captured : "") : captured;
                 var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
                 results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
                 var module = Path.GetFileName(ModuleOf(compiled, test));
@@ -1051,15 +1052,18 @@ public static class CliApp
         if (coveragePrefix is not null) psi.Environment["BAYAN_COVERAGE"] = coveragePrefix;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         using var p = System.Diagnostics.Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = BoundedCapture.Start(p.StandardOutput.BaseStream);
+        var stderr = BoundedCapture.Start(p.StandardError.BaseStream);
         if (!p.WaitForExit(TestTimeout))
         {
             p.Kill(entireProcessTree: true);
             p.WaitForExit();
-            return new TestOutcome(-1, true, stdout.Result, stderr.Result, clock.Elapsed);
+            // A grandchild may still hold the pipes open; do not wait for them forever.
+            // What was read so far is kept either way.
+            Task.WaitAll([stdout.Completion, stderr.Completion], TimeSpan.FromSeconds(5));
+            return new TestOutcome(-1, true, stdout.Snapshot(), stderr.Snapshot(), clock.Elapsed);
         }
-        return new TestOutcome(p.ExitCode, false, stdout.Result, stderr.Result, clock.Elapsed);
+        return new TestOutcome(p.ExitCode, false, stdout.Completion.Result, stderr.Completion.Result, clock.Elapsed);
     }
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)
