@@ -117,7 +117,7 @@ The **015** column marks modules the tooling ports are expected to need first; t
 | `std.db` | database interfaces: `IQuerySource`, `unique Rows<T>` (`moveNext`/`current`, `first`, `single`, `all`, `readInto`), `IRow`/`IEntity`, `Sql` sink type, `sql"…"` with `$n`, `prepare(…, Millis timeout = 30s)`, `checkShape(… as Mapping)`, cancellation from the fiber scope, `effect db = net, fs`; named placeholders and batches deferred; proposed Oct 24, not decided: interpolation holes instead of `$n`, composable `Sql` fragments, compile-time schema checks, dialect-neutral lowering | `db` alias | spec-only; naming Open (Q1) | |
 | `std.c` | FFI and C ABI interop, comptime header import, `extern c`, postfix pointers (`Sqlite3* db`), `cstr` and wide strings, C ABI exports so other languages can call Bayān | `.native` grant | v0.1 in part | |
 | `std.test` | power asserts, parameterized tests via attributes, benchmarks, doctests, mutation-testing hooks (`@unobservable`), `console` capture per test, effect fakes via `provide` | inferred | v0.1 in part | yes |
-| Events | `Event<T>`, `unique Subscription`; events named for what happened (no `on` prefix) | bound in the type | spec-only; module Open (Q7) | |
+| Events | `Event<T>`, `unique Subscription`; events named for what happened (no `on` prefix) | bound in the type | spec-only; module `std.event` (Q7) | |
 
 **Not in `std`, on purpose:** protocols (HTTP, SMTP, TLS), drivers, interop formats (CSV, TOML, YAML, XML), timezone data, culture (`kit.intl`), and anything else that changes faster than an edition.
 
@@ -128,6 +128,7 @@ The **015** column marks modules the tooling ports are expected to need first; t
 | Module | Contents | Depends on | Status | 015 |
 | --- | --- | --- | --- | --- |
 | `kit.http` | HTTP/1.1 and HTTP/2 client and server, routing primitives, timeouts required, resilience (timeout, retry, circuit breaker); `HeaderValue` sink type; per-worker connection ownership | `kit.tls`, `kit.mime` | spec | yes (see §12.5) |
+| `kit.crypto` | AEAD (ChaCha20-Poly1305, AES-GCM), Ed25519, X25519, Argon2; algorithms always named explicitly | `std.crypto` | Decided (batch 7) | |
 | `kit.tls` | TLS client and server; the CA root store ships here, not frozen | `std.crypto` | spec; backend Decided (Q8) | indirectly |
 | `kit.jwt` | token signing and verification | `std.crypto` | spec | |
 | `kit.retry` | retry and backoff outside HTTP (may fold into `kit.http`) | `std.fiber` | Proposed | |
@@ -149,7 +150,7 @@ The **015** column marks modules the tooling ports are expected to need first; t
 | `kit.markdown` | Markdown rendering and sanitizing | `std.text` | Proposed (named in the markup design) | |
 | `kit.proto` | Protocol Buffers; `Protobuf.generator` for `build.byn` | `std.codec` | later | |
 
-The markup feature is a generic language construct (`markup target { … }`, `@element` structs) with no built-in vocabulary. Each target library supplies its vocabulary. The keyword `markup` is reserved in round 4; the feature lands in v0.2 with `kit.web` and `kit.ui`.
+The markup feature is a generic language construct (`markup target { … }`, `@element` structs) with no built-in vocabulary. Each target library supplies its vocabulary. The word `markup` is contextual (batch 9), not reserved; the feature lands in v0.2 with `kit.web` and `kit.ui`.
 
 ## 7. Not a library: language features, official packages, ecosystem
 
@@ -401,7 +402,7 @@ The agent asks before touching any of these.
 | Q4 | Unicode case tables | Rev 0003: full case mapping in `std.text` after v0.1. Rev 0015: `lowercased()` with tables from `UnicodeData.txt`, added to the compiler now. | Tables generated into `core` (classification and simple case mapping); folding, special casing and normalization in `std.text`. Confirm rev 0015's scope. |
 | Q5 | Legacy encodings | Rev 0003: "`kit` (`kit.intl`, `Latin1` and other encodings)". | Separate `kit.encoding`; culture and encodings are different concerns. |
 | Q6 | `kit.template` | Stdlib chat proposed it; Nov 1 markup design covers HTML through markup and content files through generators. | Drop `kit.template`. |
-| Q7 | `Event<T>` home | Spec §16, spec-only, no module. | `core` if it needs no allocator; otherwise `std.event`. Decide when implemented. |
+| Q7 | `Event<T>` home | Spec §16, spec-only, no module. | Decided (batch 9): `std.event` (SPEC `uses alloc`). |
 | Q8 | `kit.tls` backend | Not discussed. | Decided (batch 7): `curl` shell-outs for 015 scripts now; `kit.tls` wraps a C library via `std.c` in v0.3 (library chosen later); native TLS needs its own spec. |
 | Q9 | `kit.xml` | New on Nov 2. Spec 015 S9 (Nov 2): build it only if the known-failures script outlives the C# test suite; confirm first. | Confirm `kit` placement and the pull-reader-first scope. |
 | Q10 | Script mode auto-imports `kit` (dropped Nov 2: scripts import explicitly) | Proposed in the stdlib chat, never confirmed. | Confirm or drop. |
@@ -416,7 +417,7 @@ Newest first.
 | --- | --- | --- |
 | Nov 2 | Spec 015 answers S1–S12, D1–D4: ports wait for 012; `std.env`, `std.regex` (RE2-style), `std.fs` path-string verbs (`createDirectory`, `canonical`), `run(directory:, input:, env:)`, layered `std.json`; Q3 settled (`std.encoding`), Q10 dropped, Q9 conditional | `docs/specs/015-tooling/015-spec.md` *Decisions* |
 | Nov 2 | Spec 015 decisions T1–T4 (§12.1); `kit.xml` proposed | this doc |
-| Nov 1 | `markup` blocks and `@element` are a generic language feature; HTML and UI vocabularies live in `kit.web`, `kit.ui`; `markup` reserved in round 4 | markup design |
+| Nov 1 | `markup` blocks and `@element` are a generic language feature; HTML and UI vocabularies live in `kit.web`, `kit.ui`; `markup` a contextual word (batch 9) | markup design |
 | Nov 1 | Packages: `uses:` grants per dependency, `.native`, versioned modules from `kit`, update cooldown, lockfile hashes | packages design |
 | Nov 1 | Concurrency: thread-per-core, `scope`/`spawn`, implicit cancellation, `ISendable`/`IShareable`, no lock across suspend, `@blocking` and compute offload; v0.2 | concurrency design |
 | Nov 1 | Code generation option B (staged): `Row`, `Json`, `Csv`, generators, `bayan expand` in v0.2; readable `gen/` tree | codegen design |
