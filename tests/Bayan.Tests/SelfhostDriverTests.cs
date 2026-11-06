@@ -63,8 +63,6 @@ public sealed class SelfhostDriverT1Tests
     public void MatchesTheCSharpCli(string[] args) => AssertSameAsCs(args);
 
     [Theory]
-    [InlineData("build")]
-    [InlineData("run")]
     [InlineData("doctor")]
     [InlineData("format")]
     [InlineData("audit")]
@@ -86,18 +84,26 @@ public sealed class SelfhostDriverT1Tests
         Assert.Equal($"error: `{command}` is not available in the self-hosted compiler; use the C# `bayan`\n", stderr);
     }
 
+    /// <summary>`build` and `run` reach their commands (T5, T6): a missing path fails as the C# does.</summary>
     [Fact]
-    public void AScriptIsRefusedAsRunAndAGlobalOptionBeforeItIsTaken()
+    public void DispatchesBuildAndRun()
+    {
+        var missing = Path.Combine(Golden.RepoRoot, "tmp", "t1-driver", "missing.byn");
+        AssertSameAsCs("build", missing);
+        AssertSameAsCs("run", missing);
+    }
+
+    [Fact]
+    public void AScriptRunsAndAGlobalOptionBeforeItIsTaken()
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "t1-driver");
         Directory.CreateDirectory(dir);
         var script = Path.Combine(dir, "tool.byn");
         File.WriteAllText(script, "print(\"hi\")\n");
-        var (exit, stdout, stderr) = SelfhostDriverHarness.Run("--ascii", script, "--color", "bad");
-        Assert.Equal(CliApp.ExitUsage, exit);
-        Assert.Equal("", stdout);
-        // no-oracle: Q917 (as above; the C# would run the script, and `--color bad` after it is the script's own argument)
-        Assert.Equal("error: `run` is not available in the self-hosted compiler; use the C# `bayan`\n", stderr);
+        // the script runs (T6); `--color bad` after it is its own argument (CliApp.cs:97, :315)
+        // (the C# program inherits the test process's stdout, so only the exit code is comparable)
+        string[] runArgs = ["--ascii", script, "--color", "bad"];
+        Assert.Equal(Oracle(runArgs).Exit, SelfhostDriverHarness.Run(runArgs).Exit);
         AssertSameAsCs(dir);
         // a directory named like a script is not one (`File.Exists`)
         Directory.CreateDirectory(Path.Combine(dir, "d.byn"));
@@ -109,13 +115,18 @@ public sealed class SelfhostDriverT1Tests
 
     private static string Fmt(Style? s) => $"{(s!.Colors is not null).ToString().ToLowerInvariant()} {(s.Symbols == Symbols.Ascii).ToString().ToLowerInvariant()} {s.Width}";
 
-    private static object? Static(string name) => typeof(CliApp).GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null);
-
-    /// <summary>The style state after <see cref="CliApp.Run(string[], TextWriter, TextWriter)"/> with the process environment.</summary>
+    /// <summary>
+    /// The style state `Run` sets (CliApp.cs:40) with no environment variable set: the colour and `--ascii` come from the C#
+    /// <c>TakeGlobalOptions</c> itself, then <c>Decide</c> as `Run` calls it, over an empty environment so the test process's
+    /// <c>NO_COLOR</c>, <c>FORCE_COLOR</c>, <c>TERM</c> and locale cannot change the expected line (`Run` takes no environment).
+    /// </summary>
     private static string CsStyle(string[] args)
     {
-        CliApp.Run(args, new StringWriter(), new StringWriter());
-        return StyleLine((Style?)Static("s_styleOut"), (Style?)Static("s_styleErr"), (bool)Static("s_stderrTty")!);
+        var call = new object[] { args, new StringWriter() };
+        var taken = typeof(CliApp).GetMethod("TakeGlobalOptions", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, call);
+        var (color, ascii) = ((string Color, bool Ascii))taken!;
+        var style = TerminalStyle.Decide(color, ascii, false, _ => null, 0);
+        return StyleLine(style, style, false);
     }
 
     private static string ProbeStyle(IReadOnlyDictionary<string, string> env, string[] args)

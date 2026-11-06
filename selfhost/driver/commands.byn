@@ -63,7 +63,8 @@ i32 parseCommand(in List<string> kept) {
         }
     }
     unless tryReadSingleFile(in rest) { return exitUsage }
-    if printAst { return parser.parseOne(rest[0], by: lexer.Keywords.build()) }
+    // `parseOne` reads stdin for `-`; the C# parses the file named `-` (CliApp.cs:128, :1107), so it is read as `./-`.
+    if printAst { return parser.parseOne(rest[0] == "-" ? "./-" : rest[0], by: lexer.Keywords.build()) }
     // stub: T2 parse without --ast (blocked: Q940)
     return refuse("parse")
 }

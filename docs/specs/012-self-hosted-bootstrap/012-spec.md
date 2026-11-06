@@ -67,7 +67,7 @@ Steps 1 to 5 ported the lexer (`selfhost/lexer/`, L001), the parser (`selfhost/p
 - `SelfhostDriverRuntimeTests` (new): R8 constants equal the runtime files.
 - `BootstrapTests` (new, `Law=L027`): stages 1–3 in `tmp/bootstrap/stage{1,2,3}`; C1 == C2 == C3 in `safe` and `debug`; no absolute path or timestamp in C1; `bootstrap/bayan.c` == C1 `safe`; the `bootstrap/README.md` command builds it with `cc` on the host and the result passes `version`.
 - `SelfhostDriverGoldenTests` (new, `Law=L028`): R10 against stage 2.
-- `SelfhostDriverInventoryTests` (new): R12.
+- `SelfhostDriverT8Tests` (new, in `SelfhostDriverInventoryTests.cs`): R12.
 - `docs/laws/027-bootstrap-fixpoint.md` and `docs/laws/028-driver-equivalence.md` (new) enacted by the user and proved by `laws-check.js --run` (`docs/laws/README.md:12`).
 - `docs/bayan-handoff.md` row 012 done; Questions recorded.
 
