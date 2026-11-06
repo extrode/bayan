@@ -702,4 +702,23 @@ public sealed class FormatTests
         Assert.Empty(after.Diagnostics.Items);
         Assert.DoesNotContain("HashMap<", System.Text.Encoding.UTF8.GetString(fixedBytes));
     }
+
+    /// <summary>`bayan format` indents each under-indented joined line, so BYN5103 is quiet on its output; quiet input is left alone.</summary>
+    [Theory]
+    [InlineData("line-join-member", true)]
+    [InlineData("line-join-enum-shorthand", true)]
+    [InlineData("line-join-and", true)]
+    [InlineData("line-join-quiet", false)]
+    public void FormattedCodeQuietsTheLineJoinLint(string name, bool fires)
+    {
+        var source = File.ReadAllBytes(Path.Combine(Golden.CasesRoot, "diag", name + ".byn"));
+        var file = Path.Combine(Fresh("line-join-" + name), "main.byn");
+        File.WriteAllBytes(file, source);
+        Assert.Equal(fires, Bayan.Syntax.Parsing.SyntaxTree.Parse(new Bayan.Syntax.Text.SourceText(file, source)).Lints.Count > 0);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        var formatted = File.ReadAllBytes(file);
+        Assert.Empty(Bayan.Syntax.Parsing.SyntaxTree.Parse(new Bayan.Syntax.Text.SourceText(file, formatted)).Lints);
+        if (!fires) Assert.Equal(source, formatted);
+    }
 }

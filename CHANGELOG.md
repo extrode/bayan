@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- Lint BYN5103: a line starting with a joining token (`.`, `?.`, `??`, `&&`, `||`, `and`, `or`, `catch`, `fails`, …) must be indented deeper than its statement's first line; `bayan format` applies the fix.
+
+### Changed
+- `ensures` is no longer reserved and can be used as an identifier (revision 0019, round-4 batch 1); BYN0012 no longer fires on it.
+
 ### Security
 
 - Runtime (audit `docs/security/2026-11-06-runtime-audit.md`): an arena allocation near `i64.max` bytes panics "arena
@@ -10,6 +16,8 @@
   `BCryptGenRandom`), replacing FNV-1a seeded from the clock and pid; the fixed key under `--test` is zero.
 - Slice bounds `^n` and inclusive ends reject out-of-range values before computing, with no signed overflow; `replaced`,
   `joined` and list growth check their size arithmetic and panic "too long".
+- `Io.stdin.readAll()` rejects input that is not UTF-8 (`invalidUtf8`), as `Io.readText` does; the new
+  `Io.stdin.readAllBytes()` returns the rest of stdin as `List<u8>`, unvalidated.
 
 ## [0.2.0] - 2026-11-06
 

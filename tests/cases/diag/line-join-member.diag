@@ -1,0 +1,17 @@
+warning BYN5103: a line starting with `.` joins the statement above; indent it deeper
+
+  4 │ .length
+    │ ^ joins the statement on line 3
+    │
+  help: indent it deeper than the line its statement starts on
+    │ 4 │     .length
+    │   │ ++++
+
+warning BYN5103: a line starting with `.` joins the statement above; indent it deeper
+
+  9 │     .length
+    │     ^ joins the statement on line 8
+    │
+  help: indent it deeper than the line its statement starts on
+    │ 9 │         .length
+    │   │     ++++

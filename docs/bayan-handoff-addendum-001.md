@@ -26,7 +26,7 @@ Why not make span parameters read-only by default: it would give `Span<T>` a dif
 - Exponent spelling: lowercase, no `+`, no leading zeros: `1e15`, `1.5e-7`, `-2.25e20`. The output is always a valid Bayan literal and valid JSON.
 - Special values: `nan`, `inf`, `-inf` in `$"{x}"`; `Json.encode` rejects them (`JsonError.nonFinite`).
 - `-0.0` prints `-0`. Integral values print without a decimal point (`42`, not `42.0`), matching .NET.
-- Fixed-format control (`{x:F2}`) remains deferred to the format-specifier design.
+- Fixed-format control (`{x:F2}`) remains deferred to the format-specifier design. Superseded by revision 0003 §6 (batch 9): format specifiers are settled, and `{x:.2}` is an input form that `bayan format` rewrites to `{x, digits: 2}` (BYN1068).
 
 Add golden cases at the boundaries: `999999999999999.9`, `1e15`, `0.00001`, `0.0000099`, `0.1 + 0.2`, `-0.0`, `nan`.
 

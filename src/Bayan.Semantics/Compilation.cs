@@ -169,6 +169,7 @@ public sealed partial class Compilation
         {
             var tree = SyntaxTree.Parse(source);
             Diagnostics.AddRange(tree.Diagnostics);
+            Diagnostics.AddRange(tree.Lints);
             module.Files.Add(new FileContext(module, tree));
         }
         foreach (var file in module.Files.Where(f => !f.Tree.Diagnostics.Any(d => d.IsError)))

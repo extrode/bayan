@@ -92,8 +92,10 @@ bool isWasl(ref Parser p, at i64 index) {
 }
 
 /// Whether the line before token `index` ends in an operator, `,`, `=`, `=>` or an opening bracket (lā), or the token is waṣl.
-bool lineContinues(ref Parser p, at i64 index) {
-    if isWasl(ref p, at: index) { return true }
+bool lineContinues(ref Parser p, at i64 index) => isWasl(ref p, at: index) || afterLa(ref p, at: index)
+
+/// Whether the line before token `index` ends in an operator, `,`, `=`, `=>` or an opening bracket (lā).
+bool afterLa(ref Parser p, at i64 index) {
     if index <= 0 { return false }
     switch p.kindAt(index - 1) {
         case .comma or .fatArrow or .openBrace or .openParen or .openBracket or
@@ -121,6 +123,74 @@ bool endsBefore(ref Parser p, at i64 index) {
     let kind = p.kindAt(index)
     return kind == .semicolon || kind == .closeBrace || kind == .endOfFile || breaksLine(ref p, at: index)
 }
+
+// ── Line-join lint (BYN5103) ─────────────────────────────────────────────────────
+
+/// BYN5103, a warning: a waṣl line indented no deeper than the line its statement starts on. Reported by a
+/// compilation and fixed by `bayan format`, not by `bayan parse`. Ports `LintLineJoins`.
+public List<Diagnostic> lintLineJoins(ref Parser p) uses alloc {
+    var lints = List<Diagnostic>()
+    var opener = List<i64>()
+    var open = List<i64>()
+    for i in 0..p.count {
+        opener.append(-1)
+        switch p.kindAt(i) {
+            case .openParen or .openBracket or .openBrace or .interpolationStart:
+                open.append(i)
+            case .closeParen or .closeBracket or .interpolationEnd or .closeBrace:
+                if open.length > 0 { opener[i] = open.removeLast() }
+            default:
+                continue
+        }
+    }
+    for i in 1..p.count {
+        if !breaksLine(ref p, at: i) || hasBlankLineBefore(ref p, at: i) || !isWasl(ref p, at: i) { continue }
+        // After lā the line above already continues; after `{` or `,` the line starts an entry (a statement, an arm).
+        if afterLa(ref p, at: i) { continue }
+        if p.kindAt(i) == .catchKeyword && p.kindAt(i - 1) == .closeBrace { continue }
+        // At a field's indentation `requires` is a struct-level rule (O3, spec §2.5), so its indentation is meant.
+        if p.kindAt(i) == .requiresKeyword { continue }
+        var start = lineFirst(ref p, at: i - 1)
+        while true {
+            if opener[start] >= 0 {
+                start = lineFirst(ref p, at: opener[start])
+            } else if start > 0 && joinsLineBefore(ref p, at: start) {
+                start = lineFirst(ref p, at: start - 1)
+            } else {
+                break
+            }
+        }
+        let token = p.lexed.tokens[i]
+        let indent = indentAt(ref p, at: token.start)
+        let statementIndent = indentAt(ref p, at: p.lexed.tokens[start].start)
+        if indent.length > statementIndent.length { continue }
+        let line = p.lexed.source.getLineIndex(p.lexed.tokens[start].start) + 1
+        let lineStart = p.lexed.source.getLineSpan(p.lexed.source.getLineIndex(token.start)).start
+        lints.append(Diagnostic {
+            code: "BYN5103",
+            span: spanOf(token),
+            message: $"a line starting with `{p.textOf(token)}` joins the statement above; indent it deeper",
+            label: $"joins the statement on line {line}",
+            help: "indent it deeper than the line its statement starts on",
+            hasFix: true,
+            fixSpan: TextSpan { start: lineStart, length: indent.length },
+            fixReplacement: $"{statementIndent}    ",
+        })
+    }
+    return lints
+}
+
+/// The first token on the line holding token `index`.
+i64 lineFirst(ref Parser p, at i64 index) {
+    var i = index
+    while i > 0 && !p.lexed.tokens[i].hasNewlineBefore { i -= 1 }
+    return i
+}
+
+/// Whether token `index` continues the statement on the line before it.
+bool joinsLineBefore(ref Parser p, at i64 index) =>
+    !breaksLine(ref p, at: index) || !hasBlankLineBefore(ref p, at: index) && p.kindAt(index - 1) != .openBrace
+        && lineContinues(ref p, at: index)
 
 /// Whether the group opened at `open` has a `kind` token at its top level.
 bool inGroup(ref Parser p, at i64 open, for TokenKind kind) {

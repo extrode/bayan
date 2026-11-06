@@ -35,7 +35,7 @@ Every open design item across `docs/bayan-design-round-4-draft.md` (R4D), `docs/
 | R4D §7 `when` + HQ70 | `when` guards on arms. SPEC :1287 already has owning-switch guards (BYN2791 read-only); Q70 asks whether guards may mutate | syn | – | S | open |
 | HQ69 | `move x switch` parses `move (x switch)` vs `(move x) switch`. Current choice already in SPEC :1287 | syn | `when`/switch batch | S | open (confirm) |
 | R4D §7 final + rev 0016 | `final` states, BYN7013 | sem | – | M | open |
-| R4D §7 closures + §9 Q1 + rev 0016 | Closure escape rule + `fails` polymorphism (BYN2825). §9 Q1 (lowering) answered by 007 Q114 `{code, env}`, so this is checker-only | sem | – | L | Q1 superseded (007 Q114, Sūq response appendix); rule open |
+| R4D §7 closures + §9 Q1 + rev 0016 | Closure escape rule + `fails` polymorphism (BYN2825). §9 Q1 (lowering) answered by Q345 (was Q114) `{code, env}`, so this is checker-only | sem | – | L | Q1 superseded (007 Q114, Sūq response appendix); rule open |
 | R4D §7 dbg | `dbg(x)` is an error in release (`dbg` already in SPEC :920) | diag | – | S | open |
 | R4D §7 BYN1070 | `!(x is .s)` input form | diag | – | S | open |
 | R4D §7 + rev 0016 | Payload size-ratio lint: threshold | diag | – | S | lint itself decided (rev 0016); threshold open |
@@ -169,3 +169,112 @@ Unrelated issues seen while auditing:
 - **Word order:** the guide gains one sentence on type-first declarations against name-first locals.
 - **§5 guardrails:** accepted: no `!` suppression (a trapping unwrap, if wanted, is spelled `?? panic "…"`); `return`
   inside a lambda is local to it; inference never crosses the module.
+
+### Batch 5 (user, 2026-11-06)
+- **Row 38 closure escape + `fails` polymorphism:** explicit `where (T -> bool fails E)`; `E` is inferred at the call
+  from the lambda's error set under monomorphization (checker-only, Q345). BYN2825 becomes the dedicated code for
+  storing or returning a borrowed closure, replacing the generic BYN3002 at those sites.
+- **Row 37 `final` states (BYN7013):** states marked `final` in the `states` block (contextual word, not reserved);
+  checked at normal-path scope end only; `fail` and `defer failing` paths are exempt. All-paths checking may follow
+  later without breaking accepted code.
+- **Row 42 consuming `finish()`:** no change in round 4; `finish().copy()` stays the path. A separate `move this`
+  member is added only on profiling evidence (Sūq or selfhost).
+- **Row 43 Q745 summaries across packages:** `bayan api diff` treats a change to a public function's store/return
+  summary as breaking, and the lock/module cache records the summaries. Declared summaries in the signature stay open
+  if diff noise is high.
+- **Row 70 Sūq F-30:** `void dispose(move this)` on `struct unique`: runs once, replaces derived cleanup, then fields
+  still owned are disposed in reverse order. Supersedes the `drop(ref this)` / `dispose(ref this)` forms.
+- **Row 71 HQ64:** BYN2788 stays; `T?` or per-field `take()` covers the use.
+- **Row 72 HQ68:** L006's wording narrows to "types that have `.copy`" (docs only).
+- **Row 74 HQ342:** BYN7012 at the instantiating call stays; revisit with typestate scope.
+- Fixed on the way (docs/batch-5-fixes): SPEC :1953 called `finish()` "move this … no copy", contradicting :303 and revision 0018;
+  inventory row 38 cited Q114 where the function-value decision is Q345.
+
+### Batch 6 (user, 2026-11-06)
+- **Row 25 P6 state-tag checks:** closed; SPEC :656-657 already makes typestate checks compile-time only.
+- **Row 52 arena default:** the SPEC :1274-1279 table stands; `main` stays on `General` under both `run` and `build`.
+  The script row (never-freed `Arena`) is unimplemented: the runtime defaults every program to `General`
+  (`bayan-rt.c` `byn_context = &byn_general`), filed in `work/todo.md`.
+- **Row 41 payload size lint:** warn when the largest union payload exceeds the second largest by at least 128 bytes
+  (64-bit); suppressed with `@allow(BYN…) because`; code reserved beside BYN1070/1071.
+- **Row 26 P7 compile-time budgets:** CI fails on a >10% regression of `--emit-c` and of the checker on the 1 MB
+  program against a stored baseline; absolute targets are set after P1/P3. C-compile time is excluded.
+- **Row 23 P4 niches:** pointer niches only (`string`, `Span`, `Owned<T>`), v0.2a, after P1 shows the gain;
+  `Result` niches wait.
+- **Row 24 P5 field reorder:** by alignment by default after 012; `extern`-reachable structs keep declared order,
+  `@layout(.declared)` opts out; emitted order deterministic; needs a C-interop golden.
+- **Row 59 R4.6 `restrict`:** deferred until P1 shows a gain, then enabled only after K2 with a law test that the
+  checker refuses every alias pair.
+- **Row 45 bounds-check report:** ships with P2 in v0.2, filed next to P2 in the v0.2a plan.
+- Noted on the way: R4D :143 names `Box<T>`; the SPEC's heap owner is `Owned<T>` (SPEC :1268).
+
+### Batch 7 (user, 2026-11-06)
+- **R4D §9 Q7 TinyCC:** used per target where a CI probe passes; system `cc` elsewhere (K3 driver interface).
+- **Phase-3 risks:** macOS SDK redistribution and libc source size are phase-3 entry conditions; if licensing fails,
+  macOS uses the system SDK and only musl/mingw sysroots ship.
+- **Registry hosting:** the lockfile records a registry alias, not a URL (an S04 format choice, before v0.3); the
+  `ikhbat-org` host name is reserved, the service deferred.
+- **Tiers Q8 `kit.tls`:** `curl` shell-outs for 015 scripts now; `kit.tls` wraps a C library via `std.c` in v0.3
+  (library chosen later); native TLS needs its own spec.
+- **Tiers Q2 crypto:** hashes, HMAC and CSPRNG in `std`; AEAD, Ed25519/X25519 and Argon2 in `kit.crypto`.
+- **R4D :328 C handles:** no `extern class`. A `struct unique` with `dispose(move this)` may hold a private `T*`
+  field, touched only in `unsafe`; BYN1067 narrows accordingly.
+- **R4D :311-318 placement:** `Rc`, `Pool`, `Handle` in `std.alloc`; `Arc`, `Mutex`, `Atomic` with `std.fiber`'s sync
+  types.
+- **Tiers Proposed rows:** map hashing confirmed as seeded SipHash-1-3 (what fix/runtime-security ships); a faster
+  non-flood-resistant hasher may come later as an opt-in. The other seven rows stay Proposed until a consumer exists.
+- **Own specs needed:** native `kit.tls`; phase-3 sysroots; registry service + Isnād; `std.crypto` + `Secret`;
+  SIMD `Vec<T, N>` (with Q12 const generics).
+- Noted on the way, for the spec revision pass: SPEC :2447 and :2492 still assume a GC tier (removed in batch 1);
+  SPEC :1529 `@replaced(by:, since:)` overlaps batch 4's `@deprecated(by:, until:)` (one spelling: decide which
+  stays); roadmap :96 settles Q8 but roadmap :119 and tiers :405 still list it open; the batch 1-2 "stale tiers :40"
+  note is resolved.
+
+### Batch 8 (user, 2026-11-06)
+Every trigger below is evaluated at a fixed point by a named owner: **at Sūq's first runnable release, by the round-5
+review** (kit/Sūq public-surface counts: every release).
+- **Row 1 region refs in structs:** kept; the row closes with a reopen trigger: any new region-ref soundness bug
+  reopens it. The 010 bugs (Q745 escapes, Q747 `ref this` map field, arena returned two levels) were each fixed by a
+  local rule, so compile-fail goldens are added that combine them (a `ref this` map field inside an arena with a
+  two-level return, plus a Q745-style escape), where local rules interact.
+- **Row 2 naming/particle rules (BYN5100/5101):** kept with the >5 `@allow`/renames per 10k lines trigger, measured on
+  the public surface of `kit` and Sūq each release (selfhost has little public API, so its zero count is not
+  evidence). Until that measurement exists the row is not "kept on evidence".
+- **Row 3 line-joining starters:** a lint fires when a joined line is not indented deeper than the start of the
+  statement it joins. The real risk is `.` (and enum shorthand `.foo`) after a line that is already a complete
+  statement; `&&`, `||`, `and`, `or`, `??` cannot start a statement. `catch` directly after a closing `}` is exempt.
+  The formatter's continuation indentation keeps it quiet on formatted code.
+- **Row 4 type-based overloads:** deferred; SPEC :1382 rule 1 is marked not in v0.1. Until overloads exist, two
+  same-name functions with different parameter types stay a hard BYN2006 duplicate-declaration error (never first- or
+  last-wins), with a golden, so the overload rules can land later without changing existing code's behaviour.
+- **Row 5 `$n` SQL placeholders:** kept; reopens with interpolation when ≥10% of Sūq queries have ≥5 arguments.
+- **Row 6 trust model:** stdin stays plain; reopens when Sūq averages >2 `trustUnchecked() because` per handler; the
+  total count is recorded beside the average.
+- **Row 7 typestate scope:** reopens when >20% of `states` blocks are not lifecycles; HQ342 reopens with it (batch 5).
+- **`then` stages:** reopens when ≥10% of call sites in Sūq + selfhost nest 3 or more calls deep. If adopted, `then`
+  is contextual (never reserved), joins the line above like the other starters, and is covered by the row 3 lint.
+- **`@replaced`:** removed; `bayan migrate` reads `@deprecated(by:)` when `by:` is same-shape. If anything consumes
+  `since:`, it becomes an optional field of `@deprecated`, not a second attribute.
+- **Contradiction pass:** one revision file, written against batches 1-8 (not the pre-round text), applied after
+  this batch is recorded.
+
+## Batch 9 (user, 2026-11-06)
+
+- **HQ78 per-field-path loans:** keep per-root loans; closed with a trigger. Count the sites in Sūq + selfhost where
+  code was split or reordered to dodge a per-root loan conflict, at Sūq's first runnable release and the round-5
+  review. Reopen at ≥10 sites, or at once when any consumer is blocked. Deferring is safe: field paths accept strictly
+  more programs, and under Q745 (`api diff` breaks only on a tightened summary) the summary changes are loosenings.
+  Scope if reopened: Rust's, disjoint borrows of direct field paths within a body, not through method calls.
+- **A001 §1 format specifiers:** closed as superseded by revision 0003 §6 (SPEC :917, :1997). A001 :29 gets a pointer
+  to it, not a silent delete. The two-spellings question is answered by SPEC :2347: `{x:.2}` is an input form,
+  refused with BYN1068 and rewritten by `bayan format` to `{x, digits: 2}`, so there is one spelling.
+- **Tiers Q6 `kit.template`:** batch 2 stands. Evaluated at the first Sūq milestone after markup ships: drop
+  `kit.template` if Sūq renders every page with markup and has 0 `kit.template` uses.
+- **Tiers Q7 `Event<T>`:** home is `std.event` (SPEC :1791 `uses alloc`). SPEC fixes, applied by the contradiction
+  revision: `struct unique Event<T>`; `subscriberCount` read-only (a getter); the subscribed lambda must own its
+  captures (move captures) or it is BYN2825; `Subscription` drop unsubscribes through `dispose(move this)`, with
+  `cancel(move this)` as the explicit early form on the same code path (no second meaning); a subscription stores the
+  allocator it was made with, so unsubscribe frees with that allocator, with a golden that subscribes under one
+  allocator and drops under another (when `std.event` is implemented).
+- **Also:** `markup` (tiers :152, :419 "reserved in round 4") becomes a contextual word under batch 4, like `law`
+  and `effect`; the contradiction revision applies it.
