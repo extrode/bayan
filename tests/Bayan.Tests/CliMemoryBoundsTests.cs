@@ -324,15 +324,48 @@ public sealed class CliMemoryBoundsTests
 
     // ── Review fixes ─────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void F2_AWorkDirectoryAnotherProcessSweptIsDeletedWithoutAnException()
+    /// <summary>Runs the CLI with a temp root where a watcher deletes every <paramref name="prefix"/> directory as soon as it appears, as another process's sweep would.</summary>
+    private static int RunWithSweptWorkDir(string name, string prefix, string source, params string[] args)
     {
-        var dir = Path.Combine(Fresh("swept-work"), "gone");
-        CliApp.DeleteWorkDir(dir);
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "f"), "x");
-        CliApp.DeleteWorkDir(dir);
-        Assert.False(Directory.Exists(dir));
+        var root = Fresh(name);
+        var file = Path.Combine(root, "main.byn");
+        File.WriteAllText(file, source);
+        var temp = Path.Combine(root, "tmp");
+        Directory.CreateDirectory(temp);
+        using var stop = new CancellationTokenSource();
+        var watcher = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                foreach (var d in Directory.EnumerateDirectories(temp, prefix + "*"))
+                    try { Directory.Delete(d, recursive: true); } catch (IOException) { }
+                Thread.Sleep(5);
+            }
+        });
+        var exit = 0;
+        WithEnv("TMPDIR", temp, () => WithEnv("BAYAN_CACHE", Path.Combine(root, "cache"), () => WithEnv("BAYAN_TEST_TIMEOUT_MS", "2000", () =>
+            exit = Run([.. args, file]).Exit)));
+        stop.Cancel();
+        watcher.Wait();
+        return exit;
+    }
+
+    [Fact]
+    public void F2_ACoverageWorkDirectoryAnotherProcessSweptDoesNotChangeTheExitCode()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var exit = RunWithSweptWorkDir("swept-coverage", "bayan-coverage-",
+            "void main() {\n}\n\ntest \"spin\" {\n    while true {\n    }\n}\n", "test", "--coverage");
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+    }
+
+    [Fact]
+    public void F2_AMutateWorkDirectoryAnotherProcessSweptDoesNotChangeTheExitCode()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var exit = RunWithSweptWorkDir("swept-mutate", "bayan-mutate-",
+            "i64 inc(i64 n) {\n    return n + 1\n}\n\ntest \"inc\" {\n    assert inc(1) == 2\n}\n", "test", "--mutate");
+        Assert.Equal(CliApp.ExitOk, exit);
     }
 
     [Fact]
