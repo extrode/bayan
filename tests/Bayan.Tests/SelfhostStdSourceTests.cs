@@ -77,7 +77,7 @@ public sealed class SelfhostStdSourceTests
         Assert.Equal(Files(StdDir), Listed(File.ReadAllText(StdSourceFile)));
     }
 
-    /// <summary><c>lib/std/</c> ships no module yet (T4 adds the first), so the generator is checked on a fixture tree.</summary>
+    /// <summary>The generator on a fixture tree: a nested module, a test file and text with braces, which <c>lib/std/</c> need not hold.</summary>
     [Fact]
     public void GeneratedFileListsEveryFile()
     {

@@ -136,6 +136,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NestedIt = Error("BYN2029", "`it` inside a lambda that already uses `it`; name one lambda");
     public static readonly DiagnosticDescriptor ToStringCall = Error("BYN2031", "Bayan has no `toString()`; display is `format()` (derived from `formatInto(ref StrBuf)`)");
     public static readonly DiagnosticDescriptor UnknownStdModule = Error("BYN2032", "no std module `{0}`");
+    public static readonly DiagnosticDescriptor StdImportsPackage = Error("BYN2033", "std module `{0}` imports `{1}`, which is not a std module");
     public static readonly DiagnosticDescriptor MissingInitializer = Error("BYN2101", "`{0} {1}` needs a value");
     public static readonly DiagnosticDescriptor UseBeforeAssign = Error("BYN2102", "`{0}` is used before it is assigned");
     public static readonly DiagnosticDescriptor OutNotAssigned = Error("BYN2103", "`out` parameter `{0}` is not assigned on every path");

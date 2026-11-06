@@ -376,6 +376,12 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
     let stdPath = $"{stdPathBuf.finish()}"
     let dir = std ? $"<std>/{stdPath}" : Path.combine(parts.span)
     let span = TextSpan.fromBounds(decl.path[0].start, until: decl.path[decl.path.length - 1].end)
+    // A std module never reads the importing package: its imports are std modules only.
+    if !std && c.modules[c.files[file].module].directory.startsWith("<std>/") {
+        report(ref c, for: .stdImportsPackage, from: file, at: span, by: (c.modules[c.files[file].module].name, name, "", "", ""),
+            help: "import only `std.…` modules from a std module")
+        return
+    }
     let alias = t11Text(in c, from: file, at: decl.alias ?? decl.path[decl.path.length - 1])
     var module: ModId = -1
     if c.modulesByDir.contains(dir) {

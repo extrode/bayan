@@ -1,7 +1,7 @@
 // std.json tree (spec 016 T4, 015 S7): `JsonValue` built on `JsonReader`, and `Json.encode`.
 
-/// A JSON value. A number keeps its text, so `Json.encode` writes it back as read; an object keeps its members
-/// in text order, duplicate keys included.
+/// A JSON value. A number keeps its text, so `Json.encode` writes it back as read (a built one whose text is not a
+/// JSON number is written from its value); an object keeps its members in text order, duplicate keys included.
 public union JsonValue {
     nothing
     flag(bool value)
@@ -29,7 +29,9 @@ public struct Json {
     }
 
     /// `v` as text, the layout of Python's `json.dumps(v, indent=indent)` with `ensure_ascii`: compact with `, ` and
-    /// `: ` when `indent` is 0 or less, else one item per line, `indent` spaces per level. A number is its text.
+    /// `: ` when `indent` is 0 or less, else one item per line, `indent` spaces per level. A number is its text when that
+    /// is a JSON number (RFC 8259 §6), else its value: shortest digits when finite, `null` for NaN and ±infinity, so a
+    /// built number never writes invalid JSON or text outside itself.
     public static string encode(JsonValue v, i32 indent = 0) uses alloc {
         var sb = StrBuf()
         encodeInto(ref sb, from: v, by: i64(indent), at: 0)
@@ -71,7 +73,7 @@ void encodeInto(ref StrBuf sb, from JsonValue v, by i64 indent, at i64 level) us
     switch v {
         case .nothing: sb.append("null")
         case .flag(let value): sb.append(value ? "true" : "false")
-        case .number(_, let text): sb.append(text)
+        case .number(let value, let text): numberInto(ref sb, from: value, as: text)
         case .text(let value): quoteInto(ref sb, from: value)
         case .list(let items):
             if items.length == 0 {
@@ -100,6 +102,24 @@ void encodeInto(ref StrBuf sb, from JsonValue v, by i64 indent, at i64 level) us
             newline(ref sb, by: indent, at: level)
             sb.append("}")
     }
+}
+
+/// `text` when it is one whole JSON number, else `value` (`null` when not finite: only then is `value - value` not 0).
+void numberInto(ref StrBuf sb, from f64 value, as string text) uses alloc {
+    if isNumberText(text) {
+        sb.append(text)
+    } else if value - value == 0.0 {
+        sb.append($"{value}")
+    } else {
+        sb.append("null")
+    }
+}
+
+/// Whether `text` is exactly one JSON number, as `JsonReader` reads it.
+bool isNumberText(string text) uses alloc {
+    var reader = JsonReader.over(text)
+    let token = reader.next() catch { return false }
+    return token is .number(_, let digits) && digits.length == text.length
 }
 
 /// Before an item: `, ` (compact) or `,` and a new line (indented); the first item has no comma.

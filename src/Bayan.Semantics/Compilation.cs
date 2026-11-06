@@ -191,6 +191,13 @@ public sealed partial class Compilation
         var std = import.Path[0].Text == "std";
         var stdPath = string.Join("/", import.Path.Skip(1).Select(p => p.Text));
         var dir = std ? "<std>/" + stdPath : Path.Combine([PackageRoot, .. import.Path.Select(p => p.Text)]);
+        // A std module never reads the importing package: its imports are std modules only.
+        if (!std && file.Module.Directory.StartsWith("<std>/", StringComparison.Ordinal))
+        {
+            Diagnostics.Report(DiagnosticCodes.StdImportsPackage, file.Source, span, [file.Module.Name, name],
+                help: "import only `std.…` modules from a std module");
+            return;
+        }
         var alias = (import.Alias ?? import.Path[^1]).Text;
         ModuleSymbol? module;
         if (_modulesByDir.TryGetValue(dir, out module))

@@ -247,8 +247,9 @@ public struct JsonReader {
                 var cp = try hex4(escapeAt: at)
                 if cp >= 0xD800 && cp <= 0xDBFF {
                     fail .syntax(message: "lone surrogate", offset: at, line: line, column: columnAt(at)) if !text[pos..].startsWith("\\u")
+                    let second = pos
                     pos += 2
-                    let low = try hex4(escapeAt: at)
+                    let low = try hex4(escapeAt: second)
                     fail .syntax(message: "lone surrogate", offset: at, line: line, column: columnAt(at)) if low < 0xDC00 || low > 0xDFFF
                     cp = 0x10000 + (cp - 0xD800) * 0x400 + (low - 0xDC00)
                 } else if cp >= 0xDC00 && cp <= 0xDFFF {

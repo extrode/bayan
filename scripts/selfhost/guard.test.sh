@@ -13,7 +13,8 @@
 # red test run is not checked for coverage. The tests run with VSTEST_TESTHOST_SHUTDOWN_TIMEOUT of at least 60 s: the stub
 # writes no report without it, as vstest kills the test host before its exit handler merges ~1,100 counter files (T41).
 # A changed file the coverage report has no entry for (b.byn's run reports only b.byn) fails naming it (Q820).
-# lib/std (spec 016 T3): a changed lib/std/<m>/x.byn is in BAYAN_COVERAGE_FILES; misformatted it fails the format check naming it, formatted it passes.
+# lib/std (spec 016 T3): a changed lib/std/<m>/x.byn is in BAYAN_COVERAGE_FILES and adds StdTestFilesTests to the filter;
+# misformatted it fails the format check naming it, formatted it passes; covered it passes, a missed line of it fails by file:line.
 # A changed file whose name has a space is reported by its full name.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -41,7 +42,7 @@ if [ -n "${BAYAN_SNAPSHOT:-}" ]; then
   [ -f $AUX/badmanifest ] && echo '{"version": 1, "builds": [' > "$BAYAN_SNAPSHOT/manifest.json"
 fi
 if [ -n "${BAYAN_COVERAGE:-}" ]; then
-  echo "$BAYAN_COVERAGE_FILES" > $AUX/cover.txt
+  echo "$BAYAN_COVERAGE_FILES" > $AUX/cover.txt; echo "${@: -3:1}" > $AUX/coverfilter.txt
   # as the real test host: the report is written at process exit, which vstest cuts short unless the guard lengthens the wait
   [ -f $AUX/nocov ] || [ "${VSTEST_TESTHOST_SHUTDOWN_TIMEOUT:-0}" -lt 60000 ] || { mkdir -p "$BAYAN_COVERAGE"; cp $AUX/cov.json "$BAYAN_COVERAGE/bayan-quality.json"; cp $AUX/fns.json "$BAYAN_COVERAGE/functions.json"; }
 fi
@@ -130,7 +131,15 @@ covconst=$(ALLOWX=,selfhost/semantics/b.byn,selfhost/semantics/c.byn g)
 mkdir -p lib/std/m; printf 'fn k() -> int {\n  return 1 /*BAD*/\n}\n' > lib/std/m/x.byn
 stdbad=$(ALLOWX=,lib/std/m/x.byn g); stdcover=$(cat $aux/cover.txt)
 printf 'fn k() -> int {\n    return 1\n}\n' > lib/std/m/x.byn
-stdgood=$(ALLOWX=,lib/std/m/x.byn g)
+stdgood=$(ALLOWX=,lib/std/m/x.byn g); stdfilter=$(cat $aux/coverfilter.txt)
+# lib/std coverage alone: k covered passes, k's line 2 missed fails by file:line
+git show base:selfhost/semantics/a.byn > selfhost/semantics/a.byn; rm selfhost/semantics/b.byn selfhost/semantics/c.byn
+x=$r/lib/std/m/x.byn; a=$x cov 1 1 '[]' '[]' '[]'
+printf '{"version": 1, "files": {"%s": [{"span": [1, 3], "lines": [1, 1], "branches": [0, 0]}]}}\n' "$x" > $aux/fns.json
+stdcovpass=$(ALLOWX=,lib/std/m/x.byn g)
+a=$x cov 0 1 '[2]' '[]' '[]'
+printf '{"version": 1, "files": {"%s": [{"span": [1, 3], "lines": [0, 1], "branches": [0, 0]}]}}\n' "$x" > $aux/fns.json
+stdcovmiss=$(ALLOWX=,lib/std/m/x.byn g)
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$pass" | grep -q '^GUARD PASS$' || fail "all killed (one marked) did not pass" "$pass"
@@ -180,5 +189,8 @@ echo "$covnone" | grep -q "^- coverage: the tests wrote no tmp/guard-run/coverag
   || fail "a coverage run without a report (an earlier run's left in place) did not fail" "$covnone"
 echo "$stdbad" | grep -q '^- format: bayan format --check lib/std failed: .*lib/std/m/x.byn' || fail "a misformatted lib/std file did not fail the format check naming it" "$stdbad"
 echo "$stdgood" | grep -q '^- format:' && fail "a formatted lib/std file failed the format check" "$stdgood"
+[ "$stdfilter" = "(FullyQualifiedName~SelfhostSemanticsT99Tests)|FullyQualifiedName~StdTestFilesTests" ] || fail "a lib/std change did not add StdTestFilesTests to the test filter" "$stdfilter"
+echo "$stdcovpass" | grep -q '^GUARD PASS$' && echo "$stdcovpass" | grep -qF "coverage: lib/std/m/x.byn: touched functions: lines 1/1" || fail "a covered lib/std change did not pass with its coverage line" "$stdcovpass"
+echo "$stdcovmiss" | grep -q '^- coverage: missed line lib/std/m/x.byn:2; ' || fail "an uncovered lib/std function was not a FAIL item with file:line" "$stdcovmiss"
 case ",$stdcover," in *,lib/std/m/x.byn,*) ;; *) fail "a changed lib/std file was not in BAYAN_COVERAGE_FILES ($stdcover)" "$stdbad";; esac
 echo PASS

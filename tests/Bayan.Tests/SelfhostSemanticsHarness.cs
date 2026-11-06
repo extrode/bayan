@@ -99,7 +99,7 @@ public static class SelfhostSemanticsHarness
     /// an entry on disk that this compilation does not compile is ignored for this build (Q820), and one that does not
     /// exist throws, naming <paramref name="variable"/>. A relative compiled path (an
     /// imported module's file, relative to the compilation's <c>DisplayRoot</c>, Compilation.cs:209) resolves against
-    /// <paramref name="root"/>.</summary>
+    /// <paramref name="root"/>, and a std module's file is its <see cref="StdSource"/>.</summary>
     internal static HashSet<string> SnapshotSkip(IEnumerable<string> compiled, IReadOnlySet<string> generated, string? files, string variable = "BAYAN_SNAPSHOT_FILES", string? root = null)
     {
         var skip = new HashSet<string>(generated, StringComparer.Ordinal);
@@ -107,13 +107,18 @@ public static class SelfhostSemanticsHarness
         var paths = compiled.ToList();
         var keep = files.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Select(f => Path.GetFullPath(f, Golden.RepoRoot)).ToHashSet(StringComparer.Ordinal);
-        var full = (string p) => root is null ? Path.GetFullPath(p) : Path.GetFullPath(p, root);
+        var full = (string p) => StdSource(p) ?? (root is null ? Path.GetFullPath(p) : Path.GetFullPath(p, root));
         var all = paths.Select(full).ToHashSet(StringComparer.Ordinal);
         if (keep.FirstOrDefault(k => !all.Contains(k) && !File.Exists(k)) is { } missing)
             throw new InvalidOperationException($"{variable}: {missing} matches no compiled source");
         skip.UnionWith(paths.Where(p => !keep.Contains(full(p))));
         return skip;
     }
+
+    /// <summary>The <c>lib/std/</c> file a std module's <c>&lt;std&gt;/m/f.byn</c> (Compilation.cs:193) is embedded from, or
+    /// null for any other path.</summary>
+    internal static string? StdSource(string path) =>
+        path.StartsWith("<std>/", StringComparison.Ordinal) ? Path.Combine(Golden.RepoRoot, "lib", "std", path["<std>/".Length..]) : null;
 
     /// <summary>Lists <paramref name="binary"/> and its site map in <paramref name="dir"/>'s <c>manifest.json</c>.</summary>
     internal static void RecordBuild(string dir, string binary, string sites)
@@ -196,9 +201,10 @@ public static class SelfhostSemanticsHarness
             static string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
             File.WriteAllText(wrapper, $"#!/bin/sh\nBAYAN_COVERAGE={Quote(prefix)} exec {Quote(binary)} \"$@\"\n");
             File.SetUnixFileMode(wrapper, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            // An imported module's file is compiled under a path relative to DisplayRoot (Compilation.cs:209); the report
-            // and functions.json name it by its full path, as CliApp.cs:1027 resolves it, so the guard finds it in git.
-            string Full(string p) => Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(c.DisplayRoot, p));
+            // An imported module's file is compiled under a path relative to DisplayRoot (Compilation.cs:209), a std
+            // module's under `<std>/`; the report and functions.json name it by its full path, as CliApp.cs:1027
+            // resolves it, so the guard finds it in git.
+            string Full(string p) => StdSource(p) ?? (Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(c.DisplayRoot, p)));
             CoverageBuilds.Add((dir, map with { Counters = map.Counters.Select(k => k with { File = Full(k.File) }).ToList() }, prefix,
                 functions.Select(f => (Full(f.Path), f.Item2, f.Item3)).ToList()));
             return build with { ExecutablePath = wrapper };
