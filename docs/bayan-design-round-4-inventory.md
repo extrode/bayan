@@ -141,3 +141,14 @@ Unrelated issues seen while auditing:
   and pid, fixed under the test flag). The seed feeds FNV-1a, which is not flood-resistant: a security-audit item.
 - Still open from the tiers list: Q2 (crypto scope), Q6, Q8 (`kit.tls` backend), Q12, the "Proposed" catalog rows;
   tiers §2 :40 ("auto-imports `kit`") is stale since Q10 was dropped.
+
+### Batch 3 (user, 2026-11-06)
+- **Subjectless `switch`:** adopted for the round-4 syntax batch (`switch { cond => … else => … }`, arms in order, same
+  C as the `else if` chain; BYN1071 was reserved for it).
+- **HQ69:** kept. `move x switch { … }` parses as `move (x switch { … })`; the owning expression form is
+  `(move x) switch { … }`.
+- **HQ70:** kept. Arm bindings are read-only inside the `when` guard of an owning switch (BYN2791).
+- **Negated `is`:** both spellings stay valid, `!(x is P)` and `x is not P`. BYN1070 is repurposed for the precedence
+  trap: an unparenthesized `!x is P` or `not x is P` is an error, with fix-its to `!(x is P)` and `x is not P`.
+- Superseded rows found while preparing the batch: `when` guards exist (SPEC :877); `dbg` is an error in release
+  (SPEC :920). Still open: the payload size-ratio lint threshold (moves to batch 6, with the other numbers).
