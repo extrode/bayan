@@ -593,6 +593,13 @@ public static class CliApp
         return ExitOk;
     }
 
+    /// <summary>Removes a scratch directory; one another process already swept or that cannot be removed is not an error.</summary>
+    internal static void DeleteWorkDir(string dir)
+    {
+        try { Directory.Delete(dir, recursive: true); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>A test that runs longer than this (60 s, or <c>$BAYAN_TEST_TIMEOUT_MS</c>) is stopped and reported as timed out.</summary>
     private static TimeSpan TestTimeout =>
         int.TryParse(Environment.GetEnvironmentVariable("BAYAN_TEST_TIMEOUT_MS"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var ms) && ms > 0
@@ -742,7 +749,7 @@ public static class CliApp
         }
         finally
         {
-            if (coverageDir is not null) Directory.Delete(coverageDir, recursive: true);
+            if (coverageDir is not null) DeleteWorkDir(coverageDir);
         }
     }
 
@@ -843,7 +850,7 @@ public static class CliApp
         }
         finally
         {
-            work.Delete(recursive: true);
+            DeleteWorkDir(work.FullName);
         }
     }
 

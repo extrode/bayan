@@ -183,6 +183,19 @@ public sealed class CliMemoryBoundsTests
         Assert.DoesNotContain("inner-link", output);
     }
 
+    [Fact]
+    public void M3_FormatAndAuditFindFilesUnderNestedBuildNamedDirectories()
+    {
+        var root = Fresh("nested-bin");
+        var file = Path.Combine(root, "src", "bin", "x.byn");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "unsafe void poke() {\n}\nlet a = true\nunless !a { print(\"y\") }\n");
+        var (_, formatOut, formatErr) = Run("format", "--check", root);
+        Assert.Contains("x.byn", formatOut + formatErr);
+        var (_, auditOut, _) = Run("audit", root);
+        Assert.Contains("unsafe void poke()", auditOut);
+    }
+
     // ── M4 ───────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -340,5 +353,70 @@ public sealed class CliMemoryBoundsTests
                     Assert.Contains("timed out after 2 s", build.Errors);
                     Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), clock.Elapsed.ToString());
                 })));
+    }
+
+    // ── Review fixes ─────────────────────────────────────────────────────────────
+
+    /// <summary>Runs the CLI with a temp root where a watcher deletes every <paramref name="prefix"/> directory as soon as it appears, as another process's sweep would.</summary>
+    private static int RunWithSweptWorkDir(string name, string prefix, string source, params string[] args)
+    {
+        var root = Fresh(name);
+        var file = Path.Combine(root, "main.byn");
+        File.WriteAllText(file, source);
+        var temp = Path.Combine(root, "tmp");
+        Directory.CreateDirectory(temp);
+        using var stop = new CancellationTokenSource();
+        var watcher = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                foreach (var d in Directory.EnumerateDirectories(temp, prefix + "*"))
+                    try { Directory.Delete(d, recursive: true); } catch (IOException) { }
+                Thread.Sleep(5);
+            }
+        });
+        var exit = 0;
+        WithEnv("TMPDIR", temp, () => WithEnv("BAYAN_CACHE", Path.Combine(root, "cache"), () => WithEnv("BAYAN_TEST_TIMEOUT_MS", "2000", () =>
+            exit = Run([.. args, file]).Exit)));
+        stop.Cancel();
+        watcher.Wait();
+        return exit;
+    }
+
+    [Fact]
+    public void F2_ACoverageWorkDirectoryAnotherProcessSweptDoesNotChangeTheExitCode()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var exit = RunWithSweptWorkDir("swept-coverage", "bayan-coverage-",
+            "void main() {\n}\n\ntest \"spin\" {\n    while true {\n    }\n}\n", "test", "--coverage");
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+    }
+
+    [Fact]
+    public void F2_AMutateWorkDirectoryAnotherProcessSweptDoesNotChangeTheExitCode()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var exit = RunWithSweptWorkDir("swept-mutate", "bayan-mutate-",
+            "i64 inc(i64 n) {\n    return n + 1\n}\n\ntest \"inc\" {\n    assert inc(1) == 2\n}\n", "test", "--mutate");
+        Assert.Equal(CliApp.ExitOk, exit);
+    }
+
+    [Fact]
+    public void F13_AStagingDirectoryLivesAsLongAsTheCompileTimeoutPlusTenMinutes()
+    {
+        var root = Fresh("staging-age");
+        WithEnv("BAYAN_CACHE", Path.Combine(root, "cache"), () =>
+            WithEnv("BAYAN_CC_TIMEOUT_S", "7200", () =>
+            {
+                var staging = Path.Combine(Toolchain.CacheData, "tmp");
+                var running = Path.Combine(staging, "key-running");
+                var dead = Path.Combine(staging, "key-dead");
+                foreach (var d in new[] { running, dead }) Directory.CreateDirectory(d);
+                Directory.SetLastWriteTimeUtc(running, DateTime.UtcNow.AddMinutes(-125));
+                Directory.SetLastWriteTimeUtc(dead, DateTime.UtcNow.AddHours(-3));
+                Toolchain.SweepStale(Path.Combine(root, "tmp"), TimeSpan.FromHours(1));
+                Assert.True(Directory.Exists(running));
+                Assert.False(Directory.Exists(dead));
+            }));
     }
 }
