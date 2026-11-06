@@ -78,7 +78,7 @@ Three cross-checks before adding anything:
 | Iteration and queries | `for` over the `moveNext`/`current` cursor pattern; `IIterator<T>` as a bounded generic; lazy queries (`where`, `except`, `all()`); collection aggregates `sum`, `product`, `average`, `min`, `max`, `min(by:)`, `percentile(at:)` and their `try` forms | in progress (006/007) | rev 0002, round 3 §27 |
 | Safety types | `Untrusted<T>` with `trustUnchecked() because "…"`; `Secret<T>`; distinct types with `requires`; units of measure; typed indices | v0.1 in part; units, typed indices spec-only | round 3 §8, §9, §17 |
 | Concurrency marker interfaces | `ISendable`, `IShareable` (auto-derived), `@sendable` | Decided, v0.2 | concurrency design R4 |
-| Hashing | non-cryptographic only (wyhash or rapidhash class) for maps | Proposed | stdlib chat |
+| Hashing | seeded SipHash-1-3 for maps (what ships); a faster non-flood-resistant hasher may follow as an opt-in | Decided (batch 7) | stdlib chat |
 | Comptime | reflection (`typeof(T).fields`), derivation hooks, `comptime for`/`if`, opt-in `law` declarations | spec; interpreter in v0.2 | codegen design |
 | SIMD | portable `Vec<T, N>` with runtime CPU dispatch (AVX2, AVX-512, NEON) | Proposed, needs const generics | ndarray discussion |
 | Builtins | `print` and stdin (`uses console`), `print(…, to: .stderr)`, ambient `log(…, as: .level)` (non-allocating, `level: message` to stderr in v0.1), `panic`, `assert` | v0.1 | J14, J67 |
@@ -91,7 +91,7 @@ The **015** column marks modules the tooling ports are expected to need first; t
 
 | Module | Contents (full intended scope) | Effect | Status | 015 |
 | --- | --- | --- | --- | --- |
-| `std.alloc` | `General` (default for `main`), `Arena`, `Pool`, `FixedBuffer`, leak-checking test allocator | `alloc` | spec | |
+| `std.alloc` | `General` (default for `main`), `Arena`, `Pool`, `Rc`, `Handle`, `FixedBuffer`, leak-checking test allocator | `alloc` | spec | |
 | `std.collections` | `List`, `Map`, `Set`, `Deque`, `PriorityQueue`, `BitSet`, inline/small-buffer list (`InlineList<T, N>` needs const generics); members `append`/`prepend`, `add` for sets, `get(at:)` behind `[]` (traps), `tryGet(at:)`, `remove(at:)`, `remove(from:until:)`/`(from:through:)`, `replace(at:by:)`, stable `sort`; map literals | `alloc` | v0.1 in part | yes |
 | `std.io` | `Reader`/`Writer` interfaces, buffered I/O, stdin/stdout streams | `console` for std streams | spec | yes |
 | `std.fs` | files, directories, metadata, exists/mkdir/remove/rename, glob, walk, temp files and dirs, watching, user dirs, file locks; capability `Dir` handles (paths resolve relative to a handle; `Untrusted` paths cannot escape it) | `fs` | spec | yes |
@@ -101,14 +101,14 @@ The **015** column marks modules the tooling ports are expected to need first; t
 | `std.cli` | argument parsing derived at comptime from a struct | `env` | spec | yes |
 | `std.config` | binds env, files and args to a struct at comptime; dependencies come from effects, not a container | `env`, `fs` | Proposed | |
 | `std.time` | `Instant`, `Duration` as units, `DateTime`, UTC and offsets; all immutable values | `clock` | spec | yes |
-| `std.fiber` (and sync types) | fibers, `scope`/`spawn` runtime (`limit:`, `timeout:`/`until:`, `policy: .collectAll`, `workers: .compute`), `Channel`, `select`, timers, `Fiber.yieldNow()`, `Fiber.checkCanceled()`, `shield(timeout:)`, `Mutex` guards (`lock()`, `unlock(move this)`), `AsyncMutex`, `Arc`, `Rc`, blocking pool for `@blocking` externs, compute pool, debug watchdog, data-parallel `par` query | `suspend` | Decided, v0.2 | |
+| `std.fiber` (and sync types) | fibers, `scope`/`spawn` runtime (`limit:`, `timeout:`/`until:`, `policy: .collectAll`, `workers: .compute`), `Channel`, `select`, timers, `Fiber.yieldNow()`, `Fiber.checkCanceled()`, `shield(timeout:)`, `Mutex` guards (`lock()`, `unlock(move this)`), `AsyncMutex`, `Arc`, `Atomic`, blocking pool for `@blocking` externs, compute pool, debug watchdog, data-parallel `par` query | `suspend` | Decided, v0.2 | |
 | `std.net` | TCP, UDP, DNS, Unix sockets, named pipes; timeouts or deadlines required in signatures | `net` | spec | |
 | `std.codec` | the shared codec interface so JSON, TOML, CSV and binary formats use one comptime derivation | none | Proposed | |
 | `std.json` | comptime-generated, zero-allocation reader and writer; decoded output `Untrusted` by default; `@derive(Json)` (unions, validation on decode); no reflection-based polymorphic decoding | none | Decided (std); derivation v0.2 | yes |
 | Byte codecs | `Hex` (v0.1), `Base64` (spec-only), varint; static `encode`/`decode`, `decode` fails a codec error | none | J83; module Open (Q3) | yes (`Hex`) |
 | `std.text` | `Utf16.decode`, `words`, `graphemes`, full Unicode case mapping and folding, `normalized`, `truncated`, `wrapped`, identifier-case transforms, `slugged`, `escaped`, regex `replaced`, `grouping`, date specs; ordinal and invariant only | none | after v0.1 (rev 0003) | maybe |
 | `std.regex` | compiled at comptime when the pattern is a literal | none | spec | yes |
-| `std.crypto` | SHA-2/3, BLAKE3, HMAC, CSPRNG, ChaCha20-Poly1305, AES-GCM, Ed25519, X25519, Argon2; integrated with `Secret`; algorithms always named explicitly | `random` for CSPRNG | spec; scope Open (Q2) | yes (SHA-256) |
+| `std.crypto` | SHA-2/3, BLAKE3, HMAC, CSPRNG (AEAD, Ed25519, X25519 and Argon2 are in `kit.crypto`); integrated with `Secret`; algorithms always named explicitly | `random` for CSPRNG | spec; scope Decided (Q2) | yes (SHA-256) |
 | `std.random` | seeded PRNG, separate from the CSPRNG | `random` | spec | |
 | `std.log` | the ambient `log` effect, structured fields, spans; never evaluates message content; tainted fields stay marked | `log` (ambient) | `log` builtin in v0.1 | |
 | `std.uri` | URL parsing, `Url` sink type, `Url.tryParse` (rejects `javascript:` in markup `href`) | none | spec | maybe |
@@ -128,7 +128,7 @@ The **015** column marks modules the tooling ports are expected to need first; t
 | Module | Contents | Depends on | Status | 015 |
 | --- | --- | --- | --- | --- |
 | `kit.http` | HTTP/1.1 and HTTP/2 client and server, routing primitives, timeouts required, resilience (timeout, retry, circuit breaker); `HeaderValue` sink type; per-worker connection ownership | `kit.tls`, `kit.mime` | spec | yes (see §12.5) |
-| `kit.tls` | TLS client and server; the CA root store ships here, not frozen | `std.crypto` | spec; backend Open (Q8) | indirectly |
+| `kit.tls` | TLS client and server; the CA root store ships here, not frozen | `std.crypto` | spec; backend Decided (Q8) | indirectly |
 | `kit.jwt` | token signing and verification | `std.crypto` | spec | |
 | `kit.retry` | retry and backoff outside HTTP (may fold into `kit.http`) | `std.fiber` | Proposed | |
 | `kit.mime` | message builder and parser, multipart, attachments, encoded-word UTF-8 headers, `EmailAddress` distinct type; also used for HTTP multipart uploads | `std` | Decided | |
@@ -378,7 +378,7 @@ Everything else is a candidate. Tests and generators around the editor tooling (
 
 ### 12.5 The HTTP gap
 
-A native `kit.tls` is a large job and must not block 015. Until it exists, a ported script that fetches over HTTPS calls `curl` through `std.process`, and the port records that as a tracked todo. The alternative, backing `kit.tls` with a C library through `std.c` first, is a separate decision (Q8).
+A native `kit.tls` is a large job and must not block 015. Until it exists, a ported script that fetches over HTTPS calls `curl` through `std.process`, and the port records that as a tracked todo. The alternative, backing `kit.tls` with a C library through `std.c` first, is the Q8 decision (batch 7): `kit.tls` wraps a C library via `std.c` in v0.3.
 
 ### 12.6 Pinned build details
 
@@ -396,13 +396,13 @@ The agent asks before touching any of these.
 | # | Question | What the sources say | Proposed resolution |
 | --- | --- | --- | --- |
 | Q1 | Database module names | Round 3: `std.db`. Stdlib chat: `kit.sql` + `kit.sqlite`, `kit.postgres`. Packages doc: `kit.db.pg`. | Interfaces in `std.db` (rule 4: facades in `std`); drivers as `kit.db.sqlite`, `kit.db.pg`. Retire `kit.sql`. |
-| Q2 | Crypto scope in `std` | Stdlib chat put all of it in `std` but left it open. | Hashes, HMAC and CSPRNG in `std` (frozen algorithms). Decide AEAD, signatures and Argon2 before P2 #19. |
+| Q2 | Crypto scope in `std` | Stdlib chat put all of it in `std` but left it open. | Decided (batch 7): hashes, HMAC and CSPRNG in `std`; AEAD, Ed25519/X25519 and Argon2 in `kit.crypto`. |
 | Q3 | Byte-codec module name (settled Nov 2: `std.encoding`) | Stdlib chat: `std.encoding`. Round 3 (J83): "`Hex` and `Base64` are `std` codecs", no module named. | One module, `std.encoding`, holding `Hex`, `Base64`, varint; `Utf16` stays in `std.text`, `Utf8` in `core`. |
 | Q4 | Unicode case tables | Rev 0003: full case mapping in `std.text` after v0.1. Rev 0015: `lowercased()` with tables from `UnicodeData.txt`, added to the compiler now. | Tables generated into `core` (classification and simple case mapping); folding, special casing and normalization in `std.text`. Confirm rev 0015's scope. |
 | Q5 | Legacy encodings | Rev 0003: "`kit` (`kit.intl`, `Latin1` and other encodings)". | Separate `kit.encoding`; culture and encodings are different concerns. |
 | Q6 | `kit.template` | Stdlib chat proposed it; Nov 1 markup design covers HTML through markup and content files through generators. | Drop `kit.template`. |
 | Q7 | `Event<T>` home | Spec §16, spec-only, no module. | `core` if it needs no allocator; otherwise `std.event`. Decide when implemented. |
-| Q8 | `kit.tls` backend | Not discussed. | Native Bayān long-term. Short-term, decide between a C library via `std.c` (fast, adds a `.native` dependency) and `curl` shell-outs (§12.5). |
+| Q8 | `kit.tls` backend | Not discussed. | Decided (batch 7): `curl` shell-outs for 015 scripts now; `kit.tls` wraps a C library via `std.c` in v0.3 (library chosen later); native TLS needs its own spec. |
 | Q9 | `kit.xml` | New on Nov 2. Spec 015 S9 (Nov 2): build it only if the known-failures script outlives the C# test suite; confirm first. | Confirm `kit` placement and the pull-reader-first scope. |
 | Q10 | Script mode auto-imports `kit` (dropped Nov 2: scripts import explicitly) | Proposed in the stdlib chat, never confirmed. | Confirm or drop. |
 | Q11 | `std.config` | Proposed; overlaps with `std.cli` and `std.env`. | Keep as a thin binder over both; confirm before P1 #13. |

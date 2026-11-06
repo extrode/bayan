@@ -50,7 +50,7 @@ Bayan (بيان, "clarity, eloquent exposition") is a value-oriented, natively c
 | Naming | Types `PascalCase`; everything else `camelCase`. Casing encodes part of speech (§5). |
 | Derivation | A closed set of patterns derives forms (`tryX`, `xInto`, `xOp`, `T.Builder`, …). |
 | Generics | C# syntax, constraints checked at definition, monomorphized. |
-| Async | Colorless: no `async` on declarations. `async`/`await` at call sites; I/O through `context.Io`. |
+| Async | Colorless: no `async` on declarations. Round 4 replaces call-site `async`/`await` with `scope`/`spawn` (user decision 2026-11-04, revision 0019); I/O through `context.Io`. |
 | Comptime | Ordinary Bayan run at compile time by the interpreter; deterministic and sandboxed. |
 | Modules | A directory is a module. `import`. No cycles. Default visibility: module. |
 | Safety | No undefined behavior outside `unsafe`. Taint tracking, `Secret<T>`, capability declarations. |
@@ -382,7 +382,7 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 - No implementation inheritance (revisit only if a GC tier is added).
 
 ### 3.11 Move-only types
-`struct unique` cannot be copied; use `move`. Cleanup is derived (disposes fields in reverse declaration order) and runs exactly once, at scope end or by the final owner.
+`struct unique` cannot be copied; use `move`. Cleanup is derived (disposes fields in reverse declaration order) and runs exactly once, at scope end or by the final owner. A `struct unique` may declare `void dispose(move this)`: it runs once, replaces derived cleanup, then fields still owned are disposed in reverse order.
 
 - `unique` is for resources (`File`, `Socket`, `Transaction`, `Lock`). Plain data types (orders, lines) are never declared `unique`. `unique` is unrelated to `const`, and a `unique` type cannot be `const` (BYN3209).
 
@@ -1381,7 +1381,7 @@ xs.remove(from: 2, until: 5)
 
 **Overloading.** Overloads may differ by particle set (`move(from:to:)` vs `move(_, by:)`) or by parameter type. The checks run at the **declaration**, so a call never needs C#-style ambiguity resolution:
 
-1. Overloads that differ only by type must not overlap through any implicit conversion (finer units, integer widening, state widening). `void f(Grams g)` beside `void f(Kilograms k)` is an error, because `Kilograms` converts to `Grams` (BYN3213).
+1. Not in v0.1: until overloads exist, two same-name functions with different parameter types are a BYN2006 duplicate declaration, never first- or last-wins. Overloads that differ only by type must not overlap through any implicit conversion (finer units, integer widening, state widening). `void f(Grams g)` beside `void f(Kilograms k)` is an error, because `Kilograms` converts to `Grams` (BYN3213).
 2. Overloads may not differ only by function-type parameters, since `it` lambdas need one target type.
 3. Defaults may not make two overloads accept the same argument list.
 4. A reference to an overloaded name needs a target type: `let f: i32 -> i32 = abs` (BYN3215).
@@ -1526,7 +1526,7 @@ public static Query<T> sql<T>(const string text) {
 
 > Round 2 §10: diagnostic fields use `:` like every field initialization.
 
-Packages reserve a code prefix in `package.byn`; the registry enforces uniqueness. `@whenMissing("…")` customizes unmet-constraint messages. `@replaced(by: "…", since: "2.0")` drives `bayan migrate`. Projects may raise a library's warnings to errors but never lower its errors.
+Packages reserve a code prefix in `package.byn`; the registry enforces uniqueness. `@whenMissing("…")` customizes unmet-constraint messages. `bayan migrate` reads `@deprecated(by: "…")` when `by:` names a same-shape replacement. `@deprecated(by:, until:)`: the error from `until:` is keyed to the consuming package's edition; a fix-it is offered only when `by:` names a same-shape replacement; without `by:` the attribute requires `because`. Projects may raise a library's warnings to errors but never lower its errors.
 
 ---
 
@@ -2047,7 +2047,7 @@ public c_int settleC(…) { … }
 ```
 
 - Pointer types are postfix: `T*` (`Sqlite3* db`, `u8* buf`). A pointer C must not write through is `readonly T*` (C `const char*` is `readonly u8*`). The prefix forms `*T`, `*mut T` and `*const T` are input forms (BYN1066).
-- Pointer types are allowed only in `extern` declarations (BYN1067); `unsafe because` blocks extend the rule when they first parse (not v0.1).
+- Pointer types are allowed only in `extern` declarations and as a private `T*` field of a `struct unique` with `dispose(move this)`, touched only in `unsafe` (BYN1067, revision 0019); `unsafe because` blocks extend the rule when they first parse (not v0.1).
 - `comptime CImport("header.h")` translates headers.
 - Calling `extern` functions requires `unsafe`; libraries wrap them once in safe APIs.
 - `build.addCSource(…)` compiles C dependencies from source via `zig cc`.
@@ -2248,7 +2248,7 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 | `bayan features --used` | Report the language features a build used (feeds the reference-app coverage matrix) |
 | `bayan audit` | List every `because` bypass, `unsafe` block, `extern` declaration and C source, with reasons (§19.3) |
 | `bayan explain CODE` | Long explanation of a diagnostic |
-| `bayan migrate` | Rename casing, upgrade editions, apply `@replaced` |
+| `bayan migrate` | Rename casing, upgrade editions, apply same-shape `@deprecated(by:)` |
 | `bayan new test X` | Test scaffolds |
 
 Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
@@ -2393,7 +2393,7 @@ The `add` through `toString()` rows are beyond the HANDOFF round 2 table; the pl
 source → lex → parse → AST → sema (types, regions, effects, comptime) → DIR
 DIR → interpreter (comptime, scripts, REPL, tests)
 DIR → C with mutant schemata (mutation: one build per run)
-DIR → C → libtcc (debug, scripts) | clang / zig cc (release, cross-compile)
+DIR → C → TinyCC per target where a CI probe passes, system cc elsewhere (debug, scripts) | clang / zig cc (release, cross-compile)
 DIR → LLVM (later) | WASM via clang wasm32 (+ generated .d.ts)
 ```
 
@@ -2445,9 +2445,9 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
 - No symbol for effects; `noalloc` / `nosuspend` are gone (§14).
 - No Ruby-style `?` suffix on boolean members; `?` means only `T?`, `?.`, `??`, ternary.
 - No angle-bracket unit syntax (`5<s>`, `int<Bytes>`).
-- No inheritance before a GC tier exists.
+- No inheritance; there is no GC tier (revision 0019, round-4 batch 1).
 - No language-level JSON; JSON is a first-class standard-library feature.
-- `Op` suffix; `async`/`await`; `fails`; `.byn`; Bayan.
+- `Op` suffix; `fails`; `.byn`; Bayan. `async`/`await` was settled here; user decision 2026-11-04 supersedes it with `scope`/`spawn` (revision 0019).
 - One copy-with-changes form: `x with { f: v }`. No derived `withF(v)`.
 
 - **Round 3 (2026-10-22):**
@@ -2489,7 +2489,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
 
 ## Appendix B — Deferred
 
-Isnād registry design · Arabic prose templates · regex API, date/time · SIMD types, inline assembly · variadic generics · `bayan verify` (contract proofs) · JS backend, `bayan gen ts` · hot reload · GC tier and inheritance · guaranteed tail calls (`become` now means typestate, §3.17; the spelling is open) · interpolating prefixed literals (`sql"…{x}…"`, `html"…"`) · fiber isolation on panic · `if let` · string `+` and fluent asserts · effect variables in function types and interfaces · `format(into: ref buf)` as a particle form of `xInto` · collection-value-tied indices (`orders.Index`) · growing the particle set (`until`, `between`, `per`, `within`), only by spec revision when Sūq shows a need.
+Isnād registry design · Arabic prose templates · regex API, date/time · SIMD types, inline assembly · variadic generics · `bayan verify` (contract proofs) · JS backend, `bayan gen ts` · hot reload · guaranteed tail calls (`become` now means typestate, §3.17; the spelling is open) · interpolating prefixed literals (`sql"…{x}…"`, `html"…"`) · fiber isolation on panic · `if let` · string `+` and fluent asserts · effect variables in function types and interfaces · `format(into: ref buf)` as a particle form of `xInto` · collection-value-tied indices (`orders.Index`) · growing the particle set (`until`, `between`, `per`, `within`), only by spec revision when Sūq shows a need.
 
 > Round 2 §13, Deferred: format specifiers are now specified (§6.6); the three HANDOFF deferrals are listed, not designed.
 
