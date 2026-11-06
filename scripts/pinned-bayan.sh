@@ -18,6 +18,7 @@ sha="$(git rev-parse -q --verify "$ref^{commit}")" || { echo "pinned-bayan: no c
 main="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"  # shared by every worktree of the repo
 cache="$main/.cache/bayan/$sha"
 exe=bayan; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exe=bayan.exe ;; esac
+touch -c "$cache" 2>/dev/null || true  # mark the pin used before anything else can rank it for eviction
 if [ -e "$cache" ] && [ ! -x "$cache/bin/$exe" ]; then
   echo "pinned-bayan: $cache exists but holds no bin/$exe; remove it and rerun" >&2; exit 1
 fi
@@ -49,5 +50,5 @@ if [ ! -x "$cache/bin/$exe" ]; then
   done
   find "$main/.cache/bayan" -maxdepth 1 -name '.build-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 fi
-touch "$cache"  # last-use order, which the eviction above follows
+touch -c "$cache"  # last-use order, which the eviction above follows
 echo "$cache/bin/$exe"

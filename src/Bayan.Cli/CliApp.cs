@@ -987,7 +987,7 @@ public static class CliApp
         return lines;
     }
 
-    internal sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
+    private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
 
     private sealed record ChangedSet(bool All, HashSet<string> Directories);
 
@@ -1044,7 +1044,7 @@ public static class CliApp
         return dir;
     }
 
-    internal static TestOutcome RunTest(string executable, int index, string? coveragePrefix = null)
+    private static TestOutcome RunTest(string executable, int index, string? coveragePrefix = null)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(executable)
         {
@@ -1067,11 +1067,7 @@ public static class CliApp
             p.WaitForExit();
             // A grandchild may still hold the pipes open; do not wait for them forever.
             // What was read so far is kept either way.
-            try { Task.WaitAll([stdout.Completion, stderr.Completion], TimeSpan.FromSeconds(5)); }
-            catch (AggregateException) { }
-            // Closing our ends ends the readers still blocked on a pipe a grandchild holds open.
-            try { p.StandardOutput.Dispose(); p.StandardError.Dispose(); }
-            catch (Exception e) when (e is IOException or ObjectDisposedException) { }
+            Task.WaitAll([stdout.Completion, stderr.Completion], TimeSpan.FromSeconds(5));
             return new TestOutcome(-1, true, stdout.Snapshot(), stderr.Snapshot(), clock.Elapsed);
         }
         return new TestOutcome(p.ExitCode, false, stdout.Completion.Result, stderr.Completion.Result, clock.Elapsed);

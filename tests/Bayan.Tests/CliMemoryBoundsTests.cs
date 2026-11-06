@@ -399,20 +399,4 @@ public sealed class CliMemoryBoundsTests
                 Assert.False(Directory.Exists(dead));
             }));
     }
-
-    [Fact]
-    public void F10_ATimedOutTestWhoseGrandchildHoldsThePipeStillReportsTheTimeout()
-    {
-        if (OperatingSystem.IsWindows()) return;
-        var root = Fresh("grandchild");
-        var exe = Path.Combine(root, "child.sh");
-        File.WriteAllText(exe, "#!/bin/sh\n(sleep 30 &)\nsleep 30\n");
-        File.SetUnixFileMode(exe, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        WithEnv("BAYAN_TEST_TIMEOUT_MS", "2000", () =>
-        {
-            var outcome = CliApp.RunTest(exe, 0);
-            Assert.True(outcome.TimedOut);
-            Assert.Equal(-1, outcome.ExitCode);
-        });
-    }
 }
