@@ -206,3 +206,25 @@ Unrelated issues seen while auditing:
   checker refuses every alias pair.
 - **Row 45 bounds-check report:** ships with P2 in v0.2, filed next to P2 in the v0.2a plan.
 - Noted on the way: R4D :143 names `Box<T>`; the SPEC's heap owner is `Owned<T>` (SPEC :1268).
+
+### Batch 7 (user, 2026-11-06)
+- **R4D §9 Q7 TinyCC:** used per target where a CI probe passes; system `cc` elsewhere (K3 driver interface).
+- **Phase-3 risks:** macOS SDK redistribution and libc source size are phase-3 entry conditions; if licensing fails,
+  macOS uses the system SDK and only musl/mingw sysroots ship.
+- **Registry hosting:** the lockfile records a registry alias, not a URL (an S04 format choice, before v0.3); the
+  `ikhbat-org` host name is reserved, the service deferred.
+- **Tiers Q8 `kit.tls`:** `curl` shell-outs for 015 scripts now; `kit.tls` wraps a C library via `std.c` in v0.3
+  (library chosen later); native TLS needs its own spec.
+- **Tiers Q2 crypto:** hashes, HMAC and CSPRNG in `std`; AEAD, Ed25519/X25519 and Argon2 in `kit.crypto`.
+- **R4D :328 C handles:** no `extern class`. A `struct unique` with `dispose(move this)` may hold a private `T*`
+  field, touched only in `unsafe`; BYN1067 narrows accordingly.
+- **R4D :311-318 placement:** `Rc`, `Pool`, `Handle` in `std.alloc`; `Arc`, `Mutex`, `Atomic` with `std.fiber`'s sync
+  types.
+- **Tiers Proposed rows:** map hashing confirmed as seeded SipHash-1-3 (what fix/runtime-security ships); a faster
+  non-flood-resistant hasher may come later as an opt-in. The other seven rows stay Proposed until a consumer exists.
+- **Own specs needed:** native `kit.tls`; phase-3 sysroots; registry service + Isnād; `std.crypto` + `Secret`;
+  SIMD `Vec<T, N>` (with Q12 const generics).
+- Noted on the way, for the spec revision pass: SPEC :2447 and :2492 still assume a GC tier (removed in batch 1);
+  SPEC :1529 `@replaced(by:, since:)` overlaps batch 4's `@deprecated(by:, until:)` (one spelling: decide which
+  stays); roadmap :96 settles Q8 but roadmap :119 and tiers :405 still list it open; the batch 1-2 "stale tiers :40"
+  note is resolved.
