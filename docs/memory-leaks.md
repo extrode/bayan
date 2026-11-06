@@ -44,16 +44,16 @@ or by luck; LOW = small or one-shot. Source reports: `tmp/leak-audit/*.out` (scr
 |---|---|---|
 | HIGH | Whole-tree indexing, watcher loads mutants (incident above) | fixed, `fix/lsp-index-bound` |
 | HIGH | Close re-read files from disk and kept them forever, ignoring exclusions and budgets | fixed, `fix/review-2026-11-06-1` |
-| HIGH | Retained state per file is 10–80× its text (tokens, diagnostics kept for closed files) | `fix/lsp-leaks` L1 |
-| HIGH | Stack overflow from nested interpolation (Lexer) and member chains (`TypeOfReceiver`) | `fix/lsp-leaks` L2 |
+| HIGH | Retained state per file is 10–80× its text (tokens, diagnostics kept for closed files) | fixed, `fix/lsp-leaks` L1 |
+| HIGH | Stack overflow from nested interpolation (Lexer) and member chains (`TypeOfReceiver`) | fixed, `fix/lsp-leaks` L2 |
 | MEDIUM | `_chars` budget drifted on edits and reloads | fixed, `fix/review-2026-11-06-1` |
-| MEDIUM | Folder delete or rename left the old subtree indexed and skipped the new one | `fix/lsp-leaks` L3 |
-| MEDIUM | `Invalidate` kept replaced documents alive (2.9× after watcher storms) | `fix/lsp-leaks` L4 |
-| MEDIUM | No cap on open-buffer size (32 MB didOpen → 1.09 GB) | `fix/lsp-leaks` L5 |
-| MEDIUM | No cap on diagnostics; JSON-RPC body buffer never shrank | `fix/lsp-leaks` L6 |
-| LOW | Body allocated from the header up front (256 MiB); truncated stream crashed | `fix/lsp-leaks` L7 |
-| LOW | Walk time unbounded on roots with few `.byn` files | `fix/lsp-leaks` L8 |
-| LOW | One file through two paths (symlink) became two documents | `fix/lsp-leaks` L9 |
+| MEDIUM | Folder delete or rename left the old subtree indexed and skipped the new one | fixed, `fix/lsp-leaks` L3 |
+| MEDIUM | `Invalidate` kept replaced documents alive (2.9× after watcher storms) | fixed, `fix/lsp-leaks` L4 |
+| MEDIUM | No cap on open-buffer size (32 MB didOpen → 1.09 GB) | fixed, `fix/lsp-leaks` L5 |
+| MEDIUM | No cap on diagnostics; JSON-RPC body buffer never shrank | fixed, `fix/lsp-leaks` L6 |
+| LOW | Body allocated from the header up front (256 MiB); truncated stream crashed | fixed, `fix/lsp-leaks` L7 |
+| LOW | Walk time unbounded on roots with few `.byn` files | fixed, `fix/lsp-leaks` L8 |
+| LOW | One file through two paths (symlink) became two documents | fixed, `fix/lsp-leaks` L9 |
 
 ### CLI and compiler (C#)
 
@@ -87,7 +87,7 @@ or by luck; LOW = small or one-shot. Source reports: `tmp/leak-audit/*.out` (scr
 
 | Sev | Leak | Status |
 |---|---|---|
-| HIGH | `.worktrees` with `tmp/cache` could not be retired (66.9 GB) | fixed, `cow-worktree.js` CACHEDIR.TAG rule + tagged caches |
+| HIGH | `.worktrees` with `tmp/cache` could not be retired (66.9 GB) | fixed, `cow-worktree.js` CACHEDIR.TAG rule; Bayan tags its program cache and `pinned-bayan.sh` its `.cache/bayan` (`fix/cachedir-tag`) |
 | HIGH | `tmp/ignored-*` parked output never removed (18.4 GB) | cleanup script |
 | HIGH | Orphaned MSBuild nodes and VBCSCompiler (~4.5 GB) | fixed, `fix/tooling-bounds` T3 |
 | HIGH | No xunit parallelism limit; static `Lazy` caches held to host exit | open: decision (class fixtures, `maxParallelThreads`) |

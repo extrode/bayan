@@ -33,6 +33,8 @@ if [ ! -x "$cache/bin/$exe" ]; then
   fi
   rm -rf "$build/src"  # only bin/ is used (the version is stamped at build time); nothing reads the checkout afterwards
   mkdir -p "$(dirname "$cache")"
+  # CACHEDIR.TAG marks the directory as a disposable cache (worktree removal, backups skip it).
+  [ -f "$main/.cache/bayan/CACHEDIR.TAG" ] || printf %s\\n "Signature: 8a477f597d28d172789f06886806bc55" "# This file is a cache directory tag created by pinned-bayan.sh." > "$main/.cache/bayan/CACHEDIR.TAG"
   # A concurrent build of the same commit may have won: then mv nests ours inside the cache (exit 0), so drop it.
   mv "$build" "$cache" 2>/dev/null || true
   [ -d "$cache/$(basename "$build")" ] && rm -rf "${cache:?}/$(basename "$build")"
@@ -42,7 +44,7 @@ if [ ! -x "$cache/bin/$exe" ]; then
   # Keep the newest 3 commits (never the one just built); other builds' leftovers go only once an hour old.
   n=0
   for d in $(ls -t "$main/.cache/bayan"); do
-    case "$d" in .*) continue ;; esac
+    case "$d" in .*|CACHEDIR.TAG) continue ;; esac
     n=$((n+1)); [ "$n" -le 3 ] || [ "$d" = "$sha" ] || rm -rf "${main:?}/.cache/bayan/$d"
   done
   find "$main/.cache/bayan" -maxdepth 1 -name '.build-*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
