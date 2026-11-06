@@ -72,3 +72,4 @@ None in the code. New golden `tests/cases/diag/duplicate-overload-types` (genera
 - SPEC §13 (:1541-1577) still specifies `async`/`await`, `Io.group` and `provide timeout:`; R4D §7 plans the rewrite by revision (line added to `work/todo.md`).
 - Other uses of "derived cleanup" in SPEC may need the `dispose(move this)` form (batch 5 row 70 supersedes the `drop(ref this)` / `dispose(ref this)` forms); not searched beyond §3.11.
 - Overload rules 2-5 (SPEC §5) describe type overloads that do not exist in v0.1; only the intro and rule 1 are marked.
+- Lexer still reserves `ensures` (`Keywords.cs:41`, `selfhost/lexer/tokens.byn:186`); batch 1 unreserves it (line added to `work/todo.md`).
