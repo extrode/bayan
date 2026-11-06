@@ -14,6 +14,11 @@ R4. Every hit of the token regex in `tests/Bayan.Tests/CInventoryTests.cs` is on
 | src/runtime/bayan-rt.h `if (!__builtin_add_overflow(a, b, &r))` | `__builtin_add_overflow` | Saturating `+` needs the overflow flag. C11 replacement: as the checked `+` row. |
 | src/runtime/bayan-rt.h `if (!__builtin_sub_overflow(a, b, &r))` | `__builtin_sub_overflow` | Saturating `-` needs the overflow flag. C11 replacement: as the checked `-` row. |
 | src/runtime/bayan-rt.h `if (!__builtin_mul_overflow(a, b, &r))` | `__builtin_mul_overflow` | Saturating `*` needs the overflow flag. C11 replacement: as the checked `*` row. |
+| src/runtime/bayan-rt.c `if (__builtin_mul_overflow(byn_str_count(s, x)` | `__builtin_mul_overflow` | `replaced` panics when its length overflows. C11 replacement: as the checked `*` row. |
+| src/runtime/bayan-rt.c `if (__builtin_mul_overflow(byn_str_count(s, x)` | `__builtin_add_overflow` | `replaced` panics when its length overflows. C11 replacement: as the checked `+` row. |
+| src/runtime/bayan-rt.c `__builtin_mul_overflow(n - 1, sep.len, &len)` | `__builtin_mul_overflow` | `joined` panics when its length overflows. C11 replacement: as the checked `*` row. |
+| src/runtime/bayan-rt.c `__builtin_add_overflow(len, xs[i].len, &len)` | `__builtin_add_overflow` | `joined` panics when its length overflows. C11 replacement: as the checked `+` row. |
+| src/runtime/bayan-rt.c `__builtin_mul_overflow(grown, elem_size, &bytes)` | `__builtin_mul_overflow` | `byn_list_reserve` panics when the byte size overflows. C11 replacement: as the checked `*` row. |
 | src/Bayan.Backend.C/CEmitter.cs `"NULL", "asm", "typeof"` | `asm` | In the reserved-identifier list; reserved word, not a use; no replacement needed. |
 | src/Bayan.Backend.C/CEmitter.cs `"NULL", "asm", "typeof"` | `typeof` | In the reserved-identifier list; reserved word, not a use; no replacement needed. |
 | selfhost/emitter/cprint/cctx.byn `"NULL", "asm", "typeof"` | `asm` | Port of the `CEmitter.cs` reserved-identifier list; reserved word, not a use; no replacement needed. |

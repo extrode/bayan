@@ -1,0 +1,4 @@
+// An inclusive end of i64.max is out of range, rejected before `end + 1` can overflow (audit 2026-11-06).
+let xs = [1, 2, 3]
+let n: i64 = 9223372036854775807
+print($"{xs.span[0..=n].length}")
