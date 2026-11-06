@@ -1,5 +1,5 @@
 // bayan: the self-hosted compiler driver (spec 012). `Run` of CliApp.cs:37 with the global options of
-// `TakeGlobalOptions` (CliApp.cs:315); commands the driver does not port are refused (R3).
+// `TakeGlobalOptions` (CliApp.cs:328); commands the driver does not port are refused (R3).
 //
 //     bayan [--ascii] [--color auto|always|never] <command> [args]
 
@@ -81,54 +81,79 @@ matters, run `bayan build` first or read `--diagnostics json`.
 /// CliApp.cs:33 `VersionLine` with the commit replaced by `selfhost` (spec Q3).
 string versionLine() => $"bayan {version} (selfhost)"
 
-/// The C# `File.Exists`: `path` reads and is not a directory.
-bool t1FileExists(string path) {
-    let _ = Io.listDir(path) catch {
-        let _ = Io.readFile(path) catch return false
-        return true
+/// CliApp.cs:37 `Run`.
+i32 run(ReadOnlySpan<string> args, through ref DCtx d) {
+    var kept = List<string>()
+    unless takeGlobalOptions(args, to: ref kept, through: ref d) { return exitUsage }
+    // no-builtin: Q919 the `Terminal` of CliApp.cs:27 is what `Run(args, stdout, stderr)` gives: neither stream a tty, width 0
+    d.styleOut = decideStyle(d.color, by: d.ascii, through: false, for: 0)
+    d.styleErr = decideStyle(d.color, by: d.ascii, through: false, for: 0)
+    d.stderrTty = false
+    if kept.length == 0 {
+        Io.stderr.write($"{usageText}\n")
+        return exitUsage
     }
-    return false
-}
-
-/// CliApp.cs:362 `IsScript`: a file whose first two bytes are `#!`. A copy of `semantics/cli.byn` `t26IsScript` (private there); T28 merges copies.
-bool t1IsScript(string path) {
-    unless t1FileExists(path) { return false }
-    // coverage-exempt: Q918 the catch is reached only if the file changes between the reads at :87 and :97 (a race no test can stage); the C# has no such branch
-    let bytes = Io.readFile(path) catch return false
-    return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
-}
-
-/// R3 (spec Q4): one stderr line naming `what`.
-i32 refuse(string what) {
-    Io.stderr.write($"error: `{what}` is not available in the self-hosted compiler; use the C# `bayan`\n")
-    return exitUsage
-}
-
-/// CliApp.cs:370 `RefuseLibrary`: a library has nothing to build or run; `command` is the refused verb (`build`, `run`).
-bool refuseLibrary(semantics.Ctx compiled, by string command) {
-    unless compiled.library { return false }
-    Io.stderr.write($"bayan: `{compiled.packageName}` is a library, so there is no program to {command}; `bayan test` runs its tests\n")
-    return true
-}
-
-/// TerminalStyle.cs:13 `Decide`. Its environment reads (`TERM`, `NO_COLOR`, `FORCE_COLOR`, `COLORTERM`, `BAYAN_THEME`, `COLORFGBG`,
-/// `LC_ALL`, `LC_CTYPE`, `LANG`) and the Windows code page have no builtin (spec Q1), so each is read as unset (Q919).
-DStyle decideStyle(string colorFlag, by bool ascii, through bool isTty, for i64 width) {
-    var color = false
-    switch colorFlag {
-        case "always":
-            color = true
-        case "never":
-            color = false
+    let command = kept[0]
+    switch command {
+        case "--version" or "version":
+            Io.stdout.write($"{versionLine()}\n")
+            return exitOk
+        case "doctor":
+            return refuse(command)
+        case "--help" or "-h" or "help":
+            Io.stdout.write($"{usageText}\n")
+            return exitOk
+        case "lex":
+            return lexCommand(in kept)
+        case "parse":
+            return parseCommand(in kept)
+        case "types":
+            return typesCommand(in kept, by: in d)
+        case "format":
+            return refuse(command)
+        case "audit":
+            return refuse(command)
+        case "features":
+            return refuse(command)
+        case "explain":
+            return refuse(command)
+        case "check":
+            return checkCommand(in kept, by: in d)
+        case "build":
+            return buildCommand(in kept, by: in d)
+        case "run":
+            return runProgram(in t2Rest(kept), by: in d)
+        case "test":
+            return refuse(command)
+        case "mutate":
+            return refuse(command)
+        case "new":
+            return refuse(command)
+        case "dist":
+            return refuse(command)
+        case "cache":
+            return refuse(command)
+        case "clean":
+            return refuse(command)
+        case "init":
+            return refuse(command)
         default:
-            // no-builtin: Q919 the `NO_COLOR`, `FORCE_COLOR` and `TERM=dumb` arms of TerminalStyle.cs:21-23 read the environment
-            color = isTty
+            // `#!/usr/bin/env bayan` runs `bayan script.byn [args]` (CliApp.cs:97).
+            if command.endsWith(".byn") && t1FileExists(command) {
+                var script = List<string>()
+                script.append(command)
+                script.append("--")
+                for a in t2Rest(kept) { script.append(a) }
+                return runProgram(in script, by: in d)
+            }
+            Io.stderr.write($"bayan: unknown command `{command}`\n")
+            if command == "fmt" { Io.stderr.write("the formatter is `bayan format`\n") }
+            Io.stderr.write($"{usageText}\n")
+            return exitUsage
     }
-    // no-builtin: Q919 `ascii || dumb || !Utf8(env)` (TerminalStyle.cs:28): `dumb` is false and `Utf8` is true with no environment
-    return DStyle { color: color, ascii: ascii, width: isTty && width > 0 ? width : 100 }
 }
 
-/// CliApp.cs:315 `TakeGlobalOptions`: `--color` and `--ascii` are removed from `args` into `kept` and `d`, before any `--`
+/// CliApp.cs:328 `TakeGlobalOptions`: `--color` and `--ascii` are removed from `args` into `kept` and `d`, before any `--`
 /// and before a script run without a command; false after reporting a bad colour value.
 bool takeGlobalOptions(ReadOnlySpan<string> args, to ref List<string> kept, through ref DCtx d) {
     var color = "auto"
@@ -171,54 +196,51 @@ bool takeGlobalOptions(ReadOnlySpan<string> args, to ref List<string> kept, thro
     return true
 }
 
-/// CliApp.cs:37 `Run`.
-i32 run(ReadOnlySpan<string> args, through ref DCtx d) {
-    var kept = List<string>()
-    unless takeGlobalOptions(args, to: ref kept, through: ref d) { return exitUsage }
-    // no-builtin: Q919 the `Terminal` of CliApp.cs:27 is what `Run(args, stdout, stderr)` gives: neither stream a tty, width 0
-    d.styleOut = decideStyle(d.color, by: d.ascii, through: false, for: 0)
-    d.styleErr = decideStyle(d.color, by: d.ascii, through: false, for: 0)
-    d.stderrTty = false
-    if kept.length == 0 {
-        Io.stderr.write($"{usageText}\n")
-        return exitUsage
-    }
-    let command = kept[0]
-    switch command {
-        case "--version" or "version":
-            Io.stdout.write($"{versionLine()}\n")
-            return exitOk
-        case "--help" or "-h" or "help":
-            Io.stdout.write($"{usageText}\n")
-            return exitOk
-        case "lex":
-            return lexCommand(in kept)
-        case "parse":
-            return parseCommand(in kept)
-        case "types":
-            return typesCommand(in kept, by: in d)
-        case "check":
-            return checkCommand(in kept, by: in d)
-        case "build":
-            return buildCommand(in kept, by: in d)
-        case "run":
-            return runProgram(in t2Rest(kept), by: in d)
-        case "doctor" or "format" or "audit" or "features" or "explain" or "test" or "mutate" or "new" or "dist" or "cache" or "clean" or "init":
-            return refuse(command)
+/// TerminalStyle.cs:13 `Decide`. Its environment reads (`TERM`, `NO_COLOR`, `FORCE_COLOR`, `COLORTERM`, `BAYAN_THEME`, `COLORFGBG`,
+/// `LC_ALL`, `LC_CTYPE`, `LANG`) and the Windows code page have no builtin (spec Q1), so each is read as unset (Q919).
+DStyle decideStyle(string colorFlag, by bool ascii, through bool isTty, for i64 width) {
+    var color = false
+    switch colorFlag {
+        case "always":
+            color = true
+        case "never":
+            color = false
         default:
-            // `#!/usr/bin/env bayan` runs `bayan script.byn [args]` (CliApp.cs:97).
-            if command.endsWith(".byn") && t1FileExists(command) {
-                var script = List<string>()
-                script.append(command)
-                script.append("--")
-                for a in t2Rest(kept) { script.append(a) }
-                return runProgram(in script, by: in d)
-            }
-            Io.stderr.write($"bayan: unknown command `{command}`\n")
-            if command == "fmt" { Io.stderr.write("the formatter is `bayan format`\n") }
-            Io.stderr.write($"{usageText}\n")
-            return exitUsage
+            // no-builtin: Q919 the `NO_COLOR`, `FORCE_COLOR` and `TERM=dumb` arms of TerminalStyle.cs:21-23 read the environment
+            color = isTty
     }
+    // no-builtin: Q919 `ascii || dumb || !Utf8(env)` (TerminalStyle.cs:28): `dumb` is false and `Utf8` is true with no environment
+    return DStyle { color: color, ascii: ascii, width: isTty && width > 0 ? width : 100 }
+}
+
+/// The C# `File.Exists`: `path` reads and is not a directory.
+bool t1FileExists(string path) {
+    let _ = Io.listDir(path) catch {
+        let _ = Io.readFile(path) catch return false
+        return true
+    }
+    return false
+}
+
+/// CliApp.cs:375 `IsScript`: a file whose first two bytes are `#!`. A copy of `semantics/cli.byn` `t26IsScript` (private there); T28 merges copies.
+bool t1IsScript(string path) {
+    unless t1FileExists(path) { return false }
+    // coverage-exempt: Q918 the catch is reached only if the file changes between the reads at :219 and :229 (a race no test can stage); the C# has no such branch
+    let bytes = Io.readFile(path) catch return false
+    return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
+}
+
+/// CliApp.cs:384 `RefuseLibrary`: a library has nothing to build or run; `command` is the refused verb (`build`, `run`).
+bool refuseLibrary(semantics.Ctx compiled, by string command) {
+    unless compiled.library { return false }
+    Io.stderr.write($"bayan: `{compiled.packageName}` is a library, so there is no program to {command}; `bayan test` runs its tests\n")
+    return true
+}
+
+/// R3 (spec Q4): one stderr line naming `what`.
+i32 refuse(string what) {
+    Io.stderr.write($"error: `{what}` is not available in the self-hosted compiler; use the C# `bayan`\n")
+    return exitUsage
 }
 
 i32 main(ReadOnlySpan<string> args) {

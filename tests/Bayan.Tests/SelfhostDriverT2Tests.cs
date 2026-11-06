@@ -10,8 +10,10 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostDriverT2Tests
 {
-    private static string Mask(string text) =>
-        Regex.Replace(Regex.Replace(text, @" in \d+\.\d\ds", " in masked"), @"^(bayan \S+) \(.*\)$", "$1 (masked)", RegexOptions.Multiline);
+    private static string Mask(string text) => Regex.Replace(text, @" in \d+\.\d\ds", " in masked");
+
+    /// <summary>The version line's commit part differs by design (spec Q3); only stdout of `version` and `--version` has one.</summary>
+    private static string MaskVersion(string text) => Regex.Replace(text, @"^(bayan \S+) \(.*\)$", "$1 (masked)", RegexOptions.Multiline);
 
     private static (int Exit, string Out, string Err) Oracle(string[] args)
     {
@@ -27,7 +29,8 @@ public sealed class SelfhostDriverT2Tests
         var actual = SelfhostDriverHarness.Run(args);
         var label = string.Join(' ', args);
         Assert.Equal(expected.Exit, actual.Exit);
-        SelfhostEmitterHarness.AssertSame($"stdout of `{label}`", Mask(expected.Out), Mask(actual.Out));
+        Func<string, string> out_ = args is ["version"] or ["--version"] ? t => MaskVersion(Mask(t)) : Mask;
+        SelfhostEmitterHarness.AssertSame($"stdout of `{label}`", out_(expected.Out), out_(actual.Out));
         SelfhostEmitterHarness.AssertSame($"stderr of `{label}`", Mask(expected.Err), Mask(actual.Err));
     }
 
@@ -93,6 +96,28 @@ public sealed class SelfhostDriverT2Tests
         AssertSameAsCs("check", main, "--diagnostics", "json");
         AssertSameAsCs("types", main);
         AssertSameAsCs("types", Isolated("diag/ambiguous-variant.byn"));
+    }
+
+    /// <summary>`Mask` leaves a line that looks like a version line alone; only `MaskVersion` (for `version` stdout) rewrites it.</summary>
+    [Fact]
+    public void MaskKeepsVersionLikeLinesOnOtherStreams()
+    {
+        Assert.Equal("bayan 1 (x)\n", Mask("bayan 1 (x)\n"));
+        Assert.Equal("bayan 1 (masked)\n", MaskVersion("bayan 1 (x)\n"));
+    }
+
+    /// <summary>A file named `-` in the working directory is parsed, not stdin (CliApp.cs:128, :1107); both sides see the test process's cwd.</summary>
+    [Fact]
+    public void ParsesAFileNamedDash()
+    {
+        var dash = Path.Combine(Directory.GetCurrentDirectory(), "-");
+        File.Copy(Case("parse/assert.byn"), dash, overwrite: true);
+        try
+        {
+            Assert.Equal(0, Oracle(["parse", "--ast", "-"]).Exit);
+            AssertSameAsCs("parse", "--ast", "-");
+        }
+        finally { File.Delete(dash); }
     }
 
     [Fact]

@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Bayan.Backend.C;
 using Bayan.Cli;
@@ -70,9 +69,6 @@ public sealed partial class SelfhostDriverT8Tests
         Assert.Contains("memcpy", listed);
     }
 
-    private static Regex Extensions() =>
-        (Regex)typeof(CInventoryTests).GetMethod("Extensions", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, null)!;
-
     private static HashSet<string> InventoryTokens()
     {
         var tokens = new HashSet<string>(StringComparer.Ordinal);
@@ -105,9 +101,10 @@ public sealed partial class SelfhostDriverT8Tests
         }
     }
 
-    /// <summary>The C of every <c>run/</c> input in each build mode (a <c>*.test.byn</c> as <c>bayan test</c> builds it); inputs the C# rejects are skipped.</summary>
+    /// <summary>The C of every <c>run/</c> input in each build mode (a <c>*.test.byn</c> as <c>bayan test</c> builds it); an input the C# rejects is recorded in <see cref="Dropped"/>.</summary>
     private static List<string> CorpusC()
     {
+        Dropped.Clear();
         var dir = Path.Combine(Golden.CasesRoot, "run");
         var all = new List<string>();
         foreach (var path in Directory.GetFiles(dir, "*.byn").Order(StringComparer.Ordinal))
@@ -116,25 +113,37 @@ public sealed partial class SelfhostDriverT8Tests
             {
                 var work = Path.Combine(Golden.RepoRoot, "tmp", "t8-inventory", Path.GetFileNameWithoutExtension(path));
                 if (SelfhostEmitterHarness.TestRunC(path, work) is { } testC) all.Add(testC);
+                else Dropped.Add(Path.GetFileName(path));
                 continue;
             }
             var c = Compilation.Create([SourceText.FromFile(path)], dir);
-            if (c.Diagnostics.HasErrors) continue;
+            if (c.Diagnostics.HasErrors)
+            {
+                Dropped.Add(Path.GetFileName(path));
+                continue;
+            }
             foreach (var mode in new[] { BuildMode.Debug, BuildMode.Safe, BuildMode.Fast }) all.Add(CliApp.EmitC(c, mode));
         }
         return all;
     }
+
+    /// <summary>The <c>run/</c> inputs <see cref="CorpusC"/> left out because the C# rejects them.</summary>
+    private static readonly List<string> Dropped = [];
 
     private static readonly Lazy<List<string>> Corpus = new(CorpusC);
 
     [Fact]
     public void EmittedCHasOnlyInventoryExtensionTokens()
     {
-        Assert.True(Corpus.Value.Count > 500, $"only {Corpus.Value.Count} emitted units");
+        var corpus = Corpus.Value;
+        var inputs = Directory.GetFiles(Path.Combine(Golden.CasesRoot, "run"), "*.byn");
+        var tests = inputs.Count(f => f.EndsWith(".test.byn", StringComparison.Ordinal));
+        Assert.True(Dropped.Count == 0, $"inputs the C# rejects, so they have no emitted unit: {string.Join(", ", Dropped)}");
+        Assert.Equal((inputs.Length - tests) * 3 + tests, corpus.Count);
         var rows = InventoryTokens();
         var found = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var unit in Corpus.Value)
-            foreach (Match m in Extensions().Matches(unit))
+            foreach (Match m in CInventoryTests.Extensions().Matches(unit))
                 foreach (var token in CInventoryTests.Split(m.Value)) if (!rows.Contains(token)) found.Add(token);
         Assert.True(found.Count == 0, $"emitted C has tokens without a row in {InventoryPath}:\n{string.Join("\n", found)}");
     }
@@ -154,7 +163,7 @@ public sealed partial class SelfhostDriverT8Tests
     {
         var rows = InventoryTokens();
         var unit = "int f(void) { return " + "(" + "{ 1; }); }";
-        Assert.Contains(Extensions().Matches(unit), m => !rows.Contains(m.Value));
+        Assert.Contains(CInventoryTests.Extensions().Matches(unit), m => !rows.Contains(m.Value));
     }
 
     [Fact]

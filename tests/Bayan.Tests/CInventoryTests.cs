@@ -1,5 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Bayan.Cli;
+using Bayan.Semantics;
+using Bayan.Backend.C;
+using Bayan.Syntax.Text;
 
 namespace Bayan.Tests;
 
@@ -16,7 +20,7 @@ public sealed partial class CInventoryTests
     private static readonly string[] LiteralFiles = ["src/Bayan.Backend.C/CEmitter.cs"];
 
     [GeneratedRegex(@"__builtin_\w+|__attribute__\s*\(\(([^()]|\([^()]*\))*\)\)|__declspec|\balloca\b|__typeof__|\btypeof\b|__auto_type|__thread\b|__int128|__extension__|__restrict\w*|#pragma \w+|_Pragma|__asm__|\basm\b|__has_builtin|__PRETTY_FUNCTION__|__COUNTER__|\(\{")]
-    private static partial Regex Extensions();
+    internal static partial Regex Extensions();
 
     [GeneratedRegex(@"^\| (?<file>[^ |`]+) `(?<anchor>[^`]+)` \| `(?<token>[^`]+)` \| (?<why>.+) \|$")]
     private static partial Regex Row();
@@ -33,6 +37,18 @@ public sealed partial class CInventoryTests
         Assert.True(noRow.Count == 0 && noHit.Count == 0,
             $"hits without a row:\n{string.Join("\n", noRow)}\nrows without a hit:\n{string.Join("\n", noHit)}");
         Assert.Equal(hits, rows);
+    }
+
+    /// <summary>The scan sees what the C# emitter really writes: the extensions in the C of a small program are all rows.</summary>
+    [Fact]
+    public void EmittedCOfAProgramUsesOnlyRowTokens()
+    {
+        var c = Compilation.Create([new SourceText("main.byn", "print(\"hi\")\n"u8.ToArray())], Path.GetTempPath());
+        Assert.False(c.Diagnostics.HasErrors);
+        var rows = Rows([]).Select(r => r[(r.IndexOf(' ') + 1)..]).ToHashSet(StringComparer.Ordinal);
+        var emitted = CliApp.EmitC(c, BuildMode.Debug);
+        var unlisted = Extensions().Matches(emitted).SelectMany(m => Split(m.Value)).Where(t => !rows.Contains(t)).ToList();
+        Assert.True(unlisted.Count == 0, $"emitted extension tokens without a row: {string.Join(", ", unlisted)}");
     }
 
     private static IEnumerable<string> Hits()

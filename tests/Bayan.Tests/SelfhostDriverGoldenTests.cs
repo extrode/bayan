@@ -204,7 +204,7 @@ public sealed class SelfhostDriverGoldenTests
             var expected = CSharp(cwd, args);
             Assert.NotEmpty(Codes(File.ReadAllText(Path.ChangeExtension(Path_(name), ".diag"))).Except(Codes(expected.Stdout + expected.Stderr)));
         }
-        // The C# `test --all` (CliApp.cs:618, IncludeTests) does print cases-type-mismatch's BYN2202, but stage 2 refuses `test` (main.byn:206).
+        // The C# `test --all` (CliApp.cs:618, IncludeTests) does print cases-type-mismatch's BYN2202, but stage 2 refuses `test` (main.byn:126 `case "test":`).
         var tests = Path_("diag/cases-type-mismatch.test.byn");
         var dir = Path.GetDirectoryName(tests)!;
         string[] testArgs = ["test", "--all", "--package", dir, Path.GetFileName(tests)];
