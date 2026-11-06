@@ -12,7 +12,7 @@ trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # The doc's gate block, comments dropped, is the list the script must run.
-awk '/^## /{if(s)exit} /^## Release gate/{s=1} s&&/^```sh/{b=1;next} b&&/^```/{exit} b' "$doc" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//' \
+awk '/^## /{if(s)exit} /^## Release gate$/{s=1} s&&/^```sh/{b=1;next} b&&/^```/{exit} b' "$doc" | sed -E 's/(^|[[:space:]]+)#.*$//; s/[[:space:]]+$//' \
   | sed '/^$/d' > "$tmp/doc-cmds"
 [ -s "$tmp/doc-cmds" ] || fail "no command block under '## Release gate' in docs/memory-leaks.md"
 while IFS= read -r c; do
@@ -50,6 +50,6 @@ grep -q "FAILED: bash scripts/pinned-bayan.test.sh" "$tmp/err" || fail "the pinn
 
 # Wiring: release.yml runs the gate in its own job and the draft release needs it.
 grep -q '^  memory-gate:' "$wf" || fail "release.yml has no memory-gate job"
-awk '/^  memory-gate:/{j=1;next} j&&/^  [^ ]/{exit} j' "$wf" | grep -qE '^ +run: bash scripts/release/memory-gate.sh$' || fail "release.yml's memory-gate job does not run memory-gate.sh"
+awk '/^  memory-gate:/{j=1;next} j&&/^  [^ #]/{exit} j' "$wf" | grep -qE '^ +run: bash scripts/release/memory-gate.sh$' || fail "release.yml's memory-gate job does not run memory-gate.sh"
 awk '/^  release:/{r=1} r&&/needs:/{print; exit}' "$wf" | grep -q 'memory-gate' || fail "release.yml's release job does not need memory-gate"
 echo PASS
