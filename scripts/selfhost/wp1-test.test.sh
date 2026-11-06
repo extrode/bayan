@@ -39,12 +39,16 @@ printf '#!/bin/bash\ncat "$AUX/ssh-out"\n' > "$aux/bin/dotnet"; chmod +x "$aux/b
 first=$(w feat/x "$F"); [ -f "$aux/remote/$s/a.txt" ] && [ -f "$aux/remote/$s.wp1-test" ] && cloned=1 || cloned=0
 touch "$aux/remote/$s/stale"; again=$(w feat/x "$F"); [ -f "$aux/remote/$s/a.txt" ] && [ ! -e "$aux/remote/$s/stale" ] && replaced=1 || replaced=0
 rm "$aux/remote/$s.wp1-test"; touch "$aux/remote/$s/stale"; foreign=$(w feat/x "$F"); [ -e "$aux/remote/$s/stale" ] && kept=1 || kept=0
+# a commit landing on the branch between the sha lookup and the bundle: the remote clone is not the sha, so the run exits 4
+realgit=$(command -v git)
+printf '#!/bin/bash\nif [ "$1" = bundle ]; then n=$(%s commit-tree -p feat/x -m moved "feat/x^{tree}"); %s update-ref refs/heads/feat/x "$n"; fi\nexec %s "$@"\n' "$realgit" "$realgit" "$realgit" > "$aux/bin/git"; chmod +x "$aux/bin/git"
+rm -rf "$aux/remote/$s"; moved=$(w feat/x "$F"); mout=$(cat "tmp/wp1/$sha.out")
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 has() { grep -qxF -- "$2" <<< "$1"; }
 [ "$scpa" = "-q tmp/wp1/$s.bundle wp1:/$R/" ] || fail "scp ran '$scpa'" "$good"
 CMD=${ssha#wp1 }
-for p in "Set-Location '$R';" "git clone -q -b feat/x $s.bundle $s;" "Set-Location '$s'; dotnet test tests/Bayan.Tests -c Release -p:NuGetAudit=false -v q --filter '$F'; exit \$LASTEXITCODE"; do
+for p in "Set-Location '$R';" "git clone -q -b feat/x $s.bundle $s;" "Set-Location '$s'; if ((git rev-parse HEAD) -ne '$sha') { Write-Output 'wp1-test: feat/x moved after $sha was resolved; the clone is not $sha'; exit 4 }; dotnet test tests/Bayan.Tests -c Release -p:NuGetAudit=false -v q --filter '$F'; exit \$LASTEXITCODE"; do
   [[ $ssha == "wp1 "*"$p"* ]] || fail "ssh ran '$ssha', without '$p'" "$good"; done
 grep -q "^$sha refs/heads/feat/x$" <<< "$bundled" || fail "the bundle does not hold feat/x" "$bundled"
 [ "$(head -4 <<< "$gout")" = "$(printf 'branch: feat/x\nsha: %s\nfilter: %s\ncommand: ssh wp1 "%s"' "$sha" "$F" "$CMD")" ] || fail "the .out header is wrong" "$gout"
@@ -60,4 +64,5 @@ has "$first" "rc=0" && [ $cloned = 1 ] || fail "the remote command did not clone
 has "$again" "rc=0" && [ $replaced = 1 ] || fail "a re-run for the same sha did not replace the clone it made" "$again"
 has "$foreign" "wp1-test: $aux/remote/$s exists and wp1-test.sh did not create it" && has "$foreign" "rc=3" && [ $kept = 1 ] \
   || fail "a directory wp1-test.sh did not make was not left alone" "$foreign"
+has "$moved" "rc=4" && [ "$(tail -1 <<< "$mout")" = "exit 4" ] && grep -q "moved after $sha was resolved" <<< "$mout" || fail "a branch that moved after the sha lookup was tested as the sha" "$moved"
 echo PASS
