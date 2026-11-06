@@ -8,7 +8,7 @@
 # tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
 # holds a line added or changed against the merge base with --base; a new function counts) must be covered, each missed one
 # named (coverage-gate.py; `// coverage-exempt:` for code dead in the C#, `// coverage-blocked: Qnnn T<k> <fn>` for code
-# behind sibling T<k>'s stub while T<k> is open and not --task); each file's other functions get one info line, never a FAIL; a changed file the report has no entry for is one (Q820) unless its AST (pinned bayan parse --ast) holds no Function, Constructor, Getter, Property, Test or Block line: then an info line. The guard makes no baseline check of
+# behind sibling T<k>'s stub while T<k> is open and not --task); each file's other functions get one info line, never a FAIL; a file under another specs.tsv row's bydir (an 011 task editing selfhost/semantics) has only its changed lines gated (Q871), while files outside every bydir (selfhost/parser) keep the touched-function rule; a changed file the report has no entry for is one (Q820) unless its AST (pinned bayan parse --ast) holds no Function, Constructor, Getter, Property, Test or Block line: then an info line. The guard makes no baseline check of
 # coverage: it leaves the report at tmp/guard-run/coverage/bayan-quality.json, and land.sh records it (raise-only) in
 # tests/quality-baseline.json. 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
 # mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
