@@ -3,6 +3,9 @@
 #   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]] [--spec <nnn>] [--scope-only]
 # --spec picks the row of specs.tsv (default 010): its shared-state files are allowed in scope, its test-class prefix names the task;
 # --scope-only stops after check 1 and 2 (land.sh --check-scope).
+# Changed lib/std/**/*.byn files are treated like selfhost .byn files wherever the guard selects them (coverage, banned C#-isms);
+# with one changed, the coverage run adds StdTestFilesTests to --filter, whose harness build of each std module's tests counts them,
+# and check 5 runs the pinned `bayan format --check` over lib/std/ (skipped on Windows, as SourcesAreFormatted).
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
 # 3 build 0 warnings, 4 tests pass with 0 skipped, and coverage (spec 013 T26): when the branch changes selfhost .byn files the
 # tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
@@ -48,7 +51,9 @@ if [ $SCOPEONLY = 1 ]; then
   echo "GUARD FAIL (${#FAIL[@]} items):"; for x in "${FAIL[@]}"; do echo "- $x"; done; exit 1
 fi
 # the changed selfhost .byn files still present: the files coverage is measured over
-COVER=$(while IFS= read -r f; do case "$f" in selfhost/*.byn) [ -f "$f" ] && echo "$f";; esac; done <<< "$CHANGED" | tr '\n' ',' | sed 's/,$//')
+COVER=$(while IFS= read -r f; do case "$f" in selfhost/*.byn|lib/std/*.byn) [ -f "$f" ] && echo "$f";; esac; done <<< "$CHANGED" | tr '\n' ',' | sed 's/,$//')
+# a changed lib/std file is covered by its module's own tests (StdTestFilesTests), whatever --filter selects
+TFILTER=$FILTER; case ",$COVER" in *,lib/std/*) TFILTER="($FILTER)|FullyQualifiedName~StdTestFilesTests";; esac
 rm -f "$LOG/quality-"*.json  # a mutation report left by an earlier run must not reach this run's baseline check
 COV="$LOG/coverage"; rm -f "$COV/bayan-quality.json" "$COV/functions.json"; TX=1
 
@@ -62,10 +67,10 @@ if [ "$E" = 0 ]; then
   # the harness writes the coverage report in a ProcessExit handler; vstest kills the test host shortly after the run unless
   # given longer, and merging ~1,100 counter files (L022 under coverage, T41) takes more than its default
   ( [ -n "$COVER" ] && export BAYAN_COVERAGE=$COV BAYAN_COVERAGE_FILES=$COVER VSTEST_TESTHOST_SHUTDOWN_TIMEOUT=600000
-    dotnet test --no-build -p:UseSharedCompilation=false --filter "$FILTER" --logger "console;verbosity=normal" ) > "$LOG/test.txt" 2>&1; TX=$?
+    dotnet test --no-build -p:UseSharedCompilation=false --filter "$TFILTER" --logger "console;verbosity=normal" ) > "$LOG/test.txt" 2>&1; TX=$?
   R=$(grep -E 'Total tests:|^ *(Passed|Failed|Skipped): *[0-9]+' "$LOG/test.txt" | tr -s ' \n' ' ')
   [ $TX = 0 ] || note "tests: FAIL ($R) — first failure: $(grep -m1 -A8 'Error Message' "$LOG/test.txt" | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
-  grep -qE 'No test matches|Total tests: 0' "$LOG/test.txt" && note "tests: filter '$FILTER' matched no tests"
+  grep -qE 'No test matches|Total tests: 0' "$LOG/test.txt" && note "tests: filter '$TFILTER' matched no tests"
   echo "$R" | grep -qE 'Skipped: [1-9]' && note "tests: skipped tests present ($R)"
 fi
 
@@ -73,7 +78,7 @@ fi
 # 100% of their lines and branches; no baseline check (see the header)
 if [ $TX = 0 ] && [ -n "$COVER" ]; then
   if [ ! -f "$COV/bayan-quality.json" ]; then
-    note "coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter '$FILTER' builds a selfhost program with $COVER"
+    note "coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter '$TFILTER' builds a selfhost program with $COVER"
   else
     # a changed file no build under --filter compiles has no entry in the report, so none of its functions is checked (Q820);
     # a malformed report fails in coverage-gate.py below, naming it
@@ -86,7 +91,7 @@ if [ $TX = 0 ] && [ -n "$COVER" ]; then
         && ! echo "$ast" | awk '$1 ~ /^(Function|Constructor|Getter|Property|Test|Block)$/ { found = 1 } END { exit !found }'; then
         echo "coverage: $f declares no function; nothing to cover"; continue
       fi
-      note "coverage: $f is in no build under --filter '$FILTER' (no entry in tmp/guard-run/coverage/bayan-quality.json), so its touched functions are unchecked"
+      note "coverage: $f is in no build under --filter '$TFILTER' (no entry in tmp/guard-run/coverage/bayan-quality.json), so its touched functions are unchecked"
     done <<< "$miss"
     out=$(python3 -I "$(dirname "$0")/coverage-gate.py" "$(git merge-base "$BASE" HEAD)" "$COV/bayan-quality.json" "$COV/functions.json" \
       "$SDIR/$STASKS" "$TASK" "$BYDIR" 2> "$LOG/coverage-gate.txt") \
@@ -101,6 +106,15 @@ while IFS= read -r f; do case "$f" in *.byn) [ -f "$f" ] || continue
   grep -nE '[A-Za-z_)]\.[0-9]+\b' "$f" | grep -vE '"[^"]*\.[0-9]' | head -3 | while read -r l; do echo "banned: $f:${l%%:*} tuple field .N"; done
 ;; esac; done <<< "$CHANGED" > "$LOG/banned.txt"
 while read -r l; do [ -n "$l" ] && note "$l"; done < "$LOG/banned.txt"
+
+# 5 bayan format --check over lib/std/ (only when it holds a .byn file; skipped on Windows, where pinned-bayan.sh exits 127)
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *)
+  if [ -n "$(find lib/std -name '*.byn' 2> /dev/null | head -1)" ]; then
+    if CLI=$(bash "$(dirname "$0")/../pinned-bayan.sh" 2> "$LOG/pinned.txt" | tail -1) && [ -n "$CLI" ]; then
+      fmt=$("$CLI" format --check lib/std 2>&1) || note "format: bayan format --check lib/std failed: $(echo "$fmt" | grep -v '^\s*$' | head -5 | tr '\n' ' ')"
+    else note "format: no pinned bayan for the lib/std format check — $(tail -1 "$LOG/pinned.txt")"; fi
+  fi;;
+esac
 
 # 7 content checks (before mutations: they are cheap)
 # the task comes from --task, else from a <prefix><n>Tests class in --filter (the row's test-class prefix; T26/T27 test classes carry no number)

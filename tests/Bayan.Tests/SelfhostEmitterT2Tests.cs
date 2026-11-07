@@ -19,7 +19,8 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostEmitterT2Tests
 {
-    // args: mode, the C file name and `#line` path of the C# `FunctionEmitter` ("-" for none), then bayan-check's.
+    // args: mode, the C file name (not read: each function's is numbered as the C# does) and `#line` path of the C#
+    // `FunctionEmitter` ("-" for none), then bayan-check's.
     private const string Main = """
         import semantics
         import emitter.cprint
@@ -73,7 +74,7 @@ public sealed class SelfhostEmitterT2Tests
                 Io.stdout.write(t2PrintCTypes(ref c))
                 Io.stdout.write(t2PrintKeys(ref c))
                 Io.stdout.write(t2PrintPredicates(ref c, through: ref l))
-                Io.stdout.write(t2PrintLines(ref c, at: args[1], for: args[2]))
+                Io.stdout.write(t2PrintLines(ref c, for: args[2]))
             }
             return 0
         }
@@ -186,10 +187,15 @@ public sealed class SelfhostEmitterT2Tests
             return $"{sb.finish()}"
         }
 
-        string t2PrintLines(ref Ctx c, at string file, for string linePath) uses alloc {
+        /// Each function's file is named as `CEmitter.FileName` names it: `byn_file_N`, numbered in function order.
+        string t2PrintLines(ref Ctx c, for string linePath) uses alloc {
             var sb = StrBuf()
             sb.append("== lines\n")
+            var files = Map<string, string>()
             for fn in t2Functions(ref c) {
+                let key = $"{c.functions[fn].file}"
+                if !files.contains(key) { files[key] = $"byn_file_{files.length}" }
+                let file = files[key]
                 let span = semantics.nodeSpan(in c, for: c.functions[fn].body)
                 var withPath = CFunc { fn: fn, file: file, linePath: linePath, lineStarts: cprint.lineStartsOf(in c, for: c.functions[fn].file) }
                 if linePath == "-" { withPath.linePath = null }
