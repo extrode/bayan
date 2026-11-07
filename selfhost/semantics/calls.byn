@@ -111,6 +111,10 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fro
     }
     if kind == .builtinGroup {
         let name = c.bBuiltinGroups[i].name
+        // `Io.stdin.readAllBytes()` fails like `Io.readFile`: a call of a failing builtin function, not a builtin member.
+        if name == "readAllBytes" && exprType(in c, for: c.bBuiltinGroups[i].receiver) == builtinType(.ioInput) {
+            return bindFunctionCall(ref b, through: ref c, for: in call, by: t9Function(ref c, for: "Io.stdin.readAllBytes"), from: -1, at: syntax)
+        }
         return bindBuiltinMethodCall(ref b, through: ref c, for: in call, from: c.bBuiltinGroups[i].receiver, by: name)
     }
     if kind == .typeRef {

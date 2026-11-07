@@ -1784,6 +1784,14 @@ internal sealed class FunctionEmitter
                     $"    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
             }
+            case BuiltinFunction.IoStdinReadAllBytes:
+            {
+                var list = _c.CType(fn.ReturnType);
+                var name = _c.Helper("bynh_io_read_all_bytes", $"static uint32_t bynh_io_read_all_bytes({list}* out)", () =>
+                    $"{{\n    uint8_t* p = NULL;\n    int64_t n = 0;\n    uint32_t err = byn_io_read_stdin_bytes(&p, &n, byn_context);\n" +
+                    $"    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n");
+                return $"{name}({result ?? "NULL"})";
+            }
             case BuiltinFunction.IoReadText:
                 return $"byn_io_read_text({Expr(c.Arguments[0])}, {result ?? "NULL"}, byn_context)";
             case BuiltinFunction.IoWriteFile:
@@ -2278,15 +2286,6 @@ internal sealed class FunctionEmitter
                 var res = _c.CType(b.Type);
                 var name = _c.Helper("bynh_io_read_all", $"static {res} bynh_io_read_all(int32_t fd)", () =>
                     $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err.code = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
-                return $"{name}({Expr(r)})";
-            }
-            case BuiltinMember.IoReadAllBytes:
-            {
-                var res = _c.CType(b.Type);
-                var list = _c.CType(((ResultType)b.Type).Value);
-                var name = _c.Helper("bynh_io_read_all_bytes", $"static {res} bynh_io_read_all_bytes(int32_t fd)", () =>
-                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    uint8_t* p = NULL;\n    int64_t n = 0;\n    r.err.code = byn_io_read_stdin_bytes(&p, &n, byn_context);\n" +
-                    $"    if (r.err.code == 0) r.value = ({list}){{p, n, n, byn_context}};\n    return r;\n}}\n");
                 return $"{name}({Expr(r)})";
             }
             case BuiltinMember.StrBufAsString:

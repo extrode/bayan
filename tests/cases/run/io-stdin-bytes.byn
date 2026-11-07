@@ -1,8 +1,9 @@
 // `Io.stdin.readAllBytes()` returns standard input as bytes, not checked for UTF-8.
-let input = Io.stdin.readAllBytes()
-if !input.isOk {
-    print("read failed")
-} else {
-    print($"{input.value.length} bytes")
-    for b in input.value { print($"{b}") }
+void main() {
+    let input = Io.stdin.readAllBytes() catch {
+        print("read failed")
+        return
+    }
+    print($"{input.length} bytes")
+    for b in input { print($"{b}") }
 }

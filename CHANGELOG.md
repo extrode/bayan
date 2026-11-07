@@ -17,7 +17,8 @@
 - Slice bounds `^n` and inclusive ends reject out-of-range values before computing, with no signed overflow; `replaced`,
   `joined` and list growth check their size arithmetic and panic "too long".
 - `Io.stdin.readAll()` rejects input that is not UTF-8 (`invalidUtf8`), as `Io.readText` does; the new
-  `Io.stdin.readAllBytes()` returns the rest of stdin as `List<u8>`, unvalidated.
+  `Io.stdin.readAllBytes()` returns the rest of stdin as `List<u8>`, unvalidated, and fails with `IoError` like
+  `Io.readFile`.
 
 ## [0.2.0] - 2026-11-06
 

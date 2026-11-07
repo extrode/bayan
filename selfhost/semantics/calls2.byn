@@ -361,7 +361,7 @@ BExpr bindBuiltinMethodCall(ref Binder b, through ref Ctx c, for in parser.CallE
     var returns = m.returns
     if kindOf(m.returns) == .span && boundKind(target) == .staticArray {
         returns = internSpan(ref c, by: c.spanTypes[typeIndex(m.returns)].element, readOnly: true)
-    } else if m.member == .ioReadAll || m.member == .ioReadAllBytes {
+    } else if m.member == .ioReadAll {
         returns = internResult(ref c, by: m.returns, to: t9Type(ref c, for: "IoError"))
     }
     let n = recordSyntaxNode(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: m.member, receiver: target, arguments: move args, type: returns }), at: syntaxOfCall(ref c, from: in call))

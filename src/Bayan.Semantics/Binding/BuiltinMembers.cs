@@ -126,7 +126,7 @@ internal static class BuiltinMembers
         (BuiltinType { Kind: BuiltinKind.StrBuf } s, "take") => new(BuiltinMember.StrBufTake, [], s, Mutating: true),
         (OptionalType o, "take") when TypeFacts.IsUnique(o.Inner) => new(BuiltinMember.OptionalTake, [], o, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),
-        // The binder wraps the result in `Result<string, IoError>` (`Result<List<u8>, IoError>` for `readAllBytes`).
+        // The binder wraps the result in `Result<string, IoError>`; it binds `readAllBytes()` as `Builtins.IoStdinReadAllBytes`, which fails.
         (BuiltinType { Kind: BuiltinKind.IoInput }, "readAll") => new(BuiltinMember.IoReadAll, [], PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.IoInput }, "readAllBytes") => new(BuiltinMember.IoReadAllBytes, [], new ListType(PrimitiveType.U8)),
         _ => null,

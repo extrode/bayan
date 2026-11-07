@@ -79,6 +79,16 @@ public sealed class RuntimeNativeTests
         Assert.Equal("cap 128, taken text unchanged 1, old blocks handed back 0\n", Run(Build(driver), []).Replace("\r\n", "\n"));
     }
 
+    /// <summary><c>Io.readText</c> and <c>Io.stdin.readAll</c> release their buffer when the bytes are not UTF-8.</summary>
+    [Fact]
+    public void FailedReadReleasesItsBuffer()
+    {
+        var work = Path.Combine(Golden.RepoRoot, "tmp", "native", "io-read-release");
+        Directory.CreateDirectory(work);
+        var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "io-read-release.c"));
+        Assert.Equal("file 3 leaked 0, stdin 3 leaked 0\n", Run(Build(driver), [Path.Combine(work, "invalid.bin")]).Replace("\r\n", "\n"));
+    }
+
     /// <summary><c>replace</c> with items read from the list itself releases the copy it takes of them.</summary>
     [Fact]
     public void AliasingReplaceReleasesItsCopy()
