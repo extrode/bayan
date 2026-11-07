@@ -35,7 +35,7 @@ i32 lexCommand(in List<string> kept) {
     var bytes = List<u8>()
     var name = "<stdin>"
     if args.length == 1 && args[0] == "-" {
-        // coverage-exempt: Q943 the C# `CopyTo` has no failure branch and no test can make stdin unreadable
+        // coverage-exempt: Q943 the C# `CopyTo` has no failure branch; the runtime side is tested by `RuntimeNativeTests.FailedReadReleasesItsBuffer` (stdin from a directory)
         bytes = Io.stdin.readAllBytes() catch return exitFailure
     } else {
         unless tryReadSingleFile(in args) { return exitUsage }

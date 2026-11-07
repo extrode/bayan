@@ -609,7 +609,6 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
                 // The binder wraps the result in `Result<string, IoError>`; it binds `readAllBytes()` as the builtin `Io.stdin.readAllBytes`, which fails.
                 case .ioInput:
                     if name == "readAll" { return BuiltinMethod { member: .ioReadAll, parameters: List<BuiltinParameter>(), returns: prim(.string) } }
-                    if name == "readAllBytes" { return BuiltinMethod { member: .ioReadAllBytes, parameters: List<BuiltinParameter>(), returns: internList(ref c, by: prim(.u8)) } }
                 default: return null
             }
         case .optional:
@@ -621,7 +620,8 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
     return null
 }
 
-bool hasMethod(ref Ctx c, for Type type, by string name) => method(ref c, for: type, by: name) is not null
+// `Io.stdin.readAllBytes` is bound as a failing builtin function, so `method` has no entry for it.
+bool hasMethod(ref Ctx c, for Type type, by string name) => method(ref c, for: type, by: name) is not null || (type == builtinType(.ioInput) && name == "readAllBytes")
 
 /// The C# `Candidates`.
 List<string> t9Candidates() => [
