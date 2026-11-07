@@ -1,0 +1,6 @@
+// The list from `Io.stdin.readAllBytes()` is the caller's: it moves into a `var` and grows.
+void main() {
+    var bytes = Io.stdin.readAllBytes() catch return
+    bytes.append(0x21)
+    print($"{bytes.length} bytes, last {bytes[bytes.length - 1]}")
+}

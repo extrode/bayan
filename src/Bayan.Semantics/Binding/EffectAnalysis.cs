@@ -261,6 +261,7 @@ internal static class EffectAnalysis
         BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir => ["fs", "alloc"],
         BuiltinFunction.IoWriteFile or BuiltinFunction.IoRemove or BuiltinFunction.IoCreateDirectory or BuiltinFunction.IoRemoveDirectory or BuiltinFunction.FsFileExists => ["fs"],
         BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch => ["process", "alloc"],
+        BuiltinFunction.IoStdinReadAllBytes => ["console", "alloc"],
         BuiltinFunction.IoMonotonicNanos => ["clock"],
         BuiltinFunction.EnvGet => ["env", "alloc"],
         BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver or BuiltinFunction.ArenaNew
@@ -273,7 +274,7 @@ internal static class EffectAnalysis
     private static string[] Member(BuiltinMember m) => m switch
     {
         BuiltinMember.IoWrite => ["console"],
-        BuiltinMember.IoReadAll or BuiltinMember.IoReadAllBytes => ["console", "alloc"],
+        BuiltinMember.IoReadAll => ["console", "alloc"],
         BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
             or BuiltinMember.IntToString or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet
             or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated or BuiltinMember.StringPadded or BuiltinMember.BytesToString
