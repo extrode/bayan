@@ -591,3 +591,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - LOW (review 2e461a20..9e7660d5, 2026-11-07) `bayan-rt.c` `byn_hash_seed_init` panics at startup when the system RNG is unavailable (Win7 without KB2533623, glibc < 2.25); there is no fallback.
 - LOW (review 2e461a20..9e7660d5, 2026-11-07) `bayan-rt.c` `byn_hash_mix` runs SipHash-1-3 per key part, so composite-key hashing is slower than the old FNV-1a; no benchmark measures it.
 - LOW (review 2e461a20..9e7660d5, 2026-11-07) `Io.stdin.readAllBytes` (`bynh_io_read_all_bytes` in `CEmitter.cs` and `selfhost/emitter/cprint/expr.byn`, like `Io.readFile`) sets the list's cap to its length while the read buffer holds up to twice that, so the slack is wasted.
+- LOW (review 2e461a20..9e7660d5 fix gate, 2026-11-07) `tests/Bayan.Tests/RuntimeNativeTests.cs` `IsMusl()` calls `Directory.GetFiles("/lib", ...)`, which throws on a Linux host with no `/lib` instead of skipping.
