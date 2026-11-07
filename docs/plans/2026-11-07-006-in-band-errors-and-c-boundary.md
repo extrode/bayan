@@ -41,7 +41,7 @@ Priority order (replaces "easiest first"): W0, then W1 (libc pin, NUL, errno, re
 **Problem.** `Io.run` can report exit code 0 when it never learned the child's status.
 
 - Unix (`bayan-rt.c:3510-3512`): `status` is initialised to 0 (`:3510`) and the `waitpid` loop only retries on `EINTR` (`:3511`). Any other `waitpid` failure leaves `status` 0 and the code is 0 (success).
-- Windows (`:3419-3421`): the `WaitForSingleObject` result is ignored and `status` starts at 0 (`:3420`); a failed `GetExitCodeProcess` (`:3421`) leaves it 0. Same outcome.
+- Windows (`:3419-3421`): the `WaitForSingleObject` result is ignored and `status` starts at 0 (`:3420`); a failed `GetExitCodeProcess` (`:3421`) leaves it 0, so the caller sees exit code 0. If the wait fails but `GetExitCodeProcess` succeeds on a child still running, `status` is `STILL_ACTIVE` (259), reported as the child's exit code.
 
 **Finding on `WIFEXITED`.** The Unix path does not test `WIFEXITED`. Line `:3512` is `WIFSIGNALED(status) ? 128 + WTERMSIG(status) : WEXITSTATUS(status)`. A signal-killed child therefore does not report 0: it reports `128 + signal`, the shell convention, which is indistinguishable from a child that itself exits with that number. The `else` branch applies `WEXITSTATUS` to anything not signaled, which is correct only because `waitpid` is called without `WUNTRACED`/`WCONTINUED` (so no stopped state), and which also reads the zeroed `status` after a failed wait. Checked by reading `:3510-3512`; not run.
 
@@ -50,7 +50,7 @@ Priority order (replaces "easiest first"): W0, then W1 (libc pin, NUL, errno, re
 - A signal-killed child must not report 0 and must be told apart from a normal exit: map it to a distinct `IoError` variant, or keep a documented signal exit code. Question for the handoff; this plan recommends the distinct variant.
 - Move the status-to-result mapping into one function that takes the wait outcome and raw status and returns the code or an `IoError`. Both platform paths call it.
 
-**Test (this is L031).** Unit-test the mapping function with injected failures: wait failed, exit query failed, signaled, normal exit. Run on linux-x64 (musl), macOS and wp1.
+**Test (this is L031).** Unit-test the mapping function with injected failures: wait failed, exit query failed, Windows wait failed with the child still running (`STILL_ACTIVE`), signaled, normal exit. Run on linux-x64 (musl), macOS and wp1.
 
 **Files.** `src/runtime/bayan-rt.c`, `bayan-rt.h` (the `byn_io_run` surface), `tests/native/*.c`, `tests/Bayan.Tests/RuntimeNativeTests.cs`.
 
@@ -151,7 +151,7 @@ Gate: before merging, run it over `lib/` and `selfhost/` and report the hit coun
 
 ### W7. Norms: selfhost migration and teaching material
 
-**Timing.** Not during the ports. Spec 010/011/012 ports match C# method for method (Q711); changing return shapes there would break the oracle tests. The migration is its own spec after the self-hosted compiler reaches parity on every golden kind and the bootstrap fixpoint law (L027, `docs/laws/027-bootstrap-fixpoint.md`) is enacted. Working name: spec "selfhost sentinel migration", number assigned then (017 is taken by selfhost-default; the next free number then).
+**Timing.** Not during the ports. Spec 010/011/012 ports match C# method for method (Q711); changing return shapes there would break the oracle tests. The migration is its own spec after the self-hosted compiler reaches parity on every golden kind and the bootstrap fixpoint law (L027, `docs/laws/027-bootstrap-fixpoint.md`) is enacted. Working name: spec "selfhost sentinel migration", number assigned then (017 is selfhost-default, `docs/specs/017-selfhost-default/` on branch `feat/017-selfhost-default`, not yet on dev; the next free number then).
 
 **Progress metric (W2c, moved from W2).** A sentinel-comparison lint: for a non-public function `f` returning an integer type, if every call site compares the result with the same literal (`== -1`, `!= -1`, `< 0`) and `f` has at least one `return <that literal>`, report once at `f`'s declaration: "callers treat `-1` as absence; return `i64?` or declare `fails`". It needs every call site of `f`, so it runs after binding over all functions of the module; `NeverReassignedVarLint` (`Binding/NeverReassignedVarLint.cs:13`) is per-function, so this needs a new module-level pass. It ships with the migration spec, the C# lint and the selfhost port together (L022). It is a warning; a test counts it over `selfhost/` and that count is the baseline. No `lints:` manifest key and no module-level `@allow` are needed. Files: a new `src/Bayan.Semantics/Binding/SentinelLint.cs`, `tests/cases/diag/sentinel-return.byn` and `.diag` (one fires, one silent), `docs/diagnostics/BYNxxxx.md`; code BYN49xx (D4).
 
@@ -172,7 +172,7 @@ Gate: before merging, run it over `lib/` and `selfhost/` and report the hit coun
 |---|---|---|---|
 | L029 runtime-no-in-band-error | property | For every exported runtime function in `bayan-rt.h` whose Bayan surface can fail or be absent, the C return is a status code or a `bool` with an out parameter, or the declaration comment names the Bayan surface that wraps its sentinel | parse `bayan-rt.h` declarations; assert each `int64_t`-returning function with a negative sentinel comment has a matching `OptionalType` or `fails` builtin in `BuiltinMembers.cs`/`Builtins.cs` |
 | L030 libc-returns-checked | property | Every libc call in `libc-uses.txt` is either checked at its call site or listed as "cannot fail" with a reason | extend `SelfhostDriverInventoryTests` (unverified owner) to read W1's table |
-| L031 no-exit-code-zero-on-failed-wait | property | `Io.run` never reports exit code 0 when the wait or the exit-code query failed | W0's injected-failure unit test of the status mapping function |
+| L031 no-exit-code-on-failed-wait | property | `Io.run` never reports an exit code when the wait or the exit-code query failed (neither 0 nor Windows `STILL_ACTIVE` 259); it fails with `IoError` | W0's injected-failure unit test of the status mapping function |
 
 The sshd bug would have been L029's counterexample: a hash function whose error is a valid hash.
 
@@ -190,7 +190,7 @@ The sshd bug would have been L029's counterexample: a hash function whose error 
 
 ## 4. Out of scope
 
-Memory safety, the `unsafe` rules, taint (`Untrusted<T>`) beyond the one "secret sink" row in W5, PAM-style pluggable auth, any change to `docs/bayan-spec.md` or `docs/bayan-handoff.md` from this plan, and any edit to `selfhost/` before the W7 spec.
+Memory safety, the `unsafe` rules, taint (`Untrusted<T>`) beyond the one "secret sink" row in W5, PAM-style pluggable auth, any change to `docs/bayan-spec.md` or `docs/bayan-handoff.md` from this plan, and any edit to `selfhost/` before the W7 spec other than the same-change lint port L022 requires (W2b's `selfhost/semantics` port).
 
 ## Noticed, not addressed
 
