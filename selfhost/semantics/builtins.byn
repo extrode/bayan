@@ -57,7 +57,7 @@ const validationErrorSource: string = "public union error ValidationError {\n   
 
 const ruleSource: string = "public union Rule {\n    /// `it.runeCount in a..=b`.\n    length(Range<i64> bounds)\n    /// `it in a..=b`.\n    range(Range<i64> bounds)\n    /// Any other rule.\n    custom\n}\n\npublic struct Violation {\n    i64 field\n    i64 rule\n}"
 
-const ioErrorSource: string = "public union error IoError {\n    /// The file does not exist.\n    notFound,\n    /// Permission denied.\n    permissionDenied,\n    /// The file is not valid UTF-8.\n    invalidUtf8,\n    /// The path exists but is not a directory.\n    notADirectory,\n    /// An input or output operation failed.\n    other,\n    /// An argument cannot be passed exactly, so nothing was done.\n    invalidInput,\n    /// The operation is not available on this platform.\n    unsupported,\n}"
+const ioErrorSource: string = "public union error IoError {\n    /// The file does not exist.\n    notFound,\n    /// Permission denied.\n    permissionDenied,\n    /// The input is not valid UTF-8.\n    invalidUtf8,\n    /// The path exists but is not a directory.\n    notADirectory,\n    /// An input or output operation failed.\n    other,\n    /// An argument cannot be passed exactly, so nothing was done.\n    invalidInput,\n    /// The operation is not available on this platform.\n    unsupported,\n}"
 
 /// The builtin module, built on first use (the C# `Builtins.Module`).
 ModId t9Module(ref Ctx c) {
@@ -121,6 +121,9 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Make(ref c, by: m, for: "stdout", as: .ioStdout, to: builtinType(.ioStream), from: List<BuiltinParameter>(), at: "Io.stdout")
     let _ = t9Make(ref c, by: m, for: "stderr", as: .ioStderr, to: builtinType(.ioStream), from: List<BuiltinParameter>(), at: "Io.stderr")
     let _ = t9Make(ref c, by: m, for: "stdin", as: .ioStdin, to: builtinType(.ioInput), from: List<BuiltinParameter>(), at: "Io.stdin")
+    // Not a static member of `Io`: the binder calls it for `Io.stdin.readAllBytes()`.
+    let stdinBytes = t9Make(ref c, by: m, for: "readAllBytes", as: .ioStdinReadAllBytes, to: internList(ref c, by: prim(.u8)), from: List<BuiltinParameter>(), at: "Io.stdin.readAllBytes")
+    t9Fails(ref c, for: stdinBytes, by: ioError)
 
     let utf8Error = t9ErrorSet(ref c, from: utf8ErrorSource, by: m)
     let _ = t9ErrorSet(ref c, from: validationErrorSource, by: m)
@@ -603,10 +606,9 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
                     }
                 case .ioStream:
                     if name == "write" { return BuiltinMethod { member: .ioWrite, parameters: t9One("text", as: prim(.string)), returns: prim(.void) } }
-                // The binder wraps the result in `Result<string, IoError>` (`Result<List<u8>, IoError>` for `readAllBytes`).
+                // The binder wraps the result in `Result<string, IoError>`; it binds `readAllBytes()` as the builtin `Io.stdin.readAllBytes`, which fails.
                 case .ioInput:
                     if name == "readAll" { return BuiltinMethod { member: .ioReadAll, parameters: List<BuiltinParameter>(), returns: prim(.string) } }
-                    if name == "readAllBytes" { return BuiltinMethod { member: .ioReadAllBytes, parameters: List<BuiltinParameter>(), returns: internList(ref c, by: prim(.u8)) } }
                 default: return null
             }
         case .optional:
@@ -618,7 +620,8 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
     return null
 }
 
-bool hasMethod(ref Ctx c, for Type type, by string name) => method(ref c, for: type, by: name) is not null
+// `Io.stdin.readAllBytes` is bound as a failing builtin function, so `method` has no entry for it.
+bool hasMethod(ref Ctx c, for Type type, by string name) => method(ref c, for: type, by: name) is not null || (type == builtinType(.ioInput) && name == "readAllBytes")
 
 /// The C# `Candidates`.
 List<string> t9Candidates() => [

@@ -654,7 +654,7 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             break
     }
     switch member {
-        case .ioReadAll or .ioReadAllBytes or .intToString or .stringCopy or .stringLowercased or .stringUppercased
+        case .ioReadAll or .intToString or .stringCopy or .stringLowercased or .stringUppercased
             or .stringReplaced or .stringRepeated or .stringJoined or .utf16Copy
             or .stringPadded or .bytesToString or .spanCopy or .listCopy:
             // Fresh text from `context.allocator`, like `Io.readText`.

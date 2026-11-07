@@ -2750,7 +2750,10 @@ uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc
     bool failed = ferror(f) != 0;
     int e = errno;
     if (fclose(f) != 0 && !failed) failed = true, e = errno;
-    if (failed) return byn_io_error(e);
+    if (failed) {
+        byn_release(alloc, buf);
+        return byn_io_error(e);
+    }
     *ptr = buf;
     *len = n;
     return 0;
@@ -2761,7 +2764,10 @@ uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc) {
     int64_t n;
     uint32_t err = byn_io_read(path, &p, &n, alloc);
     if (err != 0) return err;
-    if (!byn_utf8_valid(p, n)) return BYN_IO_INVALID_UTF8;
+    if (!byn_utf8_valid(p, n)) {
+        byn_release(alloc, p);
+        return BYN_IO_INVALID_UTF8;
+    }
     if (out) *out = (byn_str){p, n};
     return 0;
 }
@@ -2784,7 +2790,11 @@ uint32_t byn_io_read_stdin_bytes(uint8_t** ptr, int64_t* len, byn_alloc* alloc) 
         n += (int64_t)got;
         if (got == 0) break;
     }
-    if (ferror(stdin)) return byn_io_error(errno);
+    if (ferror(stdin)) {
+        int e = errno;
+        byn_release(alloc, buf);
+        return byn_io_error(e);
+    }
     *ptr = buf;
     *len = n;
     return 0;
@@ -2795,7 +2805,10 @@ uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc) {
     int64_t n;
     uint32_t err = byn_io_read_stdin_bytes(&p, &n, alloc);
     if (err != 0) return err;
-    if (!byn_utf8_valid(p, n)) return BYN_IO_INVALID_UTF8;
+    if (!byn_utf8_valid(p, n)) {
+        byn_release(alloc, p);
+        return BYN_IO_INVALID_UTF8;
+    }
     if (out) *out = (byn_str){p, n};
     return 0;
 }

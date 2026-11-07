@@ -280,7 +280,7 @@ bool t41IsBroad(Ctx c, for FuncId fn) =>
 /// The builtin functions' return summaries: whether the builtin's result borrows no argument (an entry, always empty). `Io` results and
 /// decoded or encoded text are fresh copies, and an interned `Symbol` lives until exit. Every other builtin's result borrows every argument (rule 4).
 bool t41BuiltinFresh(BuiltinFunction builtin) =>
-    builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
+    builtin == .ioReadFile || builtin == .ioStdinReadAllBytes || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
         || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .stringInvalidUtf8At || builtin == .hexEncode || builtin == .hexDecode
         || builtin == .envGet
         || builtin == .symbolIntern || builtin == .pathRelative || builtin == .pathFileName || builtin == .pathDirectoryName || builtin == .pathCombine || builtin == .pathCombineSpan || builtin == .pathFullPath
