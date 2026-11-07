@@ -128,11 +128,12 @@ internal static class BuiltinMembers
         (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),
         // The binder wraps the result in `Result<string, IoError>`; it binds `readAllBytes()` as `Builtins.IoStdinReadAllBytes`, which fails.
         (BuiltinType { Kind: BuiltinKind.IoInput }, "readAll") => new(BuiltinMember.IoReadAll, [], PrimitiveType.String),
-        (BuiltinType { Kind: BuiltinKind.IoInput }, "readAllBytes") => new(BuiltinMember.IoReadAllBytes, [], new ListType(PrimitiveType.U8)),
         _ => null,
     };
 
-    public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
+    // `Io.stdin.readAllBytes` is bound by the binder as a failing builtin function, so `Method` has no entry for it.
+    public static bool HasMethod(TypeSymbol type, string name) =>
+        Method(type, name) is not null || (type is BuiltinType { Kind: BuiltinKind.IoInput } && name == "readAllBytes");
 
     private static readonly string[] Candidates =
         ["length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",

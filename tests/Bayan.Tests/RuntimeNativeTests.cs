@@ -79,14 +79,56 @@ public sealed class RuntimeNativeTests
         Assert.Equal("cap 128, taken text unchanged 1, old blocks handed back 0\n", Run(Build(driver), []).Replace("\r\n", "\n"));
     }
 
-    /// <summary><c>Io.readText</c> and <c>Io.stdin.readAll</c> release their buffer when the bytes are not UTF-8.</summary>
+    /// <summary>
+    /// <c>Io.readText</c>, <c>Io.stdin.readAll</c> and <c>Io.stdin.readAllBytes</c> release their buffer when the bytes are not UTF-8 or
+    /// the read fails (a directory, as a file and as stdin). The heap is measured on macOS and glibc only.
+    /// </summary>
     [Fact]
     public void FailedReadReleasesItsBuffer()
     {
         var work = Path.Combine(Golden.RepoRoot, "tmp", "native", "io-read-release");
         Directory.CreateDirectory(work);
         var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "io-read-release.c"));
-        Assert.Equal("file 3 leaked 0, stdin 3 leaked 0\n", Run(Build(driver), [Path.Combine(work, "invalid.bin")]).Replace("\r\n", "\n"));
+        var output = Run(Build(driver), [Path.Combine(work, "invalid.bin"), work]).Replace("\r\n", "\n");
+        if (output == "unsupported\n")
+        {
+            Assert.True(OperatingSystem.IsWindows() || !OperatingSystem.IsMacOS() && !OperatingSystem.IsLinux() || IsMusl(), "heap introspection is missing on macOS or glibc Linux");
+            return;
+        }
+        Assert.Equal("file 3 leaked 0, stdin 3 leaked 0, dir failed 1 leaked 0, dir stdin failed 1 leaked 0\n", output);
+    }
+
+    private static bool IsMusl() => OperatingSystem.IsLinux() && Directory.GetFiles("/lib", "ld-musl-*").Length > 0;
+
+    /// <summary>A built program whose standard input is a directory: <c>Io.stdin.readAllBytes()</c> fails and the <c>catch</c> branch runs (prints -1).</summary>
+    [Fact]
+    public void StdinFromDirectoryTakesTheCatchBranch()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        const string program = """
+            i64 count() {
+                let bytes = Io.stdin.readAllBytes() catch {
+                    return -1
+                }
+                return bytes.length
+            }
+            print($"{count()}")
+            """;
+        var c = Compilation.Create([SourceText.FromString("stdin-dir.byn", program)], Path.Combine(Golden.RepoRoot, "tmp"));
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        var exe = Build(CliApp.EmitC(c, BuildMode.Debug));
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "native", "io-read-release");
+        Directory.CreateDirectory(dir);
+        var psi = new ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, UseShellExecute = false };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("\"$0\" < \"$1\"");
+        psi.ArgumentList.Add(exe);
+        psi.ArgumentList.Add(dir);
+        using var p = Process.Start(psi)!;
+        var stdout = p.StandardOutput.ReadToEndLf();
+        p.WaitForExit();
+        Assert.Equal(0, p.ExitCode);
+        Assert.Equal("-1\n", stdout);
     }
 
     /// <summary><c>replace</c> with items read from the list itself releases the copy it takes of them.</summary>
