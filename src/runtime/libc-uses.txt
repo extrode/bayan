@@ -9,15 +9,16 @@ FindClose
 FindFirstFileW
 FindNextFileW
 GetCommandLineW
-GetCurrentProcessId
 GetEnvironmentVariableW
 GetExitCodeProcess
 GetFileAttributesW
 GetFullPathNameW
 GetLastError
 GetLongPathNameW
+GetProcAddress
 GetStdHandle
 GetSystemDirectoryW
+LoadLibraryExW
 LocalFree
 MultiByteToWideChar
 QueryPerformanceCounter
@@ -36,6 +37,7 @@ _strtof_l
 _wcsnicmp
 _wfopen
 abort
+arc4random_buf
 atoi
 calloc
 clock_gettime
@@ -55,7 +57,7 @@ free
 fwrite
 getcwd
 getenv
-getpid
+getrandom
 longjmp
 lstat
 malloc

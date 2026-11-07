@@ -365,6 +365,7 @@ public enum BuiltinFunction
     IoStdout,
     IoStderr,
     IoStdin,
+    IoStdinReadAllBytes,
     Utf8Decode,
     Utf8TryDecode,
     Utf8DecodeReplace,

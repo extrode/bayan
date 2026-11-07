@@ -1784,6 +1784,14 @@ internal sealed class FunctionEmitter
                     $"    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
             }
+            case BuiltinFunction.IoStdinReadAllBytes:
+            {
+                var list = _c.CType(fn.ReturnType);
+                var name = _c.Helper("bynh_io_read_all_bytes", $"static uint32_t bynh_io_read_all_bytes({list}* out)", () =>
+                    $"{{\n    uint8_t* p = NULL;\n    int64_t n = 0;\n    uint32_t err = byn_io_read_stdin_bytes(&p, &n, byn_context);\n" +
+                    $"    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n");
+                return $"{name}({result ?? "NULL"})";
+            }
             case BuiltinFunction.IoReadText:
                 return $"byn_io_read_text({Expr(c.Arguments[0])}, {result ?? "NULL"}, byn_context)";
             case BuiltinFunction.IoWriteFile:

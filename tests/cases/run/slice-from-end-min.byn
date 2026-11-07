@@ -1,0 +1,4 @@
+// `^n` with n = i64.min is out of range, rejected before `len - n` can overflow (audit 2026-11-06).
+let xs = [1, 2, 3]
+let n: i64 = -9223372036854775808
+print($"{xs.span[^n..].length}")

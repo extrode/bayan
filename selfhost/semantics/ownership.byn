@@ -976,7 +976,7 @@ void t24CheckHandler(ref Ctx c, for FuncId fn, at BNode body, bool whole) {
 
 bool t24AllocatingFunction(BuiltinFunction b) {
     switch b {
-        case .listNew or .ownedNew or .strBufGrow or .strBufOver or .arenaNew or .utf8Decode or .utf8TryDecode or .utf8DecodeReplace or .hexEncode or .hexDecode or .symbolIntern or .ioReadFile or .ioReadText or .ioListDir or .ioRun or .ioRunBatch or .pathRelative or .pathFileName or .pathDirectoryName or .pathCombine or .pathCombineSpan or .pathFullPath or .envGet:
+        case .listNew or .ownedNew or .strBufGrow or .strBufOver or .arenaNew or .utf8Decode or .utf8TryDecode or .utf8DecodeReplace or .hexEncode or .hexDecode or .symbolIntern or .ioReadFile or .ioReadText or .ioListDir or .ioStdinReadAllBytes or .ioRun or .ioRunBatch or .pathRelative or .pathFileName or .pathDirectoryName or .pathCombine or .pathCombineSpan or .pathFullPath or .envGet:
             return true
         default:
             return false

@@ -600,6 +600,7 @@ internal sealed class RegionAnalysis
     private static readonly Dictionary<BuiltinFunction, HashSet<int>> BuiltinResults = new()
     {
         [BuiltinFunction.IoReadFile] = [],
+        [BuiltinFunction.IoStdinReadAllBytes] = [],
         [BuiltinFunction.IoReadText] = [],
         [BuiltinFunction.IoListDir] = [],
         [BuiltinFunction.IoRun] = [],

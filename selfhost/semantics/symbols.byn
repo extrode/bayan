@@ -84,6 +84,7 @@ public enum BuiltinFunction {
     ioStdout
     ioStderr
     ioStdin
+    ioStdinReadAllBytes
     utf8Decode
     utf8TryDecode
     utf8DecodeReplace
