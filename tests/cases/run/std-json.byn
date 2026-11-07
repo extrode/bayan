@@ -11,6 +11,7 @@ void show(string text) {
             print($"too deep at {e.offset}")
             return
         },
+        _ => panic("parse fails only syntax or tooDeep"),
     }
     let v = (move parsed).trustUnchecked() because "the input is a literal"
     if v is .object(let members) {
@@ -18,8 +19,8 @@ void show(string text) {
             if m.key == "name" && m.value is .text(let name) { print($"name: {name}") }
         }
     }
-    print(json.Json.encode(v))
-    print(json.Json.encode(v, indent: 2))
+    print(json.Json.encode(v) catch "not encodable")
+    print(json.Json.encode(v, indent: 2) catch "not encodable")
 }
 
 void main() {

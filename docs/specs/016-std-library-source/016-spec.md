@@ -61,21 +61,16 @@ OS. Until a program can `import std.json` and get Bayān source shipped with the
 ## Open questions
 - None.
 
-## Decision for T4 (user, 2026-11-06): `std.json` members, tree and encode first
-The pull reader stays internal in this task (S7's layering kept inside the module). Public members:
+## Decision for T4 (user, 2026-11-06; members revised 2026-11-07, 016-tasks.md T4): `std.json` members, tree and encode first
+The first sketch (struct `JsonValue` with `asBool`/`get`/`at` and `Json.object` builders) failed BYN1064/BYN2009/BYN2608/BYN2022; the public members as implemented:
 ```
-enum JsonKind { null, bool, number, string, list, object }
-struct JsonValue  // kind and payload; a number keeps its f64 and its source text
-  JsonKind kind
-  bool asBool() fails JsonError
-  f64 asNumber() fails JsonError
-  i64 asInteger() fails JsonError        // a number with no fraction or exponent overflow
-  string asString() fails JsonError
-  List<JsonValue> items() fails JsonError
-  List<string> keys() fails JsonError    // in source order
-  JsonValue? get(string key)             // none: absent, or not an object
-  JsonValue at(i32 index) fails JsonError
-Untrusted<JsonValue> Json.parse(string text) fails JsonError   // the message carries line:col
-string Json.encode(JsonValue v, i32 indent = 0)                // indent 2 = Python json.dumps(indent=2)
-JsonValue Json.object(List<(string, JsonValue)>), Json.list, Json.number, Json.string, Json.bool, Json.null
+public union JsonValue { nothing, flag(bool value), number(f64 value, string text), text(string value), list(List<JsonValue> items), object(List<JsonMember> members) }
+public struct JsonMember { string key; JsonValue value }        // an object keeps its members in text order, duplicates included
+public union error JsonError { syntax(string message, i64 offset, i32 line, i32 column), tooDeep(i64 offset, i32 line, i32 column), nonFinite, nestedTooDeep }
+Untrusted<JsonValue> Json.parse(string text) fails JsonError   // static members of `public struct Json`
+string Json.encode(JsonValue v, i32 indent = 0) fails JsonError // indent 2 = Python json.dumps(indent=2); NaN/±inf: nonFinite; past 128 levels: nestedTooDeep
+JsonReader JsonReader.over(string text)                         // the public pull reader
+JsonToken? JsonReader.next() fails JsonError
+public union JsonToken { startObject, endObject, startList, endList, key(string name), text(string value), number(f64 value, string text), flag(bool value), nothing }
 ```
+No key lookup member: deferred until borrows or union methods exist (a lookup on a unique tree would deep-copy on every call); its future name follows tryX (`tryGet`); lookup-heavy code uses `JsonReader` or matches `.object(let members)`.

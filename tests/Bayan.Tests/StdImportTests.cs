@@ -137,6 +137,20 @@ public sealed class StdImportTests : IDisposable
     }
 
     [Fact]
+    public void AStdModuleCannotImportAPackageModule()
+    {
+        // The package's `util/` would resolve if the import were read against PackageRoot.
+        Write("main.byn", "import std.a\nprint(\"hi\")\n");
+        Write("util/util.byn", "public i64 one() {\n    return 1\n}\n");
+        var c = Compilation.FromPath(_dir, new CompilationOptions(Std: Std(("a/a.byn", "import util\n"))));
+        var d = Assert.Single(c.Diagnostics.Items);
+        Assert.Equal("BYN2033", d.Code);
+        Assert.Equal("std module `std.a` imports `util`, which is not a std module", d.Message);
+        Assert.Equal("<std>/a/a.byn", d.Source!.Path);
+        Assert.DoesNotContain(c.Modules, m => m.Name == "util");
+    }
+
+    [Fact]
     public void ANonPublicStdMemberIsNotVisible()
     {
         Write("main.byn", "import std.probe\nprint(probe.hidden())\n");

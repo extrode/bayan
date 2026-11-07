@@ -82,6 +82,7 @@ public sealed class DiagnosticCodesTests
         ["BYN2011"] = "circular alias example reports no diagnostic standalone",
         ["BYN2015"] = "multi-file: the module's file is imported elsewhere",
         ["BYN2026"] = "retired: the example now reports BYN1017 and BYN1018",
+        ["BYN2033"] = "multi-file: needs a std module, and no shipped one imports a package module",
         ["BYN2113"] = "superseded by BYN2761",
         ["BYN2116"] = "not reported yet: operator declarations are spec-only",
         ["BYN2224"] = "no longer reported since M14",
@@ -106,7 +107,7 @@ public sealed class DiagnosticCodesTests
     // Skipped docs whose example is not compilable text, or that have no example block (the rest must still fail to report their own code).
     private static readonly HashSet<string> StructuralExamples =
     [
-        "BYN0001", "BYN0005", "BYN0015", "BYN0016", "BYN2005", "BYN2010", "BYN2015",
+        "BYN0001", "BYN0005", "BYN0015", "BYN0016", "BYN2005", "BYN2010", "BYN2015", "BYN2033",
         "BYN3100", "BYN3101", "BYN3102", "BYN3103", "BYN3104", "BYN3213", "BYN3215", "BYN3217", "BYN4001", "BYN6004",
     ];
 

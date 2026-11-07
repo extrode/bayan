@@ -1,0 +1,7 @@
+error BYN2033: std module `std.a` imports `util`, which is not a std module
+  --> <std>/a/a.byn:1:8
+
+  1 │ import util
+    │        ^^^^
+    │
+  help: import only `std.…` modules from a std module

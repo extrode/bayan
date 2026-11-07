@@ -13,14 +13,20 @@ public union JsonToken {
     nothing
 }
 
-/// Why a JSON text was refused: at a byte offset, with the 1-based line and column (in runes) of that offset.
+/// Why a JSON text was refused (at a byte offset, with the 1-based line and column in runes of that offset), or why
+/// `Json.encode` refused a tree.
 public union error JsonError {
     syntax(string message, i64 offset, i32 line, i32 column)
     tooDeep(i64 offset, i32 line, i32 column)
+    /// A number to encode is NaN or infinite and its text is not a JSON number.
+    nonFinite
+    /// A tree to encode nests deeper than `maxDepth`.
+    nestedTooDeep
 }
 
-/// Lists and objects nest at most this deep: a deeper text is `tooDeep`, never a stack overflow in a caller that
-/// recurses per level (docs/memory-leaks.md rule 5). 128 is the decoder default of spec §15.4.
+/// Lists and objects nest at most this deep: a deeper text is `tooDeep` and a deeper tree to encode `nestedTooDeep`,
+/// never a stack overflow in a caller that recurses per level (docs/memory-leaks.md rule 5). 128 is the decoder default
+/// of spec §15.4.
 const maxDepth: i64 = 128
 
 /// What the reader accepts next.
@@ -247,8 +253,9 @@ public struct JsonReader {
                 var cp = try hex4(escapeAt: at)
                 if cp >= 0xD800 && cp <= 0xDBFF {
                     fail .syntax(message: "lone surrogate", offset: at, line: line, column: columnAt(at)) if !text[pos..].startsWith("\\u")
+                    let second = pos
                     pos += 2
-                    let low = try hex4(escapeAt: at)
+                    let low = try hex4(escapeAt: second)
                     fail .syntax(message: "lone surrogate", offset: at, line: line, column: columnAt(at)) if low < 0xDC00 || low > 0xDFFF
                     cp = 0x10000 + (cp - 0xD800) * 0x400 + (low - 0xDC00)
                 } else if cp >= 0xDC00 && cp <= 0xDFFF {

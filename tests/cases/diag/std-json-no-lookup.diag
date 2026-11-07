@@ -1,4 +1,4 @@
 error BYN2003: `get` is not a member of `Json`
 
-  6 │     print(json.Json.encode(json.Json.get(v, "a")))
+  6 │     print(json.Json.encode(json.Json.get(v, "a")) catch "")
     │                                      ^^^

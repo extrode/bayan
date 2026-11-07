@@ -40,6 +40,7 @@ enum SemaCode {
     nestedIt
     toStringCall
     unknownStdModule
+    stdImportsPackage
     missingInitializer
     useBeforeAssign
     outNotAssigned
@@ -299,6 +300,7 @@ string codeText(SemaCode code) => code switch {
     .nestedIt => "BYN2029",
     .toStringCall => "BYN2031",
     .unknownStdModule => "BYN2032",
+    .stdImportsPackage => "BYN2033",
     .missingInitializer => "BYN2101",
     .useBeforeAssign => "BYN2102",
     .outNotAssigned => "BYN2103",
@@ -558,6 +560,7 @@ string messageFormat(SemaCode code) => code switch {
     .nestedIt => "`it` inside a lambda that already uses `it`; name one lambda",
     .toStringCall => "Bayan has no `toString()`; display is `format()` (derived from `formatInto(ref StrBuf)`)",
     .unknownStdModule => "no std module `{0}`",
+    .stdImportsPackage => "std module `{0}` imports `{1}`, which is not a std module",
     .missingInitializer => "`{0} {1}` needs a value",
     .useBeforeAssign => "`{0}` is used before it is assigned",
     .outNotAssigned => "`out` parameter `{0}` is not assigned on every path",
