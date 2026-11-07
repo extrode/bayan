@@ -13,7 +13,7 @@ Three lessons: (1) errors need a channel the caller cannot confuse with data; (2
 - Every Linux binary links musl statically: `src/Bayan.Backend.C/Targets.cs:11-12` (`x86_64-linux-musl`, `aarch64-linux-musl`). macOS uses its libc, Windows the UCRT (`x86_64-windows-gnu`, `Targets.cs:15`).
 - The runtime (`src/runtime/bayan-rt.c`, 3,569 lines; `bayan-rt.h`, 572) calls 96 libc and OS functions, listed in `src/runtime/libc-uses.txt` (spec 012 T8, `docs/specs/012-self-hosted-bootstrap/012-tasks.md:16`). A libc divergence reaches every program through it.
 - The runtime already carries the norm in places: `byn_io_read` returns `0` or an `IoError` code (`bayan-rt.h:445-446`); `Env.get` returns `string?` (`src/Bayan.Semantics/Builtins.cs:128`); `position` returns `i64?` (`Binding/BuiltinMembers.cs:64`).
-- The norm-setter does not follow the norm: `selfhost/**/*.byn` (90 files) has 140 `return -1`, 620 `== -1`/`!= -1` and 28 `) fails ` (grep, 2026-11-07). Spec 010/011 rule the port matches the C# method for method (handoff Q711, `docs/bayan-handoff.md:1142`), so this is deliberate and must not change mid-port.
+- The norm-setter does not follow the norm: `selfhost/**/*.byn` (90 files) has 140 `return -1`, 620 `== -1`/`!= -1` and 27 lines with `) fails ` (grep, 2026-11-07). Spec 010/011 rule the port matches the C# method for method (handoff Q711, `docs/bayan-handoff.md:1142`), so this is deliberate and must not change mid-port.
 
 ## 1. Lessons mapped to Bayan mechanisms
 
@@ -54,7 +54,7 @@ Acceptance for these: a comment at each declaration naming the Bayan surface, an
 
 | Call | Line | musl | glibc | macOS | UCRT | Action |
 |---|---|---|---|---|---|---|
-| `strtod(sci, NULL)` in float formatting | `:439` | locale-sensitive decimal point | same | same | n/a (`_strtod_l` path) | use `byn_c_locale()` as `:1593` does, or document that the runtime never calls `setlocale` (0 calls) and a linked C library might |
+| `strtod(sci, NULL)` in float formatting | `:439` | locale-sensitive decimal point | same | same | same: this call has no `#if`, so it runs on Windows too, unlike the parser's `_strtod_l` at `:1591` | use `byn_c_locale()` as `:1591-1593` do, or document that the runtime never calls `setlocale` (0 calls) and a linked C library might |
 | `atoi(exponent)` | `:449` | returns 0 on garbage, no errno | same | same | same | input is `snprintf`'s own output; add an assert or parse by hand |
 | `snprintf` into fixed buffer | `:458,:224,:246` | returns needed length, may truncate | same | same | pre-2015 UCRT returned -1 on truncation | check against buffer size |
 | `clock_gettime(CLOCK_MONOTONIC)` | `:3566` | cannot fail on Linux | same | available since 10.12 | n/a | check return or comment why not |
@@ -68,7 +68,7 @@ Acceptance for these: a comment at each declaration naming the Bayan surface, an
 
 Hashing: the map seed comes from the OS CSPRNG or is fixed (`:2360-2365`). No password or message hashing exists in the runtime, so the `crypt` class of bug has no current site. Record this in the audit table so a future `std.crypto` (W5) does not add one to the runtime.
 
-**Acceptance.** Every row above is either fixed or has a one-line reason in `runtime-libc-audit.md`. `libc-uses.txt` gains a column or a sibling file: per function, "checked at line N" or "cannot fail: reason". A native test (`tests/native/`, built by `Toolchain.Build` as `RuntimeNativeTests.cs:193` does) drives `byn_io_run` with a process the OS refuses to wait on where that is reproducible; otherwise a unit test on the error-mapping function. Run on linux-x64 (musl, `RuntimeNativeTests.IsMusl` at `:101` already gates musl-only tests) and on wp1 (`tests/windows-known-failures.txt` is empty today and must stay empty).
+**Acceptance.** Every row above is either fixed or has a one-line reason in `runtime-libc-audit.md`. `libc-uses.txt` gains a column or a sibling file: per function, "checked at line N" or "cannot fail: reason". A native test (`tests/native/`, built by `Toolchain.Build` as `RuntimeNativeTests.cs:193` does) drives `byn_io_run` with a process the OS refuses to wait on where that is reproducible; otherwise a unit test on the error-mapping function. Run on linux-x64 (musl, `RuntimeNativeTests.IsMusl` at `:101` already gates musl-only tests) and on wp1 (`tests/windows-known-failures.txt` lists one entry today, `SelfhostEmitterSpeedTests.OneMegabyteLowerAndEmitWithinTenTimes`, and must gain no runtime test).
 
 **Touches.** Spec §21.1 (none), handoff Question: "runtime libc returns: policy is check or document, no exceptions".
 
@@ -86,7 +86,9 @@ Three items. The discarded-result rule already exists (L3), so the gap is narrow
 
 **Acceptance.** Each lint has a golden that fires and one that stays silent (the exemptions above are each a line in the silent golden). Running the three lints over `selfhost/` prints a count that W7 uses as its baseline. Zero new warnings on `lib/std/json/*.byn`.
 
-**Numbers.** 2xxx is at BYN2832, 3xxx at BYN3218, 5xxx at BYN5103 (last codes in `docs/bayan-spec.md`). The brief says lints go in an x9xx range under design round A2; no document in `docs/` contains `x9xx` (grep, unverified). See Needs decision D4.
+**Numbers.** 2xxx is at BYN2832, 3xxx at BYN3218, 5xxx at BYN5103 (last codes in `docs/bayan-spec.md`). Lints are planned as "TBD (x9xx of their area, A2)": `docs/bayan-shorthands-proposal.md:289,300,335,360` and `docs/bayan-style-proposal.md:192,317-321`. All three W2 lints are semantic, so they would be BYN29xx, assigned in A2. See Needs decision D4.
+
+**Touches.** Spec §2.5 (`docs/bayan-spec.md:141`, BYN3201 and `_ = f()`), §8 (`:1244`, `catch value`), §4.4 (`:710`, `@allow(X) because`), §21.1 diagnostics (`:2232`); `docs/diagnostics/` one file per code. Handoff Questions: new ones for D1-D4; none of the existing Questions covers sentinels (`sentinel` has 0 matches in `docs/bayan-handoff.md`, grep 2026-11-07).
 
 ### W3. Std API sweep
 
@@ -176,7 +178,7 @@ The sshd bug would have been L029's counterexample: a hash function whose error 
 | D1 | W2a discarded optional/result: rule or lint | error like BYN3201; warning; off | Warning by default, error under `bayan check --strict` if that exists (unverified); `@allow … because` opt-out. A hard error would hit `_ = map.tryGet(…)` idioms in tests |
 | D2 | W2b `catch <literal>` severity | warning / error | Warning. It is heuristic (the literal might be a true default); the fix-it does the teaching |
 | D3 | W2c sentinel-comparison lint scope | all code / public only / off in selfhost | All code, with `lints:` disabled for `selfhost/` in its `package.byn` until W7, so the baseline is measurable |
-| D4 | Diagnostic numbers | continue 32xx (after BYN3218) / open the x9xx lint range the brief names | Continue 32xx now; renumber in the round-4 renumbering (`docs/plans/2026-11-05-r4-section-10-lessons.md` conventions) if the lint range is confirmed. Do not invent a range this plan cannot cite |
+| D4 | Diagnostic numbers | continue 32xx (after BYN3218) / x9xx of the semantic area (BYN29xx) as the A2 lint convention says (`docs/bayan-shorthands-proposal.md:335`) | BYN29xx, as the other planned lints do; descriptor names only until the A2 numbering, per `docs/plans/2026-11-05-r4-section-10-lessons.md` conventions |
 | D5 | Selfhost migration timing | now / per file during ports / after parity and L027 | After parity and L027, its own spec with the goldens plus the fixpoint as oracle |
 | D6 | W4 home | `bayan audit` / new `bayan api diff` / `bayan pkg` | `bayan api diff` as a verb of `bayan pkg` (spec `:2250` already groups `audit` and `export --json` there) |
 | D7 | W6 marker spelling | `@cReturns(.nullOnError)` / infer from type only | Infer from type in the lint now; add the attribute with `CImport`. One Question |
