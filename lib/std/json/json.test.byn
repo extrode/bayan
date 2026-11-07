@@ -177,6 +177,13 @@ test "encode refuses a tree nested past 128 levels" {
     members.append(JsonMember { key: "a", value: nested(128) })
     assert Json.encode(JsonValue.object(members: move members)) fails JsonError.nestedTooDeep
     assert encodeErrorOf(nested(1000000)) == "nestedTooDeep"
+    var deep = JsonValue.object(members: List<JsonMember>())
+    for _ in 0..128 {
+        var items = List<JsonValue>()
+        items.append(move deep)
+        deep = .list(items: move items)
+    }
+    assert Json.encode(deep) fails JsonError.nestedTooDeep
 }
 
 @cases(
