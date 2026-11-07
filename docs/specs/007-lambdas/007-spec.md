@@ -2,8 +2,8 @@
 Status: done
 Created: 2026-10-22
 Revised: 2026-10-22 (design round 3: `->` function types, type-first declarations (J54), no semicolons, effects, particles)
-Revised: 2026-10-25 (revisions 0002–0011; Questions renumbered 345–362; codes realigned: BYN2221 → BYN2602, BYN6001 → BYN6002, BYN6002 → BYN6003 for an unknown effect; effects pass and `provide` lowering exist; plan references re-located on dev at 123e9ff)
-Depends on: dev at 123e9ff (round 3 and spec 006 merged). Spec §3.16 is read as SPEC has it there; round 3 and its revisions 0002–0011 win on any conflict.
+Revised: 2026-10-25 (revisions 0002–0011; Questions renumbered 345–362; codes realigned: BYN2221 → BYN2602, BYN6001 → BYN6002, BYN6002 → BYN6003 for an unknown effect; effects pass and `provide` lowering exist; plan references re-located on dev at 58cfad9)
+Depends on: dev at 58cfad9 (round 3 and spec 006 merged). Spec §3.16 is read as SPEC has it there; round 3 and its revisions 0002–0011 win on any conflict.
 
 Note (2026-10-22, J54): declarations are type-first again (`docs/plans/2026-10-22-002-design-round-3.md` J54). Returns, parameters, fields and payloads read `bool any(Span<Token> ts, by (Token -> bool) p)`; `-> T` and `name: Type` declarations are input forms (BYN1043). Locals stay `let f: Pred = …`. A function-typed parameter or field puts the type in parentheses before its name (`(Order -> void uses net) onPaid`), which replaces the name-first rule that a `fails`/`uses` list in a parameter list ends before `, name:`; R1, R4, R15, the examples and the acceptance criteria are rewritten, no requirement's meaning changes beyond that.
 

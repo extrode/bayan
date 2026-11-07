@@ -259,19 +259,21 @@ internal static class EffectAnalysis
     {
         BuiltinFunction.Print or BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin => ["console"],
         BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir => ["fs", "alloc"],
-        BuiltinFunction.IoWriteFile => ["fs"],
+        BuiltinFunction.IoWriteFile or BuiltinFunction.IoRemove or BuiltinFunction.IoCreateDirectory or BuiltinFunction.IoRemoveDirectory or BuiltinFunction.FsFileExists => ["fs"],
         BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch => ["process", "alloc"],
         BuiltinFunction.IoMonotonicNanos => ["clock"],
+        BuiltinFunction.EnvGet => ["env", "alloc"],
         BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver or BuiltinFunction.ArenaNew
             or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
-            or BuiltinFunction.SymbolIntern => ["alloc"],
+            or BuiltinFunction.SymbolIntern or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName or BuiltinFunction.PathDirectoryName
+            or BuiltinFunction.PathCombine or BuiltinFunction.PathCombineSpan or BuiltinFunction.PathFullPath => ["alloc"],
         _ => [],
     };
 
     private static string[] Member(BuiltinMember m) => m switch
     {
         BuiltinMember.IoWrite => ["console"],
-        BuiltinMember.IoReadAll => ["console", "alloc"],
+        BuiltinMember.IoReadAll or BuiltinMember.IoReadAllBytes => ["console", "alloc"],
         BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
             or BuiltinMember.IntToString or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet
             or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated or BuiltinMember.StringPadded or BuiltinMember.BytesToString

@@ -1,0 +1,9 @@
+error BYN3002: arena `arena` does not live as long as `b`, which borrows it
+
+  14 │         m[1] = v
+     │                - `put` stores `v` into `this` here
+     │
+  22 │         b.put(mk2("ann", from: arena))
+     │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ arena `arena` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

@@ -1,0 +1,14 @@
+void pass(string s, to out string g) {
+    let t = s
+    g = t
+}
+
+void main() {
+    var kept = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        pass(name, to: out kept)
+    }
+    print(kept)
+}

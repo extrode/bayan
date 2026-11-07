@@ -7,7 +7,7 @@
 #define BAYAN_RT_H
 
 /* Bumped on every change to the runtime source. */
-#define BYN_RUNTIME_VERSION 1
+#define BYN_RUNTIME_VERSION 2
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -33,6 +33,28 @@ typedef struct byn_str {
 } byn_str;
 
 #define BYN_STR(lit, n) ((byn_str){(const uint8_t*)(lit), (n)})
+
+/* `Target.os` / `Target.arch` of a build with no `--target`: the C compiler's own target, resolved by the preprocessor. */
+#if defined(_WIN32)
+#define BYN_HOST_OS BYN_STR("windows", 7)
+#elif defined(__APPLE__)
+#define BYN_HOST_OS BYN_STR("macos", 5)
+#elif defined(__linux__)
+#define BYN_HOST_OS BYN_STR("linux", 5)
+#elif defined(__wasm32__)
+#define BYN_HOST_OS BYN_STR("wasi", 4)
+#else
+#define BYN_HOST_OS BYN_STR("", 0)
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define BYN_HOST_ARCH BYN_STR("arm64", 5)
+#elif defined(__x86_64__) || defined(_M_X64)
+#define BYN_HOST_ARCH BYN_STR("x64", 3)
+#elif defined(__wasm32__)
+#define BYN_HOST_ARCH BYN_STR("wasm32", 6)
+#else
+#define BYN_HOST_ARCH BYN_STR("", 0)
+#endif
 
 /* ── Panics ──────────────────────────────────────────────────────────────── */
 
@@ -248,9 +270,15 @@ static inline void byn_slice_check(int64_t start, int64_t end, int64_t len, cons
 /* Resolves slice bounds: a mode of 0 is an offset from the start, 1 from the end, 2 absent. */
 static inline void byn_slice_range(int64_t len, int64_t start, int start_mode, int64_t end, int end_mode, bool inclusive,
                                    const char* file, int line, int64_t* from, int64_t* to) {
+    /* Out-of-range offsets are rejected before any arithmetic, so `len - start` and `e + 1` cannot overflow. */
+    if (BYN_UNLIKELY((start_mode == 1 && (uint64_t)start > (uint64_t)len) || (end_mode == 1 && (uint64_t)end > (uint64_t)len)))
+        bayan_trap_slice(file, line);
     int64_t s = start_mode == 2 ? 0 : start_mode == 1 ? len - start : start;
     int64_t e = end_mode == 2 ? len : end_mode == 1 ? len - end : end;
-    if (inclusive && end_mode != 2) e += 1;
+    if (inclusive && end_mode != 2) {
+        if (BYN_UNLIKELY(e == INT64_MAX)) bayan_trap_slice(file, line);
+        e += 1;
+    }
     byn_slice_check(s, e, len, file, line);
     *from = s;
     *to = e;
@@ -314,16 +342,36 @@ bool byn_float_parse(byn_str s, bool single, double* out);
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to);
 /* `Hex.decode`: -1 and the bytes in `*out`, or the offset of the first non-hex digit (the length for an odd count). */
 int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to);
+/* `Path.isRooted`: .NET `Path.IsPathRooted` on this OS (on Windows a leading `\` or `/`, or a drive letter and `:`). */
+bool byn_path_is_rooted(byn_str p);
+/* `Path.fileName`: .NET `Path.GetFileName` on this OS, copied into `to`. */
+byn_str byn_path_file_name(byn_str p, byn_alloc* to);
+/* `Path.directoryName`: .NET `Path.GetDirectoryName` on this OS, copied into `*out` (runs of separators collapsed, and on Windows
+   each one `\`). False, where .NET returns null, for an empty path (on Windows a blank one) or a root. */
+bool byn_path_directory_name(byn_str p, byn_str* out, byn_alloc* to);
+/* `Path.combine(a, b)`: .NET `Path.Combine(a, b)` on this OS, copied into `to`: `b` when `a` is empty or `b` rooted, else `a`
+   and `b` joined by the OS separator unless `a` ends in a separator (any of them, on Windows) or `b` is empty. */
+byn_str byn_path_combine(byn_str a, byn_str b, byn_alloc* to);
+/* `Path.combine(paths)`: .NET `Path.Combine(params string[])` on this OS, copied into `to`: empty parts are skipped and the
+   last rooted part restarts the result. */
+byn_str byn_path_combine_span(const byn_str* p, int64_t n, byn_alloc* to);
+/* `Path.fullPath(p)`: .NET `Path.GetFullPath(p)` on this OS, copied into `to`; a relative path is made full against the working
+   directory. Panics on an empty path or one with a NUL byte, where .NET throws `ArgumentException`. */
+byn_str byn_path_full_path(byn_str p, byn_alloc* to, const char* file, int line);
+/* `Path.relative(from, to)`: .NET `Path.GetRelativePath(from, to)` on this OS, copied into `to`; both paths are made full against
+   the working directory first. Panics on an empty path or one with a NUL byte, where .NET throws `ArgumentException`. */
+byn_str byn_path_relative(byn_str from, byn_str path, byn_alloc* to, const char* file, int line);
 
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);
 
 /* ── Maps ────────────────────────────────────────────────────────────────── */
 
-/* Seeds every key hash; `main` sets it (0 under `--test`, else time xor pid). */
+/* The 128-bit key of every key hash (low and high halves); `main` sets it (0 under `--test`, else from the OS CSPRNG). */
 extern uint64_t byn_hash_seed;
+extern uint64_t byn_hash_seed_hi;
 void byn_hash_seed_init(bool fixed);
-/* FNV-1a 64 over n bytes, starting from the seed. */
+/* SipHash-1-3 over n bytes, keyed by the seed. */
 uint64_t byn_hash_bytes(const void* p, int64_t n);
 
 /* The untyped part of `Map<K, V>`: entries are dense arrays in insertion order (keys and values live in the
@@ -354,7 +402,7 @@ void byn_map_clear(byn_map_hdr* h);
 void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void** dkeys, const void* vals, int64_t vsize,
                   void** dvals, byn_map_hdr* dst, byn_alloc* to);
 
-/* Folds `part` into the hash `h` (FNV-1a over its 8 bytes), for keys hashed part by part. */
+/* Folds `part` into the hash `h` (keyed SipHash-1-3 over both, 16 bytes), for keys hashed part by part. */
 uint64_t byn_hash_mix(uint64_t h, uint64_t part);
 
 /* ── Symbols ─────────────────────────────────────────────────────────────── */
@@ -398,7 +446,9 @@ byn_str* byn_args(int* argc, char** argv);
 uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc);
 /* As byn_io_read, and the bytes must be UTF-8. `out` may be NULL. */
 uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc);
-/* `Io.stdin.readAll`: the rest of standard input, bytes as-is (not checked for UTF-8), from `alloc`. */
+/* `Io.stdin.readAllBytes`: the rest of standard input, bytes as-is (not checked for UTF-8), from `alloc`. */
+uint32_t byn_io_read_stdin_bytes(uint8_t** ptr, int64_t* len, byn_alloc* alloc);
+/* `Io.stdin.readAll`: the same bytes as text; `BYN_IO_INVALID_UTF8` if they are not UTF-8. */
 uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc);
 uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len);
 /* `Io.listDir`: entry names without `.` and `..`, sorted by byte order, allocated from `alloc`. */
@@ -502,5 +552,21 @@ static inline uint32_t byn_to_char_u(uint64_t v, const char* file, int line) {
         return (T)v; }
 
 BYN_INT_TYPES(BYN_DEF_ARITH)
+
+/* `Env.get`: .NET `Environment.GetEnvironmentVariable`, the value copied into `*out` as .NET decodes it: each lone invalid byte, and each well-formed sequence cut short, as one U+FFFD.
+   False, where .NET returns null, when the variable is not set. */
+bool byn_env_get(byn_str name, byn_str* out, byn_alloc* to);
+
+/* `Fs.fileExists`: .NET `File.Exists`; false for a directory, a missing entry, an empty path, a path with a NUL, and a path ending in a separator. */
+bool byn_fs_file_exists(byn_str path);
+
+/* `Io.remove`: as .NET `File.Delete`: a missing file is not an error, a directory is `permissionDenied`; a missing directory is `notFound`. */
+uint32_t byn_io_remove(byn_str path);
+
+/* `Io.createDirectory`: as .NET `Directory.CreateDirectory`: missing parents are made, an existing directory is not an error, an existing file (or a file as a parent) is. */
+uint32_t byn_io_create_directory(byn_str path);
+
+/* `Io.removeDirectory`: as .NET `Directory.Delete(path)`: an empty directory only; a missing path, a file and a non-empty directory fail. */
+uint32_t byn_io_remove_directory(byn_str path);
 
 #endif

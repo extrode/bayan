@@ -3,6 +3,11 @@ namespace Bayan.LanguageServer.Analysis;
 public readonly record struct Diagnostic(int Start, int Length, string Message, string? Code, int Severity);
 
 /// <summary>One `.byn` file: text, line table and analysis results.</summary>
+/// <remarks>
+/// A document that is not open in the client keeps only its text, line table and non-local
+/// symbols: tokens, locals, the outline and diagnostics are dropped after analysis and recomputed by
+/// <see cref="Full"/> when a request needs them.
+/// </remarks>
 public sealed class Document
 {
     public string Uri { get; }
@@ -18,7 +23,13 @@ public sealed class Document
     /// <summary>Called after every analysis so the workspace can drop its symbol index.</summary>
     internal Action? Analyzed;
 
-    public Document(string uri, string text, int version) { Uri = uri; Set(text, version); }
+    /// <summary>Called with the change in text length whenever the text is replaced or edited.</summary>
+    internal Action<int>? LengthChanged;
+
+    public Document(string uri, string text, int version, bool open = false) { Uri = uri; IsOpen = open; Set(text, version); }
+
+    /// <summary>This document when open, else a fully analysed copy that is not kept.</summary>
+    public Document Full() => IsOpen ? this : new Document(Uri, Text, Version, open: true);
 
     public void Set(string text, int version)
     {
@@ -30,16 +41,20 @@ public sealed class Document
     /// <summary>Replaces the text without analysing (full-sync change inside a batch).</summary>
     public void Replace(string text)
     {
+        int delta = text.Length - Text.Length;
         Text = text;
         LineStarts = ComputeLines(text);
+        LengthChanged?.Invoke(delta);
     }
 
     /// <summary>Applies one LSP incremental change (UTF-16 line/character range).</summary>
     public void Apply(int startLine, int startChar, int endLine, int endChar, string newText)
     {
         int a = Offset(startLine, startChar), b = Offset(endLine, endChar);
+        int before = Text.Length;
         Text = string.Concat(Text.AsSpan(0, a), newText, Text.AsSpan(b));
         LineStarts = ComputeLines(Text);
+        LengthChanged?.Invoke(Text.Length - before);
     }
 
     public void Analyze()
@@ -49,10 +64,23 @@ public sealed class Document
         var ix = Indexer.Run(Text, lx.Tokens);
         Symbols = ix.Symbols;
         Roots = ix.Roots;
-        var diags = new List<Diagnostic>(lx.Problems.Count);
+        var diags = new List<Diagnostic>(lx.Problems.Count + 1);
         foreach (var p in lx.Problems) diags.Add(new Diagnostic(p.Start, p.Length, p.Message, p.Code, p.Code == "BYN1047" ? 2 : 1));
+        if (lx.Hidden > 0) diags.Add(new Diagnostic(0, 0, $"{lx.Hidden} more problems not shown", null, 2));
         Diagnostics = diags;
+        if (!IsOpen) Release();
         Analyzed?.Invoke();
+    }
+
+    /// <summary>Drops what only an open buffer needs: tokens, locals and parameters, outline, diagnostics.</summary>
+    internal void Release()
+    {
+        Tokens = [];
+        Diagnostics = [];
+        Roots = [];
+        var kept = new List<Symbol>(Symbols.Count(s => !s.IsLocal));
+        foreach (var s in Symbols) if (!s.IsLocal) { s.Children = null; kept.Add(s); }
+        Symbols = kept;
     }
 
     static int[] ComputeLines(string s)
@@ -130,30 +158,132 @@ public sealed class Document
 }
 
 /// <summary>All documents of the workspace: open buffers plus `.byn` files on disk.</summary>
-public sealed class Workspace
+/// <remarks>
+/// Disk files are bounded: hidden directories (`.git`, `.worktrees`, `.bayan-staging-*`), `tmp`
+/// and build output are never walked, and indexing stops at <paramref name="maxFiles"/> files or
+/// <paramref name="maxChars"/> characters of disk text. Open buffers are always held.
+/// The character budget counts the text of every document, open or not, by its length. A closed
+/// document retains about 10 bytes per character (2 for the text, the rest for line starts and
+/// non-local symbols; measured 10.00 over 8,388,744 characters of symbol-dense code, 10.07 in
+/// another run), so the default budget bounds closed
+/// documents near 2.5 GiB. Open buffers also keep tokens and diagnostics.
+/// </remarks>
+public sealed class Workspace(int maxFiles = Workspace.DefaultMaxFiles, long maxChars = Workspace.DefaultMaxChars, long maxFileBytes = Workspace.DefaultMaxFileBytes, int maxDirs = Workspace.DefaultMaxDirs)
 {
+    public const int DefaultMaxFiles = 20_000;
+    public const long DefaultMaxChars = 256L * 1024 * 1024;
+    public const long DefaultMaxFileBytes = 4L * 1024 * 1024;
+    public const int DefaultMaxDirs = 200_000;
+
     // Windows and macOS file systems are case-insensitive by default; Linux is not.
     static readonly StringComparer PathComparer =
         OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
+    static readonly HashSet<string> SkippedDirs = new(StringComparer.OrdinalIgnoreCase) { "node_modules", "bin", "obj", "dist", "tmp", "Library", "target", "out", "build" };
+
     readonly Dictionary<string, Document> _docs = new(PathComparer);
+    readonly List<string> _roots = [];
+    long _chars;
+    bool _limitLogged;
+    readonly HashSet<string> _dirs = new(PathComparer); // distinct directories entered by folder walks
+    bool _dirsLogged;
+
+    /// <summary>True while the file or character budget is spent; further disk files are not indexed.</summary>
+    public bool LimitReached => _docs.Count >= maxFiles || _chars >= maxChars;
+
+    /// <summary>Total length of the text of all documents.</summary>
+    public long CharCount => _chars;
+
+    /// <summary>A directory the indexer never enters.</summary>
+    public static bool IsSkippedDirectory(string name) => name.StartsWith('.') || SkippedDirs.Contains(name);
+
+    /// <summary>
+    /// True when <paramref name="fullPath"/> lies outside every indexed root, or under a skipped
+    /// directory of one. With no root indexed, nothing is excluded. Links among the directories
+    /// of <paramref name="fullPath"/> are resolved, as they are for roots.
+    /// </summary>
+    public bool IsExcluded(string fullPath)
+    {
+        var full = Path.GetFullPath(fullPath);
+        var dir = Path.GetDirectoryName(full);
+        return IsExcludedKey(dir is null ? full : Path.Combine(RealPath(dir), Path.GetFileName(full)));
+    }
+
+    /// <summary><see cref="IsExcluded"/> for a path already resolved by <see cref="Key"/>.</summary>
+    bool IsExcludedKey(string fullPath)
+    {
+        if (_roots.Count == 0) return false;
+        var cmp = PathComparer == StringComparer.Ordinal ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        foreach (var root in _roots)
+        {
+            if (!fullPath.StartsWith(root, cmp) || fullPath.Length <= root.Length) continue;
+            if (fullPath[root.Length] != Path.DirectorySeparatorChar && !Path.EndsInDirectorySeparator(root)) continue;
+            var dirs = Path.GetDirectoryName(fullPath.AsSpan(root.Length)).Trim(Path.DirectorySeparatorChar).ToString();
+            if (dirs.Length == 0 || !dirs.Split(Path.DirectorySeparatorChar).Any(IsSkippedDirectory)) return false;
+        }
+        return true;
+    }
+
+    bool OverBudget(int addChars, bool newFile = true)
+    {
+        if ((!newFile || _docs.Count < maxFiles) && _chars + addChars <= maxChars) return false;
+        if (!_limitLogged)
+        {
+            _limitLogged = true;
+            Console.Error.WriteLine($"bayan-lsp: a .byn file does not fit the index budget ({_docs.Count} files, {_chars} chars) and was not indexed; a folder walk in progress stops there, so its later files are skipped");
+        }
+        return true;
+    }
     readonly Dictionary<string, string> _keyCache = new(StringComparer.Ordinal); // uri as sent → key
 
     public IEnumerable<Document> Documents => _docs.Values;
 
-    /// <summary>Normalises a URI so `file:///c%3A/x` and `file:///C:/x` hit the same document.</summary>
+    /// <summary>
+    /// Normalises a URI so `file:///c%3A/x` and `file:///C:/x` hit the same document. Symbolic
+    /// links among the directories are resolved, so `/tmp/x` and `/private/tmp/x` are one key.
+    /// </summary>
     public string Key(string uri)
     {
         if (_keyCache.TryGetValue(uri, out var k)) return k;
         try
         {
             var u = new Uri(uri);
-            k = u.IsFile ? Path.GetFullPath(u.LocalPath) : uri;
+            if (u.IsFile)
+            {
+                var full = Path.GetFullPath(u.LocalPath);
+                var dir = Path.GetDirectoryName(full);
+                k = dir is null ? full : Path.Combine(RealPath(dir), Path.GetFileName(full));
+            }
+            else k = uri;
         }
         catch (Exception ex) when (ex is UriFormatException or ArgumentException or NotSupportedException) { k = uri; }
         if (_keyCache.Count > 4096) _keyCache.Clear();
         _keyCache[uri] = k;
         return k;
+    }
+
+    /// <summary>
+    /// <paramref name="full"/> with every symbolic link along it resolved; components that
+    /// cannot be inspected are kept as written.
+    /// </summary>
+    static string RealPath(string full, int depth = 0)
+    {
+        var root = Path.GetPathRoot(full);
+        if (string.IsNullOrEmpty(root) || depth > 40) return full; // 40 links: a cycle
+        var cur = root;
+        foreach (var part in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            cur = Path.Combine(cur, part);
+            try
+            {
+                var info = new DirectoryInfo(cur);
+                if (info.LinkTarget is not null && info.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+                    cur = RealPath(Path.TrimEndingDirectorySeparator(target.FullName), depth + 1); // the target may sit under a link
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return cur;
     }
 
     static string? LocalPath(string uri)
@@ -167,17 +297,30 @@ public sealed class Workspace
     Document Add(string key, Document d)
     {
         d.Analyzed = Invalidate;
+        d.LengthChanged = n => _chars += n;
+        if (_docs.TryGetValue(key, out var old)) { _chars -= old.Text.Length; old.LengthChanged = null; }
+        _chars += d.Text.Length;
         _docs[key] = d;
         Invalidate();
         return d;
     }
 
+    /// <summary>True when an open buffer is larger than the per-file limit and must not be analysed.</summary>
+    public bool TooLarge(string text) =>
+        text.Length > maxFileBytes || (text.Length * 3L > maxFileBytes && System.Text.Encoding.UTF8.GetByteCount(text) > maxFileBytes);
+
+    /// <summary>Forgets a document whose buffer is too large, whether open or indexed from disk.</summary>
+    public void Drop(string uri)
+    {
+        var key = Key(uri);
+        if (_docs.TryGetValue(key, out var d)) RemoveKey(key, d);
+    }
+
     public Document Open(string uri, string text, int version)
     {
         var key = Key(uri);
-        if (_docs.TryGetValue(key, out var d) && d.Uri == uri) d.Set(text, version);
-        else d = Add(key, new Document(uri, text, version));
-        d.IsOpen = true;
+        if (_docs.TryGetValue(key, out var d) && d.Uri == uri) { d.IsOpen = true; d.Set(text, version); }
+        else d = Add(key, new Document(uri, text, version, open: true));
         return d;
     }
 
@@ -187,28 +330,54 @@ public sealed class Workspace
         var key = Key(uri);
         if (!_docs.TryGetValue(key, out var d)) return;
         d.IsOpen = false;
-        if (LocalPath(uri) is { } path && File.Exists(path))
-        {
-            try { d.Set(File.ReadAllText(path), 0); return; }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-        }
+        d.Release();
+        if (LocalPath(uri) is not { } path || !File.Exists(path) || IsExcludedKey(key) || IsReparsePoint(path)) RemoveKey(key, d);
+        else LoadFromDisk(path, uri); // a failed read keeps the previous document
+    }
+
+    void RemoveKey(string key, Document d)
+    {
+        _chars -= d.Text.Length;
+        d.LengthChanged = null;
         _docs.Remove(key);
         Invalidate();
     }
 
-    public void LoadFromDisk(string path)
+    /// <summary>
+    /// Indexes or re-reads one file on disk. A file not yet indexed is skipped when it is excluded
+    /// (<see cref="IsExcluded"/>), a symbolic link, larger than the per-file limit, or over the
+    /// workspace budget. <paramref name="clientUri"/> is the URI the new document keeps.
+    /// Returns true when the file was rejected for the budget.
+    /// </summary>
+    public bool LoadFromDisk(string path, string? clientUri = null)
     {
         var full = Path.GetFullPath(path);
-        var uri = new Uri(full).AbsoluteUri;
+        var uri = clientUri ?? new Uri(full).AbsoluteUri;
         var key = Key(uri);
-        if (_docs.TryGetValue(key, out var existing) && existing.IsOpen) return;
+        bool known = _docs.TryGetValue(key, out var existing);
+        if (known && existing!.IsOpen) return false;
+        if (!known && (IsExcludedKey(key) || IsReparsePoint(full))) return false;
         string text;
-        try { text = File.ReadAllText(full); }
-        catch (IOException) { return; }
-        catch (UnauthorizedAccessException) { return; }
-        if (existing is not null && existing.Text == text) return; // watcher echo of our own state
+        try
+        {
+            if (new FileInfo(full).Length > maxFileBytes)
+            {
+                if (known) RemoveKey(key, existing!);
+                return false;
+            }
+            text = File.ReadAllText(full);
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+        if (existing is not null && existing.Text == text) return false; // watcher echo of our own state
+        int delta = text.Length - (existing?.Text.Length ?? 0);
+        if ((!known || delta > 0) && OverBudget(delta, !known))
+        {
+            if (known) RemoveKey(key, existing!);
+            return true;
+        }
         Add(key, new Document(uri, text, 0));
+        return false;
     }
 
     /// <summary>Removes a deleted file. Returns the URI of the removed document, if any.</summary>
@@ -216,28 +385,91 @@ public sealed class Workspace
     {
         var key = Key(uri);
         if (!_docs.TryGetValue(key, out var d) || d.IsOpen) return null;
-        _docs.Remove(key);
-        Invalidate();
+        RemoveKey(key, d);
         return d.Uri;
     }
 
+    /// <summary>
+    /// Removes every document under a deleted directory, except open buffers. Returns the URIs
+    /// of the removed documents.
+    /// </summary>
+    public List<string> RemoveFolder(string uri)
+    {
+        var removed = new List<string>();
+        var key = Key(uri);
+        if (LocalPath(uri) is null || IsExcludedKey(key)) return removed; // nothing is indexed under an excluded path
+        var prefix = Path.TrimEndingDirectorySeparator(key) + Path.DirectorySeparatorChar;
+        var cmp = PathComparer == StringComparer.Ordinal ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        foreach (var (k, d) in _docs.ToList())
+            if (!d.IsOpen && k.StartsWith(prefix, cmp)) { RemoveKey(k, d); removed.Add(d.Uri); }
+        _dirs.RemoveWhere(x => x.StartsWith(prefix, cmp) || PathComparer.Equals(x, key));
+        return removed;
+    }
+
+    /// <summary>
+    /// Indexes a directory created or moved in under a root, with the rules of <see cref="IndexFolder"/>;
+    /// it does not become a root.
+    /// </summary>
+    public void LoadFolder(string path)
+    {
+        var full = RealPath(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)));
+        // IsExcluded looks at the directories above a file, so ask about a file inside this one.
+        if (!Directory.Exists(full) || IsExcluded(Path.Combine(full, "_.byn")) || IsReparsePoint(full)) return;
+        Walk(full);
+    }
+
+    /// <summary>
+    /// Indexes the `.byn` files under <paramref name="root"/>. Skipped directories and symbolic
+    /// links are not entered; the walk stops once the budget is spent or once all walks together
+    /// have entered <paramref name="maxDirs"/> directories. The root is kept by its real path.
+    /// </summary>
     public void IndexFolder(string root)
     {
         if (!Directory.Exists(root)) return;
-        var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".git", "node_modules", "bin", "obj", "dist", ".bayan" };
+        root = RealPath(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)));
+        if (!_roots.Contains(root, PathComparer)) _roots.Add(root);
+        Walk(root);
+    }
+
+    void Walk(string root)
+    {
         var stack = new Stack<string>();
         stack.Push(root);
-        while (stack.Count > 0)
+        while (stack.Count > 0 && !LimitReached)
         {
             var dir = stack.Pop();
+            if (!_dirs.Contains(dir) && _dirs.Count >= maxDirs)
+            {
+                if (!_dirsLogged) Console.Error.WriteLine($"bayan-lsp: the folder walk stopped after {maxDirs} directories; later directories are not indexed");
+                _dirsLogged = true;
+                return;
+            }
+            _dirs.Add(dir);
             try
             {
-                foreach (var f in Directory.EnumerateFiles(dir, "*.byn")) LoadFromDisk(f);
+                foreach (var f in Directory.EnumerateFiles(dir, "*.byn"))
+                {
+                    if (IsReparsePoint(f)) continue;
+                    if (LoadFromDisk(f) || LimitReached) return;
+                }
                 foreach (var sub in Directory.EnumerateDirectories(dir))
-                    if (!skip.Contains(Path.GetFileName(sub))) stack.Push(sub);
+                {
+                    if (IsSkippedDirectory(Path.GetFileName(sub))) continue;
+                    if (IsReparsePoint(sub)) continue;
+                    stack.Push(sub);
+                }
             }
             catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
         }
+    }
+
+    /// <summary>True for a symbolic link or junction; an entry that cannot be inspected counts as one.</summary>
+    static bool IsReparsePoint(string path)
+    {
+        try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+        catch (IOException) { return true; }
+        catch (UnauthorizedAccessException) { return true; }
     }
 
     // ---- symbol index -------------------------------------------------------
@@ -252,7 +484,13 @@ public sealed class Workspace
     readonly Dictionary<string, List<(Document, Symbol)>> _byContainer = new(StringComparer.Ordinal);
     readonly Dictionary<string, (Document, Symbol)> _types = new(StringComparer.Ordinal);
 
-    void Invalidate() => _indexValid = false;
+    /// <summary>Drops the index at once, so replaced documents are not kept alive until the next request.</summary>
+    void Invalidate()
+    {
+        if (!_indexValid) return;
+        _indexValid = false;
+        _global.Clear(); _casesStates.Clear(); _byName.Clear(); _byContainer.Clear(); _types.Clear();
+    }
 
     void EnsureIndex()
     {
@@ -322,8 +560,7 @@ public sealed class Workspace
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (int i = doc.Symbols.Count - 1; i >= 0; i--)
         {
-            var s = doc.Symbols[i];
-            if (s.IsLocal && s.ScopeStart <= offset && offset <= s.ScopeEnd && s.NameStart < offset && seen.Add(s.Name))
+            if (doc.Symbols[i] is LocalSymbol s && s.ScopeStart <= offset && offset <= s.ScopeEnd && s.NameStart < offset && seen.Add(s.Name))
                 yield return s;
         }
     }
@@ -334,22 +571,21 @@ public sealed class Workspace
         // Innermost first: the last matching local declared before the offset wins.
         for (int i = doc.Symbols.Count - 1; i >= 0; i--)
         {
-            var s = doc.Symbols[i];
-            if (s.IsLocal && s.ScopeStart <= offset && offset <= s.ScopeEnd && s.NameStart < offset && s.Name == name)
+            if (doc.Symbols[i] is LocalSymbol s && s.ScopeStart <= offset && offset <= s.ScopeEnd && s.NameStart < offset && s.Name == name)
                 return (doc, s);
         }
         if (EnclosingType(doc, offset) is { } ty && Member(ty.Name, name) is { } m) return m;
         var named = Named(name);
         // Prefer a top-level symbol, then one in this document, then any.
         foreach (var e in named) if (e.Sym.Container is null) return e;
-        foreach (var e in named) if (e.Doc == doc) return e;
+        foreach (var e in named) if (e.Doc == doc || Key(e.Doc.Uri) == Key(doc.Uri)) return e; // doc may be a Full() copy
         return named.Count > 0 ? named[0] : null;
     }
 
     /// <summary>Static type name of a receiver expression ending at token <paramref name="idx"/>.</summary>
-    public string? TypeOfReceiver(Document doc, int idx)
+    public string? TypeOfReceiver(Document doc, int idx, int depth = 0)
     {
-        if (idx < 0) return null;
+        if (idx < 0 || depth > 8) return null;
         var t = doc.Tokens[idx];
         if (t.Kind == TokenKind.String) return "string";
         if (t.Kind is not (TokenKind.Ident or TokenKind.Keyword)) return null;
@@ -358,15 +594,15 @@ public sealed class Workspace
         if (char.IsUpper(text[0])) return text; // `Order.` → static members / cases
         // `a.b.` → type of b inside type of a.
         if (idx >= 2 && (doc.Is(idx - 1, ".") || doc.Is(idx - 1, "?.")))
-            return TypeOfReceiver(doc, idx - 2) is { } outer && Member(outer, text) is { } m ? TypeOfSymbol(m.Doc, m.Sym, 1) : null;
+            return TypeOfReceiver(doc, idx - 2, depth + 1) is { } outer && Member(outer, text) is { } m ? TypeOfSymbol(m.Doc, m.Sym, 1) : null;
         return Resolve(doc, text, t.Start) is { } r ? TypeOfSymbol(r.Doc, r.Sym, 0) : null;
     }
 
     string? TypeOfSymbol(Document doc, Symbol s, int depth)
     {
         if (Normalize(s.TypeName) is { } declared) return declared == "Self" ? s.Container : declared;
-        if (s.Kind == SymbolKind.Local && s.InitStart >= 0 && depth < 8)
-            return ExprType(doc, doc.TokenIndexAt(s.InitStart), depth + 1);
+        if (s is LocalSymbol { Kind: SymbolKind.Local, InitStart: >= 0 } l && depth < 8)
+            return ExprType(doc, doc.TokenIndexAt(l.InitStart), depth + 1);
         return null;
     }
 

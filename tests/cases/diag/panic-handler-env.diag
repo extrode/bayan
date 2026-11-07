@@ -1,0 +1,6 @@
+error BYN2612: allocation is not allowed in a panic handler
+
+  3 │     let home = Env.get("HOME")
+    │                ^^^^^^^^^^^^^^^
+    │
+  help: remove it; panic handlers can't recover

@@ -126,8 +126,9 @@ internal static class BuiltinMembers
         (BuiltinType { Kind: BuiltinKind.StrBuf } s, "take") => new(BuiltinMember.StrBufTake, [], s, Mutating: true),
         (OptionalType o, "take") when TypeFacts.IsUnique(o.Inner) => new(BuiltinMember.OptionalTake, [], o, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),
-        // The binder wraps the result in `Result<string, IoError>`.
+        // The binder wraps the result in `Result<string, IoError>` (`Result<List<u8>, IoError>` for `readAllBytes`).
         (BuiltinType { Kind: BuiltinKind.IoInput }, "readAll") => new(BuiltinMember.IoReadAll, [], PrimitiveType.String),
+        (BuiltinType { Kind: BuiltinKind.IoInput }, "readAllBytes") => new(BuiltinMember.IoReadAllBytes, [], new ListType(PrimitiveType.U8)),
         _ => null,
     };
 
@@ -135,7 +136,7 @@ internal static class BuiltinMembers
 
     private static readonly string[] Candidates =
         ["length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
-         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip", "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message", "radix", "debug", "width", "fill", "align", "digits"];
+         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip", "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "readAllBytes", "name", "ordinal", "exitCode", "stdout", "stderr", "message", "radix", "debug", "width", "fill", "align", "digits"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

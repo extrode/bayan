@@ -30,7 +30,7 @@ public sealed record CacheStats(string Directory, int Programs, long Bytes, int 
 public static class Toolchain
 {
     /// <summary>The Bayan compiler's version; part of every cache key.</summary>
-    public const string CompilerVersion = "0.1.0";
+    public const string CompilerVersion = "0.2.0";
 
     public static string RuntimeHeader { get; } = Resource("runtime/bayan-rt.h");
 
@@ -60,6 +60,30 @@ public static class Toolchain
     public static string CacheData => Path.Combine(CacheDirectory, "v1");
 
     private static string Programs => Path.Combine(CacheData, "programs");
+
+    /// <summary>The CACHEDIR.TAG signature (bford.info/cachedir): backup tools and worktree removal treat a tagged
+    /// directory as a disposable cache, so the program cache under a checkout never blocks or bloats.</summary>
+    internal const string CacheDirTag = "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by bayan.\n# For information about cache directory tags see https://bford.info/cachedir/\n";
+
+    /// <summary>Writes <c>CACHEDIR.TAG</c> in <see cref="CacheData"/> once: only the directory bayan owns, never the
+    /// <c>$BAYAN_CACHE</c> root a user may share, so `bayan clean --cache` removes the tag with the cache. Written to a temporary
+    /// name and moved into place, so no reader sees a partial tag; a cache that cannot be tagged still works.</summary>
+    internal static void TagCacheDirectory()
+    {
+        var tag = Path.Combine(CacheData, "CACHEDIR.TAG");
+        if (File.Exists(tag)) return;
+        var temp = tag + "." + Guid.NewGuid().ToString("N");
+        try
+        {
+            Directory.CreateDirectory(CacheData);
+            File.WriteAllText(temp, CacheDirTag);
+            File.Move(temp, tag, overwrite: false);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            try { File.Delete(temp); } catch (Exception d) when (d is IOException or UnauthorizedAccessException) { }
+        }
+    }
 
     private static string Scripts => Path.Combine(CacheData, "scripts");
 
@@ -112,6 +136,12 @@ public static class Toolchain
         if (File.Exists("/usr/bin/clang")) yield return ["/usr/bin/clang"];
         if (FindOnPath("clang") is { } clang) yield return [clang];
     }
+
+    /// <summary>How long one C compiler run may take: 10 minutes, or <c>$BAYAN_CC_TIMEOUT_S</c> seconds.</summary>
+    private static TimeSpan CompileTimeout =>
+        int.TryParse(Environment.GetEnvironmentVariable("BAYAN_CC_TIMEOUT_S"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var s) && s > 0
+            ? TimeSpan.FromSeconds(s)
+            : TimeSpan.FromMinutes(10);
 
     /// <summary>Test seams: how long the probe waits for a candidate to compile, and for its program to run.</summary>
     internal static TimeSpan ProbeCompileTimeout { get; set; } = TimeSpan.FromSeconds(120);
@@ -181,6 +211,7 @@ public static class Toolchain
 
     private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output, string? target, bool sanitize)
     {
+        SweepOnce();
         var cross = target != Targets.Host;
         var sanitizerCompiler = sanitize && !cross ? SanitizerOverride ?? SanitizerCompiler : null;
         var asan = sanitizerCompiler is not null;
@@ -217,6 +248,7 @@ public static class Toolchain
                 return new NativeBuild(null, $"cannot run the C compiler `{string.Join(" ", compiler)}`: {e.Message}");
             }
         }
+        if (hit) TagCacheDirectory();
         var exe = Path.Combine(Programs, key, exeName);
         if (output is null) return new NativeBuild(exe, "", hit, key);
         ReplaceFile(output, temp => File.Copy(exe, temp));
@@ -262,7 +294,11 @@ public static class Toolchain
         if (!Directory.Exists(dir)) return null;
         try
         {
-            if (File.Exists(exe) && File.Exists(sum) && File.ReadAllText(sum).Trim() == HashFile(exe)) return exe;
+            if (File.Exists(exe) && File.Exists(sum) && File.ReadAllText(sum).Trim() == HashFile(exe))
+            {
+                Touch(dir);
+                return exe;
+            }
         }
         catch (IOException)
         {
@@ -275,6 +311,7 @@ public static class Toolchain
     /// <summary>Builds into a private directory, then renames it to <c>programs/&lt;key&gt;</c>; null on success.</summary>
     private static string? Compile(string[] compiler, List<string> flags, string cSource, string key, string exeName, bool windows)
     {
+        TagCacheDirectory();
         var work = Path.Combine(Staging, key[..16] + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         try
@@ -288,7 +325,10 @@ public static class Toolchain
             args.AddRange(["-ffile-prefix-map=" + work + "=.", "-I", ".", CEmitter.GeneratedFile, "bayan-rt.c", "-o", exeName]);
             // `CommandLineToArgvW` (program arguments) is in shell32.
             args.Add(windows ? "-lshell32" : "-lm");
-            var (code, stdout, stderr) = Exec(compiler[0], args, work);
+            var limit = CompileTimeout;
+            var (code, stdout, stderr) = Exec(compiler[0], args, work, limit);
+            if (code == -1)
+                return $"C compiler timed out after {limit.TotalSeconds:0} s and was killed (set BAYAN_CC_TIMEOUT_S to allow longer)";
             var exe = Path.Combine(work, exeName);
             if (code != 0 || !File.Exists(exe))
                 return $"C compiler failed (exit {code}):\n{stdout}{stderr}";
@@ -299,6 +339,7 @@ public static class Toolchain
             try
             {
                 Directory.Move(work, Path.Combine(Programs, key));
+                Evict(key);
             }
             catch (IOException) when (Lookup(key, exeName) is not null)
             {
@@ -309,6 +350,92 @@ public static class Toolchain
         finally
         {
             if (Directory.Exists(work)) Discard(work);
+        }
+    }
+
+    private const long DefaultCacheMaxMb = 2048;
+    private const int DefaultCacheMaxEntries = 4000;
+    private static readonly TimeSpan InUseWindow = TimeSpan.FromMinutes(10);
+
+    /// <summary>Marks a cache entry as just used; failure is harmless.</summary>
+    private static void Touch(string dir)
+    {
+        try { Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
+    /// Trims the program cache to <c>$BAYAN_CACHE_MAX_MB</c> (2 GiB; 0 for no cap) and 4000 entries, least recently
+    /// used first, then drops script pointers whose program is gone. <paramref name="keep"/> and any entry used
+    /// within <paramref name="minAge"/> (a concurrent build may be running it) are never removed.
+    /// </summary>
+    private static void Evict(string keep)
+    {
+        var mb = long.TryParse(Environment.GetEnvironmentVariable("BAYAN_CACHE_MAX_MB"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : DefaultCacheMaxMb;
+        if (mb == 0) return;
+        Evict(keep, mb * 1024 * 1024, DefaultCacheMaxEntries, InUseWindow);
+    }
+
+    internal static void Evict(string keep, long maxBytes, int maxEntries, TimeSpan minAge)
+    {
+        try
+        {
+            var entries = Directory.EnumerateDirectories(Programs).Select(d => new DirectoryInfo(d))
+                .Select(d => (Dir: d, Used: d.LastWriteTimeUtc, Size: d.EnumerateFiles().Sum(f => f.Length)))
+                .OrderBy(e => e.Used).ToList();
+            var count = entries.Count;
+            var bytes = entries.Sum(e => e.Size);
+            var cutoff = DateTime.UtcNow - minAge;
+            foreach (var e in entries)
+            {
+                if (count <= maxEntries && bytes <= maxBytes) break;
+                if (e.Dir.Name == keep || e.Used > cutoff) continue;
+                Discard(e.Dir.FullName);
+                count--;
+                bytes -= e.Size;
+            }
+            if (!Directory.Exists(Scripts)) return;
+            foreach (var pointer in Directory.EnumerateFiles(Scripts).Where(f => !f.EndsWith(".tmp", StringComparison.Ordinal)))
+                if (!Directory.Exists(Path.Combine(Programs, File.ReadAllText(pointer).Trim()))) File.Delete(pointer);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    private static int s_swept;
+
+    /// <summary>Sweeps stale temporary directories once per process, before the first build.</summary>
+    private static void SweepOnce()
+    {
+        if (Interlocked.Exchange(ref s_swept, 1) == 0) SweepStale(Path.GetTempPath(), TimeSpan.FromHours(1));
+    }
+
+    /// <summary>
+    /// Removes what an interrupted run left behind and nothing cleans up later: <c>bayan-coverage-*</c>,
+    /// <c>bayan-mutate-*</c> and <c>bayan-asan-*</c> under <paramref name="tempRoot"/>, and everything in the cache's
+    /// staging directory, when last modified more than <paramref name="age"/> ago (staging: more than max(<paramref name="age"/>,
+    /// compile timeout + 10 minutes), so a slow compile in progress is kept). Errors are ignored.
+    /// </summary>
+    internal static void SweepStale(string tempRoot, TimeSpan age)
+    {
+        var cutoff = DateTime.UtcNow - age;
+        var stagingCutoff = DateTime.UtcNow - TimeSpan.FromTicks(Math.Max(age.Ticks, (CompileTimeout + TimeSpan.FromMinutes(10)).Ticks));
+        var stale = new List<(string Path, DateTime Cutoff)>();
+        try
+        {
+            foreach (var pattern in new[] { "bayan-coverage-*", "bayan-mutate-*", "bayan-asan-*" })
+                if (Directory.Exists(tempRoot)) stale.AddRange(Directory.EnumerateDirectories(tempRoot, pattern).Select(d => (d, cutoff)));
+            if (Directory.Exists(Staging)) stale.AddRange(Directory.EnumerateFileSystemEntries(Staging).Select(d => (d, stagingCutoff)));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        foreach (var (path, limit) in stale)
+        {
+            try
+            {
+                if (Directory.GetLastWriteTimeUtc(path) >= limit) continue;
+                if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+                else File.Delete(path);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
     }
 
@@ -337,7 +464,9 @@ public static class Toolchain
         var pointer = Path.Combine(Scripts, scriptKey);
         try
         {
-            return File.Exists(pointer) ? Lookup(File.ReadAllText(pointer).Trim(), exeName) : null;
+            var exe = File.Exists(pointer) ? Lookup(File.ReadAllText(pointer).Trim(), exeName) : null;
+            if (exe != null) TagCacheDirectory();
+            return exe;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -349,6 +478,7 @@ public static class Toolchain
     {
         try
         {
+            TagCacheDirectory();
             Directory.CreateDirectory(Scripts);
             var temp = Path.Combine(Scripts, scriptKey + "." + Guid.NewGuid().ToString("N") + ".tmp");
             File.WriteAllText(temp, programKey + "\n");

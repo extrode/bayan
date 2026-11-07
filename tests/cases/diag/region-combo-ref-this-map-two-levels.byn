@@ -1,0 +1,25 @@
+// A `ref this` map-field store (Q747) of an arena value returned through two levels is refused.
+string mk(string s, from Arena a) {
+    return s.copy(to: a)
+}
+
+string mk2(string s, from Arena a) {
+    return mk(s, from: a)
+}
+
+struct Bag {
+    Map<i64, string> m
+
+    void put(ref this, string v) {
+        m[1] = v
+    }
+}
+
+void main() {
+    var b = Bag { m: Map<i64, string>() }
+    {
+        using let arena = Arena()
+        b.put(mk2("ann", from: arena))
+    }
+    print(b.m[1])
+}

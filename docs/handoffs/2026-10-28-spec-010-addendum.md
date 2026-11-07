@@ -8,13 +8,13 @@ This session reviewed the work landed after the dropoff, set up a stricter landi
 |---|---|
 | `dev` | `feat/010-self-hosted-semantics` merged in with `--no-ff` (landing gate, ctx sections, T10 landed, T11–T17 unticked) |
 | `feat/010-self-hosted-semantics` | **The base.** T1–T10 ticked, T11–T39 open. Branch from here. |
-| `feat/010-t15-redo` | Redo written; guard passed at `e3b3dd4`. Review 1 FAIL: 0 HIGH, 3 MEDIUM (`reviews/T15.md`). The last commit `70365d6` is the writer's unfinished fix. **Land first.** |
+| `feat/010-t15-redo` | Redo written; guard passed at `de3ef1c`. Review 1 FAIL: 0 HIGH, 3 MEDIUM (`reviews/T15.md`). The last commit `994d479` is the writer's unfinished fix. **Land first.** |
 | `feat/010-t13-redo` | Redo written; guard passed. Review 1 FAIL: 4 HIGH (`reviews/T13.md`). Base merged (Q714). The rulings below are not applied yet. |
-| `feat/010-t11-redo` | Writer stopped mid-task (`88c8051`): not guarded, not reviewed, and predates Q713/Q714. |
+| `feat/010-t11-redo` | Writer stopped mid-task (`135b978`): not guarded, not reviewed, and predates Q713/Q714. |
 | `feat/010-t12-redo`, `t14`, `t16`, `t17` | Not started; each equals the base. |
 | `claude/wonderful-cray-qaf9g3` | Same as the base (the session's push branch). |
 
-Test status of the redo branches at the stop: see *Test status at handoff* at the end (T15 tip is broken WIP; last good e3b3dd4).
+Test status of the redo branches at the stop: see *Test status at handoff* at the end (T15 tip is broken WIP; last good de3ef1c).
 
 ## Do next, in order
 
@@ -72,6 +72,7 @@ git switch feat/010-self-hosted-semantics && bash scripts/selfhost/land.sh T13 f
 - **Mutations.**
   - Mutants that fail to compile are skipped instead of counted as killed.
   - One line per file may be exempted with `// mutation-exempt: Qnnn` on the line above it, only when the line's sole effect goes through a sibling's stub. Do not move code to dodge a mutant.
+- **Coverage.** A line that is dead in the C# too (an internal-error throw, a branch the C# never takes) may be exempted from the coverage gate with `// coverage-exempt: Qnnn` (or `… through N`) on the line above it. The Question cites the `.byn` line and the C# line that shows the path is dead. A Question that cites no line of the marker's span is a guard failure. Do not exempt a line that only lacks a test program. A line that runs only once sibling task T<k> ports its stub `<fn>` takes `// coverage-blocked: Qnnn T<k> <fn>` (or `… through N`) instead, with the Question citing the `.byn` line and the stub (Q838). The guard accepts it while T<k> is open and is not the task under guard; T<k> covers those lines and removes the marker before it lands.
 
 How long the guard takes: about 20–40 minutes per task (8 mutants, each a build plus the task's tests).
 
@@ -79,7 +80,7 @@ How long the guard takes: about 20–40 minutes per task (8 mutants, each a buil
 
 - **Setup.** `builds.dotnet.microsoft.com` is blocked by the cloud proxy, so `dotnet-install.sh` fails. Use `apt-get install -y dotnet-sdk-10.0` (10.0.1xx satisfies `global.json` 10.0.100 with `latestFeature`). `cc`, `gcc` and `clang` are present. `dotnet run --project src/Bayan.Cli -- doctor` checks the toolchain.
 - **Commands.**
-  - `dotnet build -v q`, then `dotnet test -v q --filter 'FullyQualifiedName~SelfhostSemantics'`. On the old tip (`c1cbedb`) that gave 234 passed, 0 skipped, in about 3.5 minutes.
+  - `dotnet build -v q`, then `dotnet test -v q --filter 'FullyQualifiedName~SelfhostSemantics'`. On the old tip (`a00e69b`) that gave 234 passed, 0 skipped, in about 3.5 minutes.
   - One task: `--filter 'FullyQualifiedName~SelfhostSemanticsT15Tests'`.
   - Full suite: `dotnet test -v q` (2,704 tests on 2026-10-26). `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` is flaky under load.
 - **Probing the language.** Write a snippet to `tmp/probe/<name>/main.byn`, then run `src/Bayan.Cli/bin/Debug/net10.0/bayan check <file>` (0.4 s) or `bayan run <file>`.
@@ -122,7 +123,7 @@ The spec makes `in` optional, and a probe on 2026-10-28 confirms it.
 1. **Complete the C# state in one pass.** One agent should list every field of the C# `Compilation`, `Binder`, `Conformance` and `BinderExpressions` classes, then add each missing one to ctx.byn: shared fields where two tasks touch them, task sections otherwise. Writers then never invent state. This is the cheapest prevention left.
 2. **Port in dependency order rather than all in parallel.** Coupling through stubs is why so many paths cannot be tested against the C# yet (T15's `bindChecks` waits on T38, `bindEnumArguments` on T20; T13's second pass waits on T15–T17 and T20). Doing the declaration tasks, then the binder core, then expressions and calls lets later tasks test against real siblings.
 3. **Run the `in` cleanup now** (above).
-4. Mutation-exempt lines and `(blocked: Qnnn)` stubs are debts for T28. Grep for `mutation-exempt:` and `blocked: Q` at integration time.
+4. Mutation-exempt lines, coverage-exempt lines and `(blocked: Qnnn)` stubs are debts for T28. Grep for `mutation-exempt:`, `coverage-exempt:` and `blocked: Q` at integration time; no `coverage-blocked:` marker may remain (Q838).
 
 ## Writer prompt for a redo (used this session; adapt T/paths)
 
@@ -143,7 +144,7 @@ This is a REDO: start from the code in your owned files (the earlier attempt), k
 
 ## Test status at handoff (2026-10-28, each branch's own test class)
 
-- `feat/010-t11-redo` (`88c8051`, WIP): builds, `SelfhostSemanticsT11Tests` 24/24 pass. Not guarded.
+- `feat/010-t11-redo` (`135b978`, WIP): builds, `SelfhostSemanticsT11Tests` 24/24 pass. Not guarded.
 - `feat/010-t13-redo`: 14/14 pass. Merging the base had declared `includeTests`/`skipOwnershipCheck` twice (T13 section and the Q714 shared section), which broke every T13 test. The tip commit removes the T13 copies, which also applies the first ruling.
-- `feat/010-t15-redo`: **the WIP tip `70365d6` fails all 37 tests**. The generated main panics `index out of range` at binder.byn:435, because `t15ParameterOwner` returns -1 inside `bindParameterDefault` right after the new `t15CaptureTypes` call. The writer was stopped mid-fix. The last good commit is `e3b3dd4` (35/35, GUARD PASS). Diff `e3b3dd4..70365d6` to finish the fix, or reset the task branch to `e3b3dd4` plus the review file and redo the two MEDIUM fixes.
+- `feat/010-t15-redo`: **the WIP tip `994d479` fails all 37 tests**. The generated main panics `index out of range` at binder.byn:435, because `t15ParameterOwner` returns -1 inside `bindParameterDefault` right after the new `t15CaptureTypes` call. The writer was stopped mid-fix. The last good commit is `de3ef1c` (35/35, GUARD PASS). Diff `de3ef1c..994d479` to finish the fix, or reset the task branch to `de3ef1c` plus the review file and redo the two MEDIUM fixes.
 - Base `feat/010-self-hosted-semantics`: the T10 and T4 classes pass after the ctx.byn sections were added. The full SelfhostSemantics suite was 234/234 on the old tip; it was not re-run after Q714.

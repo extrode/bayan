@@ -1,0 +1,183 @@
+// bayan-emit: the self-hosted C emitter (spec 011). The arguments of `bayan-check` plus `--mode` and `--tests`,
+// the shared CLI pieces of `semantics/cli.byn` (D2), then `lower` and `cprint.emit`. The C# it follows:
+// `CliApp.EmitC` (CliApp.cs:409), the compilation of `RunTests.Execute` (RunTests.cs:70-83: the input alone,
+// its directory as package root, tests with `*.test.byn`) and `bayan build --emit-c` (CliTests.cs:276-283).
+//
+//     bayan-emit [--ascii] [--color <when>] [--mode debug|safe|fast] [--tests] <path>
+//                                    the C `bayan build --emit-c <path>` writes, on stdout
+//     bayan-emit [--mode m] [--tests] --package <dir> <file>
+//                                    `<file>` compiled alone with `<dir>` as package root, as `RunTests` does
+//     bayan-emit [--mode m] --many <dir>
+//                                    `== <name>` and, for every `*.byn` in `<dir>` in name order, its
+//                                    `--package <dir>` output (`--tests` for `*.test.byn`), then `exit <n>`
+//                                    when that input's exit is not 0
+//     bayan-emit [--mode m] --time <path>
+//                                    the nanoseconds spent in `lower` and `cprint.emit` on stdout, and
+//                                    `lower … emit …` on stderr
+//
+// Paths are absolute (R1): Bayan has no current directory (Q571).
+
+import lexer
+import semantics
+import emitter.cprint
+
+type CompilationOptions = semantics.CompilationOptions
+type T26Options = semantics.T26Options
+
+const exitOk: i32 = 0
+const exitFailure: i32 = 1
+const exitUsage: i32 = 2
+
+i32 usage() {
+    Io.stderr.write("usage: bayan-emit [--ascii] [--color <when>] [--mode debug|safe|fast] [--tests] <path> | [--mode m] [--tests] --package <dir> <file> | [--mode m] --many <dir> | [--mode m] --time <path>\n")
+    return exitUsage
+}
+
+/// CliApp.cs:409 `EmitC` on a compiled program.
+public string t12Emit(ref semantics.Ctx c, by string mode) uses alloc {
+    var l = LCtx {}
+    let program = lower(ref c, to: ref l)
+    return cprint.emit(ref c, from: in l.tree, through: in program, by: mode == "debug")
+}
+
+bool t12HasErrors(in semantics.Ctx c) {
+    for d in c.diagnostics {
+        if !d.isWarning { return true }
+    }
+    return false
+}
+
+/// The compilation of `RunTests.Execute` (RunTests.cs:80): `file` alone, `dir` as package root, tests when `tests`.
+semantics.Ctx t12Compile(string dir, at move List<u8> bytes, for string file, by bool tests) {
+    var sources = List<lexer.SourceText>()
+    sources.append(lexer.SourceText.create(Path.fileName(file), from: move bytes))
+    let options = CompilationOptions { includeTests: tests }
+    return semantics.create(from: move sources, at: dir, by: in options)
+}
+
+/// Reports `c` as `CliApp.Compile` does (CliApp.cs:298) and fails as `Failed` does (`build`), or with a bare exit 1 when
+/// `tests` (`Test`, CliApp.cs:605), or emits it to stdout.
+i32 t12Finish(ref semantics.Ctx c, for in T26Options o, by in semantics.T26Symbols symbols, through string mode, as bool tests) {
+    var reported = List<semantics.T26Reported>()
+    semantics.t26Report(in o, by: in symbols, for: ref c, to: ref reported)
+    if t12HasErrors(in c) { return tests ? exitFailure : semantics.t26Failed(in o, from: in reported, by: in symbols) }
+    Io.stdout.write(t12Emit(ref c, by: mode))
+    return exitOk
+}
+
+i32 t12Package(string dir, at string file, by bool tests, through string mode, for in semantics.T26Symbols symbols) {
+    let bytes = Io.readFile(file) catch {
+        Io.stderr.write($"bayan: not found: {file}\n")
+        return exitFailure
+    }
+    var c = t12Compile(dir, at: move bytes, for: file, by: tests)
+    let o = T26Options { path: file }
+    return t12Finish(ref c, for: in o, by: in symbols, through: mode, as: tests)
+}
+
+/// `--many`: every `*.byn` in `dir`, in name order; the shape of `bayan-check --many`. Exits 0: the worst exit that is not 1 (selfhost/semantics/main.byn:102-107), and a `--package` run is 0 or 1.
+i32 t12Many(string dir, by string mode, for in semantics.T26Symbols symbols) {
+    var names = Io.listDir(dir) catch return usage()
+    names.sort()
+    for name in names {
+        unless name.endsWith(".byn") { continue }
+        print($"== {name}")
+        let exit = t12Package(dir, at: $"{dir}/{name}", by: name.endsWith(".test.byn"), through: mode, for: in symbols)
+        if exit != exitOk { print($"exit {exit}") }
+    }
+    return exitOk
+}
+
+/// `--time`: `lower` and `cprint.emit` on the compilation of `path`, the total on stdout (the shape of `bayan-check --time`).
+i32 t12Timed(string path, by string mode, through bool ascii) {
+    let symbols = semantics.t26Symbols(ascii)
+    var args = List<string>()
+    args.append(path)
+    let o = semantics.t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return semantics.t26Failed(in o, from: in reported, by: in symbols) }
+    var l = LCtx {}
+    let t0 = Io.monotonicNanos()
+    let program = lower(ref c, to: ref l)
+    let t1 = Io.monotonicNanos()
+    let text = cprint.emit(ref c, from: in l.tree, through: in program, by: mode == "debug")
+    let t2 = Io.monotonicNanos()
+    print($"{t2 - t0}")
+    Io.stderr.write($"lower {t1 - t0} emit {t2 - t1} bytes {text.length}\n")
+    return exitOk
+}
+
+i32 main(ReadOnlySpan<string> args) {
+    var ascii = false
+    var mode = "safe"
+    var tests = false
+    var package: string? = null
+    var many: string? = null
+    var time: string? = null
+    var rest = List<string>()
+    var i: i64 = 0
+    while i < args.length {
+        let a = args[i]
+        if a == "--" {
+            // CliApp.cs:325 `TakeGlobalOptions` and :163 `ParseBuildOptions` stop here: the rest is the program's.
+            for k in i..args.length { rest.append(args[k]) }
+            break
+        } else if a == "--ascii" {
+            ascii = true
+        } else if a == "--color" || a.startsWith("--color=") {
+            // CliApp.cs:315 `TakeGlobalOptions`: the value is checked and paints nothing (plain style only).
+            var value = ""
+            if a == "--color" && i + 1 < args.length {
+                i += 1
+                value = args[i]
+            } else if a != "--color" {
+                value = a["--color=".length..a.length]
+            }
+            if value != "auto" && value != "always" && value != "never" {
+                Io.stderr.write($"bayan: unknown color setting `{value}` (expected auto, always or never)\n")
+                return exitUsage
+            }
+        } else if a == "--mode" && i + 1 < args.length {
+            i += 1
+            mode = args[i]
+        } else if a == "--tests" {
+            tests = true
+        } else if a == "--package" && i + 1 < args.length {
+            i += 1
+            package = args[i]
+        } else if a == "--many" && i + 1 < args.length {
+            i += 1
+            many = args[i]
+        } else if a == "--time" && i + 1 < args.length {
+            i += 1
+            time = args[i]
+        } else {
+            rest.append(a)
+        }
+        i += 1
+    }
+    if mode != "debug" && mode != "safe" && mode != "fast" {
+        Io.stderr.write($"bayan: unknown mode `{mode}` (expected debug, safe or fast)\n")
+        return exitUsage
+    }
+    let symbols = semantics.t26Symbols(ascii)
+    if (many is { } dir) { return rest.length == 0 ? t12Many(dir, by: mode, for: in symbols) : usage() }
+    if (time is { } path) { return rest.length == 0 ? t12Timed(path, by: mode, through: ascii) : usage() }
+    if (package is { } root) {
+        return rest.length == 1 ? t12Package(root, at: rest[0], by: tests, through: mode, for: in symbols) : usage()
+    }
+    let o = semantics.t26ParseBuildOptions(in rest, allowSpans: false) ?? return exitUsage
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var c = semantics.t26Compile(in o, by: in symbols, to: ref reported, through: ref ok, includeTests: tests)
+    unless ok { return tests ? exitFailure : semantics.t26Failed(in o, from: in reported, by: in symbols) }
+    // CliApp.cs:464 `RefuseLibrary` (`Build`; `Test` has none); `c.library` and `c.packageName` are the manifest's kind and name.
+    if !tests && c.library {
+        Io.stderr.write($"bayan: `{c.packageName}` is a library, so there is no program to build; `bayan test` runs its tests\n")
+        return exitUsage
+    }
+    Io.stdout.write(t12Emit(ref c, by: mode))
+    return exitOk
+}

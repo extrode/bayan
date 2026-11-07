@@ -1,0 +1,12 @@
+// `Fs.fileExists` reads the file system, so a public function calling it declares `fs` (BYN6002).
+public bool undeclaredExists(string p) {
+    return Fs.fileExists(p)
+}
+
+public bool declaredExists(string p) uses fs {
+    return Fs.fileExists(p)
+}
+
+void main() {
+    print($"{undeclaredExists("/a")} {declaredExists("/b")}")
+}

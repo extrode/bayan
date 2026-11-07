@@ -284,6 +284,7 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
                 then: body,
                 elseBranch: -1,
                 isNever: false,
+                guarded: true,
             }))
         case .whileStmt(let w):
             let target = t16Target(ref c, to: labelTarget, isLoop: true)
@@ -340,10 +341,12 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
             return bindAssert(ref b, through: ref c, for: in a.value)
         case .becomeStmt(let bcm):
             return bindBecome(ref b, through: ref c, for: in bcm.value)
+        // coverage-exempt: Q765 through `BErrorStmt { span: err.value.span }`
         case .emptyStmt(let em):
             return addBlock(ref c, from: BBlock { span: em.value.span, statements: List<BStmt>() })
         case .errorStmt(let err):
             return addErrorStmt(ref c, from: BErrorStmt { span: err.value.span })
+        // coverage-exempt: Q765 through `BErrorStmt { span: span }`
         default:
             let span = t15StmtSpan(in stmt)
             report(ref b, through: ref c, for: .unsupported, at: span, by: ("this statement", "", "", "", ""))
@@ -355,21 +358,21 @@ BExpr negate(ref Ctx c, from in parser.Expr syntax, by BExpr cond) {
     let span = parser.exprSpan(in syntax)
     if (exprConstant(in c, for: cond) is { } k) {
         if k.kind == .flag {
-            let lit = addLiteral(ref c, from: BLiteral {
+            let lit = recordSyntax(ref c, for: addLiteral(ref c, from: BLiteral {
                 span: span,
                 type: prim(.bool),
                 value: Constant { kind: .flag, flag: !k.flag },
-            })
+            }), from: in syntax)
             setConstant(ref c, for: lit, to: Constant { kind: .flag, flag: !k.flag })
             return lit
         }
     }
-    return addUnary(ref c, from: BUnary {
+    return recordSyntax(ref c, for: addUnary(ref c, from: BUnary {
         span: span,
         op: .notKeyword,
         operand: cond,
         type: prim(.bool),
-    })
+    }), from: in syntax)
 }
 
 BExpr bindCondition(ref Binder b, through ref Ctx c, for in parser.Expr e) =>
@@ -813,9 +816,10 @@ bool isBorrowedPlace(ref Ctx c, for BExpr e) {
     }
 }
 
-/// The pattern `{ } x`: on an optional, matches a present value and binds it unwrapped.
-BPattern bindPresent(ref Binder b, through ref Ctx c, at TextSpan name, as Type input) {
-    let local = declareLocal(ref b, through: ref c, at: name, as: unwrap(ref c, for: input), for: .patternVariable)
+/// The pattern `{ } x`: on an optional, matches a present value and binds it unwrapped. `discard`: `name` is a tuple
+/// `for try` variable's group, the C# parser's `_` (`declareDiscard`).
+BPattern bindPresent(ref Binder b, through ref Ctx c, at TextSpan name, as Type input, bool discard = false) {
+    let local = discard ? declareDiscard(ref b, through: ref c, at: name, as: unwrap(ref c, for: input), for: .patternVariable) : declareLocal(ref b, through: ref c, at: name, as: unwrap(ref c, for: input), for: .patternVariable)
     c.locals[local].borrowsSubject = true
     return addPropertyPattern(ref c, from: BPropertyPattern {
         span: name,
@@ -867,7 +871,9 @@ BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpT
         report(ref b, through: ref c, for: .mutateTemporary, at: parser.exprSpan(in f.iterable), by: ("", "", "", "", ""),
             label: "a `ReadOnlySpan` cannot be written through")
     }
-    let variable = declareLocal(ref b, through: ref c, at: f.variable, as: element, for: f.kind == .varKeyword ? .varKeyword : .forVariable)
+    // coverage-exempt: Q882
+    let kind: LocalKind = f.kind == .varKeyword ? .varKeyword : .forVariable
+    let variable = f.names.length > 0 ? declareDiscard(ref b, through: ref c, at: f.variable, as: element, for: kind) : declareLocal(ref b, through: ref c, at: f.variable, as: element, for: kind)
     c.locals[variable].borrowsSubject = true
     let body = bindForBody(ref b, through: ref c, for: in f, by: variable, to: target)
     popScope(ref b)

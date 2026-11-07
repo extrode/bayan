@@ -1,0 +1,6 @@
+var sb = StrBuf()
+sb.append("before")
+let s = sb.finish()
+sb.append(" after")
+print(s)
+print(sb.finish())

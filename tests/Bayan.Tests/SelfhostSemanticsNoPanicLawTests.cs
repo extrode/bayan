@@ -17,7 +17,14 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
 {
-    private const int RandomCorpusSize = 10_000;
+    private const int FullRandomCorpusSize = 10_000;
+
+    /// <summary>The quick tier's random inputs (Q748): the first 1,000 of the full corpus, which the seeded generator
+    /// writes in the same order whatever its size. <c>BAYAN_LAW_TIER=full</c> runs all of <see cref="FullRandomCorpusSize"/>.</summary>
+    private const int QuickRandomCorpusSize = 1_000;
+
+    private static int RandomCorpusSize =>
+        Environment.GetEnvironmentVariable("BAYAN_LAW_TIER") == "full" ? FullRandomCorpusSize : QuickRandomCorpusSize;
 
     private const ulong RandomSeed = 0x9E3779B97F4A7C15;
 
@@ -62,7 +69,7 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
                          + $"{clock.ElapsedMilliseconds} ms");
         Assert.True(totals.Panicked.Count == 0, $"bayan-check panicked:\n{string.Join("\n", totals.Panicked)}");
         Assert.Equal(totals.Inputs, totals.Compared);
-        Assert.Equal(KnownCSharpThrows, totals.Replaced);
+        Assert.Equal(KnownCSharpThrows.Where(t => !t.StartsWith("random/", StringComparison.Ordinal) || int.Parse(t[7..12]) < RandomCorpusSize), totals.Replaced);
 
         clock.Restart();
         var checkedPaths = CheckCli(flat);
@@ -73,14 +80,9 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
     /// C# counterexamples (Q662): the corpus inputs on which the C# checker itself throws, as
     /// <c>&lt;corpus&gt;/&lt;input&gt;</c>. Each is replaced by an empty input; the test asserts the list exactly, so a
     /// new C# throw fails it. The indices follow <see cref="FlatGoldens"/>'s ordinal file order, so they are the same on every file system.
+    /// Empty since 010 T45: the four Q662 inputs were the <c>Parser.ReportBraceless</c> throw, fixed in C# and in the port.
     /// </summary>
-    private static readonly string[] KnownCSharpThrows =
-    [
-        "random/00189.byn", // Q662: ArgumentOutOfRangeException, SourceText.GetText < Parser.ReportBraceless
-        "random/02199.byn", // Q662: same
-        "random/05136.byn", // Q662: same
-        "random/05466.byn", // Q662: same
-    ];
+    private static readonly string[] KnownCSharpThrows = [];
 
     private sealed class Totals
     {

@@ -1,0 +1,21 @@
+// An arena value returned through two levels, stored through an `out` parameter (Q745), is refused.
+string mk(string s, from Arena a) {
+    return s.copy(to: a)
+}
+
+string mk2(string s, from Arena a) {
+    return mk(s, from: a)
+}
+
+void pass(string s, to out string g) {
+    g = s
+}
+
+void main() {
+    var kept = ""
+    {
+        using let arena = Arena()
+        pass(mk2("ann", from: arena), to: out kept)
+    }
+    print(kept)
+}

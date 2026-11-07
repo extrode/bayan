@@ -282,8 +282,8 @@ public sealed class SelfhostSemanticsT3Tests
         var textViews = new[] { TextViewType.Runes, TextViewType.Utf16, TextViewType.Lines, TextViewType.Parts };
         var textViewNames = new[] { "runes", "utf16", "lines", "parts" };
         for (var i = 0; i < textViews.Length; i++) types.Add((textViews[i], $"textViewType(.{textViewNames[i]})"));
-        var builtins = new[] { BuiltinType.Arena, BuiltinType.StrBuf, BuiltinType.Io, BuiltinType.Hex, BuiltinType.Utf8, BuiltinType.IoStream, BuiltinType.IoInput, BuiltinType.ProcessResult, BuiltinType.Panic, BuiltinType.FormatSpec, BuiltinType.Symbol };
-        var builtinNames = new[] { "arena", "strBuf", "io", "hex", "utf8", "ioStream", "ioInput", "processResult", "panic", "formatSpec", "symbol" };
+        var builtins = new[] { BuiltinType.Arena, BuiltinType.StrBuf, BuiltinType.Io, BuiltinType.Hex, BuiltinType.Utf8, BuiltinType.IoStream, BuiltinType.IoInput, BuiltinType.ProcessResult, BuiltinType.Panic, BuiltinType.FormatSpec, BuiltinType.Symbol, BuiltinType.Path, BuiltinType.Target };
+        var builtinNames = new[] { "arena", "strBuf", "io", "hex", "utf8", "ioStream", "ioInput", "processResult", "panic", "formatSpec", "symbol", "path", "target" };
         for (var i = 0; i < builtins.Length; i++) types.Add((builtins[i], $"builtinType(.{builtinNames[i]})"));
         types.Add((pointA, "structTypeOf(s0)"));
         types.Add((box, "structTypeOf(s1)"));

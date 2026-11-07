@@ -1,0 +1,21 @@
+// While finish() or view still lends a StrBuf's text, insert and take are refused (Q745).
+void insertAfterFinish() {
+    var sb = StrBuf()
+    sb.append("a")
+    let s = sb.finish()
+    sb.insert("b", at: 0)
+    print(s)
+}
+
+void takeAfterView() {
+    var sb = StrBuf()
+    sb.append("a")
+    let s = sb.view
+    let t = sb.take()
+    print(s)
+}
+
+void main() {
+    insertAfterFinish()
+    takeAfterView()
+}

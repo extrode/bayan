@@ -9,19 +9,27 @@ import lexer
 import parser
 
 /// The C# `CompilationOptions` record.
-struct CompilationOptions {
-    bool includeTests = false
-    bool library = false
-    bool skipOwnershipCheck = false
-    List<string>? capabilities = null
-    string? packageName = null
+public struct CompilationOptions {
+    public bool includeTests = false
+    public bool library = false
+    public bool skipOwnershipCheck = false
+    public List<string>? capabilities = null
+    public string? packageName = null
+    public string? target = null
+}
+
+/// C# `HostTarget.Split` (HostTarget.cs): the `Target.os` and `Target.arch` of a target name; `wasm32` is `wasi`/`wasm32`.
+public (string os, string arch) hostTargetSplit(string target) uses alloc {
+    if target == "wasm32" { return (os: "wasi", arch: "wasm32") }
+    if (target.position("-") is { } dash) { return (os: $"{target[0..dash]}", arch: $"{target[(dash + 1)..target.length]}") }
+    return (os: "", arch: "")
 }
 
 
 /// The C# `_testCases` value: the arguments of the test's first `@cases` attribute (`attribute`) that are cases.
-struct TestCases {
-    i64 attribute
-    List<i64> args
+public struct TestCases {
+    public i64 attribute
+    public List<i64> args
 }
 
 /// The identity of top-level declaration `declIndex` of `file` (the C# `Decl` reference, as a map key).
@@ -31,7 +39,7 @@ i64 declKey(FileId file, at i64 declIndex) => (file << 32) | declIndex
 
 /// Compiles a file or a directory. A file's module is its directory, but only that file is read unless
 /// `wholeDirectory` is set. `path` must be absolute: Bayan has no current directory (Q571).
-Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory = true) {
+public Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory = true) uses alloc, clock, fs {
     let full = t11FullPath(path)
     let isDir = t11DirectoryExists(full)
     let dir = isDir ? full : t11DirectoryName(full)
@@ -51,7 +59,7 @@ Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory 
 
 /// Compiles a project: the entry module is `src/<entryModule>/`, imports resolve under `src/`, and with tests
 /// every `tests/*.test.byn` joins the entry module. Files are named relative to the project root.
-Ctx fromProject(string root, for string entryModule, by in CompilationOptions options) {
+public Ctx fromProject(string root, for string entryModule, by in CompilationOptions options) uses alloc, clock, fs {
     let src = t11Combine(root, by: "src")
     let entry = t11Combine(src, by: entryModule)
     var files = List<string>()
@@ -67,14 +75,14 @@ Ctx fromProject(string root, for string entryModule, by in CompilationOptions op
         for f in found { files.append(f) }
     }
     var sources = List<lexer.SourceText>()
-    for f in files { sources.append(lexer.SourceText.create(t11RelativePath(root, to: f), from: t11ReadAllBytes(f))) }
+    for f in files { sources.append(lexer.SourceText.create(t11RelativePath(root, to: f).replaced("\\", by: "/"), from: t11ReadAllBytes(f))) }
     return create(from: move sources, at: src, by: in options, displayRoot: root)
 }
 
 // ── Compilation.cs:100 Create ───────────────────────────────────────────────────
 
 /// Compiles `entryFiles` as the entry module; imports resolve under `packageRoot`.
-Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, by in CompilationOptions options, string? displayRoot = null) {
+public Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, by in CompilationOptions options, string? displayRoot = null) uses alloc, clock, fs {
     var capabilities: List<string>? = null
     if (options.capabilities is { } caps) { capabilities = copyStrings(in caps) }
     var c = Ctx {
@@ -85,6 +93,7 @@ Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, b
         library: options.library,
         capabilities: move capabilities,
         packageName: options.packageName ?? "",
+        target: options.target,
         packageRoot: packageRoot,
         displayRoot: displayRoot ?? packageRoot,
         includeTests: options.includeTests,
@@ -92,6 +101,7 @@ Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, b
     }
     var clock = Io.monotonicNanos()
     c.entryModule = loadModule(ref c, for: "main", at: packageRoot, from: move entryFiles, by: -1)
+    t11OrderModules(ref c)
     for f in copyIds(in c.modules[c.entryModule].files) { c.files[f].isEntry = true }
     c.parseTime = Io.monotonicNanos() - clock
     // Syntax errors stop here: binding a broken tree mostly reports their echoes.
@@ -172,6 +182,22 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
             })
             hasError = true
         }
+        // The line-join lint (BYN5103) is a warning the C# compilation adds after the tree's diagnostics.
+        for d in parser.lintLineJoins(ref p) {
+            addDiag(ref c, by: Diag {
+                code: d.code,
+                file: fileId,
+                span: d.span,
+                message: d.message,
+                label: d.label,
+                help: d.help,
+                isWarning: true,
+                hasFix: d.hasFix,
+                fixSpan: d.fixSpan,
+                fixReplacement: d.fixReplacement,
+                related: List<Related>(),
+            })
+        }
         c.files.append(SourceFile {
             path: path,
             displayPath: path,
@@ -209,17 +235,71 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
     return module
 }
 
+/// Compilation.cs:163-181 `LoadModule`: `Modules.Add(module)` (:180) runs after `ResolveImport` (:177), so `Modules`
+/// lists an imported module before its importer, and every pass over `Modules` (field defaults, Compilation.cs:1418-1423)
+/// sees a dependency first. `loadModule` numbers a module on append (:147), before its imports load, so once the entry
+/// module is in, `c.modules` is renumbered into `moduleOrder` (that post-order) and the ModIds held so far follow:
+/// `c.files[*].module`, `c.files[*].imports`, `c.modulesByDir`, `c.entryModule`. A `Mod` holds only its four loading
+/// fields here: `declare` builds the builtin module (`t9Create`) later, and symbols are declared later still.
+void t11OrderModules(ref Ctx c) {
+    var newId = List<ModId>()
+    for _ in 0..c.modules.length { newId.append(-1) }
+    for i in 0..c.moduleOrder.length { newId[c.moduleOrder[i]] = i }
+    var modules = List<Mod>()
+    var byDir = Map<string, ModId>()
+    for m in copyIds(in c.moduleOrder) {
+        modules.append(Mod { name: c.modules[m].name, files: copyIds(in c.modules[m].files), directory: c.modules[m].directory, cName: c.modules[m].cName })
+        byDir[c.modules[m].directory] = modules.length - 1
+    }
+    c.modules = move modules
+    c.modulesByDir = move byDir
+    c.entryModule = newId[c.entryModule]
+    for i in 0..c.moduleOrder.length { c.moduleOrder[i] = i }
+    for f in 0..c.files.length {
+        c.files[f].module = newId[c.files[f].module]
+        // `imports` is keyed by the name each `import` uses (resolveImport:236); a repeated name was reported, not stored.
+        var seen = Map<string, bool>()
+        for m in 0..c.files[f].unit.members.length {
+            switch c.files[f].unit.members[m] {
+                case .importDecl(let node):
+                    let alias = t11Text(in c, from: f, at: node.value.alias ?? node.value.path[node.value.path.length - 1])
+                    if seen.contains(alias) || !c.files[f].imports.contains(alias) { continue }
+                    seen[alias] = true
+                    c.files[f].imports[alias] = newId[c.files[f].imports[alias]]
+                    // Post-order: an import was appended to `moduleOrder` before its importer (a cycle is reported, not stored).
+                    assert c.files[f].imports[alias] < c.files[f].module
+                default:
+                    continue
+            }
+        }
+    }
+    // Every held ModId names the remapped module it came from (Q1034): a file belongs to the module listing it, a
+    // directory maps to the module loaded from it, and the entry module is the one `create` loaded at the package root.
+    var listed = 0
+    for m in 0..c.modules.length {
+        assert c.modulesByDir[c.modules[m].directory] == m
+        for f in copyIds(in c.modules[m].files) { assert c.files[f].module == m }
+        listed += c.modules[m].files.length
+    }
+    assert listed == c.files.length
+    assert c.modulesByDir.length == c.modules.length
+    assert c.modules[c.entryModule].name == "main"
+    assert c.modules[c.entryModule].directory == c.packageRoot
+}
+
 // ── Compilation.cs:146 ResolveImport ────────────────────────────────────────────
 
 void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
     var nameBuf = StrBuf()
-    var dir = c.packageRoot
+    var parts = List<string>()
+    parts.append(c.packageRoot)
     for i in 0..decl.path.length {
         let part = t11Text(in c, from: file, at: decl.path[i])
         if i > 0 { nameBuf.append(".") }
         nameBuf.append(part)
-        dir = t11Combine(dir, by: part)
+        parts.append(part)
     }
+    let dir = Path.combine(parts.span)
     let name = $"{nameBuf.finish()}"
     let span = TextSpan.fromBounds(decl.path[0].start, until: decl.path[decl.path.length - 1].end)
     let alias = t11Text(in c, from: file, at: decl.alias ?? decl.path[decl.path.length - 1])
@@ -250,7 +330,7 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
             return
         }
         var sources = List<lexer.SourceText>()
-        for f in files { sources.append(lexer.SourceText.create(t11RelativePath(c.displayRoot, to: f), from: t11ReadAllBytes(f))) }
+        for f in files { sources.append(lexer.SourceText.create(t11RelativePath(c.displayRoot, to: f).replaced("\\", by: "/"), from: t11ReadAllBytes(f))) }
         module = loadModule(ref c, for: name, at: dir, from: move sources, by: c.files[file].module)
     }
     if c.files[file].imports.contains(alias) {
@@ -1266,79 +1346,24 @@ List<string> t11ListFiles(string dir) {
     return names
 }
 
-/// The C# `Path.GetDirectoryName` of an absolute `/` path: everything before the last `/` (`/` itself for a
-/// file at the root).
+/// The C# `Path.GetDirectoryName(path)!`.
 string t11DirectoryName(string path) {
-    var last: i64 = -1
-    var i: i64 = 0
-    for b in path.bytes {
-        if b == 0x2F { last = i }
-        i += 1
-    }
-    if last == 0 { return "/" }
-    if last < 0 { return "" }
-    return path[0..last]
+    return Path.directoryName(path) ?? panic("t11DirectoryName: no directory name")
 }
 
-/// The C# `Path.GetFullPath` of an absolute `/` path: .NET's `PathInternal.RemoveRelativeSegments` with root
-/// length 1 drops `//`, `/./` and `/../` segments (`..` unwinds to the previous `/`, never past the root). A
-/// relative path is returned as given (Q571).
+/// The C# `Path.GetFullPath`.
 string t11FullPath(string path) {
-    unless path.startsWith("/") { return path }
-    let n = path.length
-    var acc = ""
-    var run: i64 = 0
-    var i: i64 = 0
-    while i < n {
-        if path.bytes[i] == 0x2F && i + 1 < n {
-            if path.bytes[i + 1] == 0x2F {
-                acc = $"{acc}{path[run..i]}"
-                i += 1
-                run = i
-                continue
-            }
-            if (i + 2 == n || path.bytes[i + 2] == 0x2F) && path.bytes[i + 1] == 0x2E {
-                acc = $"{acc}{path[run..i]}"
-                i += 2
-                run = i
-                continue
-            }
-            if i + 2 < n && (i + 3 == n || path.bytes[i + 3] == 0x2F) && path.bytes[i + 1] == 0x2E && path.bytes[i + 2] == 0x2E {
-                acc = $"{acc}{path[run..i]}"
-                var s = acc.length - 1
-                while s >= 0 && acc.bytes[s] != 0x2F { s -= 1 }
-                // .NET keeps the root's `/` for a final `..` (`s + 1`); with root length 1 the fix below does that.
-                if s < 0 {
-                    acc = ""
-                } else {
-                    acc = acc[0..s]
-                }
-                i += 3
-                run = i
-                continue
-            }
-        }
-        i += 1
-    }
-    acc = $"{acc}{path[run..n]}"
-    // The root's `/` may have been eaten with the first segment.
-    if acc.length < 1 { acc = "/" }
-    return acc
+    return Path.fullPath(path)
 }
 
-/// The C# `Path.Combine(a, b)` for `/` paths.
+/// The C# `Path.Combine(a, b)`.
 string t11Combine(string a, by string b) {
-    if a.length == 0 { return b }
-    if a.endsWith("/") { return $"{a}{b}" }
-    return $"{a}/{b}"
+    return Path.combine(a, b)
 }
 
-/// The C# `Path.GetRelativePath(root, path)` for a `path` under `root`; any other path is returned whole (Q571).
+/// The C# `Path.GetRelativePath(root, path)`.
 string t11RelativePath(string root, to string path) {
-    if path == root { return "." }
-    let prefix = root.endsWith("/") ? root : $"{root}/"
-    if path.startsWith(prefix) { return path[prefix.length..path.length] }
-    return path
+    return Path.relative(root, to: path)
 }
 
 /// Sorts `xs` in ordinal (byte) order, the C# `Order(StringComparer.Ordinal)`.

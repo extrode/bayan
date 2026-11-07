@@ -146,14 +146,14 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null, string? Package = null);
 
     internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
         bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false, coverage = false;
-        string? baseRef = null, run = null;
+        string? baseRef = null, run = null, package = null;
         var only = new List<string>();
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
@@ -224,6 +224,9 @@ public static class CliApp
                 case "-v" or "--verbose" when allowVerbose:
                     verbose = true;
                     break;
+                case "--package" when i + 1 < args.Length:
+                    package = args[++i];
+                    break;
                 default:
                     if (path is not null || args[i].StartsWith('-'))
                     {
@@ -245,7 +248,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run, package);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -278,11 +281,21 @@ public static class CliApp
                 return null;
             }
             c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib,
-                Capabilities: manifest.Capabilities, PackageName: manifest.Name));
+                Capabilities: manifest.Capabilities, PackageName: manifest.Name, Target: o.Target));
+        }
+        else if (o.Package is { } package)
+        {
+            // `--package <root>` (spec 012 Q2): the directory's files (a file alone) are the entry module and imports resolve
+            // under `<root>`, as `Compilation.Create` with `packageRoot` does for the selfhost harnesses.
+            var full = Path.GetFullPath(o.Path);
+            var files = Directory.Exists(full)
+                ? Directory.EnumerateFiles(full, "*.byn").Where(f => includeTests || !f.EndsWith(".test.byn", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToArray()
+                : [full];
+            c = Compilation.Create([.. files.Select(f => SourceText.FromFile(f))], Path.GetFullPath(package), new CompilationOptions(includeTests, Target: o.Target));
         }
         else
         {
-            c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests), wholeDirectory: !IsScript(o.Path));
+            c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests, Target: o.Target), wholeDirectory: !IsScript(o.Path));
         }
         progress.Done();
         Report(o, c.Diagnostics.Items, stderr);
@@ -593,6 +606,13 @@ public static class CliApp
         return ExitOk;
     }
 
+    /// <summary>Removes a scratch directory; one another process already swept or that cannot be removed is not an error.</summary>
+    internal static void DeleteWorkDir(string dir)
+    {
+        try { Directory.Delete(dir, recursive: true); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>A test that runs longer than this (60 s, or <c>$BAYAN_TEST_TIMEOUT_MS</c>) is stopped and reported as timed out.</summary>
     private static TimeSpan TestTimeout =>
         int.TryParse(Environment.GetEnvironmentVariable("BAYAN_TEST_TIMEOUT_MS"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var ms) && ms > 0
@@ -682,7 +702,8 @@ public static class CliApp
                     4 => TestStatus.Pending,
                     _ => TestStatus.Panic,
                 };
-                var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) : (outcome.Stdout + outcome.Stderr).TrimEnd();
+                var captured = (outcome.Stdout + outcome.Stderr).TrimEnd();
+                var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) + (captured.Length > 0 ? "\n" + captured : "") : captured;
                 var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
                 results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
                 var module = Path.GetFileName(ModuleOf(compiled, test));
@@ -741,7 +762,7 @@ public static class CliApp
         }
         finally
         {
-            if (coverageDir is not null) Directory.Delete(coverageDir, recursive: true);
+            if (coverageDir is not null) DeleteWorkDir(coverageDir);
         }
     }
 
@@ -842,7 +863,7 @@ public static class CliApp
         }
         finally
         {
-            work.Delete(recursive: true);
+            DeleteWorkDir(work.FullName);
         }
     }
 
@@ -1051,15 +1072,18 @@ public static class CliApp
         if (coveragePrefix is not null) psi.Environment["BAYAN_COVERAGE"] = coveragePrefix;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         using var p = System.Diagnostics.Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = BoundedCapture.Start(p.StandardOutput.BaseStream);
+        var stderr = BoundedCapture.Start(p.StandardError.BaseStream);
         if (!p.WaitForExit(TestTimeout))
         {
             p.Kill(entireProcessTree: true);
             p.WaitForExit();
-            return new TestOutcome(-1, true, stdout.Result, stderr.Result, clock.Elapsed);
+            // A grandchild may still hold the pipes open; do not wait for them forever.
+            // What was read so far is kept either way.
+            Task.WaitAll([stdout.Completion, stderr.Completion], TimeSpan.FromSeconds(5));
+            return new TestOutcome(-1, true, stdout.Snapshot(), stderr.Snapshot(), clock.Elapsed);
         }
-        return new TestOutcome(p.ExitCode, false, stdout.Result, stderr.Result, clock.Elapsed);
+        return new TestOutcome(p.ExitCode, false, stdout.Completion.Result, stderr.Completion.Result, clock.Elapsed);
     }
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)

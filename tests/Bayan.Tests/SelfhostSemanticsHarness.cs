@@ -82,7 +82,7 @@ public static class SelfhostSemanticsHarness
         if (coverage is not null) return BuildCovered(c, generated, coverage, coverageFiles);
         if (snapshot is not { } dir) return Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
         var compiled = c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>();
-        var skip = SnapshotSkip(compiled, generated, Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT_FILES"));
+        var skip = SnapshotSkip(compiled, generated, Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT_FILES"), root: c.DisplayRoot);
         var schema = Bayan.Testing.Schemata.Build(c, skip);
         var build = Toolchain.Build(CEmitter.Emit(Lowerer.Lower(c, schema.Switches), false), BuildMode.Fast);
         if (build.ExecutablePath is { } binary)
@@ -96,18 +96,22 @@ public static class SelfhostSemanticsHarness
 
     /// <summary>The files a snapshot build carries no sites in: <paramref name="generated"/>, and with
     /// <paramref name="files"/> (<c>BAYAN_SNAPSHOT_FILES</c>) every <paramref name="compiled"/> file it does not list;
-    /// an entry matching no compiled file throws, naming <paramref name="variable"/>.</summary>
-    internal static HashSet<string> SnapshotSkip(IEnumerable<string> compiled, IReadOnlySet<string> generated, string? files, string variable = "BAYAN_SNAPSHOT_FILES")
+    /// an entry on disk that this compilation does not compile is ignored for this build (Q820), and one that does not
+    /// exist throws, naming <paramref name="variable"/>. A relative compiled path (an
+    /// imported module's file, relative to the compilation's <c>DisplayRoot</c>, Compilation.cs:209) resolves against
+    /// <paramref name="root"/>.</summary>
+    internal static HashSet<string> SnapshotSkip(IEnumerable<string> compiled, IReadOnlySet<string> generated, string? files, string variable = "BAYAN_SNAPSHOT_FILES", string? root = null)
     {
         var skip = new HashSet<string>(generated, StringComparer.Ordinal);
         if (files is not { Length: > 0 }) return skip;
         var paths = compiled.ToList();
         var keep = files.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Select(f => Path.GetFullPath(f, Golden.RepoRoot)).ToHashSet(StringComparer.Ordinal);
-        var all = paths.Select(p => Path.GetFullPath(p)).ToHashSet(StringComparer.Ordinal);
-        if (keep.FirstOrDefault(k => !all.Contains(k)) is { } missing)
+        var full = (string p) => root is null ? Path.GetFullPath(p) : Path.GetFullPath(p, root);
+        var all = paths.Select(full).ToHashSet(StringComparer.Ordinal);
+        if (keep.FirstOrDefault(k => !all.Contains(k) && !File.Exists(k)) is { } missing)
             throw new InvalidOperationException($"{variable}: {missing} matches no compiled source");
-        skip.UnionWith(paths.Where(p => !keep.Contains(Path.GetFullPath(p))));
+        skip.UnionWith(paths.Where(p => !keep.Contains(full(p))));
         return skip;
     }
 
@@ -158,7 +162,7 @@ public static class SelfhostSemanticsHarness
     {
         var clock = Stopwatch.StartNew();
         var compiled = c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>();
-        var skip = SnapshotSkip(compiled, generated, files, "BAYAN_COVERAGE_FILES");
+        var skip = SnapshotSkip(compiled, generated, files, "BAYAN_COVERAGE_FILES", c.DisplayRoot);
         var map = Bayan.Testing.CoverageInstrumenter.Instrument(c, skip);
         // A function's lines run from its declaration (a lambda: its body) to the end of its body.
         var functions = c.Modules.SelectMany(m => m.AllFunctions)
@@ -192,7 +196,11 @@ public static class SelfhostSemanticsHarness
             static string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
             File.WriteAllText(wrapper, $"#!/bin/sh\nBAYAN_COVERAGE={Quote(prefix)} exec {Quote(binary)} \"$@\"\n");
             File.SetUnixFileMode(wrapper, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            CoverageBuilds.Add((dir, map, prefix, functions));
+            // An imported module's file is compiled under a path relative to DisplayRoot (Compilation.cs:209); the report
+            // and functions.json name it by its full path, as CliApp.cs:1027 resolves it, so the guard finds it in git.
+            string Full(string p) => Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(c.DisplayRoot, p));
+            CoverageBuilds.Add((dir, map with { Counters = map.Counters.Select(k => k with { File = Full(k.File) }).ToList() }, prefix,
+                functions.Select(f => (Full(f.Path), f.Item2, f.Item3)).ToList()));
             return build with { ExecutablePath = wrapper };
         }
     }

@@ -38,7 +38,7 @@ public static class Keywords
         ("effect", TokenKind.EffectKeyword), ("macro", TokenKind.MacroKeyword), ("select", TokenKind.SelectKeyword),
         ("become", TokenKind.BecomeKeyword), ("fail", TokenKind.FailKeyword), ("law", TokenKind.LawKeyword),
         ("requires", TokenKind.RequiresKeyword), ("because", TokenKind.BecauseKeyword), ("uses", TokenKind.UsesKeyword),
-        ("except", TokenKind.ExceptKeyword), ("provide", TokenKind.ProvideKeyword), ("ensures", TokenKind.EnsuresKeyword),
+        ("except", TokenKind.ExceptKeyword), ("provide", TokenKind.ProvideKeyword),
     ];
 
     // Bucketed by first letter so lookup compares a handful of byte strings and allocates nothing.

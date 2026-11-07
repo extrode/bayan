@@ -1,0 +1,5 @@
+bayan bench 32330daf (Darwin arm64, median of 5 runs, ratio to C, lower is better)
+benchmark bayan                    c                        rust                     zig                      checksum
+hash     240.1 ms (1.05x)         229.5 ms (1.00x)         229.3 ms (1.00x)         231.7 ms (1.01x)         12143377579992967301
+parse    46.5 ms (0.75x)          61.6 ms (1.00x)          33.9 ms (0.55x)          79.9 ms (1.30x)          14091657157103084200
+lexer    9.8 ms (n/a)             n/a (no port)            n/a (no port)            n/a (no port)            -

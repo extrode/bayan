@@ -398,6 +398,29 @@ public sealed class ParserTests
         Assert.Equal(DeferKind.Always, defer.Kind);
     }
 
+    /// <summary>Inputs that once threw: a C# primitive name as the file's first token, a braceless body cut off by the end of the
+    /// file, and an unclosed condition group whose end lands on the token buffer's last slot.</summary>
+    [Theory]
+    [InlineData("int()fails")]
+    [InlineData("int(\"\"{])fails")]
+    [InlineData("if(/*")]
+    [InlineData("if(\u0017")]
+    [InlineData("while(\u0017")]
+    [InlineData("unless ((((((((((((((((((()")]
+    public void TruncatedInputReportsWithoutThrowing(string text) =>
+        Assert.Contains(Parse(text).Diagnostics, d => d.IsError);
+
+    /// <summary>A braceless body that takes no token before <c>}</c>: the header's fix takes the braces too, so applied alone it parses.</summary>
+    [Theory]
+    [InlineData("void main() {\n    if (x) }\n", "BYN1017")]
+    [InlineData("void main() {\n    unless (!x) }\n", "BYN1007")]
+    public void AnEmptyBracelessBodyHeaderFixParses(string text, string code)
+    {
+        var fix = Assert.Single(Parse(text).Diagnostics, d => d.Code == code).Fix!;
+        var fixedText = text[..fix.Span.Start] + fix.Replacement + text[fix.Span.End..];
+        Assert.DoesNotContain(Parse(fixedText).Diagnostics, d => d.Code.StartsWith("BYN1", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void EveryTokenSequenceTerminates()
     {
@@ -408,5 +431,24 @@ public sealed class ParserTests
             var parts = Enumerable.Range(0, random.Next(1, 12)).Select(_ => fragments[random.Next(fragments.Length)]);
             Parse(string.Join(' ', parts));
         }
+    }
+
+    /// <summary>BYN5103 finds each joined line's statement start once, so a long chain or a long switch lints in linear time.</summary>
+    [Theory]
+    [InlineData("chain")]
+    [InlineData("switch")]
+    public void TheLineJoinLintIsLinear(string shape)
+    {
+        static string Source(string shape, int n) => shape == "chain"
+            ? "let n = s\n" + string.Concat(Enumerable.Repeat("    .x\n", n)) + ".y\n"
+            : "let r = v switch {\n" + string.Concat(Enumerable.Repeat("    i => a\n        .x,\n", n)) + "    _ => a\n    .x,\n}\n";
+        static string Lints(SyntaxTree tree) => string.Join("\n", tree.Lints.Select(d => $"{d.Code} {d.Fix!.Replacement.Length} {d.Label}"));
+        var expected = shape == "chain" ? "BYN5103 4 joins the statement on line 1" : "BYN5103 8 joins the statement on line 2";
+        Assert.Equal(expected, Lints(Parse(Source(shape, 100))));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var tree = Parse(Source(shape, shape == "chain" ? 20000 : 10000));
+        watch.Stop();
+        Assert.Equal(expected, Lints(tree));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"parsed in {watch.Elapsed}");
     }
 }

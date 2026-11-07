@@ -32,6 +32,9 @@ public sealed record BoundLiteral(Node Syntax, TypeSymbol Type, ConstantValue Va
 /// <summary>A string literal where a <c>Symbol</c> is expected: an entry of the program's literal table, fixed at compile time (spec 008 R2).</summary>
 public sealed record BoundSymbolLiteral(Node Syntax, string Text) : BoundExpr(Syntax, BuiltinType.Symbol);
 
+/// <summary><c>Target.os</c> (or <c>Target.arch</c>) of a build with no <c>--target</c>: not a constant, the C preprocessor resolves it so the emitted C is host-neutral.</summary>
+public sealed record BoundHostTarget(Node Syntax, bool IsOs) : BoundExpr(Syntax, PrimitiveType.String);
+
 /// <summary>The default (zero) value of a type, or <c>null</c> of an optional.</summary>
 public sealed record BoundDefault(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
@@ -84,6 +87,7 @@ public enum BuiltinMember
     OwnedValue,
     IoWrite,
     IoReadAll,
+    IoReadAllBytes,
     EnumName, EnumOrdinal,
     /// <summary>A data-enum field; the argument is the field index.</summary>
     EnumField,

@@ -1,0 +1,8 @@
+// os: unix
+// `Path.combine(a, b)` on Unix paths: a rooted second part wins, empty parts are skipped, a trailing separator is not doubled; Windows rules are in `path-windows-combine`.
+string join(string a, to string b) uses alloc => Path.combine(a, b)
+
+let pairs = [("/a", "b"), ("/a/", "b"), ("a", "b"), ("/a", "/b"), ("", "b"), ("a", ""), ("", ""), ("/", "b"), ("a//", "b"), ("/a", "b/c"), ("a", "../b"), ("x y", "é")]
+for (a, b) in pairs {
+    print($"[{a}] [{b}] -> [{join(a, to: b)}]")
+}

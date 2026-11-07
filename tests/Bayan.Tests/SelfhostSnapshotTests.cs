@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using Bayan.Semantics;
+using Bayan.Syntax.Text;
 using Xunit.Abstractions;
 
 namespace Bayan.Tests;
@@ -150,6 +152,38 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.Contains(Path.Combine(Golden.RepoRoot, "selfhost", "nope.byn") + " matches no compiled source", e.Message);
     }
 
+    /// <summary>Q820: a listed file that exists but is not in this compilation (the guard lists every changed file to
+    /// every build) is ignored for this build, so every compiled file is skipped; the compiled paths are the C# compilation's,
+    /// as <c>BuildCovered</c> takes them. Break-test: drop <c>!File.Exists(k)</c>.</summary>
+    [Fact]
+    public void SnapshotFilesOnDiskButNotCompiledAreIgnored()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "t13-tests", "snapshot-skip");
+        Directory.CreateDirectory(dir);
+        var main = Path.Combine(dir, "main.byn");
+        File.WriteAllText(main, "i64 one() => 1\nprint($\"{one()}\")\n");
+        var c = Compilation.Create([SourceText.FromFile(main)], dir);
+        Assert.False(c.Diagnostics.HasErrors);
+        var compiled = c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>().Distinct().ToList();
+        Assert.Contains(main, compiled);
+        var none = new HashSet<string>(StringComparer.Ordinal);
+        Assert.True(File.Exists(Path.Combine(Golden.RepoRoot, "selfhost", "parser", "decls.byn")));
+        var skip = SelfhostSemanticsHarness.SnapshotSkip(compiled, none, "selfhost/parser/decls.byn", root: c.DisplayRoot);
+        Assert.Equal(compiled.Order(StringComparer.Ordinal), skip.Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>An imported module's file is compiled under a path relative to the compilation's <c>DisplayRoot</c>;
+    /// <c>SnapshotSkip</c> resolves it against the root it is given, not the working directory.
+    /// Break-test: resolve with <c>Path.GetFullPath(p)</c> again.</summary>
+    [Fact]
+    public void RelativeModulePathsResolveAgainstTheRoot()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "selfhost");
+        string[] compiled = [Path.Combine(root, "emitter", "a.byn"), "emitter/cprint/common.byn"];
+        var none = new HashSet<string>(StringComparer.Ordinal);
+        Assert.Equal([compiled[0]], SelfhostSemanticsHarness.SnapshotSkip(compiled, none, "selfhost/emitter/cprint/common.byn", root: root));
+    }
+
     /// <summary>A recording whose <c>dotnet test</c> fails (here every build throws on an unknown
     /// <c>BAYAN_SNAPSHOT_FILES</c> entry) is not a recording: <see cref="Record"/> fails on the exit code.
     /// Break-test (F3): drop <see cref="Record"/>'s exit-code assert.</summary>
@@ -182,6 +216,9 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         foreach (var a in new[] { "test", typeof(SelfhostSnapshotTests).Assembly.Location, "--filter", filter }) dotnet.ArgumentList.Add(a);
         dotnet.Environment["BAYAN_SNAPSHOT"] = dir;
         dotnet.Environment["BAYAN_SNAPSHOT_FILES"] = scope;
+        // one mode per run: a guard's coverage run must not reach the recording, or BuildFast refuses both (Q820)
+        dotnet.Environment.Remove("BAYAN_COVERAGE");
+        dotnet.Environment.Remove("BAYAN_COVERAGE_FILES");
         var (exit, text) = Exec(dotnet, TimeSpan.FromMinutes(10));
         Assert.True(exit == 0, $"recording exited {exit}:\n{text}");
         var runs = File.ReadAllLines(Path.Combine(dir, "runs.jsonl")).Select(l => JsonNode.Parse(l)!).ToList();

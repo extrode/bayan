@@ -1,0 +1,13 @@
+warning BYN5103: a line starting with `.` joins the statement above; indent it deeper
+
+  11 │ .green
+     │ ^ joins the statement on line 10
+     │
+  help: indent it deeper than the line its statement starts on
+     │ 11 │     .green
+     │    │ ++++
+
+error BYN2003: `green` is not a member of `Color`
+
+  11 │ .green
+     │  ^^^^^

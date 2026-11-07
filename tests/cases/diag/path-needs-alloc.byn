@@ -1,0 +1,21 @@
+// `Path.fileName` and `Path.relative` allocate their results, so a public function calling either declares `alloc`;
+// `Path.isRooted` allocates nothing, so `rooted` declares no effect and checks clean (spec 014).
+public string undeclaredName(string p) {
+    return Path.fileName(p)
+}
+
+public string undeclaredRelative(string from, to string target) {
+    return Path.relative(from: from, to: target)
+}
+
+public string declared(string p) uses alloc {
+    return Path.fileName(p)
+}
+
+public bool rooted(string p) {
+    return Path.isRooted(p)
+}
+
+void main() {
+    print($"{undeclaredName("a/b")} {undeclaredRelative("/a", to: "/a/b")} {declared("c/d")} {rooted("/x")}")
+}

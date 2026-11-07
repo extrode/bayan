@@ -5,8 +5,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="$root/scripts/pinned-bayan.sh"
-tmp="$root/tmp/pinned-bayan-test"
-rm -rf "$tmp"
+mkdir -p "$root/tmp"; tmp="$(mktemp -d "$root/tmp/pinned-bayan-test.XXXXXX")"
 mkdir -p "$tmp/aux"
 trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL: $1" >&2; exit 1; }
@@ -23,6 +22,7 @@ STUB
 chmod +x "$tmp/aux/dotnet"
 export AUX="$tmp/aux" PATH="$tmp/aux:$PATH"
 unset PINNED_BAYAN PINNED_BAYAN_REF
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com  # CI runners have no git identity
 
 r="$tmp/repo"; mkdir -p "$r/src/Bayan.Cli"; cd "$r"
 git init -q -b dev; git config core.hooksPath /dev/null  # a scratch repo: the global hooks refuse commits on dev
@@ -77,6 +77,51 @@ grep -q "no commit for 'nope'" "$tmp/err" || fail "no unknown-ref message: $(cat
 [ "$(PINNED_BAYAN="$bin" "$script")" = "$bin" ] || fail "PINNED_BAYAN was not printed"
 if PINNED_BAYAN="$tmp/none" "$script" 2> "$tmp/err"; then fail "a missing PINNED_BAYAN was accepted"; fi
 grep -q "PINNED_BAYAN=$tmp/none is not an executable" "$tmp/err" || fail "no PINNED_BAYAN message"
+
+# After a build only the 3 most recently used commits stay, the new one among them; a recent build in progress is left alone.
+for d in "$r/.cache/bayan"/*/; do touch -t 202001010000 "$d"; done  # everything built so far is long unused
+for i in 1 2 3 4 5; do mkdir -p "$r/.cache/bayan/fake$i/bin"; touch -t 20200101000$i "$r/.cache/bayan/fake$i"; done
+mkdir -p "$r/.cache/bayan/.build-other-1"
+git checkout -q -b evict race; echo evict > src/Bayan.Cli/stamp; git commit -qam evict; evsha=$(git rev-parse evict)
+PINNED_BAYAN_REF=evict "$script" > "$tmp/out" || fail "the eviction build failed"
+[ -x "$r/.cache/bayan/$evsha/bin/bayan" ] || fail "the new build was evicted"
+[ ! -e "$r/.cache/bayan/$evsha/src" ] || fail "the build's src checkout was kept"
+[ "$(ls "$r/.cache/bayan" | grep -vx CACHEDIR.TAG | wc -l | tr -d ' ')" -le 3 ] || fail "more than 3 cached commits remain: $(ls "$r/.cache/bayan")"
+head -1 "$r/.cache/bayan/CACHEDIR.TAG" | grep -qx "Signature: 8a477f597d28d172789f06886806bc55" || fail "the pinned cache carries no CACHEDIR.TAG"
+[ -d "$r/.cache/bayan/.build-other-1" ] || fail "a recent build in progress was removed"
+git checkout -q feat/x
+
+# Resolving touches the pin, so eviction follows last use; a pin used within 2 hours survives even past the keep count.
+touch -t 202001010000 "$r/.cache/bayan/$evsha"
+PINNED_BAYAN_REF=evict "$script" > /dev/null || fail "resolving the cached pin failed"
+[ -n "$(find "$r/.cache/bayan/$evsha" -maxdepth 0 -mmin -5)" ] || fail "resolving did not touch the pin"
+for i in 1 2 3 4; do mkdir -p "$r/.cache/bayan/recent$i/bin"; done
+git checkout -q -b evict2 evict; echo evict2 > src/Bayan.Cli/stamp; git commit -qam evict2
+PINNED_BAYAN_REF=evict2 "$script" > /dev/null || fail "the second eviction build failed"
+for i in 1 2 3 4; do [ -d "$r/.cache/bayan/recent$i" ] || fail "a pin used within 2 hours was evicted"; done
+git checkout -q feat/x
+
+# A cached pin still tags an untagged cache, and a cache that cannot be tagged is no failure.
+rm -f "$r/.cache/bayan/CACHEDIR.TAG"; nb=$(wc -l < "$AUX/builds.txt")
+PINNED_BAYAN_REF=evict "$script" > /dev/null || fail "resolving the cached pin failed"
+[ "$(wc -l < "$AUX/builds.txt")" = "$nb" ] || fail "the cached pin was rebuilt"
+head -1 "$r/.cache/bayan/CACHEDIR.TAG" | grep -qx "Signature: 8a477f597d28d172789f06886806bc55" || fail "a cache hit did not tag the cache"
+rm -f "$r/.cache/bayan/CACHEDIR.TAG"; chmod u-w "$r/.cache/bayan"
+[ ! -w "$r/.cache/bayan" ] || echo "note: running as root, the untaggable-cache case cannot be tested" >&2
+out=$(PINNED_BAYAN_REF=evict "$script") || { chmod u+w "$r/.cache/bayan"; fail "an untaggable cache made the script fail"; }
+chmod u+w "$r/.cache/bayan"
+[ "$out" = "$r/.cache/bayan/$evsha/bin/bayan" ] || fail "an untaggable cache printed '$out'"
+[ -z "$(ls -a "$r/.cache/bayan" | grep "^CACHEDIR.TAG\.")" ] || fail "a temporary tag was left behind"
+
+# A leftover temporary tag is not counted as a cached commit: a fresh one stays, a stale one goes.
+c="$r/.cache/bayan"; : > "$c/CACHEDIR.TAG.11111"; : > "$c/CACHEDIR.TAG.22222"; touch -t 202001010000 "$c/CACHEDIR.TAG.22222"
+for d in "$c"/*/; do touch -t 202001010000 "$d"; done
+git checkout -q -b evict3 evict; echo evict3 > src/Bayan.Cli/stamp; git commit -qam evict3
+PINNED_BAYAN_REF=evict3 "$script" > /dev/null || fail "the third eviction build failed"
+[ "$(ls "$c" | grep -v '^CACHEDIR' | wc -l | tr -d ' ')" = 3 ] || fail "a temporary tag took a cached commit's place: $(ls "$c")"
+[ -f "$c/CACHEDIR.TAG.11111" ] || fail "a fresh temporary tag was removed"
+[ ! -e "$c/CACHEDIR.TAG.22222" ] || fail "a stale temporary tag was kept"
+rm -f "$c/CACHEDIR.TAG.11111"; git checkout -q feat/x
 
 # Wiring: the mutation step runs the pinned bayan; CI's mutation run pins the commit it checked out.
 grep -q 'pinned-bayan.sh' "$root/scripts/selfhost/mutation-step.sh" || fail "mutation-step.sh does not use pinned-bayan.sh"

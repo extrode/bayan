@@ -90,7 +90,7 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Enum(ref c, from: alignSource, by: m)
     let _ = t9Enum(ref c, from: comparisonSource, by: m)
     let _ = t9Make(ref c, by: m, for: "print", as: .print, to: prim(.void), from: t9Two("text", as: prim(.string), for: "to", to: enumTypeOf(stream)), at: "print")
-    let _ = t9Make(ref c, by: m, for: "panic", as: .panic, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "panic")
+    c.builtinPanic = t9Make(ref c, by: m, for: "panic", as: .panic, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "panic")
     let _ = t9Make(ref c, by: m, for: "todo", as: .todo, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "todo")
 
     let logLevel = t9Enum(ref c, from: logLevelSource, by: m)
@@ -98,7 +98,7 @@ ModId t9Create(ref Ctx c) {
     let _ = t9Make(ref c, by: m, for: "Arena", as: .arenaNew, to: builtinType(.arena), from: List<BuiltinParameter>(), at: "Arena")
     let bufferSpan = internSpan(ref c, by: prim(.u8), readOnly: false)
     let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufNew, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf(buffer)")
-    let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufGrow, to: builtinType(.strBuf), from: List<BuiltinParameter>(), at: "StrBuf")
+    c.builtinStrBufGrow = t9Make(ref c, by: m, for: "StrBuf", as: .strBufGrow, to: builtinType(.strBuf), from: List<BuiltinParameter>(), at: "StrBuf")
     let _ = t9Make(ref c, by: m, for: "StrBuf.over", as: .strBufOver, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf.over")
     // The value's type varies: the binder types each call (see `BindOwned`).
     let _ = t9Make(ref c, by: m, for: "Owned", as: .ownedNew, to: errorType(), from: List<BuiltinParameter>(), at: "Owned")
@@ -111,6 +111,9 @@ ModId t9Create(ref Ctx c) {
     let _ = t9MakeIo(ref c, by: m, for: "readFile", as: .ioReadFile, to: internList(ref c, by: prim(.u8)), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "readText", as: .ioReadText, to: prim(.string), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "writeFile", as: .ioWriteFile, to: prim(.void), from: t9Two("path", as: prim(.string), for: "bytes", to: roBytes), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "remove", as: .ioRemove, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "createDirectory", as: .ioCreateDirectory, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "removeDirectory", as: .ioRemoveDirectory, to: prim(.void), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "listDir", as: .ioListDir, to: internList(ref c, by: prim(.string)), from: t9One("path", as: prim(.string)), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "run", as: .ioRun, to: builtinType(.processResult), from: t9Two("program", as: prim(.string), for: "args", to: roStrings), at: ioError)
     let _ = t9MakeIo(ref c, by: m, for: "runBatch", as: .ioRunBatch, to: builtinType(.processResult), from: t9Two("path", as: prim(.string), for: "args", to: roStrings), at: ioError)
@@ -133,6 +136,15 @@ ModId t9Create(ref Ctx c) {
     t9Fails(ref c, for: hexDecode, by: parseError)
     let _ = t9Make(ref c, by: m, for: "intern", as: .symbolIntern, to: builtinType(.symbol), from: t9One("text", as: prim(.string)), at: "Symbol.intern")
     let _ = t9Make(ref c, by: m, for: "invalidUtf8At", as: .stringInvalidUtf8At, to: internOptional(ref c, by: prim(.i64)), from: t9One("bytes", as: roBytes), at: "string.invalidUtf8At")
+    let _ = t9Make(ref c, by: m, for: "isRooted", as: .pathIsRooted, to: prim(.bool), from: t9One("path", as: prim(.string)), at: "Path.isRooted")
+    let _ = t9Make(ref c, by: m, for: "relative", as: .pathRelative, to: prim(.string), from: t9Two("from", as: prim(.string), for: "to", to: prim(.string)), at: "Path.relative")
+    let _ = t9Make(ref c, by: m, for: "fileName", as: .pathFileName, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fileName")
+    let _ = t9Make(ref c, by: m, for: "directoryName", as: .pathDirectoryName, to: internOptional(ref c, by: prim(.string)), from: t9One("path", as: prim(.string)), at: "Path.directoryName")
+    let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombine, to: prim(.string), from: t9Two("path1", as: prim(.string), for: "path2", to: prim(.string)), at: "Path.combine")
+    let _ = t9Make(ref c, by: m, for: "combine", as: .pathCombineSpan, to: prim(.string), from: t9One("paths", as: internSpan(ref c, by: prim(.string), readOnly: true)), at: "Path.combine(paths)")
+    let _ = t9Make(ref c, by: m, for: "fullPath", as: .pathFullPath, to: prim(.string), from: t9One("path", as: prim(.string)), at: "Path.fullPath")
+    let _ = t9Make(ref c, by: m, for: "get", as: .envGet, to: internOptional(ref c, by: prim(.string)), from: t9One("name", as: prim(.string)), at: "Env.get")
+    let _ = t9Make(ref c, by: m, for: "fileExists", as: .fsFileExists, to: prim(.bool), from: t9One("path", as: prim(.string)), at: "Fs.fileExists")
 
     // The iteration interfaces are declared from source too; the declare pass declares their members like a user interface's.
     let iteration = t9Parse(ref c, for: iterationSource, by: m)
@@ -274,6 +286,30 @@ InterfaceId findInterface(ref Ctx c, for string name) {
     return -1
 }
 
+/// A static member of `Path`, or -1.
+FuncId findPath(ref Ctx c, for string name) {
+    switch name {
+        case "isRooted" or "relative" or "fileName" or "directoryName" or "combine" or "fullPath": return t9Function(ref c, for: $"Path.{name}")
+    }
+    return -1
+}
+
+/// A static member of `Env`, or -1.
+FuncId findEnv(ref Ctx c, for string name) {
+    switch name {
+        case "get": return t9Function(ref c, for: "Env.get")
+    }
+    return -1
+}
+
+/// A static member of `Fs`, or -1.
+FuncId findFs(ref Ctx c, for string name) {
+    switch name {
+        case "fileExists": return t9Function(ref c, for: "Fs.fileExists")
+    }
+    return -1
+}
+
 /// A static member of `string`, or -1.
 FuncId findString(ref Ctx c, for string name) {
     switch name {
@@ -307,7 +343,7 @@ FuncId intParse(ref Ctx c, for PrimitiveKind t) {
 /// A static member of `Io`, or -1.
 FuncId findIo(ref Ctx c, for string name) {
     switch name {
-        case "readFile" or "readText" or "writeFile" or "listDir" or "run" or "runBatch" or "monotonicNanos" or "stdout" or "stderr" or "stdin":
+        case "readFile" or "readText" or "writeFile" or "remove" or "createDirectory" or "removeDirectory" or "listDir" or "run" or "runBatch" or "monotonicNanos" or "stdout" or "stderr" or "stdin":
             return t9Function(ref c, for: $"Io.{name}")
     }
     return -1
@@ -567,9 +603,10 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
                     }
                 case .ioStream:
                     if name == "write" { return BuiltinMethod { member: .ioWrite, parameters: t9One("text", as: prim(.string)), returns: prim(.void) } }
-                // The binder wraps the result in `Result<string, IoError>`.
+                // The binder wraps the result in `Result<string, IoError>` (`Result<List<u8>, IoError>` for `readAllBytes`).
                 case .ioInput:
                     if name == "readAll" { return BuiltinMethod { member: .ioReadAll, parameters: List<BuiltinParameter>(), returns: prim(.string) } }
+                    if name == "readAllBytes" { return BuiltinMethod { member: .ioReadAllBytes, parameters: List<BuiltinParameter>(), returns: internList(ref c, by: prim(.u8)) } }
                 default: return null
             }
         case .optional:
@@ -588,7 +625,7 @@ List<string> t9Candidates() => [
     "length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
     "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip",
     "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append",
-    "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message",
+    "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "readAllBytes", "name", "ordinal", "exitCode", "stdout", "stderr", "message",
     "radix", "debug", "width", "fill", "align", "digits",
 ]
 

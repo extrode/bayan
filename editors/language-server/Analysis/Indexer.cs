@@ -6,26 +6,36 @@ public enum SymbolKind : byte
     Function, Field, Case, State, Const, Local, Param, Test,
 }
 
-public sealed class Symbol
+public class Symbol
 {
     public required string Name;
     public required SymbolKind Kind;
     public string? Container;      // enclosing type name for members
     public string? TypeName;       // declared type of fields, locals, params
     public required string Detail; // header line as written
-    public string? Doc;            // joined `///` lines
     public int NameStart;          // offset of the name
     public int DeclStart;          // offset of the header
     public int DeclEnd;            // end of the body (or header)
-    public int InitStart = -1;     // locals: offset of the initializer expression
-    public int ScopeStart = 0;     // locals/params: visible from here…
-    public int ScopeEnd = int.MaxValue; // …to here
-    public Symbol? Parent;         // for document outline
-    public readonly List<Symbol> Children = [];
+
+    // Docs and children are rare; one side object keeps every other symbol smaller.
+    sealed class Rare { public string? Doc; public List<Symbol>? Children; }
+    Rare? _rare;
+    /// <summary>Joined `///` lines.</summary>
+    public string? Doc { get => _rare?.Doc; set { if (value is not null || _rare is not null) (_rare ??= new()).Doc = value; } }
+    /// <summary>Document outline children; null until the first one.</summary>
+    public List<Symbol>? Children { get => _rare?.Children; set { if (value is not null || _rare is not null) (_rare ??= new()).Children = value; } }
 
     public bool IsType => Kind is SymbolKind.Struct or SymbolKind.Union or SymbolKind.ErrorUnion
         or SymbolKind.TypeAlias or SymbolKind.Interface;
     public bool IsLocal => Kind is SymbolKind.Local or SymbolKind.Param;
+}
+
+/// <summary>A local or parameter: only these carry a scope, so other symbols stay smaller.</summary>
+public sealed class LocalSymbol : Symbol
+{
+    public int InitStart = -1;     // locals: offset of the initializer expression
+    public int ScopeStart = 0;     // visible from here…
+    public int ScopeEnd = int.MaxValue; // …to here
 }
 
 /// <summary>
@@ -41,14 +51,16 @@ public sealed class Indexer
     {
         public readonly FrameKind Kind = kind;
         public readonly Symbol? Owner = owner;
-        public readonly List<Symbol> Scoped = [];
+        public readonly List<LocalSymbol> Scoped = [];
     }
 
     readonly string _s;
     readonly List<Token> _t;
     readonly List<Frame> _frames = [];
     readonly List<string> _doc = [];
-    readonly List<Symbol> _scoped = []; // reused per line
+    readonly List<LocalSymbol> _scoped = []; // reused per line
+    // Names, types and headers repeat within a file; symbols share one string per distinct text.
+    readonly Dictionary<string, string>.AlternateLookup<ReadOnlySpan<char>> _pool = new Dictionary<string, string>(StringComparer.Ordinal).GetAlternateLookup<ReadOnlySpan<char>>();
     public readonly List<Symbol> Symbols = [];
     public readonly List<Symbol> Roots = [];
 
@@ -62,7 +74,15 @@ public sealed class Indexer
     }
 
     ReadOnlySpan<char> Text(Token t) => _s.AsSpan(t.Start, t.Length);
-    string Str(Token t) => _s.Substring(t.Start, t.Length);
+    string Str(Token t) => Pool(Text(t));
+
+    string Pool(ReadOnlySpan<char> text)
+    {
+        if (_pool.TryGetValue(text, out var s)) return s;
+        s = text.ToString();
+        _pool[s] = s;
+        return s;
+    }
     bool Is(Token t, string v) => t.Length == v.Length && t.Kind is TokenKind.Keyword or TokenKind.Punct or TokenKind.Ident && Text(t).SequenceEqual(v);
     Frame? Top => _frames.Count > 0 ? _frames[^1] : null;
 
@@ -198,31 +218,33 @@ public sealed class Indexer
     {
         int end = line[^1].End;
         if (Is(line[^1], "{")) end = line.Count > 1 ? line[^2].End : line[^1].Start;
-        return _s[line[from].Start..end].Trim();
+        return Pool(_s.AsSpan(line[from].Start, end - line[from].Start).Trim());
     }
 
     Symbol Add(SymbolKind kind, Token name, List<Token> line, int from, string? typeName = null, string? container = null, bool docs = true)
     {
         var parentType = EnclosingType();
-        var sym = new Symbol
-        {
-            Name = Str(name), Kind = kind, NameStart = name.Start,
-            DeclStart = line[from].Start, DeclEnd = line[^1].End,
-            Detail = Header(line, from), TypeName = typeName,
-            Container = container ?? (kind is SymbolKind.Local or SymbolKind.Param ? null : parentType?.Name),
-            Doc = docs && _doc.Count > 0 ? string.Join('\n', _doc) : null,
-        };
+        bool local = kind is SymbolKind.Local or SymbolKind.Param;
+        Symbol sym = local
+            ? new LocalSymbol { Name = Str(name), Kind = kind, Detail = Header(line, from) }
+            : new Symbol { Name = Str(name), Kind = kind, Detail = Header(line, from) };
+        sym.NameStart = name.Start;
+        sym.DeclStart = line[from].Start;
+        sym.DeclEnd = line[^1].End;
+        sym.TypeName = typeName;
+        sym.Container = container ?? (local ? null : parentType?.Name);
+        sym.Doc = docs && _doc.Count > 0 ? string.Join('\n', _doc) : null;
         Symbols.Add(sym);
-        if (!sym.IsLocal)
+        if (!local)
         {
             var parent = parentType;
-            if (parent is not null && kind != SymbolKind.Test) { sym.Parent = parent; parent.Children.Add(sym); }
+            if (parent is not null && kind != SymbolKind.Test) (parent.Children ??= []).Add(sym);
             else Roots.Add(sym);
         }
         return sym;
     }
 
-    void Declare(List<Token> line, int k, ref Symbol? opener, ref FrameKind openerKind, List<Symbol> scoped)
+    void Declare(List<Token> line, int k, ref Symbol? opener, ref FrameKind openerKind, List<LocalSymbol> scoped)
     {
         var first = line[k];
         var w = Text(first);
@@ -287,7 +309,7 @@ public sealed class Indexer
                 {
                     string? ty = null;
                     if (At(j + 1) is { } c && Is(c, ":")) ty = TypeText(line, j + 2, stopAt: "in");
-                    scoped.Add(Add(SymbolKind.Local, lv, line, k, typeName: ty, docs: false));
+                    scoped.Add((LocalSymbol)Add(SymbolKind.Local, lv, line, k, typeName: ty, docs: false));
                 }
                 return;
             }
@@ -315,14 +337,14 @@ public sealed class Indexer
             Add(SymbolKind.Field, nameTok, line, k, typeName: typeName);
     }
 
-    void DeclareLocal(List<Token> line, int j, int from, List<Symbol>? scoped = null)
+    void DeclareLocal(List<Token> line, int j, int from, List<LocalSymbol>? scoped = null)
     {
         if (j >= line.Count || line[j].Kind != TokenKind.Ident) return;
         var nameTok = line[j];
         string? ty = null;
         if (j + 1 < line.Count && Is(line[j + 1], ":")) ty = TypeText(line, j + 2, stopAt: "=");
         else if (j + 2 < line.Count && Is(line[j + 1], "=")) ty = InferType(line, j + 2);
-        var sym = Add(SymbolKind.Local, nameTok, line, from, typeName: ty, docs: false);
+        var sym = (LocalSymbol)Add(SymbolKind.Local, nameTok, line, from, typeName: ty, docs: false);
         sym.ScopeStart = line[^1].End; // not visible in its own initializer
         for (int e = j + 1; e + 1 < line.Count; e++) if (Is(line[e], "=")) { sym.InitStart = line[e + 1].Start; break; }
         if (scoped is not null) scoped.Add(sym);
@@ -341,7 +363,7 @@ public sealed class Indexer
         return null;
     }
 
-    void DeclareParams(List<Token> line, int open, int from, List<Symbol> scoped)
+    void DeclareParams(List<Token> line, int open, int from, List<LocalSymbol> scoped)
     {
         int depth = 0, start = open + 1;
         for (int j = open; j < line.Count; j++)
@@ -358,7 +380,7 @@ public sealed class Indexer
         }
     }
 
-    void DeclareParam(List<Token> line, int a, int b, int from, List<Symbol> scoped)
+    void DeclareParam(List<Token> line, int a, int b, int from, List<LocalSymbol> scoped)
     {
         // Cut default value and inline state refinement: `Order order is .paid = …`.
         for (int j = a; j < b; j++) if (Is(line[j], "=") || Is(line[j], "is")) { b = j; break; }
@@ -370,7 +392,7 @@ public sealed class Indexer
         // Particle: a lowercase word before the type (`at i64 i`).
         if (b - a >= 3 && line[a].Kind is TokenKind.Ident or TokenKind.Keyword && char.IsLower(_s[line[a].Start])
             && !Keywords.IsPrimitive(Text(line[a]))) a++;
-        var p = Add(SymbolKind.Param, nameTok, line, from, typeName: TypeText(line, a, end: b - 1), docs: false);
+        var p = (LocalSymbol)Add(SymbolKind.Param, nameTok, line, from, typeName: TypeText(line, a, end: b - 1), docs: false);
         p.Detail = _s[line[a].Start..nameTok.End];
         scoped.Add(p);
     }
@@ -403,6 +425,6 @@ public sealed class Indexer
             while (end < line.Count && !(stopAt is not null && Is(line[end], stopAt)) && !Is(line[end], "{")) end++;
         }
         if (a >= end || a >= line.Count) return "";
-        return _s[line[a].Start..line[end - 1].End].Trim();
+        return Pool(_s.AsSpan(line[a].Start, line[end - 1].End - line[a].Start).Trim());
     }
 }

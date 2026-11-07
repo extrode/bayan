@@ -122,6 +122,8 @@ Report format (follows `docs/bayan-terminal-style.md`):
 
 ## 3. Contracts and verification (v1.x; design only)
 
+> Superseded in part (2026-11-06, `docs/bayan-design-round-4-inventory.md` batch 1): `ensures` is not adopted and is unreserved in round 4; preconditions are `expects`, return guarantees are a `requires` on the return type (round-4 draft §9).
+
 ```csharp
 public (Cents share, int extra) splitEvenly(Cents total, int ways)
     requires total >= 0 && ways > 0

@@ -1,0 +1,6 @@
+error BYN3004: `expenses` is modified while `shares` still borrows it
+
+  17 │     expenses.clear()
+     │     ^^^^^^^^^^^^^^^^ `shares` is used again on line 18
+     │
+  help: finish using `shares` first, or copy what it needs before changing `expenses`

@@ -5,6 +5,8 @@
 # 3. (--delete-scratch) gitignored scratch in tmp/ from 013's review, refute, T19 and agy-shell work;
 # 4. (--remove-docker-image) the bayan-t19 image (2.16 GB) built for the T19 Linux run;
 # 5. (--delete-remote) the T19 scratch clone, bundles and run script on wp1 and wlt1 (ssh), and wp1's old zig 0.16.0-dev and the 0.17.0 zip.
+#    Run --delete-remote only after step 9 of docs/plans/2026-11-02-003-move-to-ikhbat-org.md has moved the wp1/wlt1
+#    checkout to C:\home\code\ikhbat.org\bayan: section 5 names that path, and refuses on a host where it has no .git yet.
 # Section 1 also takes the 2026-11-02 review-fix, Q742, docs and tmp/win-combined (test/win-combined-1102), tmp/combined-1102b (test/combined-1102b) worktrees once dev holds them.
 # Dry run by default. --execute / -e acts on worktrees and branches; each later section also needs its own flag.
 # Merged-ness, tracked-ness and existence are asked at run time, never taken from this header.
@@ -105,17 +107,25 @@ elif ! docker image inspect bayan-t19 >/dev/null 2>&1; then printf 'skip:  image
 elif [ $execute -eq 1 ] && [ $docker_img -eq 1 ]; then docker image rm bayan-t19 || { printf '  refused: docker image rm bayan-t19. Left alone.\n'; failed=1; }
 else printf 'would: docker image rm bayan-t19 (needs --execute --remove-docker-image)\n'; fi
 
-# 5. Remote T19 scratch (PowerShell over ssh). /home/code/extrode.com/bayan is the hosts' real checkout: only the run script there.
+# 5. Remote T19 scratch (PowerShell over ssh). /home/code/ikhbat.org/bayan is the hosts' real checkout: only the run script there.
 printf '== 5. wp1 / wlt1 T19 scratch\n'
 for h in wp1 wlt1; do
-  for p in C:/Users/Sy/bayan-bcl C:/Users/Sy/bcl.bundle C:/Users/Sy/AppData/Local/Temp/bayan-013.bundle /home/code/extrode.com/bayan/tmp-t19-run.ps1 \
+  for p in C:/Users/Sy/bayan-bcl C:/Users/Sy/bcl.bundle C:/Users/Sy/AppData/Local/Temp/bayan-013.bundle /home/code/ikhbat.org/bayan/tmp-t19-run.ps1 \
            C:/Users/Sy/winport.bundle C:/home/lang/zig-0.16.0-dev.2682 C:/home/lang/zig-x86_64-windows-0.17.0.zip C:/Users/Sy/kf-trx; do
+    if [ "${p##*/}" = tmp-t19-run.ps1 ]; then
+      if ! co="$(ssh -o ConnectTimeout=5 "$h" "if (Test-Path '/home/code/ikhbat.org/bayan/.git') { 'yes' } else { 'no' }" 2>/dev/null | tr -d '\r')"; then
+        printf 'skip:  %s unreachable\n' "$h"; continue 2
+      fi
+      if [ "$co" != yes ]; then
+        printf 'refuse: %s: /home/code/ikhbat.org/bayan is not a checkout yet (move step 9 first). Left alone.\n' "$h"; failed=1; continue
+      fi
+    fi
     if ! there="$(ssh -o ConnectTimeout=5 "$h" "if (Test-Path '$p') { 'yes' } else { 'no' }" 2>/dev/null | tr -d '\r')"; then
       printf 'skip:  %s unreachable\n' "$h"; continue 2
     fi
     if [ "$there" != yes ]; then printf 'skip:  %s:%s already gone\n' "$h" "$p"; continue; fi
     if [ "${p##*/}" = tmp-t19-run.ps1 ] && \
-       [ "$(ssh "$h" "git -C /home/code/extrode.com/bayan ls-files -- tmp-t19-run.ps1" 2>/dev/null | tr -d '\r')" != "" ]; then
+       [ "$(ssh "$h" "git -C /home/code/ikhbat.org/bayan ls-files -- tmp-t19-run.ps1" 2>/dev/null | tr -d '\r')" != "" ]; then
       printf 'refuse: %s:%s is tracked by git there. Left alone.\n' "$h" "$p"; failed=1; continue
     fi
     if [ $execute -eq 1 ] && [ $remote -eq 1 ]; then

@@ -1,0 +1,2 @@
+panic: slice out of range
+  at slice-from-end-min.byn:4

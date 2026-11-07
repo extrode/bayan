@@ -14,8 +14,13 @@ namespace Bayan.Semantics.Binding;
 /// </summary>
 internal sealed class RegionAnalysis
 {
-    /// <summary>Storage freed when the block at <see cref="Depth"/> (1 = the function body) ends.</summary>
-    private sealed record Region(int Depth, string Name);
+    /// <summary>Storage freed when the block at <see cref="Depth"/> (1 = the function body) ends; <see cref="Source"/> marks a parameter's (or <c>this</c>'s) data in a summary.</summary>
+    private sealed record Region(int Depth, string Name, int Source = NoSource);
+
+    private const int NoSource = int.MinValue;
+
+    /// <summary>The index standing for <c>this</c> in a store summary.</summary>
+    private const int This = -1;
 
     /// <summary>
     /// What a value points into: <see cref="Regions"/> bound its lifetime; <see cref="Owners"/>
@@ -62,6 +67,8 @@ internal sealed class RegionAnalysis
     private readonly List<Mutation> _mutations = new();
     /// <summary>For a writable <c>dyn ref</c> local, whether any value it was set to may hold storage a write through it can change.</summary>
     private readonly Dictionary<LocalSymbol, bool> _referentMayBorrow = new();
+    /// <summary>A by-value loop variable over a list, array, span or map, with the iterable and its borrow: its lists share the element's storage.</summary>
+    private readonly Dictionary<LocalSymbol, (BoundExpr Iterable, Borrow Borrow)> _loopItems = new();
     private readonly Stack<Borrow> _contexts = new();
     private readonly HashSet<(int, int)> _reported = new();
     /// <summary>The regions standing for <c>rest</c> parameters, with the parameter's name.</summary>
@@ -72,12 +79,20 @@ internal sealed class RegionAnalysis
     /// <summary>The regions of capturing lambdas' environments, which a call result never borrows.</summary>
     private readonly HashSet<Region> _environments = new();
     private bool _reporting;
+    /// <summary>Set while computing <see cref="_fn"/>'s store summary: nothing is reported, and stores into a target are recorded in <see cref="_pairs"/>.</summary>
+    private readonly bool _summary;
+    private readonly Dictionary<(int Source, int Target), TextSpan> _pairs = new();
+    /// <summary>The parameters (or <see cref="This"/>) the result may borrow.</summary>
+    private readonly HashSet<int> _returns = new();
+    /// <summary>The summary's target parameters, with their index.</summary>
+    private readonly Dictionary<LocalSymbol, int> _targets = new();
 
-    private RegionAnalysis(Compilation c, FunctionSymbol fn)
+    private RegionAnalysis(Compilation c, FunctionSymbol fn, bool summary = false)
     {
         _c = c;
         _fn = fn;
         _source = fn.File!.Source;
+        _summary = summary;
     }
 
     public static void Analyze(Compilation c, FunctionSymbol fn)
@@ -85,6 +100,44 @@ internal sealed class RegionAnalysis
         if (fn.File is null || fn.Body is null) return;
         new RegionAnalysis(c, fn).Run();
     }
+
+    /// <summary>
+    /// Q745: each template's store and return summaries, one least fixpoint from none, recomputed in declaration order until no summary grows.
+    /// </summary>
+    public static void Summarize(Compilation c)
+    {
+        var functions = c.Modules.SelectMany(m => m.AllFunctions)
+            .Where(f => f.File is not null && f.Body is not null && !f.IsInstance && (HasTargets(f) || MayHold(f.ReturnType))).ToList();
+        for (var changed = true; changed;)
+        {
+            changed = false;
+            foreach (var fn in functions)
+            {
+                var analysis = new RegionAnalysis(c, fn, summary: true);
+                analysis.Run();
+                if (analysis._pairs.Count != (c.StoreSummaries.TryGetValue(fn, out var known) ? known.Count : 0))
+                {
+                    c.StoreSummaries[fn] = analysis._pairs;
+                    changed = true;
+                }
+                if (analysis._returns.Count != (c.ReturnSummaries.TryGetValue(fn, out var returned) ? returned.Count : 0))
+                {
+                    c.ReturnSummaries[fn] = analysis._returns;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="fn"/> has a summary target: a <c>ref</c>, <c>out</c> or writable <c>dyn ref</c> parameter, or a <c>ref this</c> receiver, that can hold a borrow.</summary>
+    private static bool HasTargets(FunctionSymbol fn) =>
+        fn.Parameters.Any(IsTarget) || fn.IsMutating && fn.HasThis && (fn.Owner is null || MayHold(fn.Owner));
+
+    private static bool IsTarget(ParameterSymbol p) =>
+        (p.Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out || p.Type is DynRefType { ReadOnly: false }) && MayHold(p.Type);
+
+    /// <summary>Whether a value of <paramref name="t"/> may borrow, counting a type parameter as one that may (a summary covers every instance).</summary>
+    private static bool MayHold(TypeSymbol t) => MayBorrow(t, []) || TypeParameterType.Occurs(t);
 
     private void Run()
     {
@@ -95,7 +148,13 @@ internal sealed class RegionAnalysis
             _depthOf[p] = callerOwned ? 0 : 1;
             _declaredAt[p] = -1;
             // What a parameter points to belongs to the caller; the marker keeps that known after unions.
-            if (MayBorrow(p.Type, [])) _locals[p] = new Borrow([new Region(0, "the caller's data")], []);
+            if (_summary)
+            {
+                var index = _fn.Parameters.IndexOf(p);
+                if (IsTarget(p)) _targets[p] = index;
+                if (MayHold(p.Type)) _locals[p] = new Borrow([new Region(0, "the caller's data"), new Region(0, "the caller's data", index)], []);
+            }
+            else if (MayBorrow(p.Type, [])) _locals[p] = new Borrow([new Region(0, "the caller's data")], []);
             // A `rest` tail is borrowed for the call only (J62): it lives in the caller's frame for this statement.
             if (p.Syntax?.Rest == true && p.Type is SpanType)
             {
@@ -109,7 +168,7 @@ internal sealed class RegionAnalysis
         Stmt(_fn.Body!);
         _reporting = true;
         Stmt(_fn.Body!);
-        CheckMutations();
+        if (!_summary) CheckMutations();
     }
 
     // ── Statements ───────────────────────────────────────────────────────────────
@@ -182,6 +241,9 @@ internal sealed class RegionAnalysis
                     : f.Iterable.Type is SpanType ? iterable
                     : iterable with { Owners = [] };
                 Store(f.Variable, item, f.Iterable.Syntax.Span);
+                // Q745: the item is a shallow copy the loop never frees, and `BorrowsSubject` refuses changing it (BYN2783).
+                if (f.UserIteration is null && f.Variable is { Type: not DynRefType, BorrowsSubject: true } && f.Iterable.Type is ListType or ArrayType or SpanType or MapType)
+                    _loopItems[f.Variable] = (f.Iterable, iterable);
                 if (f.Variable.Type is DynRefType)
                     _referentMayBorrow[f.Variable] = f.Iterable.Type switch
                     {
@@ -245,7 +307,7 @@ internal sealed class RegionAnalysis
     private Borrow Expr(BoundExpr e)
     {
         var result = Compute(e);
-        return MayBorrow(e.Type, []) ? result : Borrow.None;
+        return MayBorrow(e.Type, []) || _summary && TypeParameterType.Occurs(e.Type) ? result : Borrow.None;
     }
 
     private Borrow Compute(BoundExpr e)
@@ -254,6 +316,8 @@ internal sealed class RegionAnalysis
         {
             case BoundLocal l:
                 return _locals.GetValueOrDefault(l.Local, Borrow.None);
+            case BoundThis when _summary:
+                return new Borrow([new Region(0, "the caller's data", This)], []);
             case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return Borrow.None;
             case BoundConversion c:
@@ -364,32 +428,42 @@ internal sealed class RegionAnalysis
         }
     }
 
+    /// <summary>
+    /// The builtins' store summaries (Q745): the argument each stores into its receiver. Every other builtin stores none:
+    /// a <c>StrBuf</c> append or insert copies the text, <c>copy(to:)</c> copies into the arena, formatting copies.
+    /// </summary>
+    private static readonly Dictionary<BuiltinMember, int> BuiltinStores = new()
+    {
+        [BuiltinMember.ListAdd] = 0,
+        [BuiltinMember.ListReplace] = 1,
+        [BuiltinMember.MapIndexSet] = 0,
+        [BuiltinMember.MapSlot] = 0,
+    };
+
     private Borrow Builtin(BoundBuiltinCall b)
     {
         var receiver = Expr(b.Receiver);
         var args = b.Arguments.Select(Expr).ToArray();
+        if (BuiltinStores.TryGetValue(b.Member, out var stored) && stored < args.Length) StoreInto(b.Receiver, args[stored], b.Arguments[stored].Syntax.Span);
         switch (b.Member)
         {
+            // `finish()` points into the buffer's storage, which outlives the local: a loan on it, but not its scope.
+            case BuiltinMember.StrBufAsString when b.Syntax is Syntax.Ast.CallExpr && RootLocal(b.Receiver) is { } buffer:
+                return receiver.Lent(buffer, b.Syntax.Span.End);
             case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString or BuiltinMember.ListMutableSpan or BuiltinMember.ArrayMutableSpan:
                 return Lend(b.Receiver, receiver, b.Syntax.Span.End);
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
                 when b.Arguments.Length > 0:
                 return AllocatedFrom(b.Arguments[0]);
-            case BuiltinMember.IoReadAll or BuiltinMember.IntToString or BuiltinMember.StringCopy or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased
+            case BuiltinMember.IoReadAll or BuiltinMember.IoReadAllBytes or BuiltinMember.IntToString or BuiltinMember.StringCopy or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased
                 or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated or BuiltinMember.StringJoined or BuiltinMember.Utf16Copy
                 or BuiltinMember.StringPadded or BuiltinMember.BytesToString or BuiltinMember.SpanCopy or BuiltinMember.ListCopy:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
-            case BuiltinMember.ListReplace:
-                StoreInto(b.Receiver, args[1], b.Arguments[1].Syntax.Span);
-                Mutate(b.Receiver, b.Syntax.Span);
-                return Borrow.None;
-            case BuiltinMember.ListAdd:
-                StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
+            case BuiltinMember.ListReplace or BuiltinMember.ListAdd:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             case BuiltinMember.MapIndexSet or BuiltinMember.MapSlot:
-                StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
             case BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake:
@@ -454,14 +528,28 @@ internal sealed class RegionAnalysis
                 break;
             }
         }
-        // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none, and an interned `Symbol` lives until exit.
+        // What the callee may store from one argument (or its receiver) into another, by its summary.
+        foreach (var ((s, t), site) in Stores(fn, c))
+        {
+            var target = t == This ? fn.IsMutating ? c.Receiver : null
+                : t < c.Arguments.Length && t < fn.Parameters.Count ? WrittenArgument(fn.Parameters[t], c.Arguments[t]) : null;
+            if (target is null || !MayBorrow(target.Type, [])) continue;
+            var source = s == This ? receiver : s < args.Length ? args[s] : Borrow.None;
+            RelatedSpan? note = site is { } at && (Compilation.TemplateOf(fn) ?? fn) is { File: { } file } callee && file.Source == _source
+                ? new RelatedSpan(at, $"`{callee.Name}` stores `{ParameterName(callee, s)}` into `{ParameterName(callee, t)}` here")
+                : null;
+            StoreInto(target, source, c.Syntax.Span, note);
+        }
+        // A callee with a body borrows what its return summary names; a builtin what its table entry names; any other, every argument (rule 4).
         // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
-        var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
-            or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
-            or BuiltinFunction.SymbolIntern
-            ? Borrow.None
-            : args.Select((a, i) => i < fn.Parameters.Count && fn.Parameters[i].Type is FunctionType ? a with { Regions = a.Regions.Except(_environments) } : a)
-                .Aggregate(receiver, (acc, a) => acc.Union(a));
+        HashSet<int>? returned = fn.Builtin is not BuiltinFunction.None ? BuiltinResults.TryGetValue(fn.Builtin, out var named) ? named : null
+            : IsBroad(fn) || (Compilation.TemplateOf(fn) ?? fn).Body is null ? null
+            : _c.ReturnSummaries.GetValueOrDefault(Compilation.TemplateOf(fn) ?? fn) ?? [];
+        // An arena argument the result may borrow lends its memory, as `copy(to:)` does.
+        var result = args.Select((a, i) => i < fn.Parameters.Count && fn.Parameters[i].Type is FunctionType ? a with { Regions = a.Regions.Except(_environments) }
+                : returned is not null && i < c.Arguments.Length && c.Arguments[i].Type is BuiltinType { Kind: BuiltinKind.Arena } ? AllocatedFrom(c.Arguments[i], a) : a)
+            .Where((_, i) => returned is null || i >= fn.Parameters.Count || returned.Contains(i))
+            .Aggregate(returned is null || returned.Contains(This) ? receiver : Borrow.None, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
         if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver, c.Syntax.Span.End));
         // So may a function returning one: the result lives no longer than any argument passed by `ref` (`in` is by value),
@@ -475,10 +563,64 @@ internal sealed class RegionAnalysis
                 }
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `Utf8.decode` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver
-                or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode))
+                or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode
+                or BuiltinFunction.PathRelative or BuiltinFunction.PathFileName or BuiltinFunction.PathDirectoryName or BuiltinFunction.PathCombine or BuiltinFunction.PathCombineSpan
+                or BuiltinFunction.PathFullPath or BuiltinFunction.EnvGet))
             result = result.Union(_contexts.Peek());
         return result;
     }
+
+    /// <summary>
+    /// The (source, target) pairs a call of <paramref name="fn"/> may store, in a fixed order, with where its body does so. A function value,
+    /// an interface method or an <c>extern</c> function has no body to summarise: every argument and the receiver may go into every written one.
+    /// </summary>
+    private IEnumerable<((int Source, int Target) Pair, TextSpan? Site)> Stores(FunctionSymbol fn, BoundCall c)
+    {
+        if (IsBroad(fn))
+        {
+            var targets = Enumerable.Range(0, Math.Min(c.Arguments.Length, fn.Parameters.Count))
+                .Where(i => WrittenArgument(fn.Parameters[i], c.Arguments[i]) is not null).ToList();
+            if (fn.IsMutating && c.Receiver is not null) targets.Add(This);
+            var sources = Enumerable.Range(0, c.Arguments.Length).Append(This).ToList();
+            return targets.SelectMany(t => sources.Where(s => s != t).Select(s => ((s, t), (TextSpan?)null)));
+        }
+        return _c.StoreSummaries.TryGetValue(Compilation.TemplateOf(fn) ?? fn, out var pairs)
+            ? pairs.OrderBy(p => p.Key.Target).ThenBy(p => p.Key.Source).Select(p => (p.Key, (TextSpan?)p.Value)).ToList()
+            : [];
+    }
+
+    /// <summary>A function value, an interface method or an <c>extern</c> function: no body to summarise.</summary>
+    private static bool IsBroad(FunctionSymbol fn) =>
+        fn.Kind is FunctionKind.Invoke || fn.IsAbstract || fn.Decl?.Modifiers.HasFlag(Syntax.Ast.Modifiers.Extern) == true;
+
+    /// <summary>
+    /// The builtin functions' return summaries: the arguments each result borrows. <c>Io</c> results and decoded or encoded text are fresh copies,
+    /// and an interned <c>Symbol</c> lives until exit, so they borrow none. Every other builtin's result borrows every argument (rule 4).
+    /// </summary>
+    private static readonly Dictionary<BuiltinFunction, HashSet<int>> BuiltinResults = new()
+    {
+        [BuiltinFunction.IoReadFile] = [],
+        [BuiltinFunction.IoReadText] = [],
+        [BuiltinFunction.IoListDir] = [],
+        [BuiltinFunction.IoRun] = [],
+        [BuiltinFunction.IoRunBatch] = [],
+        [BuiltinFunction.Utf8Decode] = [],
+        [BuiltinFunction.Utf8TryDecode] = [],
+        [BuiltinFunction.Utf8DecodeReplace] = [],
+        [BuiltinFunction.StringInvalidUtf8At] = [],
+        [BuiltinFunction.HexEncode] = [],
+        [BuiltinFunction.HexDecode] = [],
+        [BuiltinFunction.SymbolIntern] = [],
+        [BuiltinFunction.PathRelative] = [],
+        [BuiltinFunction.PathFileName] = [],
+        [BuiltinFunction.PathDirectoryName] = [],
+        [BuiltinFunction.PathCombine] = [],
+        [BuiltinFunction.PathCombineSpan] = [],
+        [BuiltinFunction.PathFullPath] = [],
+        [BuiltinFunction.EnvGet] = [],
+    };
+
+    private static string ParameterName(FunctionSymbol fn, int index) => index == This ? "this" : fn.Parameters[index].Name;
 
     /// <summary>A borrow of <paramref name="source"/>'s own storage (a span of an array or list, a <c>StrBuf</c>'s text), taken at <paramref name="at"/>.</summary>
     private Borrow Lend(BoundExpr source, Borrow sourceBorrow, int at)
@@ -492,6 +634,9 @@ internal sealed class RegionAnalysis
         if (IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(1, $"the temporary on line {Line(source.Syntax.Span)}")], []));
         if (RootLocal(source) is { } root)
         {
+            // A list in a loop item is the iterable's: lend what the iterable lends (a span already names where it points).
+            if (source.Type is ListType && _loopItems.TryGetValue(root, out var loop))
+                return loop.Iterable.Type is SpanType ? sourceBorrow.Union(loop.Borrow) : Lend(loop.Iterable, sourceBorrow.Union(loop.Borrow), at);
             var depth = _depthOf.GetValueOrDefault(root, 0);
             var regions = depth > 0 ? sourceBorrow.Regions.Add(new Region(depth, $"`{root.Name}`")) : sourceBorrow.Regions;
             return (sourceBorrow with { Regions = regions }).Lent(root, at);
@@ -500,12 +645,15 @@ internal sealed class RegionAnalysis
     }
 
     /// <summary>Memory from the arena (or other allocator) <paramref name="allocator"/>.</summary>
-    private Borrow AllocatedFrom(BoundExpr allocator)
+    private Borrow AllocatedFrom(BoundExpr allocator) => AllocatedFrom(allocator, Expr(allocator));
+
+    private Borrow AllocatedFrom(BoundExpr allocator, Borrow borrow)
     {
-        var borrow = Expr(allocator);
         if (RootLocal(allocator) is not { } root) return borrow;
         var depth = _depthOf.GetValueOrDefault(root, 0);
         var regions = depth > 0 ? borrow.Regions.Add(new Region(depth, $"arena `{root.Name}`")) : borrow.Regions;
+        // In a summary, memory from an allocator parameter borrows that parameter.
+        if (_summary && root is ParameterSymbol p && _fn.Parameters.IndexOf(p) is >= 0 and var index) regions = regions.Add(new Region(0, "the caller's data", index));
         return new Borrow(regions, borrow.Owners.Add(root));
     }
 
@@ -528,10 +676,11 @@ internal sealed class RegionAnalysis
 
     // ── Stores and escapes ───────────────────────────────────────────────────────
 
-    private void Store(LocalSymbol local, Borrow value, TextSpan span)
+    private void Store(LocalSymbol local, Borrow value, TextSpan span, RelatedSpan? note = null)
     {
         if (value.IsEmpty) return;
         _locals[local] = _locals.GetValueOrDefault(local, Borrow.None).Union(value);
+        if (_summary && _targets.TryGetValue(local, out var target)) Record(target, value, span);
         if (!_reporting) return;
         // The loan starts where the stored value's borrow of the owner was lent (`first(w.items.asSpan(), w.grow())`
         // conflicts), or once the value is stored: a mutating call that produces it (`b.pick()` on `ref this`) is not a conflict.
@@ -542,30 +691,38 @@ internal sealed class RegionAnalysis
             if (value.Lends is { } lends && lends.TryGetValue(owner, out var at) && span.Start <= at && at < created) created = at;
             _loans.Add(new Loan(owner, local, created, 0));
         }
-        CheckOutlives(value, _depthOf.GetValueOrDefault(local, 0), local.Name, span);
+        CheckOutlives(value, _depthOf.GetValueOrDefault(local, 0), local.Name, span, note);
+    }
+
+    /// <summary>Adds a pair to the summary for each parameter (or <c>this</c>) whose data <paramref name="value"/> may hold.</summary>
+    private void Record(int target, Borrow value, TextSpan span)
+    {
+        foreach (var region in value.Regions)
+            if (region.Source != NoSource && region.Source != target) _pairs.TryAdd((region.Source, target), span);
     }
 
     /// <summary>A store into a local or a part of one; through <c>this</c> or a <c>ref</c> parameter it outlives the function.</summary>
-    private void StoreInto(BoundExpr target, Borrow value, TextSpan span)
+    private void StoreInto(BoundExpr target, Borrow value, TextSpan span, RelatedSpan? note = null)
     {
         if (StoreRoot(target) is { } root)
         {
-            Store(root, value, span);
+            Store(root, value, span, note);
             return;
         }
+        if (_summary && _fn.IsMutating && IsThisRooted(target)) Record(This, value, span);
         if (!_reporting) return;
         // A store through a span lands where the span points: it must live as long as the
         // longest-lived storage the span may point into (the caller's, when that is unknown).
         if (target is BoundIndex { Target.Type: SpanType } i && RootLocal(i.Target) is { } view)
         {
             var sources = _locals.GetValueOrDefault(view, Borrow.None).Regions;
-            CheckOutlives(value, sources.IsEmpty ? 0 : sources.Min(r => r.Depth), view.Name, span);
+            CheckOutlives(value, sources.IsEmpty ? 0 : sources.Min(r => r.Depth), view.Name, span, note);
             return;
         }
-        CheckOutlives(value, 0, "this", span);
+        CheckOutlives(value, 0, "this", span, note);
     }
 
-    private void CheckOutlives(Borrow value, int depth, string holder, TextSpan span)
+    private void CheckOutlives(Borrow value, int depth, string holder, TextSpan span, RelatedSpan? note = null)
     {
         foreach (var region in Ordered(value.Regions))
         {
@@ -573,13 +730,16 @@ internal sealed class RegionAnalysis
             if (RestEscapes(region, span)) return;
             Report(DiagnosticCodes.BorrowOutlivesSource, span, [region.Name, holder],
                 label: $"{region.Name} is freed at the end of its block",
-                help: "copy the data with `.copy(to: alloc)` into an allocator that lives long enough");
+                help: "copy the data with `.copy(to: alloc)` into an allocator that lives long enough", note: note);
             return;
         }
     }
 
     private void CheckReturn(Borrow value, TextSpan span)
     {
+        if (_summary)
+            foreach (var region in value.Regions)
+                if (region.Source != NoSource) _returns.Add(region.Source);
         if (!_reporting) return;
         foreach (var region in Ordered(value.Regions))
         {
@@ -691,13 +851,14 @@ internal sealed class RegionAnalysis
         _ => null,
     };
 
-    /// <summary>Whether <paramref name="e"/> names storage of <c>this</c> (<c>this</c>, <c>f</c>, <c>f[i]</c> of an array or list field).</summary>
+    /// <summary>Whether <paramref name="e"/> names storage of <c>this</c> (<c>this</c>, <c>f</c>, <c>f[i]</c> of an array or list field, <c>f[k]</c> or <c>f.slot(k)</c> of a map field).</summary>
     private static bool IsThisRooted(BoundExpr e) => e switch
     {
         BoundThis => true,
         BoundField f => IsThisRooted(f.Receiver),
         BoundTupleElement t => IsThisRooted(t.Receiver),
         BoundIndex i when i.Target.Type is ArrayType or ListType => IsThisRooted(i.Target),
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => IsThisRooted(b.Receiver),
         _ => false,
     };
 
@@ -874,9 +1035,10 @@ internal sealed class RegionAnalysis
 
     private int Line(TextSpan span) => _source.GetLinePosition(span.Start).Line;
 
-    private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null)
+    private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, RelatedSpan? note = null)
     {
-        if (!_reporting || !_reported.Add((span.Start, span.End))) return;
-        _c.Report(d, _source, span, args, label, help);
+        if (!_reporting || _summary || !_reported.Add((span.Start, span.End))) return;
+        if (note is null) _c.Report(d, _source, span, args, label, help);
+        else _c.ReportHeld([new Diagnostic(d.Severity, d.Code, _source, span, d.Format(args), label, help, Related: [note])]);
     }
 }

@@ -94,6 +94,22 @@ public sealed class MutationRunnerTests
     private static int Processes(Run run, int mutant) => run.Log.Count(l => l.StartsWith(mutant + " ", StringComparison.Ordinal));
 
     [Fact]
+    public void TheWorkDirectoryIsTouchedSoAnotherProcessDoesNotSweepItMidRun()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "mutation-runner-touch");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        var c = Compilation.Create([SourceText.FromString(Path.Combine(dir, "lib.test.byn"), "i64 inc(i64 n) {\n    return n + 1\n}\n")], dir,
+            new CompilationOptions(IncludeTests: true, Library: true));
+        var schema = Schemata.Build(c);
+        Assert.NotEmpty(schema.Sites);
+        var old = DateTime.UtcNow.AddHours(-3);
+        Directory.SetLastWriteTimeUtc(dir, old);
+        MutationRunner.Run("none", schema, [], dir, TimeSpan.FromSeconds(1));
+        Assert.True(Directory.GetLastWriteTimeUtc(dir) > DateTime.UtcNow.AddMinutes(-5), Directory.GetLastWriteTimeUtc(dir).ToString("o"));
+    }
+
+    [Fact]
     public void StatusesAreKilledSurvivedTimeoutNotReachedMarked()
     {
         if (Shared.Value is not { } run) return;

@@ -976,7 +976,7 @@ void t24CheckHandler(ref Ctx c, for FuncId fn, at BNode body, bool whole) {
 
 bool t24AllocatingFunction(BuiltinFunction b) {
     switch b {
-        case .listNew or .ownedNew or .strBufGrow or .strBufOver or .arenaNew or .utf8Decode or .utf8TryDecode or .utf8DecodeReplace or .hexEncode or .hexDecode or .symbolIntern or .ioReadFile or .ioReadText or .ioListDir or .ioRun or .ioRunBatch:
+        case .listNew or .ownedNew or .strBufGrow or .strBufOver or .arenaNew or .utf8Decode or .utf8TryDecode or .utf8DecodeReplace or .hexEncode or .hexDecode or .symbolIntern or .ioReadFile or .ioReadText or .ioListDir or .ioRun or .ioRunBatch or .pathRelative or .pathFileName or .pathDirectoryName or .pathCombine or .pathCombineSpan or .pathFullPath or .envGet:
             return true
         default:
             return false
@@ -985,7 +985,7 @@ bool t24AllocatingFunction(BuiltinFunction b) {
 
 bool t24AllocatingMember(BuiltinMember m) {
     switch m {
-        case .spanCopy or .stringCopy or .listCopy or .mapCopy or .strBufCopy or .ioReadAll or .intToString or .listAdd or .listReplace or .mapSlot or .mapIndexSet or .stringLowercased or .stringUppercased or .stringReplaced or .stringRepeated or .stringPadded or .bytesToString or .stringJoined or .utf16Copy:
+        case .spanCopy or .stringCopy or .listCopy or .mapCopy or .strBufCopy or .ioReadAll or .ioReadAllBytes or .intToString or .listAdd or .listReplace or .mapSlot or .mapIndexSet or .stringLowercased or .stringUppercased or .stringReplaced or .stringRepeated or .stringPadded or .bytesToString or .stringJoined or .utf16Copy:
             return true
         default:
             return false

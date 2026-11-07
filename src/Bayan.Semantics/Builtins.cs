@@ -72,6 +72,9 @@ public sealed class Builtins
         IoReadText = MakeIo("readText", BuiltinFunction.IoReadText, PrimitiveType.String, ("path", PrimitiveType.String));
         IoWriteFile = MakeIo("writeFile", BuiltinFunction.IoWriteFile, PrimitiveType.Void,
             ("path", PrimitiveType.String), ("bytes", new SpanType(PrimitiveType.U8, readOnly: true)));
+        IoRemove = MakeIo("remove", BuiltinFunction.IoRemove, PrimitiveType.Void, ("path", PrimitiveType.String));
+        IoCreateDirectory = MakeIo("createDirectory", BuiltinFunction.IoCreateDirectory, PrimitiveType.Void, ("path", PrimitiveType.String));
+        IoRemoveDirectory = MakeIo("removeDirectory", BuiltinFunction.IoRemoveDirectory, PrimitiveType.Void, ("path", PrimitiveType.String));
         IoListDir = MakeIo("listDir", BuiltinFunction.IoListDir, new ListType(PrimitiveType.String), ("path", PrimitiveType.String));
         IoRun = MakeIo("run", BuiltinFunction.IoRun, BuiltinType.ProcessResult,
             ("program", PrimitiveType.String), ("args", new SpanType(PrimitiveType.String, readOnly: true)));
@@ -114,6 +117,15 @@ public sealed class Builtins
         HexDecode.ErrorSets.Add(ParseError);
         SymbolIntern = Make("intern", BuiltinFunction.SymbolIntern, BuiltinType.Symbol, ("text", PrimitiveType.String));
         StringInvalidUtf8At = Make("invalidUtf8At", BuiltinFunction.StringInvalidUtf8At, new OptionalType(PrimitiveType.I64), bytes);
+        PathIsRooted = Make("isRooted", BuiltinFunction.PathIsRooted, PrimitiveType.Bool, ("path", PrimitiveType.String));
+        PathRelative = Make("relative", BuiltinFunction.PathRelative, PrimitiveType.String, ("from", PrimitiveType.String), ("to", PrimitiveType.String));
+        PathFileName = Make("fileName", BuiltinFunction.PathFileName, PrimitiveType.String, ("path", PrimitiveType.String));
+        PathDirectoryName = Make("directoryName", BuiltinFunction.PathDirectoryName, new OptionalType(PrimitiveType.String), ("path", PrimitiveType.String));
+        PathCombine = Make("combine", BuiltinFunction.PathCombine, PrimitiveType.String, ("path1", PrimitiveType.String), ("path2", PrimitiveType.String));
+        PathCombineSpan = Make("combine", BuiltinFunction.PathCombineSpan, PrimitiveType.String, ("paths", new SpanType(PrimitiveType.String, readOnly: true)));
+        PathFullPath = Make("fullPath", BuiltinFunction.PathFullPath, PrimitiveType.String, ("path", PrimitiveType.String));
+        EnvGet = Make("get", BuiltinFunction.EnvGet, new OptionalType(PrimitiveType.String), ("name", PrimitiveType.String));
+        FsFileExists = Make("fileExists", BuiltinFunction.FsFileExists, PrimitiveType.Bool, ("path", PrimitiveType.String));
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
         var iterationFile = new FileContext(Module, SyntaxTree.Parse(SourceText.FromString("<builtin>", IterationSource)));
@@ -247,6 +259,59 @@ public sealed class Builtins
     /// <summary><c>Symbol Symbol.intern(string text)</c>: the symbol for <c>text</c>, copied into runtime-owned storage when new (spec 008 R3).</summary>
     public FunctionSymbol SymbolIntern { get; }
 
+    /// <summary><c>bool Path.isRooted(string path)</c>: as .NET <c>Path.IsPathRooted</c> on this OS.</summary>
+    public FunctionSymbol PathIsRooted { get; }
+
+    /// <summary><c>string Path.relative(string from, string to)</c>: as .NET <c>Path.GetRelativePath</c> on this OS, a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathRelative { get; }
+
+    /// <summary><c>string Path.fileName(string path)</c>: as .NET <c>Path.GetFileName</c> on this OS, a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathFileName { get; }
+
+    /// <summary><c>string? Path.directoryName(string path)</c>: as .NET <c>Path.GetDirectoryName</c> on this OS (null for a root or an empty path), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathDirectoryName { get; }
+
+    /// <summary><c>string Path.combine(string path1, string path2)</c>: as .NET <c>Path.Combine</c> on this OS (a rooted <c>path2</c> wins), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathCombine { get; }
+
+    /// <summary><c>string Path.combine(ReadOnlySpan&lt;string&gt; paths)</c>: as .NET <c>Path.Combine(params string[])</c> on this OS (the last rooted part restarts the result), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol PathCombineSpan { get; }
+
+    /// <summary><c>string Path.fullPath(string path)</c>: as .NET <c>Path.GetFullPath</c> on this OS (a relative path against the working directory), a fresh copy from <c>context.allocator</c>; panics on an empty path or a NUL byte.</summary>
+    public FunctionSymbol PathFullPath { get; }
+
+    /// <summary><c>string? Env.get(string name)</c> <c>uses env</c>: as .NET <c>Environment.GetEnvironmentVariable</c> (null when unset), a fresh copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol EnvGet { get; }
+
+    /// <summary>A static member of <c>Env</c>, or null.</summary>
+    public FunctionSymbol? FindEnv(string name) => name switch
+    {
+        "get" => EnvGet,
+        _ => null,
+    };
+
+    /// <summary><c>bool Fs.fileExists(string path)</c> <c>uses fs</c>: as .NET <c>File.Exists</c> (false for a directory, a missing entry, an empty path and a path ending in a separator).</summary>
+    public FunctionSymbol FsFileExists { get; }
+
+    /// <summary>A static member of <c>Fs</c>, or null.</summary>
+    public FunctionSymbol? FindFs(string name) => name switch
+    {
+        "fileExists" => FsFileExists,
+        _ => null,
+    };
+
+    /// <summary>A static member of <c>Path</c>, or null.</summary>
+    public FunctionSymbol? FindPath(string name) => name switch
+    {
+        "isRooted" => PathIsRooted,
+        "relative" => PathRelative,
+        "fileName" => PathFileName,
+        "directoryName" => PathDirectoryName,
+        "combine" => PathCombine,
+        "fullPath" => PathFullPath,
+        _ => null,
+    };
+
     /// <summary>A static member of <c>string</c>, or null.</summary>
     public FunctionSymbol? FindString(string name) => name switch
     {
@@ -305,6 +370,15 @@ public sealed class Builtins
     /// <summary><c>void Io.writeFile(string path, ReadOnlySpan&lt;u8&gt; bytes) fails IoError</c>.</summary>
     public FunctionSymbol IoWriteFile { get; }
 
+    /// <summary><c>void Io.remove(string path) fails IoError</c> <c>uses fs</c>: as .NET <c>File.Delete</c> (a missing file is not an error; a directory fails).</summary>
+    public FunctionSymbol IoRemove { get; }
+
+    /// <summary><c>void Io.createDirectory(string path) fails IoError</c> <c>uses fs</c>: as .NET <c>Directory.CreateDirectory</c> (creates missing parents; an existing directory is not an error, an existing file is).</summary>
+    public FunctionSymbol IoCreateDirectory { get; }
+
+    /// <summary><c>void Io.removeDirectory(string path) fails IoError</c> <c>uses fs</c>: as .NET <c>Directory.Delete(path)</c> (an empty directory only; a missing path, a file or a non-empty directory fails).</summary>
+    public FunctionSymbol IoRemoveDirectory { get; }
+
     /// <summary><c>List&lt;string&gt; Io.listDir(string path) fails IoError</c>: entry names sorted by byte order.</summary>
     public FunctionSymbol IoListDir { get; }
 
@@ -331,6 +405,9 @@ public sealed class Builtins
         "readFile" => IoReadFile,
         "readText" => IoReadText,
         "writeFile" => IoWriteFile,
+        "remove" => IoRemove,
+        "createDirectory" => IoCreateDirectory,
+        "removeDirectory" => IoRemoveDirectory,
         "listDir" => IoListDir,
         "run" => IoRun,
         "runBatch" => IoRunBatch,

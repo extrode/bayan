@@ -1,0 +1,11 @@
+// A `.member` line at the indentation of its statement joins it, though `let n = s` reads as complete (BYN5103).
+let s = "abc"
+let n = s
+.length
+print($"{n}")
+
+if n > 0 {
+    let t = s.trimmed()
+    .length
+    print($"{t}")
+}

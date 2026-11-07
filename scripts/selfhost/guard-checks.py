@@ -1,13 +1,17 @@
 # guard-checks.py — the guard's content checks for one spec 010 task (called by guard.sh; prints one failure per line).
-#   python3 -I scripts/selfhost/guard-checks.py <base> <task, e.g. T13> <allow globs, comma-separated>
+#   python3 -I scripts/selfhost/guard-checks.py <base> <task, e.g. T13> <allow globs, comma-separated> [spec, default 010]
+# The spec is a row of specs.tsv: its shared-state files (section check C) and the directory a bare .byn name resolves in.
 # A  oracle: the task's test class runs the C# implementation and compares with it; no hand-typed expected lines.
 # B  stubs: no `// stub: <task>` marker left in an owned file unless it names its blocking Question; no empty bodies.
-# C  ctx.byn: changes only inside the task's own `// ── <task> state` section.
+# C  ctx.byn: changes only inside the task's own `// ── <task> state` section (its header line counts as inside).
 # D  gates: no Question that gates this task ("before <task>") is still Open.
 # E  docs: a Progress log entry naming the task; every `[dir/]file.byn:N` a new Question cites exists and shows the quoted code.
 import fnmatch, os, re, subprocess, sys
 
 base, task, allow = sys.argv[1], sys.argv[2], sys.argv[3].split(',')
+HEAD, *TABLE = [l.split('\t') for l in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'specs.tsv'), encoding='utf-8').read().splitlines()]
+row = dict(zip(HEAD, next(r for r in TABLE if r[0] == (sys.argv[4] if len(sys.argv) > 4 else '010'))))
+shared = row['shared'].split(',')
 n = task[1:]
 fails = []
 
@@ -25,13 +29,14 @@ def read(path):
 
 changed = sorted(set(git('diff', '--name-only', f'{base}...HEAD').split() + git('diff', '--name-only').split()
                      + git('ls-files', '--others', '--exclude-standard').split()))
-owned_byn = [p for p in allow if p.endswith('.byn') and p != 'selfhost/semantics/ctx.byn']
+owned_byn = [p for p in allow if p.endswith('.byn') and p not in shared]
 test_files = [p for p in allow if p.endswith('Tests.cs')]
 
 # A — oracle
 ORACLE = re.compile(r'\b(Compilation\.(Create|FromPath|FromProject)|Manifest\.(Read|Parse)|DiagnosticRenderer\.|new (Binder|Compilation|Parser)\b'
                     r'|typeof\((Compilation|Binder|Conversions|Conformance)\)|(Conversions|ConstantFolding|TypeFacts|Conformance|BinderExpressions|Lexicon)\.[A-Z]'
-                    r'|\.GetType\("Bayan\.Semantics)')
+                    r'|\.GetType\("Bayan\.Semantics'
+                    r'|CliApp\.(Run|EmitC)\(|SyntaxTree\.Parse\(|SelfhostEmitterHarness\.SameAsCli\()')  # 011: the C# CLI and parser, and the harness over the CLI
 HAND = re.compile(r'(\bexpected\w*\s*=\s*(new\s*(List<string>)?\s*(\(\))?\s*\{|\[)\s*")|(AssertSection\([^;]*,\s*(new\s*(List<string>)?\s*\{|\[)\s*")')
 for t in test_files:
     src = read(t)
@@ -63,9 +68,12 @@ for f in owned_byn:
             if 'blocked: Q' not in prev:
                 fails.append(f'stub: {f}:{i + 1} has an empty body; port it, or mark it `// stub: {task} … (blocked: Qnnn)`')
 
-# C — ctx.byn sections
-if 'selfhost/semantics/ctx.byn' in changed:
-    new = read('selfhost/semantics/ctx.byn').split('\n')
+# C — ctx.byn sections (each shared-state file of the spec)
+for ctx in shared:
+    if ctx not in changed:
+        continue
+    name = os.path.basename(ctx)
+    new = read(ctx).split('\n')
     spans, start = [], None
     for i, line in enumerate(new, 1):
         if re.match(rf'^\s*// ── {task} state\b', line):
@@ -73,14 +81,15 @@ if 'selfhost/semantics/ctx.byn' in changed:
         elif start and re.match(r'^\s*(// ──|\})', line):
             spans.append((start, i)); start = None
     # one diff from the merge base to the working tree, numbered as the spans are (as in E)
-    diff = git('diff', '-U0', git('merge-base', base, 'HEAD').strip(), '--', 'selfhost/semantics/ctx.byn')
+    diff = git('diff', '-U0', git('merge-base', base, 'HEAD').strip(), '--', ctx)
     for m in re.finditer(r'^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', diff, re.M):
         old_n, at, cnt = int(m.group(1) or 1), int(m.group(2)), int(m.group(3) or 1)
         lo, hi = at, at + max(cnt, 1) - 1
         if old_n and not cnt:
-            fails.append(f'ctx: ctx.byn deletes lines near :{at}; sections only grow'); continue
-        if not any(s < lo and hi < e for s, e in spans):
-            fails.append(f'ctx: ctx.byn:{lo}-{hi} is outside `// ── {task} state` sections; add fields only there')
+            fails.append(f'ctx: {name} deletes lines near :{at}; sections only grow'); continue
+        # a hunk may start on its section's header: a task adds its own `// ── Tn state` line with its first field
+        if not any(s <= lo and hi < e for s, e in spans):
+            fails.append(f'ctx: {name}:{lo}-{hi} is outside `// ── {task} state` sections; add fields only there')
 
 # D — gates
 hand = read('docs/bayan-handoff.md')
@@ -100,8 +109,8 @@ for l in added:
         continue
     for m in re.finditer(r'`?((?:[A-Za-z0-9_.-]+/)*[a-z0-9_]+\.byn)`?\s*:(\d+)(?:\s*`([^`]+)`)?', l):
         name, ln, code = m.group(1), int(m.group(2)), m.group(3)
-        # a cited directory path is exact; a bare basename is looked up in the owned files, then selfhost/semantics/
-        path = name if '/' in name else next((p for p in owned_byn if p.endswith('/' + name)), f'selfhost/semantics/{name}')
+        # a cited directory path is exact; a bare basename is looked up in the owned files, then the spec's directory
+        path = name if '/' in name else next((p for p in owned_byn if p.endswith('/' + name)), f"{row['bydir']}/{name}")
         if not os.path.exists(path):
             fails.append(f'docs: Q{l[:3]} cites {name}:{ln}, but {path} does not exist; cite an existing file')
             continue

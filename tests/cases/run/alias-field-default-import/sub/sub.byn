@@ -1,0 +1,3 @@
+public struct L {
+    public i64 a = 3
+}

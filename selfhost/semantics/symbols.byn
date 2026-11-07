@@ -26,14 +26,14 @@ import parser
 // ── Enums ───────────────────────────────────────────────────────────────────────
 
 /// C# `Accessibility`: `Private`, `Module`, `Public`.
-enum Accessibility {
+public enum Accessibility {
     privateKeyword
     module
     publicKeyword
 }
 
 /// C# `FunctionKind`.
-enum FunctionKind {
+public enum FunctionKind {
     function
     method
     constructor
@@ -46,7 +46,7 @@ enum FunctionKind {
 }
 
 /// C# `LocalKind`.
-enum LocalKind {
+public enum LocalKind {
     letKeyword
     varKeyword
     constKeyword
@@ -57,7 +57,7 @@ enum LocalKind {
 }
 
 /// C# `BuiltinFunction`.
-enum BuiltinFunction {
+public enum BuiltinFunction {
     none
     print
     log
@@ -74,6 +74,9 @@ enum BuiltinFunction {
     ioReadFile
     ioReadText
     ioWriteFile
+    ioRemove
+    ioCreateDirectory
+    ioRemoveDirectory
     ioListDir
     ioRun
     ioRunBatch
@@ -91,297 +94,306 @@ enum BuiltinFunction {
     intParse
     enumFromOrdinal
     enumParse
+    pathIsRooted
+    pathRelative
+    pathFileName
+    pathDirectoryName
+    pathCombine
+    pathCombineSpan
+    pathFullPath
+    envGet
+    fsFileExists
 }
 
 // ── Symbols ─────────────────────────────────────────────────────────────────────
 
-struct StructSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ModId module = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    Accessibility access = .module
-    i64 modifiers = 0
-    string? doc = null
+public struct StructSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ModId module = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public string? doc = null
     /// The `T.Field` enum generated for a `requires` struct, or -1.
-    EnumId fieldEnum = -1
-    List<FieldId> fields = List<FieldId>()
-    List<PropertyId> properties = List<PropertyId>()
-    List<FuncId> methods = List<FuncId>()
-    List<FuncId> constructors = List<FuncId>()
-    List<TypeParamId> typeParams = List<TypeParamId>()
-    StructId template = -1
-    List<Type> typeArgs = List<Type>()
-    Map<string, Type> typeMap = []
-    List<InterfaceId> bases = List<InterfaceId>()
-    List<ConformanceId> conformances = List<ConformanceId>()
+    public EnumId fieldEnum = -1
+    public List<FieldId> fields = List<FieldId>()
+    public List<PropertyId> properties = List<PropertyId>()
+    public List<FuncId> methods = List<FuncId>()
+    public List<FuncId> constructors = List<FuncId>()
+    public List<TypeParamId> typeParams = List<TypeParamId>()
+    public StructId template = -1
+    public List<Type> typeArgs = List<Type>()
+    public Map<string, Type> typeMap = []
+    public List<InterfaceId> bases = List<InterfaceId>()
+    public List<ConformanceId> conformances = List<ConformanceId>()
     /// The `@name` attribute names in order (for `@noEquality`/`@sealed`).
-    List<string> attributes = List<string>()
+    public List<string> attributes = List<string>()
 }
 
-struct FieldSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    StructId owner = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    Accessibility access = .module
-    i64 modifiers = 0
-    Type type = -1
-    bool hasDefault = false
+public struct FieldSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public StructId owner = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public Type type = -1
+    public bool hasDefault = false
     /// T4 (Q539): C# `Default`, the bound default value, or -1.
-    BExpr defaultValue = -1
+    public BExpr defaultValue = -1
 }
 
-struct PropertySymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    StructId owner = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    Accessibility access = .module
-    i64 modifiers = 0
-    Type type = -1
-    FuncId getter = -1
+public struct PropertySymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public StructId owner = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public Type type = -1
+    public FuncId getter = -1
 }
 
-struct FunctionSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ModId module = -1
-    FunctionKind kind = .function
-    Accessibility access = .module
-    i64 modifiers = 0
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    StructId owner = -1
-    InterfaceId iface = -1
-    bool isAbstract = false
-    bool isStatic = false
-    List<LocalId> parameters = List<LocalId>()
-    Type returnType = -1
-    List<ErrorSetId> errorSets = List<ErrorSetId>()
-    List<VariantId> excludedErrors = List<VariantId>()
-    bool hasFails = false
-    bool infersErrors = false
-    BuiltinFunction builtin = .none
-    List<LocalId> locals = List<LocalId>()
-    bool isMutating = false
-    List<TypeParamId> typeParams = List<TypeParamId>()
-    FuncId template = -1
-    List<Type> typeArgs = List<Type>()
-    List<LocalId> captures = List<LocalId>()
-    FuncId enclosing = -1
-    Map<string, Type> typeMap = []
+public struct FunctionSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ModId module = -1
+    public FunctionKind kind = .function
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public StructId owner = -1
+    public InterfaceId iface = -1
+    public bool isAbstract = false
+    public bool isStatic = false
+    public List<LocalId> parameters = List<LocalId>()
+    public Type returnType = -1
+    public List<ErrorSetId> errorSets = List<ErrorSetId>()
+    public List<VariantId> excludedErrors = List<VariantId>()
+    public bool hasFails = false
+    public bool infersErrors = false
+    public BuiltinFunction builtin = .none
+    public List<LocalId> locals = List<LocalId>()
+    public bool isMutating = false
+    public List<TypeParamId> typeParams = List<TypeParamId>()
+    public FuncId template = -1
+    public List<Type> typeArgs = List<Type>()
+    public List<LocalId> captures = List<LocalId>()
+    public FuncId enclosing = -1
+    public Map<string, Type> typeMap = []
     /// The `becomes .s` name, or null.
-    string? becomes = null
-    TextSpan? refThis = null
-    TextSpan? moveThis = null
+    public string? becomes = null
+    public TextSpan? refThis = null
+    public TextSpan? moveThis = null
     /// T4 (Q539): C# `Body` (a `BoundBlock`) or -1, and `Requires`.
-    BStmt body = -1
-    List<BExpr> requirements = List<BExpr>()
+    public BStmt body = -1
+    public List<BExpr> requirements = List<BExpr>()
 }
 
-struct InterfaceSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ModId module = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    Accessibility access = .module
-    i64 modifiers = 0
-    List<FuncId> methods = List<FuncId>()
-    List<FuncId> properties = List<FuncId>()
-    List<TypeParamId> associatedTypes = List<TypeParamId>()
+public struct InterfaceSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ModId module = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public List<FuncId> methods = List<FuncId>()
+    public List<FuncId> properties = List<FuncId>()
+    public List<TypeParamId> associatedTypes = List<TypeParamId>()
     /// The `Self` type parameter constrained to this interface, or -1 until needed.
-    TypeParamId self = -1
-    List<TypeParamId> typeParams = List<TypeParamId>()
-    InterfaceId template = -1
-    List<Type> typeArgs = List<Type>()
-    Map<string, Type> typeMap = []
+    public TypeParamId self = -1
+    public List<TypeParamId> typeParams = List<TypeParamId>()
+    public InterfaceId template = -1
+    public List<Type> typeArgs = List<Type>()
+    public Map<string, Type> typeMap = []
 }
 
 /// The C# `Conformance`: one struct's conformance to one interface instance.
-struct Conformance {
-    StructId type = -1
-    InterfaceId iface = -1
-    Map<FuncId, FuncId> witnesses = []
-    Map<FuncId, FieldId> fieldWitnesses = []
-    Map<string, Type> associatedTypes = []
+public struct Conformance {
+    public StructId type = -1
+    public InterfaceId iface = -1
+    public Map<FuncId, FuncId> witnesses = []
+    public Map<FuncId, FieldId> fieldWitnesses = []
+    public Map<string, Type> associatedTypes = []
 }
 
 /// The C# `LocalSymbol`, also carrying `ParameterSymbol`'s fields (`isParameter` says which).
-struct LocalSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    Type type = -1
-    LocalKind kind = .letKeyword
-    bool isUsing = false
-    i64 id = -1
-    bool borrowsSubject = false
-    bool isCatch = false
-    TextSpan? keywordSpan = null
-    TextSpan? guardSpan = null
-    bool written = false
+public struct LocalSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public Type type = -1
+    public LocalKind kind = .letKeyword
+    public bool isUsing = false
+    public i64 id = -1
+    public bool borrowsSubject = false
+    public bool isCatch = false
+    public TextSpan? keywordSpan = null
+    public TextSpan? guardSpan = null
+    public bool written = false
     /// `ParameterSymbol`'s fields:
-    bool isParameter = false
-    parser.ParamModifier modifier = .none
-    i64 ordinal = -1
+    public bool isParameter = false
+    public parser.ParamModifier modifier = .none
+    public i64 ordinal = -1
     /// T4 (Q539): C# `Constant`, and `ParameterSymbol.Default` (-1 for none).
-    Constant? constant = null
-    BExpr defaultValue = -1
+    public Constant? constant = null
+    public BExpr defaultValue = -1
 }
 
-struct ConstSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ModId module = -1
-    FileId file = -1
-    i64 declIndex = -1
-    Type type = -1
+public struct ConstSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ModId module = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public Type type = -1
     /// Binding state, to detect constants defined in terms of themselves.
-    i64 state = 0
-    bool isStaticArray = false
+    public i64 state = 0
+    public bool isStaticArray = false
     /// T4 (Q539): C# `Value`, `Bound` (-1 for none) and `Elements`.
-    Constant? value = null
-    BExpr bound = -1
-    List<Constant> elements = List<Constant>()
+    public Constant? value = null
+    public BExpr bound = -1
+    public List<Constant> elements = List<Constant>()
 }
 
-struct ErrorSetSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ModId module = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    Accessibility access = .module
-    i64 modifiers = 0
-    List<VariantId> variants = List<VariantId>()
+public struct ErrorSetSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ModId module = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public List<VariantId> variants = List<VariantId>()
     /// For `ValidationError<T>`, that `T`; -1 when absent.
-    Type of = -1
+    public Type of = -1
 }
 
-struct ErrorVariantSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ErrorSetId set = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    i64 code = 0
-    string? doc = null
-    List<LocalId> fields = List<LocalId>()
-    i64 exitCode = 1
+public struct ErrorVariantSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ErrorSetId set = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public i64 code = 0
+    public string? doc = null
+    public List<LocalId> fields = List<LocalId>()
+    public i64 exitCode = 1
 }
 
-struct TestSymbol {
-    string title
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    FuncId function = -1
-    FileId file = -1
-    i64 declIndex = -1
+public struct TestSymbol {
+    public string title
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public FuncId function = -1
+    public FileId file = -1
+    public i64 declIndex = -1
 }
 
-struct EnumSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ModId module = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    Accessibility access = .module
-    i64 modifiers = 0
-    List<EnumMemberId> members = List<EnumMemberId>()
-    List<EnumFieldId> fields = List<EnumFieldId>()
-    FuncId fromOrdinal = -1
-    FuncId parse = -1
+public struct EnumSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ModId module = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public List<EnumMemberId> members = List<EnumMemberId>()
+    public List<EnumFieldId> fields = List<EnumFieldId>()
+    public FuncId fromOrdinal = -1
+    public FuncId parse = -1
     /// For `T.Field` (J23): the struct whose fields are the members, or -1.
-    StructId fieldsOf = -1
+    public StructId fieldsOf = -1
 }
 
-struct EnumFieldSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    EnumId owner = -1
-    Type type = -1
-    i64 index = -1
+public struct EnumFieldSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public EnumId owner = -1
+    public Type type = -1
+    public i64 index = -1
 }
 
-struct EnumMemberSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    EnumId owner = -1
-    i64 ordinal = -1
-    string? doc = null
+public struct EnumMemberSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public EnumId owner = -1
+    public i64 ordinal = -1
+    public string? doc = null
     /// T4 (Q539): C# `Values`, one per enum field; null where C# has null.
-    List<Constant?> values = List<Constant?>()
+    public List<Constant?> values = List<Constant?>()
 }
 
-struct UnionSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    ModId module = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    Accessibility access = .module
-    i64 modifiers = 0
-    List<VariantId> variants = List<VariantId>()
-    List<TypeParamId> typeParams = List<TypeParamId>()
-    UnionId template = -1
-    List<Type> typeArgs = List<Type>()
-    Map<string, Type> typeMap = []
+public struct UnionSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public ModId module = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public Accessibility access = .module
+    public i64 modifiers = 0
+    public List<VariantId> variants = List<VariantId>()
+    public List<TypeParamId> typeParams = List<TypeParamId>()
+    public UnionId template = -1
+    public List<Type> typeArgs = List<Type>()
+    public Map<string, Type> typeMap = []
 }
 
-struct UnionVariantSymbol {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    UnionId owner = -1
-    FileId file = -1
-    i64 declIndex = -1
-    i64 memberIndex = -1
-    i64 tag = -1
-    string? doc = null
-    List<LocalId> fields = List<LocalId>()
+public struct UnionVariantSymbol {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public UnionId owner = -1
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 memberIndex = -1
+    public i64 tag = -1
+    public string? doc = null
+    public List<LocalId> fields = List<LocalId>()
 }
 
 /// The C# `TypeParameterType`'s data: its name and its `where`-clause constraints.
-struct TypeParam {
-    string name
-    List<InterfaceId> constraints = List<InterfaceId>()
+public struct TypeParam {
+    public string name
+    public List<InterfaceId> constraints = List<InterfaceId>()
 }
 
 /// A `type X = T` alias or a `union error S = A, B`; resolved to its target on first use.
-struct AliasPlaceholder {
-    string name
-    TextSpan nameSpan = TextSpan { start: 0, length: 0 }
-    TextSpan span = TextSpan { start: 0, length: 0 }
-    FileId file = -1
-    i64 declIndex = -1
-    i64 modifiers = 0
-    Type target = -1
-    bool resolving = false
+public struct AliasPlaceholder {
+    public string name
+    public TextSpan nameSpan = TextSpan { start: 0, length: 0 }
+    public TextSpan span = TextSpan { start: 0, length: 0 }
+    public FileId file = -1
+    public i64 declIndex = -1
+    public i64 modifiers = 0
+    public Type target = -1
+    public bool resolving = false
 }
 
 // ── Arena construction ─────────────────────────────────────────────────────────
@@ -478,27 +490,27 @@ AliasId newAlias(ref Ctx c, by move AliasPlaceholder s) {
 
 // ── Named-type handles ────────────────────────────────────────────────────────
 
-Type structTypeOf(StructId s) => makeType(.structType, at: s)
+public Type structTypeOf(StructId s) => makeType(.structType, at: s)
 
-Type interfaceTypeOf(InterfaceId i) => makeType(.interfaceType, at: i)
+public Type interfaceTypeOf(InterfaceId i) => makeType(.interfaceType, at: i)
 
-Type enumTypeOf(EnumId e) => makeType(.enumType, at: e)
+public Type enumTypeOf(EnumId e) => makeType(.enumType, at: e)
 
-Type unionTypeOf(UnionId u) => makeType(.unionType, at: u)
+public Type unionTypeOf(UnionId u) => makeType(.unionType, at: u)
 
-Type errorSetTypeOf(ErrorSetId e) => makeType(.errorSet, at: e)
+public Type errorSetTypeOf(ErrorSetId e) => makeType(.errorSet, at: e)
 
-Type typeParamTypeOf(TypeParamId tp) => makeType(.typeParam, at: tp)
+public Type typeParamTypeOf(TypeParamId tp) => makeType(.typeParam, at: tp)
 
 // ── Display helpers ────────────────────────────────────────────────────────────
 
 /// The C# `TypeSymbol.Qualify`: prefix a declared name with its module when qualifying is on and the
 /// module is not `builtin`.
-string qualify(ref Ctx c, by ModId module, for string name) =>
+public string qualify(ref Ctx c, by ModId module, for string name) uses alloc =>
     c.qualifyModules && c.modules[module].name != "builtin" ? $"{c.modules[module].name}.{name}" : name
 
 /// The C# `StructSymbol.DisplayName`.
-string structDisplayName(ref Ctx c, by StructId s) {
+public string structDisplayName(ref Ctx c, by StructId s) uses alloc {
     let name = c.structs[s].name
     let module = c.structs[s].module
     let q = qualify(ref c, by: module, for: name)
@@ -528,7 +540,7 @@ string structDisplayName(ref Ctx c, by StructId s) {
 }
 
 /// The C# `InterfaceSymbol.DisplayName`.
-string interfaceDisplayName(ref Ctx c, by InterfaceId i) {
+public string interfaceDisplayName(ref Ctx c, by InterfaceId i) uses alloc {
     let name = c.interfaces[i].name
     let module = c.interfaces[i].module
     let q = qualify(ref c, by: module, for: name)
@@ -558,7 +570,7 @@ string interfaceDisplayName(ref Ctx c, by InterfaceId i) {
 }
 
 /// The C# `EnumSymbol.DisplayName` (`T.Field` for a generated field enum).
-string enumDisplayName(ref Ctx c, by EnumId e) {
+public string enumDisplayName(ref Ctx c, by EnumId e) uses alloc {
     let fieldsOf = c.enums[e].fieldsOf
     if fieldsOf != -1 {
         let fName = c.structs[fieldsOf].name
@@ -571,7 +583,7 @@ string enumDisplayName(ref Ctx c, by EnumId e) {
 }
 
 /// The C# `UnionSymbol.DisplayName`.
-string unionDisplayName(ref Ctx c, by UnionId u) {
+public string unionDisplayName(ref Ctx c, by UnionId u) uses alloc {
     let name = c.unions[u].name
     let module = c.unions[u].module
     let q = qualify(ref c, by: module, for: name)
@@ -601,7 +613,7 @@ string unionDisplayName(ref Ctx c, by UnionId u) {
 }
 
 /// The C# `ErrorSetSymbol.DisplayName`.
-string errorSetDisplayName(ref Ctx c, by ErrorSetId e) {
+public string errorSetDisplayName(ref Ctx c, by ErrorSetId e) uses alloc {
     let name = c.errorSets[e].name
     let module = c.errorSets[e].module
     let of = c.errorSets[e].of
@@ -610,7 +622,7 @@ string errorSetDisplayName(ref Ctx c, by ErrorSetId e) {
 }
 
 /// The C# `ErrorSetSymbol.DisplayNameAmong`: qualify when a peer would read the same.
-string displayNameAmong(ref Ctx c, by ErrorSetId e, for in List<ErrorSetId> among) {
+public string displayNameAmong(ref Ctx c, by ErrorSetId e, for in List<ErrorSetId> among) uses alloc {
     let own = errorSetDisplayName(ref c, by: e)
     var peer = false
     for p in among {
@@ -628,7 +640,7 @@ string displayNameAmong(ref Ctx c, by ErrorSetId e, for in List<ErrorSetId> amon
 }
 
 /// The C# `FunctionSymbol.DisplaySignature`.
-string functionDisplaySignature(ref Ctx c, by FuncId f) {
+public string functionDisplaySignature(ref Ctx c, by FuncId f) uses alloc {
     let name = c.functions[f].name
     let owner = c.functions[f].owner
     var params = copyIds(in c.functions[f].parameters)
@@ -645,7 +657,7 @@ string functionDisplaySignature(ref Ctx c, by FuncId f) {
 }
 
 /// The C# `ErrorVariantSymbol.Summary`: the doc's first line, trimmed, or the name.
-string errorVariantSummary(ref Ctx c, by VariantId v) {
+public string errorVariantSummary(ref Ctx c, by VariantId v) {
     let doc = c.errorVariants[v].doc
     if (doc is { } d) {
         if d.length > 0 {
@@ -660,7 +672,7 @@ string errorVariantSummary(ref Ctx c, by VariantId v) {
 // ── Lookups ────────────────────────────────────────────────────────────────────
 
 /// The C# `StructSymbol.FindField`, or -1.
-FieldId findField(ref Ctx c, by StructId s, for string name) {
+public FieldId findField(ref Ctx c, by StructId s, for string name) {
     for f in c.structs[s].fields {
         if c.fields[f].name == name { return f }
     }
@@ -668,7 +680,7 @@ FieldId findField(ref Ctx c, by StructId s, for string name) {
 }
 
 /// The C# `StructSymbol.FindProperty`, or -1.
-PropertyId findProperty(ref Ctx c, by StructId s, for string name) {
+public PropertyId findProperty(ref Ctx c, by StructId s, for string name) {
     for p in c.structs[s].properties {
         if c.properties[p].name == name { return p }
     }
@@ -676,7 +688,7 @@ PropertyId findProperty(ref Ctx c, by StructId s, for string name) {
 }
 
 /// The C# `StructSymbol.FindMethods`.
-List<FuncId> findMethods(ref Ctx c, by StructId s, for string name) {
+public List<FuncId> findMethods(ref Ctx c, by StructId s, for string name) uses alloc {
     var result = List<FuncId>()
     for m in c.structs[s].methods {
         if c.functions[m].name == name { result.append(m) }
@@ -685,7 +697,7 @@ List<FuncId> findMethods(ref Ctx c, by StructId s, for string name) {
 }
 
 /// The C# `InterfaceSymbol.FindMethods`.
-List<FuncId> findInterfaceMethods(ref Ctx c, by InterfaceId i, for string name) {
+public List<FuncId> findInterfaceMethods(ref Ctx c, by InterfaceId i, for string name) uses alloc {
     var result = List<FuncId>()
     for m in c.interfaces[i].methods {
         if c.functions[m].name == name { result.append(m) }
@@ -694,7 +706,7 @@ List<FuncId> findInterfaceMethods(ref Ctx c, by InterfaceId i, for string name) 
 }
 
 /// The C# `InterfaceSymbol.FindProperty`, or -1.
-FuncId findInterfaceProperty(ref Ctx c, by InterfaceId i, for string name) {
+public FuncId findInterfaceProperty(ref Ctx c, by InterfaceId i, for string name) {
     for p in c.interfaces[i].properties {
         if c.functions[p].name == name { return p }
     }
@@ -702,7 +714,7 @@ FuncId findInterfaceProperty(ref Ctx c, by InterfaceId i, for string name) {
 }
 
 /// The C# `ErrorSetSymbol.Find`, or -1.
-VariantId findErrorVariant(ref Ctx c, by ErrorSetId e, for string name) {
+public VariantId findErrorVariant(ref Ctx c, by ErrorSetId e, for string name) {
     for v in c.errorSets[e].variants {
         if c.errorVariants[v].name == name { return v }
     }
@@ -710,7 +722,7 @@ VariantId findErrorVariant(ref Ctx c, by ErrorSetId e, for string name) {
 }
 
 /// The C# `EnumSymbol.Find`, or -1.
-EnumMemberId findEnumMember(ref Ctx c, by EnumId e, for string name) {
+public EnumMemberId findEnumMember(ref Ctx c, by EnumId e, for string name) {
     for m in c.enums[e].members {
         if c.enumMembers[m].name == name { return m }
     }
@@ -718,7 +730,7 @@ EnumMemberId findEnumMember(ref Ctx c, by EnumId e, for string name) {
 }
 
 /// The C# `EnumSymbol.FindField`, or -1.
-EnumFieldId findEnumField(ref Ctx c, by EnumId e, for string name) {
+public EnumFieldId findEnumField(ref Ctx c, by EnumId e, for string name) {
     for f in c.enums[e].fields {
         if c.enumFields[f].name == name { return f }
     }
@@ -726,7 +738,7 @@ EnumFieldId findEnumField(ref Ctx c, by EnumId e, for string name) {
 }
 
 /// The C# `UnionSymbol.Find`, or -1.
-VariantId findUnionVariant(ref Ctx c, by UnionId u, for string name) {
+public VariantId findUnionVariant(ref Ctx c, by UnionId u, for string name) {
     for v in c.unions[u].variants {
         if c.unionVariants[v].name == name { return v }
     }
@@ -736,7 +748,7 @@ VariantId findUnionVariant(ref Ctx c, by UnionId u, for string name) {
 // ── Computed members ──────────────────────────────────────────────────────────
 
 /// The C# `StructSymbol.IsGeneric`.
-bool structIsGeneric(ref Ctx c, by StructId s) {
+public bool structIsGeneric(ref Ctx c, by StructId s) uses alloc {
     if c.structs[s].typeParams.length > 0 { return true }
     var args = copyIds(in c.structs[s].typeArgs)
     for a in args {
@@ -746,7 +758,7 @@ bool structIsGeneric(ref Ctx c, by StructId s) {
 }
 
 /// The C# `InterfaceSymbol.IsGeneric`.
-bool interfaceIsGeneric(ref Ctx c, by InterfaceId i) {
+public bool interfaceIsGeneric(ref Ctx c, by InterfaceId i) uses alloc {
     if c.interfaces[i].typeParams.length > 0 { return true }
     var args = copyIds(in c.interfaces[i].typeArgs)
     for a in args {
@@ -756,7 +768,7 @@ bool interfaceIsGeneric(ref Ctx c, by InterfaceId i) {
 }
 
 /// The C# `UnionSymbol.IsGeneric`.
-bool unionIsGeneric(ref Ctx c, by UnionId u) {
+public bool unionIsGeneric(ref Ctx c, by UnionId u) uses alloc {
     if c.unions[u].typeParams.length > 0 { return true }
     var args = copyIds(in c.unions[u].typeArgs)
     for a in args {
@@ -766,7 +778,7 @@ bool unionIsGeneric(ref Ctx c, by UnionId u) {
 }
 
 /// The C# `FunctionSymbol.IsGeneric`.
-bool functionIsGeneric(ref Ctx c, by FuncId f) {
+public bool functionIsGeneric(ref Ctx c, by FuncId f) uses alloc {
     let owner = c.functions[f].owner
     let iface = c.functions[f].iface
     let enclosing = c.functions[f].enclosing
@@ -782,7 +794,7 @@ bool functionIsGeneric(ref Ctx c, by FuncId f) {
 }
 
 /// The C# `FunctionSymbol.IsInstance`.
-bool functionIsInstance(ref Ctx c, by FuncId f) {
+public bool functionIsInstance(ref Ctx c, by FuncId f) {
     let template = c.functions[f].template
     let owner = c.functions[f].owner
     let enclosing = c.functions[f].enclosing
@@ -793,7 +805,7 @@ bool functionIsInstance(ref Ctx c, by FuncId f) {
 }
 
 /// The C# `FunctionSymbol.HasThis`.
-bool functionHasThis(ref Ctx c, by FuncId f) {
+public bool functionHasThis(ref Ctx c, by FuncId f) {
     let owner = c.functions[f].owner
     let iface = c.functions[f].iface
     if owner == -1 && iface == -1 { return false }
@@ -803,7 +815,7 @@ bool functionHasThis(ref Ctx c, by FuncId f) {
 }
 
 /// The C# `StructSymbol.IsDefaultable`.
-bool structIsDefaultable(ref Ctx c, by StructId s) {
+public bool structIsDefaultable(ref Ctx c, by StructId s) uses alloc {
     var fields = copyIds(in c.structs[s].fields)
     for f in fields {
         if !c.fields[f].hasDefault || (c.fields[f].modifiers & 16) != 0 { return false }
@@ -812,18 +824,18 @@ bool structIsDefaultable(ref Ctx c, by StructId s) {
 }
 
 /// The C# `FieldSymbol.IsRequired`.
-bool fieldIsRequired(ref Ctx c, by FieldId f) => (c.fields[f].modifiers & 16) != 0
+public bool fieldIsRequired(ref Ctx c, by FieldId f) => (c.fields[f].modifiers & 16) != 0
 
 /// The C# `FieldSymbol.IsReadonly`.
-bool fieldIsReadonly(ref Ctx c, by FieldId f) => (c.fields[f].modifiers & 8) != 0
+public bool fieldIsReadonly(ref Ctx c, by FieldId f) => (c.fields[f].modifiers & 8) != 0
 
 /// The C# `LocalSymbol.IsMutable`.
-bool localIsMutable(ref Ctx c, by LocalId l) =>
+public bool localIsMutable(ref Ctx c, by LocalId l) =>
     c.locals[l].kind == .varKeyword || c.locals[l].kind == .temp
 
 /// The C# `ParameterSymbol.IsByRef`.
-bool paramIsByRef(ref Ctx c, by LocalId l) =>
+public bool paramIsByRef(ref Ctx c, by LocalId l) =>
     c.locals[l].isParameter && (c.locals[l].modifier == .refKeyword || c.locals[l].modifier == .outKeyword)
 
 /// The C# `TypeParameterType`'s name.
-string typeParamDisplayName(ref Ctx c, by TypeParamId tp) => c.typeParams[tp].name
+public string typeParamDisplayName(ref Ctx c, by TypeParamId tp) => c.typeParams[tp].name

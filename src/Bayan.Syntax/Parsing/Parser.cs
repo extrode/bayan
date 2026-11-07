@@ -10,6 +10,9 @@ namespace Bayan.Syntax.Parsing;
 public sealed record SyntaxTree(SourceText Source, CompilationUnit Root, IReadOnlyList<Diagnostic> Diagnostics)
 {
     public static SyntaxTree Parse(SourceText source) => Parser.Parse(source);
+
+    /// <summary>The line-join lint (BYN5103): reported by a compilation and fixed by <c>bayan format</c>, not by <c>bayan parse</c>.</summary>
+    public IReadOnlyList<Diagnostic> Lints { get; init; } = [];
 }
 
 /// <summary>
@@ -70,7 +73,7 @@ public sealed class Parser
     {
         var parser = new Parser(Lexer.Lex(source));
         var root = parser.ParseCompilationUnit();
-        return new SyntaxTree(source, root, parser._diagnostics.Items);
+        return new SyntaxTree(source, root, parser._diagnostics.Items) { Lints = parser.LintLineJoins() };
     }
 
     // ── Token access ─────────────────────────────────────────────────────────────────
@@ -249,7 +252,10 @@ public sealed class Parser
         };
 
     /// <summary>Whether the line before token <paramref name="index"/> ends in an operator, <c>,</c>, <c>=</c>, <c>=&gt;</c> or an opening bracket (lā), or the token is waṣl.</summary>
-    private bool LineContinues(int index) => IsWasl(index) || index > 0 && KindAt(index - 1) is
+    private bool LineContinues(int index) => IsWasl(index) || AfterLa(index);
+
+    /// <summary>Whether the token before <paramref name="index"/> is an operator, <c>,</c>, <c>=</c>, <c>=&gt;</c> or an opening bracket (lā).</summary>
+    private bool AfterLa(int index) => index > 0 && KindAt(index - 1) is
         TokenKind.Comma or TokenKind.FatArrow or TokenKind.OpenBrace or TokenKind.OpenParen or TokenKind.OpenBracket or
         TokenKind.Dot or TokenKind.DotDot or TokenKind.DotDotEquals or TokenKind.Question or TokenKind.QuestionQuestion or
         TokenKind.QuestionDot or TokenKind.Plus or TokenKind.Minus or TokenKind.Star or TokenKind.Slash or TokenKind.Percent or
@@ -267,6 +273,67 @@ public sealed class Parser
     /// <summary>Whether a statement ends before token <paramref name="index"/>, for lookahead: a <c>;</c>, <c>}</c>, the end, or a line break.</summary>
     private bool EndsBefore(int index) => KindAt(index) is TokenKind.Semicolon or TokenKind.CloseBrace or TokenKind.EndOfFile || BreaksLine(index);
 
+    // ── Line-join lint (BYN5103) ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// BYN5103 on each waṣl line indented no deeper (in leading space and tab bytes) than the first line of the statement
+    /// it joins; <c>catch</c> right after <c>}</c> is exempt. The fix indents the line four spaces past the statement.
+    /// </summary>
+    private IReadOnlyList<Diagnostic> LintLineJoins()
+    {
+        var lints = new DiagnosticBag();
+        var opener = new int[_count];
+        var open = new Stack<int>();
+        for (var i = 0; i < _count; i++)
+        {
+            opener[i] = -1;
+            switch (_tokens[i].Kind)
+            {
+                case TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace or TokenKind.InterpolationStart:
+                    open.Push(i);
+                    break;
+                case TokenKind.CloseParen or TokenKind.CloseBracket or TokenKind.InterpolationEnd or TokenKind.CloseBrace:
+                    if (open.TryPop(out var o)) opener[i] = o;
+                    break;
+            }
+        }
+        // Each line's first token, and the first token of the line its statement starts on, filled forward: the statement
+        // starts on the first line reached by stepping back over joined lines and bracketed groups, and every step goes back.
+        var first = new int[_count];
+        var statement = new int[_count];
+        for (var i = 0; i < _count; i++)
+        {
+            first[i] = i > 0 && !_tokens[i].HasNewlineBefore ? first[i - 1] : i;
+            statement[i] = i;
+            if (first[i] != i) continue;
+            if (opener[i] >= 0) statement[i] = statement[first[opener[i]]];
+            else if (i > 0 && JoinsLineBefore(i)) statement[i] = statement[first[i - 1]];
+        }
+        for (var i = 1; i < _count; i++)
+        {
+            if (!BreaksLine(i) || HasBlankLineBefore(i) || !IsWasl(i)) continue;
+            // After lā the line above already continues; after `{` or `,` the line starts an entry (a statement, an arm).
+            if (AfterLa(i)) continue;
+            if (KindAt(i) == TokenKind.CatchKeyword && KindAt(i - 1) == TokenKind.CloseBrace) continue;
+            // At a field's indentation `requires` is a struct-level rule (O3, spec §2.5), so its indentation is meant.
+            if (KindAt(i) == TokenKind.RequiresKeyword) continue;
+            var start = statement[first[i - 1]];
+            var indent = IndentAt(_tokens[i].Start);
+            var statementIndent = IndentAt(_tokens[start].Start);
+            if (indent.Length > statementIndent.Length) continue;
+            var line = _source.GetLineIndex(_tokens[start].Start) + 1;
+            var lineStart = _source.GetLineSpan(_source.GetLineIndex(_tokens[i].Start)).Start;
+            lints.Report(DiagnosticCodes.LineJoinIndent, _source, _tokens[i].Span, [Text(_tokens[i])],
+                label: $"joins the statement on line {line}", help: "indent it deeper than the line its statement starts on",
+                fix: new Fix(new TextSpan(lineStart, indent.Length), statementIndent + "    "));
+        }
+        return lints.Items;
+    }
+
+    /// <summary>Whether the line starting at token <paramref name="index"/> continues the line before: inside <c>()</c> or <c>[]</c>, waṣl, or after lā (not <c>{</c>, which opens a block).</summary>
+    private bool JoinsLineBefore(int index) =>
+        !BreaksLine(index) || !HasBlankLineBefore(index) && KindAt(index - 1) != TokenKind.OpenBrace && LineContinues(index);
+
     private Name ExpectName(string what = "a name")
     {
         if (IsName(Kind))
@@ -275,7 +342,7 @@ public sealed class Parser
             var text = Text(token);
             // SPEC §2.4: a C# primitive name is a type, never a declared name; a member after `.` only refers to one.
             // Not through Report: the name parsed in full, so no recovery is needed.
-            if (Keywords.IsCSharpPrimitive(text) && KindAt(_pos - 2) != TokenKind.Dot)
+            if (Keywords.IsCSharpPrimitive(text) && (_pos < 2 || KindAt(_pos - 2) != TokenKind.Dot))
                 _diagnostics.Report(DiagnosticCodes.ReservedKeyword, _source, token.Span, [text],
                     label: "a C# primitive type name", help: "choose another name");
             return new Name(token.Span, text);
@@ -2423,8 +2490,11 @@ public sealed class Parser
         var gapStart = _prevEnd;
         var errors = ErrorCount;
         var seen = _diagnostics.Items.Count;
+        var bodyPos = _pos;
         var body = ParseStatement();
         if (ErrorCount != errors && body is ErrorStmt) return body;
+        // At the end of the file the statement takes no token: there is no text to wrap in braces.
+        if (_pos == bodyPos && Kind == TokenKind.EndOfFile) return body;
         // Only an inner fix overlaps the braces fix; a diagnostic without one (e.g. BYN1006) leaves it applicable.
         header = ReportBraceless(keyword, gapStart, body, _diagnostics.Items.Skip(seen).All(d => d.Fix is null), header);
         return body;
@@ -2440,8 +2510,10 @@ public sealed class Parser
     /// </summary>
     private Diagnostic? ReportBraceless(Token keyword, int gapStart, Stmt body, bool clean, Diagnostic? header)
     {
-        var text = _source.GetText(TextSpan.FromBounds(body.Span.Start, _prevEnd));
-        var gap = _source.GetText(TextSpan.FromBounds(gapStart, body.Span.Start));
+        // A body that took no token (an `ErrorExpr` before `}`) starts past `_prevEnd`: the braces then wrap nothing.
+        var start = Math.Min(body.Span.Start, _prevEnd);
+        var text = _source.GetText(TextSpan.FromBounds(start, _prevEnd));
+        var gap = _source.GetText(TextSpan.FromBounds(gapStart, start));
         string replacement;
         if (gap.Contains('\n'))
         {
@@ -2498,7 +2570,7 @@ public sealed class Parser
         if (Kind != TokenKind.OpenParen || InGroup(_pos, TokenKind.Comma)) return false;
         var next = MatchingClose(_pos) + 1;
         var kind = KindAt(next);
-        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon || _tokens[next].HasNewlineBefore) return true;
+        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon || _tokens[Math.Min(next, _count - 1)].HasNewlineBefore) return true;
         if (kind is TokenKind.Identifier) return true;
         if (kind.IsKeyword())
             return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword or TokenKind.InKeyword);

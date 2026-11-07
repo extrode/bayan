@@ -1,0 +1,11 @@
+// While finish() lends a StrBuf's text, append, appendRepeated, length, view, copy and reassignment leave that text as it was (Q745).
+let arena = Arena()
+var sb = StrBuf()
+sb.append("ab")
+let s = sb.finish()
+sb.append("c")
+sb.appendRepeated('d', by: 2)
+let copy = sb.copy(to: arena)
+print($"{s} {sb.length} {sb.view} {copy.view}")
+sb = StrBuf()
+print($"{s} {sb.length}")

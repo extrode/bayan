@@ -527,16 +527,17 @@ T23Fix t23DeclareFix(ref Ctx c, from FileId f, for in T23Decl decl, by in List<s
 List<string> t23Builtin(BuiltinFunction f) {
     if f == .print || f == .ioStdout || f == .ioStderr || f == .ioStdin { return ["console"] }
     if f == .ioReadFile || f == .ioReadText || f == .ioListDir { return ["fs", "alloc"] }
-    if f == .ioWriteFile { return ["fs"] }
+    if f == .ioWriteFile || f == .ioRemove || f == .ioCreateDirectory || f == .ioRemoveDirectory || f == .fsFileExists { return ["fs"] }
     if f == .ioRun || f == .ioRunBatch { return ["process", "alloc"] }
     if f == .ioMonotonicNanos { return ["clock"] }
-    if f == .listNew || f == .ownedNew || f == .strBufGrow || f == .strBufOver || f == .arenaNew || f == .utf8Decode || f == .utf8TryDecode || f == .utf8DecodeReplace || f == .hexEncode || f == .hexDecode || f == .symbolIntern { return ["alloc"] }
+    if f == .envGet { return ["env", "alloc"] }
+    if f == .listNew || f == .ownedNew || f == .strBufGrow || f == .strBufOver || f == .arenaNew || f == .utf8Decode || f == .utf8TryDecode || f == .utf8DecodeReplace || f == .hexEncode || f == .hexDecode || f == .symbolIntern || f == .pathRelative || f == .pathFileName || f == .pathDirectoryName || f == .pathCombine || f == .pathCombineSpan || f == .pathFullPath { return ["alloc"] }
     return []
 }
 
 List<string> t23Member(BuiltinMember m) {
     if m == .ioWrite { return ["console"] }
-    if m == .ioReadAll { return ["console", "alloc"] }
+    if m == .ioReadAll || m == .ioReadAllBytes { return ["console", "alloc"] }
     if m == .spanCopy || m == .stringCopy || m == .listCopy || m == .mapCopy || m == .strBufCopy || m == .intToString || m == .listAdd || m == .listReplace || m == .mapSlot || m == .mapIndexSet || m == .stringLowercased || m == .stringUppercased || m == .stringReplaced || m == .stringRepeated || m == .stringPadded || m == .bytesToString || m == .stringJoined || m == .utf16Copy { return ["alloc"] }
     return []
 }

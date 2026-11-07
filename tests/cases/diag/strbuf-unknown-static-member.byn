@@ -1,0 +1,4 @@
+// A built-in type that has no static members of its own (here `StrBuf`) reports an unknown member by its type name (BYN2003).
+void main() {
+    let x = StrBuf.nope
+}

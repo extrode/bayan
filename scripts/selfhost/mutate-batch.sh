@@ -5,15 +5,17 @@
 # A file's filter is derived from --tasks (default docs/specs/010-self-hosted-semantics/010-tasks.md): every task line whose
 # `files:` list names the file contributes the *Tests.cs classes of that same list, as FullyQualifiedName~<Class> joined by `|`;
 # a glob class name such as SelfhostSemanticsT*Tests.cs is skipped (no FQN substring), and only classes of the file's own family are kept
-# (selfhost/semantics: SelfhostSemantics*, parser: SelfhostParser*, lexer: SelfhostLexer*: another build does not contain the file); a file with none left
-# uses SelfhostSemantics, SelfhostParser or SelfhostLexer; another directory fails. Files sharing a
-# filter share one recording (a group). --list prints file -> filter and runs nothing; --shard k/n takes every n-th group.
+# (selfhost/semantics: SelfhostSemantics*, parser: SelfhostParser*, lexer: SelfhostLexer*, emitter and its subdirectories cprint/, ltree/: SelfhostEmitter*: another build does not contain the file);
+# a file with none left uses SelfhostSemantics, SelfhostParser, SelfhostLexer or SelfhostEmitter; another directory fails. One group per family and shard (Q910):
+# its filter is the union of its files' filters, so the tests are recorded once per (shard, family); selfhost/emitter/ and its subdirectories are one family.
+# --list prints file -> group filter and runs nothing; --shard k/n gives file i of each family to shard (i mod n)+1.
 # Per group: reports and logs in tmp/mutate-batch/<group>/ (quality-<n>-<binary>.json), bayan mutate's summary printed. A group
 # whose CLI, recording or mutant 0 fails is named and fails the run. Then quality-baseline.py check over the reports: a score
 # below the baseline names the file with old and new score and exits 1 with the baseline untouched; else `update` raises it.
 # Each copied report's `path`s are rewritten relative to the repo root (a path outside it fails the group, naming the report);
 # CI shards (.github/workflows/mutation.yml) upload only the reports, and a final job runs one `update` over all of them.
 set -u
+export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0  # no MSBuild worker or build server outlives the run
 TASKS=docs/specs/010-self-hosted-semantics/010-tasks.md; LIST=0; FILES=""; SHARD=""
 while [ $# -gt 0 ]; do case "$1" in
   --list) LIST=1; shift;; --files) FILES=$2; shift 2;; --shard) SHARD=$2; shift 2;; --tasks) TASKS=$2; shift 2;;
@@ -26,6 +28,8 @@ import fnmatch, glob, os, re, sys
 tasks, only, shard = sys.argv[1:4]
 files = sorted(glob.glob('selfhost/**/*.byn', recursive=True))
 defaults = {'selfhost/semantics': 'SelfhostSemantics', 'selfhost/parser': 'SelfhostParser', 'selfhost/lexer': 'SelfhostLexer'}
+def family(d):
+    return 'SelfhostEmitter' if d == 'selfhost/emitter' or d.startswith('selfhost/emitter/') else defaults.get(d)
 def expand(p):
     m = re.search(r'\{([^{}]*)\}', p)
     return [q for o in m.group(1).split(',') for q in expand(p[:m.start()] + o + p[m.end():])] if m else [p]
@@ -49,29 +53,34 @@ def names(f, p):
 rows = []
 for f in files:
     d = os.path.dirname(f)
-    if d not in defaults:
-        sys.exit(f'mutate-batch: {f}: the directory {d}/ has no test family (selfhost/semantics, parser, lexer)')
-    cls = {c for pats, classes in entries if any(names(f, p) for p in pats) for c in classes if c.startswith(defaults[d])} or {defaults[d]}
+    fam = family(d)
+    if not fam:
+        sys.exit(f'mutate-batch: {f}: the directory {d}/ has no test family (selfhost/semantics, parser, lexer, emitter)')
+    cls = {c for pats, classes in entries if any(names(f, p) for p in pats) for c in classes if c.startswith(fam)} or {fam}
     rows.append((f, '|'.join('FullyQualifiedName~' + c for c in sorted(cls))))
-groups = {}  # filter -> files, in first-seen order
+fams = {}  # family dir (selfhost/<family>) -> files, in file order
 for f, flt in rows:
-    groups.setdefault(flt, []).append(f)
-order = list(groups.items())
+    fams.setdefault('/'.join(f.split('/')[:2]), []).append((f, flt))
+n = 1
 if shard:
     m = re.fullmatch(r'(\d+)/(\d+)', shard)
     if not m or not 1 <= int(m.group(1)) <= int(m.group(2)):
         sys.exit(f'mutate-batch: --shard {shard}: want k/n with 1 <= k <= n')
-    order = order[int(m.group(1)) - 1::int(m.group(2))]
+    k, n = int(m.group(1)), int(m.group(2))
 if only:
     want = only.split(',')
     for w in want:
         if w not in files:
             sys.exit(f'mutate-batch: --files {w}: not a selfhost .byn file')
-for flt, fs in order:
-    name = os.path.dirname(fs[0]).split('/')[-1] + '-' + os.path.basename(fs[0])[:-4]
-    for f in fs:
-        if not only or f in want:
-            print(f'{name}\t{f}\t{flt}')
+for d, fl in fams.items():
+    mine = fl[k - 1::n] if shard else fl  # file i goes to shard (i mod n)+1
+    mine = [x for x in mine if not only or x[0] in want]  # --files narrows the group before its union filter is built
+    if not mine:
+        continue
+    flt = '|'.join(sorted({c for _, x in mine for c in x.split('|')}))
+    name = d.split('/')[-1] + (f'-shard{k}of{n}' if shard else '')
+    for f, _ in mine:
+        print(f'{name}\t{f}\t{flt}')
 PY
 ) || { echo "$PLAN"; exit 2; }
 

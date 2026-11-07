@@ -11,6 +11,9 @@ public sealed class Server(JsonRpcTransport rpc)
     bool _shutdown;
     // Docs of the last completion list, sent on `completionItem/resolve` instead of with every item.
     readonly List<string?> _completionDocs = new(256);
+    // Open buffers over the per-file limit: not analysed, and incremental changes are ignored until
+    // a didOpen or full change brings them under it.
+    readonly HashSet<string> _tooLarge = new(StringComparer.Ordinal);
 
     public int Run()
     {
@@ -71,18 +74,33 @@ public sealed class Server(JsonRpcTransport rpc)
             case "textDocument/didOpen":
             {
                 var td = p.GetProperty("textDocument"u8);
-                var doc = _ws.Open(td.GetProperty("uri"u8).GetString()!, td.GetProperty("text"u8).GetString()!, td.GetProperty("version"u8).GetInt32());
+                var uri = td.GetProperty("uri"u8).GetString()!;
+                var text = td.GetProperty("text"u8).GetString()!;
+                if (_ws.TooLarge(text)) { DropTooLarge(uri); break; }
+                _tooLarge.Remove(uri);
+                var doc = _ws.Open(uri, text, td.GetProperty("version"u8).GetInt32());
                 Publish(doc);
                 break;
             }
             case "textDocument/didChange":
             {
                 var td = p.GetProperty("textDocument"u8);
-                if (_ws.Get(td.GetProperty("uri"u8).GetString()!) is not { } doc) break;
+                var uri = td.GetProperty("uri"u8).GetString()!;
+                var doc = _tooLarge.Contains(uri) ? null : _ws.Get(uri);
+                if (doc is null && !_tooLarge.Contains(uri)) break;
                 int version = td.GetProperty("version"u8).GetInt32();
                 foreach (var ch in p.GetProperty("contentChanges"u8).EnumerateArray())
                 {
-                    if (ch.TryGetProperty("range"u8, out var r))
+                    bool full = !ch.TryGetProperty("range"u8, out var r);
+                    if (doc is null)
+                    {
+                        // Too large so far: only a full change can bring the buffer back.
+                        if (!full || _ws.TooLarge(ch.GetProperty("text"u8).GetString()!)) continue;
+                        _tooLarge.Remove(uri);
+                        doc = _ws.Open(uri, ch.GetProperty("text"u8).GetString()!, version);
+                        continue;
+                    }
+                    if (!full)
                     {
                         var s = r.GetProperty("start"u8); var e = r.GetProperty("end"u8);
                         doc.Apply(s.GetProperty("line"u8).GetInt32(), s.GetProperty("character"u8).GetInt32(),
@@ -90,7 +108,9 @@ public sealed class Server(JsonRpcTransport rpc)
                                   ch.GetProperty("text"u8).GetString()!);
                     }
                     else doc.Replace(ch.GetProperty("text"u8).GetString()!);
+                    if (_ws.TooLarge(doc.Text)) { DropTooLarge(uri); doc = null; }
                 }
+                if (doc is null) break;
                 doc.Set(doc.Text, version); // one analysis per notification, however many changes
                 Publish(doc);
                 break;
@@ -98,6 +118,8 @@ public sealed class Server(JsonRpcTransport rpc)
             case "textDocument/didClose":
             {
                 var uri = p.GetProperty("textDocument"u8).GetProperty("uri"u8).GetString()!;
+                // A dropped buffer comes back from disk under the usual rules.
+                if (_tooLarge.Remove(uri) && new Uri(uri) is { IsFile: true } lu) _ws.LoadFromDisk(lu.LocalPath, uri);
                 _ws.Close(uri);
                 if (_ws.Get(uri) is { } d) Publish(d); else PublishEmpty(uri);
                 break;
@@ -109,9 +131,19 @@ public sealed class Server(JsonRpcTransport rpc)
                     if (ch.GetProperty("type"u8).GetInt32() == 3)
                     {
                         if (_ws.Remove(uri) is { } removed) PublishEmpty(removed);
+                        else foreach (var r in _ws.RemoveFolder(uri)) PublishEmpty(r); // a folder delete or rename
                         continue;
                     }
-                    try { if (new Uri(uri) is { IsFile: true } u) _ws.LoadFromDisk(u.LocalPath); } catch (UriFormatException) { }
+                    if (_tooLarge.Contains(uri)) continue; // the editor holds a buffer we dropped; disk text would be stale
+                    try
+                    {
+                        if (new Uri(uri) is { IsFile: true } u)
+                        {
+                            if (Directory.Exists(u.LocalPath)) _ws.LoadFolder(u.LocalPath);
+                            else _ws.LoadFromDisk(u.LocalPath);
+                        }
+                    }
+                    catch (UriFormatException) { }
                 }
                 break;
         }
@@ -183,6 +215,30 @@ public sealed class Server(JsonRpcTransport rpc)
         w.WriteEndArray();
         w.WriteEndObject();
     });
+
+    void DropTooLarge(string uri)
+    {
+        _ws.Drop(uri);
+        if (!_tooLarge.Add(uri)) return;
+        rpc.Write(w =>
+        {
+            w.WriteString("method"u8, "textDocument/publishDiagnostics"u8);
+            w.WriteStartObject("params"u8);
+            w.WriteString("uri"u8, uri);
+            w.WriteStartArray("diagnostics"u8);
+            w.WriteStartObject();
+            w.WriteStartObject("range"u8);
+            w.WriteStartObject("start"u8); w.WriteNumber("line"u8, 0); w.WriteNumber("character"u8, 0); w.WriteEndObject();
+            w.WriteStartObject("end"u8); w.WriteNumber("line"u8, 0); w.WriteNumber("character"u8, 0); w.WriteEndObject();
+            w.WriteEndObject();
+            w.WriteNumber("severity"u8, 2);
+            w.WriteString("source"u8, "bayan"u8);
+            w.WriteString("message"u8, $"file is larger than {Workspace.DefaultMaxFileBytes / (1024 * 1024)} MiB; the language server does not analyse it");
+            w.WriteEndObject();
+            w.WriteEndArray();
+            w.WriteEndObject();
+        });
+    }
 
     void PublishEmpty(string uri) => rpc.Write(w =>
     {
@@ -527,7 +583,7 @@ public sealed class Server(JsonRpcTransport rpc)
     void DocumentSymbols(JsonElement id, JsonElement p)
     {
         var uri = p.GetProperty("textDocument"u8).GetProperty("uri"u8).GetString()!;
-        if (_ws.Get(uri) is not { } doc) { Reply(id, w => w.WriteNull("result"u8)); return; }
+        if (_ws.Get(uri)?.Full() is not { } doc) { Reply(id, w => w.WriteNull("result"u8)); return; }
         Reply(id, w =>
         {
             w.WriteStartArray("result"u8);
@@ -545,10 +601,10 @@ public sealed class Server(JsonRpcTransport rpc)
         WriteRange(w, doc, s.DeclStart, Math.Max(s.DeclEnd, s.NameStart + s.Name.Length));
         w.WritePropertyName("selectionRange"u8);
         WriteRangeValue(w, doc, s.NameStart, s.NameStart + NameLength(doc, s));
-        if (s.Children.Count > 0)
+        if (s.Children is { Count: > 0 } children)
         {
             w.WriteStartArray("children"u8);
-            foreach (var c in s.Children) WriteDocSymbol(w, doc, c);
+            foreach (var c in children) WriteDocSymbol(w, doc, c);
             w.WriteEndArray();
         }
         w.WriteEndObject();
@@ -587,7 +643,7 @@ public sealed class Server(JsonRpcTransport rpc)
         var uri = p.GetProperty("textDocument"u8).GetProperty("uri"u8).GetString()!;
         if (_ws.Get(uri) is not { } d) return false;
         var pos = p.GetProperty("position"u8);
-        doc = d;
+        doc = d.Full();
         offset = d.Offset(pos.GetProperty("line"u8).GetInt32(), pos.GetProperty("character"u8).GetInt32());
         return true;
     }

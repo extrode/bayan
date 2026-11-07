@@ -50,7 +50,7 @@ internal static class Format
         var path = args[0];
         var exit = CliApp.ExitOk;
         string[] files;
-        if (Directory.Exists(path)) files = BynFiles(path, stderr, ref exit);
+        if (Directory.Exists(path)) files = BynFiles(path, stderr, ref exit, RealPath(path));
         else if (File.Exists(path)) files = [path];
         else
         {
@@ -114,6 +114,7 @@ internal static class Format
     /// Every <c>.byn</c> file under <paramref name="dir"/>. A directory or entry that cannot be read is reported, sets
     /// <paramref name="exit"/> to the failure code, and is skipped. With <paramref name="within"/>, a file or directory
     /// whose resolved path lies outside that resolved path is neither listed nor entered.
+    /// Dot-directories, <c>node_modules</c>, <c>bin</c>, <c>obj</c>, <c>dist</c> and <c>tmp</c> are not entered.
     /// </summary>
     internal static string[] BynFiles(string dir, TextWriter stderr, ref int exit, string? within = null)
     {
@@ -158,10 +159,13 @@ internal static class Format
             }
             foreach (var name in subs.Select(Path.GetFileName))
             {
+                if (IsSkippedDirectory(name!, at.Path == dir)) continue;
                 var sub = Path.Combine(at.Path, name!);
                 try
                 {
                     var real = RealPath(Path.Combine(canonical, name!));
+                    // With a bound, a directory link is never followed, inside it or out.
+                    if (within is not null && new DirectoryInfo(Path.Combine(canonical, name!)).LinkTarget is not null) continue;
                     if (Inside(real)) pending.Push((sub, real));
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Report(sub, e); }
@@ -170,6 +174,14 @@ internal static class Format
         if (failed) exit = CliApp.ExitFailure;
         return [.. files];
     }
+
+    private static readonly HashSet<string> SkippedDirs = new(StringComparer.OrdinalIgnoreCase) { "node_modules", "obj" };
+
+    private static readonly HashSet<string> SkippedRootDirs = new(StringComparer.OrdinalIgnoreCase) { "bin", "dist", "tmp" };
+
+    /// <summary>The directories skipped: dot-directories and node_modules or obj anywhere, bin, dist and tmp only directly under the walk root, where build output lands.</summary>
+    private static bool IsSkippedDirectory(string name, bool atRoot) =>
+        name.StartsWith('.') || SkippedDirs.Contains(name) || (atRoot && SkippedRootDirs.Contains(name));
 
     /// <summary>The most symlinks <see cref="RealPath"/> follows, as the kernel's own limit: 32 on macOS, 40 elsewhere.</summary>
     private static readonly int MaxLinks = OperatingSystem.IsMacOS() ? 32 : 40;
@@ -322,7 +334,7 @@ internal static class Format
                 else stderr.WriteLine(Messages.FormatRewriteAbandoned.Text(file));
                 return null;
             }
-            var fixes = tree.Diagnostics.Where(d => Applies(d) && d.Fix is not null).Select(d => d.Fix!).ToList();
+            var fixes = tree.Diagnostics.Where(d => Applies(d) && d.Fix is not null).Concat(tree.Lints).Select(d => d.Fix!).ToList();
             var next = fixes.Count > 0 ? ApplyFixes(bytes, fixes) : Restyle(file, bytes, tree, booleans, primitives, declared);
             if (RewriteHook is not null) next = RewriteHook(next);
             if (next.AsSpan().SequenceEqual(bytes))

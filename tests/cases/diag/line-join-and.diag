@@ -1,0 +1,8 @@
+warning BYN5103: a line starting with `&&` joins the statement above; indent it deeper
+
+  5 │ && b
+    │ ^^ joins the statement on line 4
+    │
+  help: indent it deeper than the line its statement starts on
+    │ 5 │     && b
+    │   │ ++++

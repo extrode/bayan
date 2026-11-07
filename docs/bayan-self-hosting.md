@@ -24,7 +24,7 @@
 | 1. Dogfood with tools | After v0.1 | Write small real programs in Bayan: release scripts, the corpus checker, small CLI utilities. Each exposes design problems cheaply. |
 | 2. Port the lexer | After v0.2 | Write `bayan-lex` in Bayan, compiled by the C# compiler. Run it differentially against the C# lexer on the whole test corpus: identical tokens or the test fails. |
 | 3. Port component by component | Next | Parser, then semantics, then the C emitter, each verified the same way against the C# implementation's output. |
-| 4. Self-compile | Once all components are ported | The C# compiler (stage 0) builds the Bayan compiler (stage 1). Stage 1 builds itself (stage 2), and stage 2 builds itself (stage 3). Stages 2 and 3 must be byte-identical. |
+| 4. Self-compile | Once all components are ported | The C# compiler (stage 0) builds the Bayan compiler (stage 1). Stage 1 builds itself (stage 2), and stage 2 builds itself (stage 3). Stages 2 and 3 must be byte-identical. Reached by spec 012 (2026-11-06, in branch): stages 2 and 3 emit byte-identical C in `safe` and `debug` on the same host (`BootstrapTests`, L027); cross-host identity is not claimed (L027 says so). |
 | 5. Retire the C# compiler | When stages 2 and 3 match on every platform | The C# compiler is frozen and kept only for verification. |
 
 ## Bootstrapping from source afterwards

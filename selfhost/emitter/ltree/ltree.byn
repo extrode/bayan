@@ -1,0 +1,496 @@
+// T1: LoweredNodes.cs 1-127 (the lowered tree; the lowerer's state is `emitter/lctx.byn`, Lowerer.cs 37-41 and 48-76).
+// A module of its own so that `emitter` and `emitter.cprint` both read it without importing each other (D1).
+//
+// The lowered tree shares the bound tree's handle space (bound.byn:3): a lowered node is
+// `(LKind << 32) | index` into a per-kind arena on `LTree`, -1 is null, and `LKind`'s ordinals start at 100,
+// above `BoundKind`'s 77 members, so a `BStmt`/`BExpr` handle and a lowered one tell apart by kind without a
+// tag. One struct per C# record, fields in C# order: `Node Syntax` is `TextSpan span`, a symbol is its
+// semantics handle, `T[]` is a `List<T>`, and a base type computed from a field (`LOptionalValue`'s `Type`)
+// is the field. The records that C# derives from `BoundStmt`/`BoundExpr` only for their `Syntax` and `Type`
+// carry the same two facts: `span` and, where C# passes it, `type`. `LMutantIs` and `LCount` are D3's and
+// not ported.
+
+import semantics
+
+public type TextSpan = semantics.TextSpan
+public type Type = semantics.Type
+public type FuncId = semantics.FuncId
+public type LocalId = semantics.LocalId
+public type VariantId = semantics.VariantId
+public type TestId = semantics.TestId
+public type BExpr = semantics.BExpr
+public type BStmt = semantics.BStmt
+public type BPattern = semantics.BPattern
+public type BInterpolationPart = semantics.BInterpolationPart
+
+/// A lowered node, or a bound one: `(kind << 32) | index`; -1 is null.
+public type LNode = i64
+
+// ── Kinds ──────────────────────────────────────────────────────────────────────
+
+/// The first `LKind` ordinal; `BoundKind` has 77 members (0..76).
+const lKindBase: i64 = 100
+
+/// `LoweredNodes.cs` order, minus D3's `LMutantIs` and `LCount`. The handle's kind is `lKindBase + ordinal`.
+public enum LKind {
+    label
+    gotoStmt
+    loop
+    returnStmt
+    returnError
+    failingCall
+    write
+    panic
+    setContext
+    freeArena
+    pushPanicHandler
+    popPanicHandler
+    claim
+    optionalHas
+    optionalValue
+    unionTag
+    unionField
+    errorCode
+    errorField
+    assignExpr
+    sequence
+    indexUnchecked
+    nextChar
+    neverValue
+    functionValue
+    voidValue
+}
+
+/// `WriteSink`.
+public enum WriteSink {
+    print
+    panic
+    strBuf
+    log
+}
+
+public LNode lNode(LKind kind, at i64 index) => ((lKindBase + i64(kind.ordinal)) << 32) | index
+
+/// Whether `n` is a lowered handle rather than a bound one.
+public bool isLowered(LNode n) => n >= 0 && (n >> 32) >= lKindBase
+
+public LKind lKindOf(LNode n) => LKind.fromOrdinal((n >> 32) - lKindBase) ?? .voidValue
+
+public i64 lIndexOf(LNode n) => n & 0xFFFFFFFF
+
+// ── Lowered records ────────────────────────────────────────────────────────────
+
+/// A jump target; emitted as `name:;`.
+public struct LLabel {
+    public TextSpan span
+    public string name
+}
+
+public struct LGoto {
+    public TextSpan span
+    public string label
+}
+
+/// `for (;;) { body }`; leave it only through `LGoto`.
+public struct LLoop {
+    public TextSpan span
+    public BStmt body
+}
+
+/// Returns normally. For a failing function the value goes to the result pointer and the error code is 0; a constructor returns its `this`. `value` -1 is C#'s null.
+public struct LReturn {
+    public TextSpan span
+    public BExpr value = -1
+}
+
+/// Returns the error code in `code` (a local of an error type) from a failing function.
+public struct LReturnError {
+    public TextSpan span
+    public BExpr code
+}
+
+/// `error = call(…, &result)` for a function that can fail.
+public struct LFailingCall {
+    public TextSpan span
+    public LocalId error
+    public BExpr call
+    public LocalId result = -1
+}
+
+/// Formats `parts` into a stack buffer and sends it to the sink. A part with a `guards` entry (-1 for none) is written only when that condition holds.
+public struct LWrite {
+    public TextSpan span
+    public WriteSink sink
+    public BExpr target = -1
+    public List<BInterpolationPart> parts
+    public List<BExpr>? guards = null
+}
+
+/// Panics with a fixed message (failed `assert`, unmatched `switch`).
+public struct LPanic {
+    public TextSpan span
+    public string message
+}
+
+/// Sets `context.allocator` to `arena`, saving the previous one in slot `slot`; with no arena, restores the saved allocator.
+public struct LSetContext {
+    public TextSpan span
+    public BExpr arena = -1
+    public i64 slot
+}
+
+/// Frees an arena declared with `using`.
+public struct LFreeArena {
+    public TextSpan span
+    public BExpr arena
+}
+
+/// Registers the `defer panicking` handler in slot `slot`.
+public struct LPushPanicHandler {
+    public TextSpan span
+    public i64 slot
+    public LocalId panic = -1
+    public BStmt body
+}
+
+/// Unregisters the handler in slot `slot` as its scope ends.
+public struct LPopPanicHandler {
+    public TextSpan span
+    public i64 slot
+}
+
+/// Debug builds: a `switch move x` binding owns its storage once its arm is selected; nothing otherwise.
+public struct LClaim {
+    public TextSpan span
+    public LocalId local
+}
+
+/// Whether an optional holds a value (type bool).
+public struct LOptionalHas {
+    public TextSpan span
+    public BExpr optional
+}
+
+/// The value inside an optional already known to hold one.
+public struct LOptionalValue {
+    public TextSpan span
+    public BExpr optional
+    public Type type
+}
+
+/// A union's tag: its variant's declaration index (type i32).
+public struct LUnionTag {
+    public TextSpan span
+    public BExpr unionValue
+}
+
+/// A payload field of a union already known to hold `variant`; its type is `variant`'s field `index`.
+public struct LUnionField {
+    public TextSpan span
+    public BExpr unionValue
+    public VariantId variant
+    public i64 index
+}
+
+/// An error's code: its case's program-wide number, 0 for none (type u32).
+public struct LErrorCode {
+    public TextSpan span
+    public BExpr error
+}
+
+/// A payload field of an error already known to be `variant`.
+public struct LErrorField {
+    public TextSpan span
+    public BExpr error
+    public VariantId variant
+    public i64 index
+}
+
+/// `(target = value)` as an expression; used for pattern bindings.
+public struct LAssignExpr {
+    public TextSpan span
+    public BExpr target
+    public BExpr value
+}
+
+/// C's comma operator: evaluates `effects`, then `value`.
+public struct LSequence {
+    public TextSpan span
+    public List<BExpr> effects
+    public BExpr value
+}
+
+/// An element read whose index the compiler proved in range (loop over a sequence).
+public struct LIndexUnchecked {
+    public TextSpan span
+    public BExpr target
+    public BExpr index
+    public Type type
+}
+
+/// The next char of `text` at byte offset `position` (a local), advancing it (type char).
+public struct LNextChar {
+    public TextSpan span
+    public BExpr text
+    public LocalId position
+}
+
+/// The value of an expression that never completes (it jumped, failed or panicked).
+public struct LNever {
+    public TextSpan span
+    public Type type
+}
+
+/// A function value: `function`'s code with `env` (the captures tuple) or no environment.
+public struct LFunctionValue {
+    public TextSpan span
+    public FuncId function
+    // Q1: round 4 redoes this (LoweredNodes.cs:118).
+    public LocalId env = -1
+    public Type functionType
+}
+
+/// The value of a `void` expression whose effects were already emitted.
+public struct LVoid {
+    public TextSpan span
+}
+
+// ── Program ────────────────────────────────────────────────────────────────────
+
+/// `LoweredFunction`: a function body with every local (not parameter) it uses, in first-use order.
+public struct LoweredFunction {
+    public FuncId symbol
+    public List<LocalId> locals
+    public i64 contextSlots
+    public i64 panicSlots
+    public BStmt body
+}
+
+/// `LoweredProgram`, with a `Ctx` passed alongside instead of `Compilation`; no `mutants`/`coverage` (D3).
+public struct LoweredProgram {
+    public List<LoweredFunction> functions
+    public FuncId main
+    public List<TestId> tests
+    public List<LoweredFunction> testFunctions
+}
+
+// ── Arenas ─────────────────────────────────────────────────────────────────────
+
+/// The arenas of the lowered kinds, one list per `LKind`.
+public struct LTree {
+    public List<LLabel> labels = List<LLabel>()
+    public List<LGoto> gotoStmts = List<LGoto>()
+    public List<LLoop> loops = List<LLoop>()
+    public List<LReturn> returnStmts = List<LReturn>()
+    public List<LReturnError> returnErrors = List<LReturnError>()
+    public List<LFailingCall> failingCalls = List<LFailingCall>()
+    public List<LWrite> writes = List<LWrite>()
+    public List<LPanic> panics = List<LPanic>()
+    public List<LSetContext> setContexts = List<LSetContext>()
+    public List<LFreeArena> freeArenas = List<LFreeArena>()
+    public List<LPushPanicHandler> pushPanicHandlers = List<LPushPanicHandler>()
+    public List<LPopPanicHandler> popPanicHandlers = List<LPopPanicHandler>()
+    public List<LClaim> claims = List<LClaim>()
+    public List<LOptionalHas> optionalHass = List<LOptionalHas>()
+    public List<LOptionalValue> optionalValues = List<LOptionalValue>()
+    public List<LUnionTag> unionTags = List<LUnionTag>()
+    public List<LUnionField> unionFields = List<LUnionField>()
+    public List<LErrorCode> errorCodes = List<LErrorCode>()
+    public List<LErrorField> errorFields = List<LErrorField>()
+    public List<LAssignExpr> assignExprs = List<LAssignExpr>()
+    public List<LSequence> sequences = List<LSequence>()
+    public List<LIndexUnchecked> indexUncheckeds = List<LIndexUnchecked>()
+    public List<LNextChar> nextChars = List<LNextChar>()
+    public List<LNever> neverValues = List<LNever>()
+    public List<LFunctionValue> functionValues = List<LFunctionValue>()
+    public List<LVoid> voidValues = List<LVoid>()
+}
+
+// ── Constructors ───────────────────────────────────────────────────────────────
+
+public LNode addLLabel(ref LTree t, from move LLabel n) uses alloc {
+    t.labels.append(move n)
+    return lNode(.label, at: t.labels.length - 1)
+}
+
+public LNode addLGoto(ref LTree t, from move LGoto n) uses alloc {
+    t.gotoStmts.append(move n)
+    return lNode(.gotoStmt, at: t.gotoStmts.length - 1)
+}
+
+public LNode addLLoop(ref LTree t, from move LLoop n) uses alloc {
+    t.loops.append(move n)
+    return lNode(.loop, at: t.loops.length - 1)
+}
+
+public LNode addLReturn(ref LTree t, from move LReturn n) uses alloc {
+    t.returnStmts.append(move n)
+    return lNode(.returnStmt, at: t.returnStmts.length - 1)
+}
+
+public LNode addLReturnError(ref LTree t, from move LReturnError n) uses alloc {
+    t.returnErrors.append(move n)
+    return lNode(.returnError, at: t.returnErrors.length - 1)
+}
+
+public LNode addLFailingCall(ref LTree t, from move LFailingCall n) uses alloc {
+    t.failingCalls.append(move n)
+    return lNode(.failingCall, at: t.failingCalls.length - 1)
+}
+
+public LNode addLWrite(ref LTree t, from move LWrite n) uses alloc {
+    t.writes.append(move n)
+    return lNode(.write, at: t.writes.length - 1)
+}
+
+public LNode addLPanic(ref LTree t, from move LPanic n) uses alloc {
+    t.panics.append(move n)
+    return lNode(.panic, at: t.panics.length - 1)
+}
+
+public LNode addLSetContext(ref LTree t, from move LSetContext n) uses alloc {
+    t.setContexts.append(move n)
+    return lNode(.setContext, at: t.setContexts.length - 1)
+}
+
+public LNode addLFreeArena(ref LTree t, from move LFreeArena n) uses alloc {
+    t.freeArenas.append(move n)
+    return lNode(.freeArena, at: t.freeArenas.length - 1)
+}
+
+public LNode addLPushPanicHandler(ref LTree t, from move LPushPanicHandler n) uses alloc {
+    t.pushPanicHandlers.append(move n)
+    return lNode(.pushPanicHandler, at: t.pushPanicHandlers.length - 1)
+}
+
+public LNode addLPopPanicHandler(ref LTree t, from move LPopPanicHandler n) uses alloc {
+    t.popPanicHandlers.append(move n)
+    return lNode(.popPanicHandler, at: t.popPanicHandlers.length - 1)
+}
+
+public LNode addLClaim(ref LTree t, from move LClaim n) uses alloc {
+    t.claims.append(move n)
+    return lNode(.claim, at: t.claims.length - 1)
+}
+
+public LNode addLOptionalHas(ref LTree t, from move LOptionalHas n) uses alloc {
+    t.optionalHass.append(move n)
+    return lNode(.optionalHas, at: t.optionalHass.length - 1)
+}
+
+public LNode addLOptionalValue(ref LTree t, from move LOptionalValue n) uses alloc {
+    t.optionalValues.append(move n)
+    return lNode(.optionalValue, at: t.optionalValues.length - 1)
+}
+
+public LNode addLUnionTag(ref LTree t, from move LUnionTag n) uses alloc {
+    t.unionTags.append(move n)
+    return lNode(.unionTag, at: t.unionTags.length - 1)
+}
+
+public LNode addLUnionField(ref LTree t, from move LUnionField n) uses alloc {
+    t.unionFields.append(move n)
+    return lNode(.unionField, at: t.unionFields.length - 1)
+}
+
+public LNode addLErrorCode(ref LTree t, from move LErrorCode n) uses alloc {
+    t.errorCodes.append(move n)
+    return lNode(.errorCode, at: t.errorCodes.length - 1)
+}
+
+public LNode addLErrorField(ref LTree t, from move LErrorField n) uses alloc {
+    t.errorFields.append(move n)
+    return lNode(.errorField, at: t.errorFields.length - 1)
+}
+
+public LNode addLAssignExpr(ref LTree t, from move LAssignExpr n) uses alloc {
+    t.assignExprs.append(move n)
+    return lNode(.assignExpr, at: t.assignExprs.length - 1)
+}
+
+public LNode addLSequence(ref LTree t, from move LSequence n) uses alloc {
+    t.sequences.append(move n)
+    return lNode(.sequence, at: t.sequences.length - 1)
+}
+
+public LNode addLIndexUnchecked(ref LTree t, from move LIndexUnchecked n) uses alloc {
+    t.indexUncheckeds.append(move n)
+    return lNode(.indexUnchecked, at: t.indexUncheckeds.length - 1)
+}
+
+public LNode addLNextChar(ref LTree t, from move LNextChar n) uses alloc {
+    t.nextChars.append(move n)
+    return lNode(.nextChar, at: t.nextChars.length - 1)
+}
+
+public LNode addLNever(ref LTree t, from move LNever n) uses alloc {
+    t.neverValues.append(move n)
+    return lNode(.neverValue, at: t.neverValues.length - 1)
+}
+
+public LNode addLFunctionValue(ref LTree t, from move LFunctionValue n) uses alloc {
+    t.functionValues.append(move n)
+    return lNode(.functionValue, at: t.functionValues.length - 1)
+}
+
+public LNode addLVoid(ref LTree t, from move LVoid n) uses alloc {
+    t.voidValues.append(move n)
+    return lNode(.voidValue, at: t.voidValues.length - 1)
+}
+
+/// `e.Type` for a bound or lowered expression (LoweredNodes.cs:83-127; Q856, moved from lower.byn `t2Type`).
+public Type typeOf(in semantics.Ctx c, through in LTree t, for LNode e) {
+    unless isLowered(e) { return semantics.exprType(in c, for: e) }
+    let i = lIndexOf(e)
+    switch lKindOf(e) {
+        case .optionalHas: return semantics.prim(.bool)
+        case .optionalValue: return t.optionalValues[i].type
+        case .unionTag: return semantics.prim(.i32)
+        case .unionField: return c.locals[c.unionVariants[t.unionFields[i].variant].fields[t.unionFields[i].index]].type
+        case .errorCode: return semantics.prim(.u32)
+        case .errorField: return c.locals[c.errorVariants[t.errorFields[i].variant].fields[t.errorFields[i].index]].type
+        case .assignExpr: return typeOf(in c, through: in t, for: t.assignExprs[i].target)
+        case .sequence: return typeOf(in c, through: in t, for: t.sequences[i].value)
+        case .indexUnchecked: return t.indexUncheckeds[i].type
+        case .nextChar: return semantics.prim(.char)
+        case .neverValue: return t.neverValues[i].type
+        case .functionValue: return t.functionValues[i].functionType
+        case .voidValue: return semantics.prim(.void)
+        // coverage-exempt: Q766
+        default: return semantics.errorType()
+    }
+}
+
+/// `n.Syntax.Span` for a bound or lowered node (Q856, moved from lower.byn `t2Span`).
+public TextSpan spanOf(in semantics.Ctx c, through in LTree t, for LNode n) {
+    unless isLowered(n) { return semantics.nodeSpan(in c, for: n) }
+    let i = lIndexOf(n)
+    switch lKindOf(n) {
+        case .label: return t.labels[i].span
+        case .gotoStmt: return t.gotoStmts[i].span
+        case .loop: return t.loops[i].span
+        case .returnStmt: return t.returnStmts[i].span
+        case .returnError: return t.returnErrors[i].span
+        case .failingCall: return t.failingCalls[i].span
+        case .write: return t.writes[i].span
+        case .panic: return t.panics[i].span
+        case .setContext: return t.setContexts[i].span
+        case .freeArena: return t.freeArenas[i].span
+        case .pushPanicHandler: return t.pushPanicHandlers[i].span
+        case .popPanicHandler: return t.popPanicHandlers[i].span
+        case .claim: return t.claims[i].span
+        case .optionalHas: return t.optionalHass[i].span
+        case .optionalValue: return t.optionalValues[i].span
+        case .unionTag: return t.unionTags[i].span
+        case .unionField: return t.unionFields[i].span
+        case .errorCode: return t.errorCodes[i].span
+        case .errorField: return t.errorFields[i].span
+        case .assignExpr: return t.assignExprs[i].span
+        case .sequence: return t.sequences[i].span
+        case .indexUnchecked: return t.indexUncheckeds[i].span
+        case .nextChar: return t.nextChars[i].span
+        case .neverValue: return t.neverValues[i].span
+        case .functionValue: return t.functionValues[i].span
+        case .voidValue: return t.voidValues[i].span
+    }
+}

@@ -1,9 +1,29 @@
 // T25: RegionAnalysis.cs 1-~417 (regions, borrows, loans, Stmt/Expr/Compute).
 
-// The C# records: a region is a lexical depth and a name.
+// The C# records: a region is a lexical depth and a name; `source` marks a parameter's (or `this`'s) data in a summary.
 struct Region {
     i64 depth
     string name
+    i64 source = regionNoSource
+}
+
+/// C# `NoSource`.
+const regionNoSource: i64 = -9223372036854775807
+
+/// C# `This`: the index standing for `this` in a store summary.
+const regionThis: i64 = -1
+
+/// One entry of a C# store summary: `(Source, Target)` and the first place the body stores it (none for a broad callee).
+struct StorePair {
+    i64 source
+    i64 target
+    TextSpan? site = null
+}
+
+/// One entry of the C# `_loopItems` map: the iterable and its borrow.
+struct LoopItem {
+    BExpr iterable
+    Borrow borrow
 }
 
 // What a value may borrow from: regions, owning locals and, per owner, the position it was lent at.
@@ -51,6 +71,15 @@ struct Regions {
     i64 iteration = 0
     List<Region> environments = []
     bool reporting = false
+    /// A by-value loop variable over a list, array, span or map, with the iterable and its borrow: its lists share the element's storage.
+    Map<LocalId, LoopItem> loopItems = []
+    /// Set while computing `fn`'s store summary: nothing is reported, and stores into a target are recorded in `pairs`.
+    bool summary = false
+    List<StorePair> pairs = []
+    /// The parameters (or `regionThis`) the result may borrow.
+    List<i64> returns = []
+    /// The summary's target parameters, with their index.
+    Map<LocalId, i64> targets = []
 }
 
 // ── The C# immutable sets (Q640): a `List` with no duplicates stands for `ImmutableHashSet`, copied on every change ──
@@ -163,6 +192,68 @@ void analyzeRegions(ref Ctx c, for FuncId fn) {
     runRegions(ref r, through: ref c)
 }
 
+/// Q745: each template's store and return summaries, one least fixpoint from none, recomputed in declaration order until no summary grows.
+void summarizeRegions(ref Ctx c) {
+    var functions = List<FuncId>()
+    for m in 0..c.modules.length {
+        let fns = copyIds(c.modules[m].allFunctions)
+        for fn in fns {
+            if c.functions[fn].file != -1 && c.functions[fn].body != -1 && !functionIsInstance(ref c, by: fn)
+                && (t41HasTargets(ref c, for: fn) || t41MayHold(ref c, for: c.functions[fn].returnType)) {
+                functions.append(fn)
+            }
+        }
+    }
+    var changed = true
+    while changed {
+        changed = false
+        for fn in functions {
+            var r = Regions { fn: fn, source: c.functions[fn].file, summary: true }
+            runRegions(ref r, through: ref c)
+            var known: i64 = 0
+            if c.storeSummaries.contains(fn) { known = c.storeSummaries[fn].length }
+            if r.pairs.length != known {
+                var pairs = List<StorePair>()
+                for p in r.pairs { pairs.append(p) }
+                c.storeSummaries[fn] = move pairs
+                changed = true
+            }
+            var returned: i64 = 0
+            if c.returnSummaries.contains(fn) { returned = c.returnSummaries[fn].length }
+            if r.returns.length != returned {
+                c.returnSummaries[fn] = copyIds(r.returns)
+                changed = true
+            }
+        }
+    }
+}
+
+/// Whether `fn` has a summary target: a `ref`, `out` or writable `dyn ref` parameter, or a `ref this` receiver, that can hold a borrow.
+bool t41HasTargets(ref Ctx c, for FuncId fn) {
+    let ps = copyIds(c.functions[fn].parameters)
+    for p in ps {
+        if t41IsTarget(ref c, for: p) { return true }
+    }
+    let owner = c.functions[fn].owner
+    return c.functions[fn].isMutating && functionHasThis(ref c, by: fn) && (owner == -1 || t41MayHold(ref c, for: structTypeOf(owner)))
+}
+
+bool t41IsTarget(ref Ctx c, for LocalId p) =>
+    (t37RefOrOut(c, for: p) || t37WritableDynRef(c, for: c.locals[p].type)) && t41MayHold(ref c, for: c.locals[p].type)
+
+/// Whether a value of `t` may borrow, counting a type parameter as one that may (a summary covers every instance).
+bool t41MayHold(ref Ctx c, for Type t) {
+    var seen = List<Type>()
+    return mayBorrow(ref c, for: t, by: ref seen) || occurs(ref c, by: t)
+}
+
+/// C# `new Borrow([new Region(0, "the caller's data", source)], [])`.
+Borrow t41Source(i64 source) {
+    var regions = List<Region>()
+    regions.append(Region { depth: 0, name: "the caller's data", source: source })
+    return Borrow { regions: move regions, owners: [] }
+}
+
 void runRegions(ref Regions r, through ref Ctx c) {
     let ps = copyIds(in c.functions[r.fn].parameters)
     // C# `p.Syntax?.Rest`: T12's parameter syntax, one per parameter in order (Q641).
@@ -175,8 +266,17 @@ void runRegions(ref Regions r, through ref Ctx c) {
         r.depthOf[p] = callerOwned ? 0 : 1
         r.declaredAt[p] = -1
         // What a parameter points to belongs to the caller; the marker keeps that known after unions.
-        var seen = List<Type>()
-        if mayBorrow(ref c, for: type, by: ref seen) { r.locals[p] = t25Region(0, as: "the caller's data") }
+        if r.summary {
+            if t41IsTarget(ref c, for: p) { r.targets[p] = i }
+            if t41MayHold(ref c, for: type) {
+                let caller = t25Region(0, as: "the caller's data")
+                let own = t41Source(i)
+                r.locals[p] = unionBorrow(caller, by: own)
+            }
+        } else {
+            var seen = List<Type>()
+            if mayBorrow(ref c, for: type, by: ref seen) { r.locals[p] = t25Region(0, as: "the caller's data") }
+        }
         // A `rest` tail is borrowed for the call only (J62): it lives in the caller's frame for this statement.
         if (syntax[i].syntax is { } x) && x.isRest && kindOf(type) == .span {
             let tail = Region { depth: 1, name: $"`{c.locals[p].name}`" }
@@ -190,7 +290,7 @@ void runRegions(ref Regions r, through ref Ctx c) {
     stmtRegions(ref r, through: ref c, for: body)
     r.reporting = true
     stmtRegions(ref r, through: ref c, for: body)
-    checkMutations(ref r, through: ref c)
+    if !r.summary { checkMutations(ref r, through: ref c) }
 }
 
 /// C# `_restTails[tail] = name`.
@@ -326,6 +426,11 @@ void t25For(ref Regions r, through ref Ctx c, for BStmt s) {
         item = t25WithoutOwners(iterable)
     }
     storeBorrow(ref r, through: ref c, for: variable, by: in item, at: iterableSpan)
+    // The item is a shallow copy the loop never frees, and `BorrowsSubject` refuses changing it (BYN2783).
+    // coverage-exempt: Q746
+    if !user && !dynRef && c.locals[variable].borrowsSubject && (kind == .list || kind == .array || kind == .span || kind == .map) {
+        r.loopItems[variable] = LoopItem { iterable: iterableExpr, borrow: t25Copy(iterable) }
+    }
     if dynRef {
         var seen = List<Type>()
         var may = true
@@ -358,7 +463,8 @@ void declareBorrow(ref Regions r, through ref Ctx c, for LocalId local, at i64 p
 Borrow exprRegions(ref Regions r, through ref Ctx c, for BExpr e) {
     let result = computeBorrow(ref r, through: ref c, for: e)
     var seen = List<Type>()
-    if mayBorrow(ref c, for: exprType(in c, for: e), by: ref seen) { return move result }
+    let type = exprType(c, for: e)
+    if mayBorrow(ref c, for: type, by: ref seen) || r.summary && occurs(ref c, by: type) { return move result }
     return t25None()
 }
 
@@ -369,7 +475,10 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             let local = c.bLocals[i].local
             if r.locals.contains(local) { return t25Copy(r.locals[local]) }
             return t25None()
-        case .literal or .defaultValue or .thisRef or .errorVariant or .enumMember or .enumValues or .staticArray:
+        case .thisRef:
+            if r.summary { return t41Source(regionThis) }
+            return t25None()
+        case .literal or .defaultValue or .errorVariant or .enumMember or .enumValues or .staticArray:
             return t25None()
         case .conversion:
             let operandExpr = c.bConversions[i].operand
@@ -504,6 +613,7 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
         default:
             var result = t25None()
             for child in children(in c, for: e) {
+                // coverage-exempt: Q746
                 if child != -1 && isExprKind(boundKind(child)) {
                     let b = exprRegions(ref r, through: ref c, for: child)
                     result = unionBorrow(in result, by: in b)
@@ -522,6 +632,14 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
     let receiver = exprRegions(ref r, through: ref c, for: receiverExpr)
     var args = List<Borrow>()
     for a in argExprs { args.append(exprRegions(ref r, through: ref c, for: a)) }
+    let stored = t41BuiltinStore(member)
+    // coverage-exempt: Q746
+    if stored != -1 && stored < args.length { storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: args[stored], at: nodeSpan(c, for: argExprs[stored])) }
+    // `finish()` points into the buffer's storage, which outlives the local: a loan on it, but not its scope.
+    if member == .strBufAsString && hasSyntax(c, for: e, by: syntaxCall) {
+        let buffer = rootLocal(ref c, for: receiverExpr)
+        if buffer != -1 { return lent(receiver, for: buffer, at: span.end) }
+    }
     switch member {
         case .listAsSpan or .arrayAsSpan or .strBufAsString or .listMutableSpan or .arrayMutableSpan:
             return lendBorrow(ref r, through: ref c, for: receiverExpr, by: in receiver, at: span.end)
@@ -536,22 +654,16 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             break
     }
     switch member {
-        case .ioReadAll or .intToString or .stringCopy or .stringLowercased or .stringUppercased
+        case .ioReadAll or .ioReadAllBytes or .intToString or .stringCopy or .stringLowercased or .stringUppercased
             or .stringReplaced or .stringRepeated or .stringJoined or .utf16Copy
             or .stringPadded or .bytesToString or .spanCopy or .listCopy:
             // Fresh text from `context.allocator`, like `Io.readText`.
             if r.contexts.length > 0 { return t25Copy(r.contexts[r.contexts.length - 1]) }
             return t25None()
-        case .listReplace:
-            storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[1], at: nodeSpan(in c, for: argExprs[1]))
-            mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
-            return t25None()
-        case .listAdd:
-            storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[0], at: nodeSpan(in c, for: argExprs[0]))
+        case .listReplace or .listAdd:
             mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
             return t25None()
         case .mapIndexSet or .mapSlot:
-            storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[0], at: nodeSpan(in c, for: argExprs[0]))
             mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
             return t25WithoutOwners(receiver)
         case .listTake or .mapTake or .strBufTake or .optionalTake:
@@ -576,5 +688,17 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             var acc = t25Copy(receiver)
             for a in args { acc = unionBorrow(in acc, by: in a) }
             return move acc
+    }
+}
+
+/// The builtins' store summaries: the argument each stores into its receiver, or -1. Every other builtin stores none:
+/// a `StrBuf` append or insert copies the text, `copy(to:)` copies into the arena, formatting copies.
+i64 t41BuiltinStore(BuiltinMember member) {
+    switch member {
+        case .listAdd: return 0
+        case .listReplace: return 1
+        case .mapIndexSet: return 0
+        case .mapSlot: return 0
+        default: return -1
     }
 }

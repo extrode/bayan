@@ -240,6 +240,23 @@ LocalId declareLocal(ref Binder b, through ref Ctx c, at TextSpan name, as Type 
     return local
 }
 
+/// `DeclareLocal` of the C# parser's `Name(SpanFrom(groupStart), "_")` (Parser.cs:2722), a tuple `for` variable: the
+/// selfhost parser keeps only the group's span (Q463), so the text `_` is given here. `CheckValue` returns on `_`
+/// (Naming.cs:42) and `AddLocal` after `_fn.Locals.Add` (Binder.cs:145-146).
+LocalId declareDiscard(ref Binder b, through ref Ctx c, at TextSpan name, as Type type, for LocalKind kind) {
+    let local = newLocal(ref c, by: LocalSymbol {
+        name: "_",
+        nameSpan: name,
+        span: name,
+        type: type,
+        kind: kind,
+        id: b.nextLocalId,
+    })
+    b.nextLocalId += 1
+    if b.fn >= 0 { c.functions[b.fn].locals.append(local) }
+    return local
+}
+
 void addLocal(ref Binder b, through ref Ctx c, at TextSpan name, for LocalId local) {
     if b.fn >= 0 { c.functions[b.fn].locals.append(local) }
     let text = t15Text(in c, from: b.file, at: name)
@@ -313,7 +330,7 @@ void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDec
     }
     if decl.expressionBody is not .none {
         checks.append(bindExpressionBody(ref b, through: ref c, for: in decl.expressionBody))
-        c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: parser.exprSpan(in decl.expressionBody), statements: move checks })
+        c.functions[b.fn].body = recordSyntax(ref c, for: addBlock(ref c, from: BBlock { span: parser.exprSpan(in decl.expressionBody), statements: move checks }), from: in decl.expressionBody)
     } else {
         // The parser already reported the missing body.
         c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: decl.span })
@@ -589,7 +606,7 @@ BExpr ruleOf(ref Binder b, through ref Ctx c, for in parser.RequiresRule r, at F
                 let end = t28RuleBound(ref c, for: c.bRangePatterns[p].end)
                 if start != -1 && end != -1 {
                     var payload = List<BExpr>()
-                    payload.append(addRange(ref c, from: BRange { span: parser.exprSpan(in r.condition), start: start, end: end, inclusive: c.bRangePatterns[p].inclusive, type: internRange(ref c, by: prim(.i64)) }))
+                    payload.append(recordSyntax(ref c, for: addRange(ref c, from: BRange { span: parser.exprSpan(in r.condition), start: start, end: end, inclusive: c.bRangePatterns[p].inclusive, type: internRange(ref c, by: prim(.i64)) }), from: in r.condition))
                     return addUnionNew(ref c, from: BUnionNew { span: r.span, variant: findUnionVariant(ref c, by: rule, for: sh), payload: move payload })
                 }
             }
@@ -602,7 +619,7 @@ BExpr ruleOf(ref Binder b, through ref Ctx c, for in parser.RequiresRule r, at F
 BExpr t28RuleBound(ref Ctx c, for BExpr e) {
     if (exprConstant(in c, for: e) is { } k) {
         if k.kind == .integer && bigFits(k.integer, to: 64, signed: true) {
-            return addLiteral(ref c, from: BLiteral { span: nodeSpan(in c, for: e), type: prim(.i64), value: Constant { kind: .integer, integer: k.integer } })
+            return shareSyntax(ref c, for: addLiteral(ref c, from: BLiteral { span: nodeSpan(in c, for: e), type: prim(.i64), value: Constant { kind: .integer, integer: k.integer } }), from: e)
         }
     }
     return -1
@@ -675,9 +692,9 @@ BStmt bindExpressionBody(ref Binder b, through ref Ctx c, for in parser.Expr e) 
     t15CaptureTypes(ref b, through: ref c)
     let span = parser.exprSpan(in e)
     if isVoid(c.functions[b.fn].returnType) {
-        return addExprStmt(ref c, from: BExprStmt { span: span, expr: bindStatementExpression(ref b, through: ref c, for: in e) })
+        return recordSyntax(ref c, for: addExprStmt(ref c, from: BExprStmt { span: span, expr: bindStatementExpression(ref b, through: ref c, for: in e) }), from: in e)
     }
-    return addReturn(ref c, from: BReturn { span: span, value: bindConverted(ref b, through: ref c, for: in e, to: c.functions[b.fn].returnType) })
+    return recordSyntax(ref c, for: addReturn(ref c, from: BReturn { span: span, value: bindConverted(ref b, through: ref c, for: in e, to: c.functions[b.fn].returnType) }), from: in e)
 }
 
 void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {
@@ -691,8 +708,8 @@ void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {
     }
     let span = parser.exprSpan(in d.body)
     var statements = List<BStmt>()
-    statements.append(addReturn(ref c, from: BReturn { span: span, value: bindConverted(ref b, through: ref c, for: in d.body, to: c.functions[b.fn].returnType) }))
-    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: span, statements: move statements })
+    statements.append(recordSyntax(ref c, for: addReturn(ref c, from: BReturn { span: span, value: bindConverted(ref b, through: ref c, for: in d.body, to: c.functions[b.fn].returnType) }), from: in d.body))
+    c.functions[b.fn].body = recordSyntax(ref c, for: addBlock(ref c, from: BBlock { span: span, statements: move statements }), from: in d.body)
 }
 
 /// The C# `decl.Body` is a `BlockStmt`; the parser's `Stmt` holds one for every constructor it builds.
@@ -805,13 +822,15 @@ void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {
                 if member == -1 || c.enumMembers[member].values.length != 0 { continue }
                 if m.args is null && d.value.params is null { continue }
                 let name = $"{c.enums[e].name}.{c.enumMembers[member].name}"
-                // C# `BindArguments(new CallExpr(d.Span, …, d.Args ?? []), …)`: `bindArgumentList` reads only the arguments and the span.
+                // C# `BindArguments(new CallExpr(d.Span, new NameExpr(d.Name.Span, …), d.Args ?? []), …)`: the arguments, the span,
+                // and that `CallExpr` as the `Syntax` of a missing argument's `BoundErrorExpr` (BinderCalls.cs:452).
+                let call = syntaxAppend(ref c, from: ExprSyntax { kind: .callExpr, span: m.span, callee: syntaxLeaf(ref c, as: .nameExpr, at: m.name) })
                 var args = List<BExpr>()
                 if (m.args is { } given) {
-                    args = bindArgumentList(ref b, through: ref c, for: in given, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name)
+                    args = t21BindArgumentList(ref b, through: ref c, for: in given, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name, syntax: call)
                 } else {
                     let none = List<parser.Argument>()
-                    args = bindArgumentList(ref b, through: ref c, for: in none, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name)
+                    args = t21BindArgumentList(ref b, through: ref c, for: in none, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name, syntax: call)
                 }
                 var values = List<Constant?>()
                 for i in 0..args.length { values.append(null) }

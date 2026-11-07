@@ -148,7 +148,7 @@ internal static class Dist
     {
         var files = new List<string> { Path.Combine(root, "package.byn") };
         var src = Path.Combine(root, "src");
-        if (Directory.Exists(src)) files.AddRange(Directory.EnumerateFiles(src, "*.byn", SearchOption.AllDirectories));
+        if (Directory.Exists(src)) files.AddRange(Directory.EnumerateFiles(src, "*.byn", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint }));
         using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var (relative, file) in files.Select(f => (Path.GetRelativePath(root, f).Replace('\\', '/'), f)).OrderBy(f => f.Item1, StringComparer.Ordinal))
         {

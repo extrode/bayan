@@ -55,6 +55,15 @@ public sealed class SelfhostSemanticsTests
     private static Compilation CheckScratch(string source) =>
         Compilation.Create([SourceText.FromString("main.byn", source)], packageRoot: SelfhostDir);
 
+    /// <summary>014 T9 (Q990): the C#'s check summary on Windows ends in CRLF; both line endings lose their time.</summary>
+    [Fact]
+    public void UntimedCoversLfAndCrlf()
+    {
+        Assert.Equal("\u25c6 checked hello in <time>\r\nnext\r\n", Untimed("\u25c6 checked hello in 0.25s\r\nnext\r\n"));
+        Assert.Equal("\u25c6 checked hello in <time>\nnext\n", Untimed("\u25c6 checked hello in 12.00s\nnext\n"));
+        Assert.Equal("checked in 0.25s later", Untimed("checked in 0.25s later"));
+    }
+
     [Fact]
     public void Builds()
     {
@@ -186,8 +195,8 @@ public sealed class SelfhostSemanticsTests
         return dir;
     }
 
-    /// <summary>The <c>in 0.25s</c> of a check summary, which no two runs share.</summary>
-    private static string Untimed(string text) => Regex.Replace(text, @" in [0-9]+\.[0-9]{2}s$", " in <time>", RegexOptions.Multiline);
+    /// <summary>The <c>in 0.25s</c> of a check summary, which no two runs share; <c>\r?</c> because the C#'s Windows output ends lines with CRLF and <c>$</c> does not match before <c>\r</c>.</summary>
+    private static string Untimed(string text) => Regex.Replace(text, @" in [0-9]+\.[0-9]{2}s(?=\r?$)", " in <time>", RegexOptions.Multiline);
 
     /// <summary>
     /// <paramref name="actual"/> against <paramref name="expected"/>, line by line, failing with

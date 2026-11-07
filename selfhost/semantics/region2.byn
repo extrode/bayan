@@ -4,7 +4,7 @@
 
 Borrow t37CopyBorrow(in Borrow b) {
     var regions = List<Region>()
-    for x in b.regions { regions.append(Region { depth: x.depth, name: x.name }) }
+    for x in b.regions { regions.append(Region { depth: x.depth, name: x.name, source: x.source }) }
     let owners = copyIds(in b.owners)
     if (b.lends is { } lends) {
         var copied: Map<LocalId, i64> = []
@@ -16,7 +16,8 @@ Borrow t37CopyBorrow(in Borrow b) {
 
 bool t37HasRegion(in List<Region> regions, for in Region region) {
     for x in regions {
-        if x.depth == region.depth && x.name == region.name { return true }
+        // coverage-exempt: Q746
+        if x.depth == region.depth && x.name == region.name && x.source == region.source { return true }
     }
     return false
 }
@@ -49,8 +50,8 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     let recv = c.bCalls[ci].receiver
     let span = c.bCalls[ci].span
     let callType = c.bCalls[ci].type
-    let arguments = copyIds(in c.bCalls[ci].arguments)
-    let parameters = copyIds(in c.functions[fn].parameters)
+    let arguments = copyIds(c.bCalls[ci].arguments)
+    let parameters = copyIds(c.functions[fn].parameters)
     var receiver = Borrow { regions: [], owners: [] }
     if recv != -1 { receiver = exprRegions(ref r, through: ref c, for: recv) }
     var args = List<Borrow>()
@@ -87,6 +88,7 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
         if mayBorrow(ref c, for: exprType(in c, for: written), by: ref seen) { mutateBorrow(ref r, through: ref c, for: written, at: argSpan) }
         // `ref this` hands over the whole receiver: the callee may change any of its fields.
         var seenThis = List<Type>()
+        // coverage-exempt: Q746
         if boundKind(written) == .thisRef && mayBorrow(ref c, for: exprType(in c, for: written), by: ref seenThis) && r.reporting && c.functions[r.fn].owner != -1 {
             let ownerFields = copyIds(in c.structs[c.functions[r.fn].owner].fields)
             for field in ownerFields {
@@ -102,6 +104,7 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
         }
         for j in 0..arguments.length {
             // A by-value copy of an element (`xs[0]` as an `i64`) cannot alias what the callee changes.
+            // coverage-exempt: Q746
             let byRef = j < parameters.length && t37RefOrOut(in c, for: parameters[j])
             var seenJ = List<Type>()
             if j == i || !(rootLocal(ref c, for: arguments[j]) == root && (byRef || mayBorrow(ref c, for: exprType(in c, for: arguments[j]), by: ref seenJ)) || t37HasId(in args[j].owners, for: root)) { continue }
@@ -113,30 +116,71 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
         }
         i += 1
     }
-    // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none, and an interned `Symbol` lives until exit.
+    // What the callee may store from one argument (or its receiver) into another, by its summary.
+    let template = templateOf(ref c, for: fn) ?? fn
+    let stores = t41Stores(ref c, for: fn, by: call)
+    for pair in stores {
+        var target: BExpr = -1
+        if pair.target == regionThis {
+            // coverage-exempt: Q746
+            if mutating { target = recv }
+        // coverage-exempt: Q746
+        } else if pair.target < arguments.length && pair.target < parameters.length {
+            target = writtenArgument(c, for: parameters[pair.target], by: arguments[pair.target])
+        }
+        if target == -1 { continue }
+        var seenTarget = List<Type>()
+        if !mayBorrow(ref c, for: exprType(c, for: target), by: ref seenTarget) { continue }
+        var source = Borrow { regions: [], owners: [] }
+        if pair.source == regionThis {
+            source = t37CopyBorrow(receiver)
+        // coverage-exempt: Q746
+        } else if pair.source < args.length {
+            source = t37CopyBorrow(args[pair.source])
+        }
+        var note: Related? = null
+        // coverage-exempt: Q746
+        if (pair.site is { } at) && c.functions[template].file != -1 && c.functions[template].file == r.source {
+            let callee = c.functions[template].name
+            note = Related { span: at, label: $"`{callee}` stores `{t41ParameterName(c, for: template, at: pair.source)}` into `{t41ParameterName(c, for: template, at: pair.target)}` here" }
+        }
+        t41StoreIntoBorrow(ref r, through: ref c, for: target, by: source, at: span, note: note)
+    }
+    // A callee with a body borrows what its return summary names; a builtin what its table entry names; any other, every argument (rule 4).
     // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
     let builtin = c.functions[fn].builtin
+    // C# `returned is not null`, and the set it names.
+    var named = true
+    var returned = List<i64>()
+    if builtin != .none {
+        named = t41BuiltinFresh(builtin)
+    } else if t41IsBroad(c, for: fn) || c.functions[template].body == -1 {
+        named = false
+    } else if c.returnSummaries.contains(template) {
+        returned = copyIds(c.returnSummaries[template])
+    }
     var result = Borrow { regions: [], owners: [] }
-    let fresh = builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
-        || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .stringInvalidUtf8At || builtin == .hexEncode || builtin == .hexDecode
-        || builtin == .symbolIntern
-    if !fresh {
-        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
-        result = t37CopyBorrow(in receiver)
-        for k in 0..args.length {
-            if k < parameters.length && kindOf(c.locals[parameters[k]].type) == .function {
-                var a = t37CopyBorrow(in args[k])
-                var kept = List<Region>()
-                for x in args[k].regions {
-                    if !t37HasRegion(in r.environments, for: in x) { kept.append(Region { depth: x.depth, name: x.name }) }
-                }
-                a.regions = move kept
-                @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
-                result = unionBorrow(in result, by: in a)
-            } else {
-                @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
-                result = unionBorrow(in result, by: in args[k])
+    if !named || t37HasId(returned, for: regionThis) { result = t37CopyBorrow(receiver) }
+    for k in 0..args.length {
+        // coverage-exempt: Q746
+        if named && k < parameters.length && !t37HasId(returned, for: k) { continue }
+        if k < parameters.length && kindOf(c.locals[parameters[k]].type) == .function {
+            var a = t37CopyBorrow(args[k])
+            var kept = List<Region>()
+            for x in args[k].regions {
+                if !t37HasRegion(r.environments, for: x) { kept.append(x) }
             }
+            a.regions = move kept
+            @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+            result = unionBorrow(result, by: a)
+        // coverage-exempt: Q746
+        } else if named && k < arguments.length && exprType(c, for: arguments[k]) == builtinType(.arena) {
+            // An arena argument the result may borrow lends its memory, as `copy(to:)` does.
+            let a = t41AllocatedFrom(ref r, through: ref c, for: arguments[k], by: args[k])
+            result = unionBorrow(result, by: a)
+        } else {
+            @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+            result = unionBorrow(result, by: args[k])
         }
     }
     // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
@@ -158,7 +202,7 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
                     result = unionBorrow(in result, by: in lentArg)
                 } else {
                     var regions = List<Region>()
-                    for x in lentArg.regions { regions.append(Region { depth: x.depth, name: x.name }) }
+                    for x in lentArg.regions { regions.append(Region { depth: x.depth, name: x.name, source: x.source }) }
                     let bare = Borrow { regions: move regions, owners: [] }
                     @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
                     result = unionBorrow(in result, by: in bare)
@@ -170,12 +214,78 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `Utf8.decode` return (Q29).
     var seenList = List<Type>()
     if r.contexts.length > 0 && (containsList(ref c, for: callType, by: ref seenList) || builtin == .ioReadText || builtin == .ioRun || builtin == .ioRunBatch || builtin == .strBufGrow || builtin == .strBufOver
-            || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .hexEncode) {
-        @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
+            || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .hexEncode
+            || builtin == .envGet
+            || builtin == .pathRelative || builtin == .pathFileName || builtin == .pathDirectoryName || builtin == .pathCombine || builtin == .pathCombineSpan || builtin == .pathFullPath) {
         result = unionBorrow(in result, by: in r.contexts[r.contexts.length - 1])
     }
     return result
 }
+
+/// The (source, target) pairs a call of `fn` may store, a fixed order, with where its body does so. A function value,
+/// an interface method or an `extern` function has no body to summarise: every argument and the receiver may go into every written one.
+List<StorePair> t41Stores(ref Ctx c, for FuncId fn, by BExpr call) {
+    let ci = boundIndex(call)
+    let arguments = copyIds(c.bCalls[ci].arguments)
+    let parameters = copyIds(c.functions[fn].parameters)
+    var result = List<StorePair>()
+    if t41IsBroad(c, for: fn) {
+        var targets = List<i64>()
+        var i: i64 = 0
+        // coverage-exempt: Q746
+        while i < arguments.length && i < parameters.length {
+            if writtenArgument(c, for: parameters[i], by: arguments[i]) != -1 { targets.append(i) }
+            i += 1
+        }
+        // coverage-exempt: Q746
+        if c.functions[fn].isMutating && c.bCalls[ci].receiver != -1 { targets.append(regionThis) }
+        var sources = List<i64>()
+        for k in 0..arguments.length { sources.append(k) }
+        sources.append(regionThis)
+        for t in targets {
+            for s in sources {
+                if s != t { result.append(StorePair { source: s, target: t }) }
+            }
+        }
+        return result
+    }
+    let template = templateOf(ref c, for: fn) ?? fn
+    if !c.storeSummaries.contains(template) { return result }
+    // C# `OrderBy(Target).ThenBy(Source)`: stable, so each pair goes after every pair not ordered after it.
+    for p in c.storeSummaries[template] {
+        var at = result.length
+        for j in 0..result.length {
+            if p.target < result[j].target || (p.target == result[j].target && p.source < result[j].source) {
+                at = j
+                break
+            }
+        }
+        // `List` has no `insert`: append, then shift the tail up by one.
+        result.append(p)
+        var j = result.length - 1
+        while j > at {
+            result[j] = result[j - 1]
+            j -= 1
+        }
+        result[at] = p
+    }
+    return result
+}
+
+/// A function value, an interface method or an `extern` function: no body to summarise.
+bool t41IsBroad(Ctx c, for FuncId fn) =>
+    // coverage-exempt: Q746
+    c.functions[fn].kind == .invoke || c.functions[fn].isAbstract || (c.functions[fn].modifiers & 128) != 0 // the parser's `modifierExtern`
+
+/// The builtin functions' return summaries: whether the builtin's result borrows no argument (an entry, always empty). `Io` results and
+/// decoded or encoded text are fresh copies, and an interned `Symbol` lives until exit. Every other builtin's result borrows every argument (rule 4).
+bool t41BuiltinFresh(BuiltinFunction builtin) =>
+    builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
+        || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .stringInvalidUtf8At || builtin == .hexEncode || builtin == .hexDecode
+        || builtin == .envGet
+        || builtin == .symbolIntern || builtin == .pathRelative || builtin == .pathFileName || builtin == .pathDirectoryName || builtin == .pathCombine || builtin == .pathCombineSpan || builtin == .pathFullPath
+
+string t41ParameterName(Ctx c, for FuncId fn, at i64 index) => index == regionThis ? "this" : c.locals[c.functions[fn].parameters[index]].name
 
 /// A borrow of `source`'s own storage (a span of an array or list, a `StrBuf`'s text), taken at `at`.
 Borrow lendBorrow(ref Regions r, through ref Ctx c, for BExpr source, by in Borrow sourceBorrow, at i64 at) {
@@ -199,6 +309,13 @@ Borrow lendBorrow(ref Regions r, through ref Ctx c, for BExpr source, by in Borr
     }
     let root = rootLocal(ref c, for: source)
     if root != -1 {
+        // A list in a loop item is the iterable's: lend what the iterable lends (a span already names where it points).
+        if kindOf(exprType(c, for: source)) == .list && r.loopItems.contains(root) {
+            let iterable = r.loopItems[root].iterable
+            let joined = unionBorrow(b, by: r.loopItems[root].borrow)
+            if kindOf(exprType(c, for: iterable)) == .span { return joined }
+            return lendBorrow(ref r, through: ref c, for: iterable, by: joined, at: at)
+        }
         let depth = r.depthOf.tryGet(at: root) ?? 0
         if depth > 0 {
             let region = Region { depth: depth, name: $"`{c.locals[root].name}`" }
@@ -215,16 +332,34 @@ Borrow lendBorrow(ref Regions r, through ref Ctx c, for BExpr source, by in Borr
 /// Memory from the arena (or other allocator) `allocator`.
 Borrow allocatedFrom(ref Regions r, through ref Ctx c, for BExpr allocator) {
     let borrow = exprRegions(ref r, through: ref c, for: allocator)
+    return t41AllocatedFrom(ref r, through: ref c, for: allocator, by: borrow)
+}
+
+Borrow t41AllocatedFrom(ref Regions r, through ref Ctx c, for BExpr allocator, by Borrow borrow) {
     let root = rootLocal(ref c, for: allocator)
-    if root == -1 { return borrow }
+    if root == -1 { return t37CopyBorrow(borrow) }
     let depth = r.depthOf.tryGet(at: root) ?? 0
     var regions = List<Region>()
-    for x in borrow.regions { regions.append(Region { depth: x.depth, name: x.name }) }
+    // coverage-exempt: Q746
+    for x in borrow.regions { regions.append(Region { depth: x.depth, name: x.name, source: x.source }) }
     if depth > 0 {
         let region = Region { depth: depth, name: $"arena `{c.locals[root].name}`" }
+        // coverage-exempt: Q746
         if !t37HasRegion(in regions, for: in region) { regions.append(region) }
     }
+    // In a summary, memory from an allocator parameter borrows that parameter.
+    if r.summary {
+        let ps = copyIds(c.functions[r.fn].parameters)
+        for index in 0..ps.length {
+            if ps[index] != root { continue }
+            let region = Region { depth: 0, name: "the caller's data", source: index }
+            // coverage-exempt: Q746
+            if !t37HasRegion(regions, for: region) { regions.append(region) }
+            break
+        }
+    }
     var owners = copyIds(in borrow.owners)
+    // coverage-exempt: Q746
     if !t37HasId(in owners, for: root) { owners.append(root) }
     return Borrow { regions: move regions, owners: move owners }
 }
@@ -254,6 +389,11 @@ void t37BindPattern(ref Regions r, through ref Ctx c, for BPattern pattern, by i
 // ── Stores and escapes ─────────────────────────────────────────────────────────
 
 void storeBorrow(ref Regions r, through ref Ctx c, for LocalId local, by in Borrow value, at TextSpan span) {
+    t41StoreBorrow(ref r, through: ref c, for: local, by: value, at: span)
+}
+
+/// C# `Store` with its `note`, the related span a summarised call's diagnostic carries.
+void t41StoreBorrow(ref Regions r, through ref Ctx c, for LocalId local, by Borrow value, at TextSpan span, Related? note = null) {
     if value.regions.length == 0 && value.owners.length == 0 { return }
     var merged = Borrow { regions: [], owners: [] }
     if r.locals.contains(local) {
@@ -263,6 +403,7 @@ void storeBorrow(ref Regions r, through ref Ctx c, for LocalId local, by in Borr
         merged = unionBorrow(in none, by: in value)
     }
     r.locals[local] = move merged
+    if r.summary && r.targets.contains(local) { t41Record(ref r, for: r.targets[local], by: value, at: span) }
     if !r.reporting { return }
     // The loan starts where the stored value's borrow of the owner was lent (`first(w.items.asSpan(), w.grow())`
     // conflicts), or once the value is stored: a mutating call that produces it (`b.pick()` on `ref this`) is not a conflict.
@@ -278,16 +419,37 @@ void storeBorrow(ref Regions r, through ref Ctx c, for LocalId local, by in Borr
         r.loans.append(Loan { owner: owner, holder: local, created: created, loopEnd: 0 })
     }
     let holder = c.locals[local].name
-    checkOutlives(ref r, through: ref c, for: in value, by: r.depthOf.tryGet(at: local) ?? 0, as: holder, at: span)
+    t41CheckOutlives(ref r, through: ref c, for: value, by: r.depthOf.tryGet(at: local) ?? 0, as: holder, at: span, note: note)
+}
+
+/// Adds a pair to the summary for each parameter (or `this`) whose data `value` may hold.
+void t41Record(ref Regions r, for i64 target, by Borrow value, at TextSpan span) {
+    for region in value.regions {
+        if region.source == regionNoSource || region.source == target { continue }
+        var known = false
+        for p in r.pairs {
+            if p.source == region.source && p.target == target {
+                known = true
+                break
+            }
+        }
+        if !known { r.pairs.append(StorePair { source: region.source, target: target, site: span }) }
+    }
 }
 
 /// A store into a local or a part of one; through `this` or a `ref` parameter it outlives the function.
 void storeIntoBorrow(ref Regions r, through ref Ctx c, for BExpr target, by in Borrow value, at TextSpan span) {
+    t41StoreIntoBorrow(ref r, through: ref c, for: target, by: value, at: span)
+}
+
+/// C# `StoreInto` with its `note`.
+void t41StoreIntoBorrow(ref Regions r, through ref Ctx c, for BExpr target, by Borrow value, at TextSpan span, Related? note = null) {
     let root = storeRoot(in c, for: target)
     if root != -1 {
-        storeBorrow(ref r, through: ref c, for: root, by: in value, at: span)
+        t41StoreBorrow(ref r, through: ref c, for: root, by: value, at: span, note: note)
         return
     }
+    if r.summary && c.functions[r.fn].isMutating && isThisRooted(c, for: target) { t41Record(ref r, for: regionThis, by: value, at: span) }
     if !r.reporting { return }
     // A store through a span lands where the span points: it must live as long as the
     // longest-lived storage the span may point into (the caller's, when that is unknown).
@@ -303,26 +465,36 @@ void storeIntoBorrow(ref Regions r, through ref Ctx c, for BExpr target, by in B
                 }
             }
             let holder = c.locals[view].name
-            checkOutlives(ref r, through: ref c, for: in value, by: depth, as: holder, at: span)
+            t41CheckOutlives(ref r, through: ref c, for: value, by: depth, as: holder, at: span, note: note)
             return
         }
     }
-    checkOutlives(ref r, through: ref c, for: in value, by: 0, as: "this", at: span)
+    t41CheckOutlives(ref r, through: ref c, for: value, by: 0, as: "this", at: span, note: note)
 }
 
 void checkOutlives(ref Regions r, through ref Ctx c, for in Borrow value, by i64 depth, as string holder, at TextSpan span) {
+    t41CheckOutlives(ref r, through: ref c, for: value, by: depth, as: holder, at: span)
+}
+
+/// C# `CheckOutlives` with its `note`.
+void t41CheckOutlives(ref Regions r, through ref Ctx c, for Borrow value, by i64 depth, as string holder, at TextSpan span, Related? note = null) {
     let ordered = t37Ordered(in value.regions)
     for region in ordered {
         if region.depth <= depth { continue }
         if restEscapes(ref r, through: ref c, for: in region, at: span) { return }
         regionReport(ref r, through: ref c, for: .borrowOutlivesSource, at: span, by: (region.name, holder, "", "", ""),
             label: $"{region.name} is freed at the end of its block",
-            help: "copy the data with `.copy(to: alloc)` into an allocator that lives long enough")
+            help: "copy the data with `.copy(to: alloc)` into an allocator that lives long enough", note: note)
         return
     }
 }
 
 void checkReturn(ref Regions r, through ref Ctx c, for in Borrow value, at TextSpan span) {
+    if r.summary {
+        for region in value.regions {
+            if region.source != regionNoSource && !t37HasId(r.returns, for: region.source) { r.returns.append(region.source) }
+        }
+    }
     if !r.reporting { return }
     let ordered = t37Ordered(in value.regions)
     for region in ordered {
@@ -473,7 +645,7 @@ LocalId rootLocal(ref Ctx c, for BExpr e) {
     }
 }
 
-/// Whether `e` names storage of `this` (`this`, `f`, `f[i]` of an array or list field).
+/// Whether `e` names storage of `this` (`this`, `f`, `f[i]` of an array or list field, `f[k]` or `f.slot(k)` of a map field).
 bool isThisRooted(in Ctx c, for BExpr e) {
     let i = boundIndex(e)
     switch boundKind(e) {
@@ -486,6 +658,10 @@ bool isThisRooted(in Ctx c, for BExpr e) {
         case .index:
             let k = kindOf(exprType(in c, for: c.bIndexes[i].target))
             if k == .array || k == .list { return isThisRooted(in c, for: c.bIndexes[i].target) }
+            return false
+        case .builtinCall:
+            let m = c.bBuiltinCalls[i].member
+            if m == .mapIndexSet || m == .mapSlot { return isThisRooted(in c, for: c.bBuiltinCalls[i].receiver) }
             return false
         default:
             return false
@@ -817,13 +993,13 @@ List<Region> t37Ordered(in List<Region> regions) {
             }
         }
         // `List` has no `insert`: append, then shift the tail up by one.
-        result.append(Region { depth: x.depth, name: x.name })
+        result.append(Region { depth: x.depth, name: x.name, source: x.source })
         var j = result.length - 1
         while j > at {
-            result[j] = Region { depth: result[j - 1].depth, name: result[j - 1].name }
+            result[j] = result[j - 1]
             j -= 1
         }
-        result[at] = Region { depth: x.depth, name: x.name }
+        result[at] = Region { depth: x.depth, name: x.name, source: x.source }
     }
     return result
 }
@@ -831,11 +1007,27 @@ List<Region> t37Ordered(in List<Region> regions) {
 i64 lineOf(ref Regions r, through ref Ctx c, at TextSpan span) => linePosition(c.files[r.source].text.span, at: span.start).line
 
 /// C# `Report` (RegionAnalysis.cs:877): once per span, and only on the reporting pass.
-void regionReport(ref Regions r, through ref Ctx c, for SemaCode code, at TextSpan span, by (string a0, string a1, string a2, string a3, string a4) args, string label = "", string help = "") {
-    if !r.reporting { return }
+void regionReport(ref Regions r, through ref Ctx c, for SemaCode code, at TextSpan span, by (string a0, string a1, string a2, string a3, string a4) args, string label = "", string help = "", Related? note = null) {
+    if !r.reporting || r.summary { return }
     for p in r.reported {
         if p == (span.start, span.end) { return }
     }
     r.reported.append((span.start, span.end))
+    if (note is { } n) {
+        var related = List<Related>()
+        related.append(n)
+        addDiag(ref c, by: Diag {
+            code: codeText(code),
+            file: r.source,
+            span: span,
+            message: format(messageFormat(code), by: args),
+            label: label,
+            help: help,
+            isWarning: isWarning(code),
+            fixSpan: TextSpan { start: 0, length: 0 },
+            related: move related,
+        })
+        return
+    }
     report(ref c, for: code, from: r.source, at: span, by: args, label: label, help: help)
 }

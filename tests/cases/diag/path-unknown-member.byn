@@ -1,0 +1,2 @@
+// `Path` has `isRooted`, `relative`, `fileName`, `directoryName`, `combine` and `fullPath`; a misspelt member gets the nearest one (BYN2003).
+print(Path.fileNme("x"))

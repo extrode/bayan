@@ -1,0 +1,22 @@
+// A list reached through nested fields of a loop item is the iterable's storage (Q745).
+struct Inner {
+    List<string> list
+}
+
+struct Outer {
+    Inner a
+}
+
+ReadOnlySpan<string> pass(ReadOnlySpan<string> s) => s
+
+var ps = List<string>()
+ps.append("ann")
+var xs = List<Outer>()
+xs.append({ a: { list: move ps } })
+var kept = List<string>()
+for e in xs {
+    for s in pass(e.a.list) {
+        kept.append(s)
+    }
+}
+print(kept[0])

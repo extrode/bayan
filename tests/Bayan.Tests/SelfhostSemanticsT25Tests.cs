@@ -51,7 +51,7 @@ public sealed class SelfhostSemanticsT25Tests
     {
         var parts = spec.Split('|');
         var regions = parts[0].Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(r => Activator.CreateInstance(RegionT, int.Parse(r.Split(':')[0]), r.Split(':')[1])!).ToList();
+            .Select(r => Activator.CreateInstance(RegionT, int.Parse(r.Split(':')[0]), r.Split(':')[1], int.MinValue)!).ToList();
         var typedRegions = typeof(ImmutableHashSet).GetMethods().First(m => m.Name == "CreateRange" && m.GetParameters().Length == 1)
             .MakeGenericMethod(RegionT).Invoke(null, [CastTo(RegionT, regions)])!;
         var owners = ImmutableHashSet.CreateRange(parts[1].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(o => Owners[int.Parse(o)]));
@@ -312,7 +312,7 @@ public sealed class SelfhostSemanticsT25Tests
             .Select(kv => kv.Key).Order(StringComparer.Ordinal)];
 
     private static object NewAnalysis(Compilation c, FunctionSymbol fn) =>
-        Analysis.GetConstructors(Any).Single().Invoke([c, fn]);
+        Analysis.GetConstructors(Any).Single(k => !k.IsStatic).Invoke([c, fn, false]);
 
     private static T Field<T>(object analysis, string name) => (T)Analysis.GetField(name, Any)!.GetValue(analysis)!;
 
@@ -428,7 +428,7 @@ public sealed class SelfhostSemanticsT25Tests
 
     private static object CsBorrowOf(string region, LocalSymbol[] owners, ImmutableDictionary<LocalSymbol, int>? lends)
     {
-        var r = Activator.CreateInstance(RegionT, int.Parse(region.Split(':')[0]), region.Split(':')[1])!;
+        var r = Activator.CreateInstance(RegionT, int.Parse(region.Split(':')[0]), region.Split(':')[1], int.MinValue)!;
         var regions = typeof(ImmutableHashSet).GetMethods().First(m => m.Name == "CreateRange" && m.GetParameters().Length == 1)
             .MakeGenericMethod(RegionT).Invoke(null, [CastTo(RegionT, new[] { r })])!;
         return Activator.CreateInstance(BorrowT, regions, ImmutableHashSet.CreateRange(owners), lends)!;
@@ -630,6 +630,7 @@ public sealed class SelfhostSemanticsT25Tests
             for fn in fns {
                 if !functionIsInstance(ref c, by: fn) { bindFunction(ref c, for: fn) }
             }
+            summarizeRegions(ref c)
             return move c
         }
 

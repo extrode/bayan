@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 namespace Bayan.Backend.C;
 
 /// <summary>
@@ -26,19 +24,7 @@ public static class Targets
     public static string? Triple(string name) => Table.FirstOrDefault(t => t.Name == name).Triple;
 
     /// <summary>The machine this runs on, or null on one with no Bayan target.</summary>
-    public static string? Host { get; } = DetectHost();
-
-    private static string? DetectHost()
-    {
-        var os = OperatingSystem.IsLinux() ? "linux" : OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : null;
-        var arch = RuntimeInformation.OSArchitecture switch
-        {
-            Architecture.X64 => "x64",
-            Architecture.Arm64 => "arm64",
-            _ => null,
-        };
-        return os is null || arch is null ? null : os + "-" + arch;
-    }
+    public static string? Host { get; } = Bayan.Semantics.HostTarget.Detect();
 
     /// <summary><c>tally</c>, <c>tally.exe</c> or <c>tally.wasm</c>.</summary>
     public static string ExecutableName(string name, string target) =>

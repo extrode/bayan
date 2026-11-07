@@ -1,0 +1,2 @@
+// `Env` has `get`; a misspelt member gets the nearest one (BYN2003).
+print(Env.gett("HOME") ?? "")

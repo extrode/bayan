@@ -1,0 +1,13 @@
+error BYN2612: allocation is not allowed in a panic handler
+
+  4 │     let name = Path.fileName(p.message)
+    │                ^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: remove it; panic handlers can't recover
+
+error BYN2612: allocation is not allowed in a panic handler
+
+  5 │     let rel = Path.relative(from: "/", to: p.message)
+    │               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: remove it; panic handlers can't recover

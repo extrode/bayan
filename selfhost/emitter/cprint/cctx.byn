@@ -1,0 +1,102 @@
+// T1: CEmitter.cs 15-60 (CEmitter's state) and 1148-1171 (FunctionEmitter's state).
+//
+// The printer module (K1): the only place that builds C text (D9). `CCtx` holds `CEmitter`'s fields, `CFunc`
+// `FunctionEmitter`'s; each task adds its fields in its own `// ── Tn state` section. A C# `HashSet<T>` is a
+// `Map<T, bool>` (Q449), a `StringBuilder` a `StrBuf`, and a `Dictionary` keyed by a symbol a `Map` keyed by its
+// semantics handle.
+
+import semantics
+
+public type Ctx = semantics.Ctx
+public type Type = semantics.Type
+public type BExpr = semantics.BExpr
+
+/// A generated helper function: prototype and definition (`_helpers` value).
+public struct CHelper {
+    public string proto
+    public string body
+}
+
+/// `CEmitter`'s fields.
+public struct CCtx {
+    // ── T1 state
+    /// `OwnershipChecks`: debug builds only, emit the runtime ownership checker.
+    public bool ownershipChecks = false
+    /// `_packageRoot`.
+    public string packageRoot = ""
+    /// `_types`: named C types by C name, each with its `Type` handle, and `_typeOrder`.
+    public Map<string, semantics.Type> types = Map<string, semantics.Type>()
+    public List<string> typeOrder = List<string>()
+    /// `_helpers` by name and `_helperOrder`.
+    public Map<string, CHelper> helpers = Map<string, CHelper>()
+    public List<string> helperOrder = List<string>()
+    /// `_statics` (enum names and values, `const` arrays) and `_staticOrder`.
+    public Map<string, string> statics = Map<string, string>()
+    public List<string> staticOrder = List<string>()
+    /// `_files`.
+    public Map<string, string> files = Map<string, string>()
+    /// `_hashes`.
+    public bool hashes = false
+    /// `_symbolTexts`, `_symbolIds` and `_symbols`: symbol literal texts numbered as first seen.
+    public List<string> symbolTexts = List<string>()
+    public Map<string, i64> symbolIds = Map<string, i64>()
+    public bool symbols = false
+    /// `_testIndex`: a test function's position in the program's tests.
+    public Map<semantics.FuncId, i64> testIndex = Map<semantics.FuncId, i64>()
+    // ── T7 state
+    /// `_vtables` by name (the `static const struct` text) and `_vtableOrder`.
+    public Map<string, string> vtables = Map<string, string>()
+    public List<string> vtableOrder = List<string>()
+    // ── T14 state
+    /// The file `lineStarts` belongs to, -1 before the first function with a file (R7).
+    public semantics.FileId lineFile = -1
+    /// The line starts of `c.files[lineFile]`, built once and lent to each frame while its function is emitted (`List.take`).
+    public List<i64> lineStarts = List<i64>()
+}
+
+/// `SymbolMark` (`'\u0001'`): the code point that stands for a symbol index until `Run` substitutes it.
+const symbolMark: u32 = 1
+
+/// `CKeywords`: C keywords and identifiers a C name must avoid.
+public List<string> cKeywords() uses alloc {
+    var k = List<string>()
+    for w in ["auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern",
+        "float", "for", "goto", "if", "inline", "int", "long", "register", "restrict", "return", "short", "signed",
+        "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while",
+        "bool", "true", "false", "main", "errno", "stdin", "stdout", "stderr", "NULL", "asm", "typeof"] {
+        k.append(w)
+    }
+    return k
+}
+
+/// `FunctionEmitter`'s fields.
+public struct CFunc {
+    // ── T1 state
+    /// `_f`: the function being emitted.
+    public semantics.FuncId fn = -1
+    /// `_names`: a local's C name.
+    public Map<semantics.LocalId, string> names = Map<semantics.LocalId, string>()
+    /// `_sb` is not a field: a struct cannot hold a `StrBuf` (BYN3001), so the emitting functions take a `ref StrBuf`.
+    /// `_file`.
+    public string file = ""
+    /// `_linePath`: the path `#line` maps to, a C string literal; null when the function has no file.
+    public string? linePath = null
+    /// `_lastLine` and `_lastLineEnd`: the line of the last `#line` written and the output length after it.
+    public i64 lastLine = 0
+    public i64 lastLineEnd = 0
+    /// `_indent`.
+    public i64 indent = 1
+    /// `_reads` and `_moves`: set while a statement is emitted dry; `hasDryRun` is C#'s non-null test.
+    public bool hasDryRun = false
+    public Map<semantics.LocalId, bool> reads = Map<semantics.LocalId, bool>()
+    public Map<semantics.LocalId, bool> moves = Map<semantics.LocalId, bool>()
+    /// `_unsequenced`: locals the statement both reads and moves.
+    public Map<semantics.LocalId, bool> unsequenced = Map<semantics.LocalId, bool>()
+    /// `_moved`: the locals the statement being emitted moves (from the dry run).
+    public Map<semantics.LocalId, bool> moved = Map<semantics.LocalId, bool>()
+    /// `_afterCalls`: claims for the owned places the statement passes by pointer, run once it is done.
+    public List<string> afterCalls = List<string>()
+    // ── T14 state
+    /// The line starts of the function's file, taken from `CCtx.lineStarts` by `emitFunction`; a frame built by hand sets it with `lineStartsOf` (R7).
+    public List<i64> lineStarts = List<i64>()
+}

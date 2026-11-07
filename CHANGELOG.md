@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+### Added
+- Lint BYN5103: a line starting with a joining token (`.`, `?.`, `??`, `&&`, `||`, `and`, `or`, `catch`, `fails`, …) must be indented deeper than its statement's first line; `bayan format` applies the fix.
+
+### Changed
+- `ensures` is no longer reserved and can be used as an identifier (revision 0019, round-4 batch 1); BYN0012 no longer fires on it.
+
+### Security
+
+- Runtime (audit `docs/security/2026-11-06-runtime-audit.md`): an arena allocation near `i64.max` bytes panics "arena
+  allocation is too large" instead of rounding to a negative size and returning a short block (heap overflow).
+- Map and `Symbol` hashing is SipHash-1-3 keyed by 128 bits from the OS CSPRNG (`arc4random_buf`, `getrandom`,
+  `BCryptGenRandom`), replacing FNV-1a seeded from the clock and pid; the fixed key under `--test` is zero.
+- Slice bounds `^n` and inclusive ends reject out-of-range values before computing, with no signed overflow; `replaced`,
+  `joined` and list growth check their size arithmetic and panic "too long".
+- `Io.stdin.readAll()` rejects input that is not UTF-8 (`invalidUtf8`), as `Io.readText` does; the new
+  `Io.stdin.readAllBytes()` returns the rest of stdin as `List<u8>`, unvalidated.
+
+## [0.2.0] - 2026-11-06
+
+Bayan compiles itself: the self-hosted lexer, parser, checker, emitter and driver in `selfhost/` build a `bayan` that
+builds itself again, with byte-identical C at every stage. The released binary is still the C# compiler.
+
+### Known limits
+- The self-hosted driver ports `lex`, `parse`, `types`, `check`, `build`, `run`, `version` and `help`; `test`, `format`,
+  `dist`, `doctor`, `new`/`init`, `clean` and `bayan-lsp` are C# only.
+- The self-hosted `bayan run` fails on a program whose output is not UTF-8 (Q1065, until `Io.run` takes raw output).
+- Windows: one known failure, the 1 MB emitter speed test (`tests/windows-known-failures.txt`).
+- `bayan dist --target all` still fails on wasm32 (WASM is v0.3).
+
+### Added
+
+- Spec 011: the self-hosted C emitter (`selfhost/emitter/`). It emits the same C as the C# backend, byte for byte, on
+  every `run/` golden and on generated programs in each build mode (law L024), and never panics on checked input
+  (L025). One module writes C text, and the C it relies on beyond C11 is listed (`011-c-inventory.md`).
+- Spec 012: the self-hosted driver (`selfhost/driver/`) and the three-stage bootstrap: the C# compiler builds stage 1,
+  stage 1 builds stage 2, stage 2 builds stage 3, and their emitted C is identical. The golden suite runs against stage
+  2 (L028). `bootstrap/bayan.c` and its README build a compiler with only a C compiler, no Zig and no .NET.
+
+- Spec 014: `Path.combine` (two strings or a `span<string>`), `Path.directoryName` (`string?`, null for a root), `Path.fullPath` and the existing `Path.isRooted`, `Path.relative` and `Path.fileName` agree with .NET's `Path.*` on each OS (Law L026, `StdPathLawTests`); the self-hosted checker calls them, so `tests/windows-known-failures.txt` is empty. Questions 900–1006
+
+### Changed
+
+- The repository moved to `github.com/ikhbat-org/bayan` (Ikhbat Foundation); home page `https://bayan.run`.
+- A release now waits for the memory and disk gate of `docs/memory-leaks.md` (`scripts/release/memory-gate.sh`, run on Linux and macOS by `release.yml`).
+
+### Fixed
+
+- `bayan-lsp` no longer indexes every `.byn` under the workspace: hidden directories (`.git`, `.worktrees`, `.bayan-staging-*`), `tmp`, build output and symbolic links are skipped, the server ignores file watcher events for the same paths, and disk indexing stops at 20,000 files, 256 Mi characters or 4 MiB per file. A repo with 2.3 million `.byn` copies drove it past 200 GB; it now peaks at 81 MB. Removing files frees room under the index limits for files indexed later, a second root can still be indexed, the character total stays exact across edits, nested roots and closed buffers follow the same exclusion and size rules, and symbolic-linked files are skipped.
+- Test and script disk and memory bounds: the test project removes the scratch directories of killed hosts after a day and the T8 fixture deletes its own; `scripts/pinned-bayan.sh` keeps the newest 3 cached commits, drops the build's source checkout and cleans up on INT/TERM; the scripts that run `dotnet` set `MSBUILDDISABLENODEREUSE=1` and `DOTNET_CLI_USE_MSBUILD_SERVER=0` so MSBuild nodes no longer outlive the run (`scripts/dotnet-env.test.sh` checks it).
+- The CLI no longer grows without bound: `bayan test` keeps only the first and last 64 KiB of a test's output (M1); a mutant's discarded output is not buffered (M2); `bayan format` skips dot-directories, `tmp`, `node_modules`, `bin`, `obj`, `dist` and links leaving the directory (M3); `bayan dist` does not follow links when hashing inputs (M4); the program cache is trimmed to 2 GiB and 4000 entries, least recently used first, `BAYAN_CACHE_MAX_MB` overrides (M5); temporary directories older than an hour are swept before a build (M6); a C compiler run is killed after 10 minutes, `BAYAN_CC_TIMEOUT_S` overrides (M7).
+- The program cache (`v1/` under the cache root, the directory bayan owns) and `.cache/bayan` (the pinned build) carry a `CACHEDIR.TAG`, so worktree removal and backup tools treat them as disposable caches.
+- `bayan-lsp` memory and robustness limits:
+  - Closed and disk documents keep only their text, line starts and top-level symbols (about 10 bytes per character: measured 10.00 over 8,388,744 characters of symbol-dense code, 10.07 in another run); tokens, locals, outline and diagnostics are recomputed when a request needs them.
+  - Deeply nested string interpolation (over 256 levels) and long receiver chains no longer overflow the stack.
+  - Deleting or renaming a folder removes its documents from the index; a created folder is indexed with the usual rules.
+  - The symbol index is released on every change instead of holding replaced documents until the next request.
+  - An open buffer over 4 MiB is not analysed or indexed; it gets one warning instead.
+  - Diagnostics are capped at 1000 per file plus a "N more problems not shown" entry, and the response buffer shrinks again after a message over 1 MiB.
+  - Messages are limited to 64 MiB and read in chunks, so a false `Content-Length` header no longer allocates up front; a truncated message ends the session like end of input.
+  - Folder walks stop after 200,000 directories and also skip `Library`, `target`, `out` and `build`.
+  - Symbolic links in root and document paths are resolved, so `/tmp/x` and `/private/tmp/x` are one document.
+
 ## [0.1.0] - 2026-11-02
 
 First release: milestones M0–M12 of the handoff's "What v0.1 is". Compiler archives for linux-x64, linux-arm64,

@@ -1,0 +1,100 @@
+// The commands `lex`, `parse`, `types` and `check` of the self-hosted driver (spec 012 T2). Ports `CliApp.cs` :108 `Lex`,
+// :125 `Parse`, :141 `Types` and :448 `Check`; :259-309 (`Compile`, `Report`) are `semantics/cli.byn` `t26Compile` and
+// `t26Report`. Each takes the arguments `run` kept (the command first).
+
+import lexer
+import parser
+import semantics
+
+/// The arguments after the command (`args[1..]` of CliApp.cs:49).
+List<string> t2Rest(in List<string> kept) {
+    var rest = List<string>()
+    for i in 1..kept.length { rest.append(kept[i]) }
+    return rest
+}
+
+/// CliApp.cs:1107 `TryReadSingleFile`: one argument that is a file; false after the message.
+bool tryReadSingleFile(in List<string> args) {
+    if args.length != 1 {
+        Io.stderr.write("bayan: expected exactly one file\n")
+        return false
+    }
+    unless t1FileExists(args[0]) {
+        Io.stderr.write($"bayan: file not found: {args[0]}\n")
+        return false
+    }
+    return true
+}
+
+/// CliApp.cs:108 `Lex`. `--json` is refused (R3, Q940). No style: the dump renders plain (Q941).
+i32 lexCommand(in List<string> kept) {
+    let args = t2Rest(kept)
+    for a in args {
+        if a == "--json" { return refuse("lex --json") }
+    }
+    var bytes = List<u8>()
+    var name = "<stdin>"
+    if args.length == 1 && args[0] == "-" {
+        let input = Io.stdin.readAllBytes()
+        // coverage-exempt: Q943 the C# `CopyTo` has no failure branch and no test can make stdin unreadable
+        unless input.isOk { return exitFailure }
+        for b in input.value { bytes.append(b) }
+    } else {
+        unless tryReadSingleFile(in args) { return exitUsage }
+        name = args[0]
+        // coverage-exempt: Q943 reached only if the file changes between the reads of `t1FileExists` and here
+        bytes = Io.readFile(name) catch return exitFailure
+    }
+    var sb = StrBuf()
+    let failed = lexer.dumpFile(name, from: move bytes, by: lexer.Keywords.build(), to: ref sb, json: false)
+    Io.stdout.write(sb.finish())
+    return failed ? exitFailure : exitOk
+}
+
+/// CliApp.cs:125 `Parse`.
+i32 parseCommand(in List<string> kept) {
+    var printAst = false
+    var rest = List<string>()
+    for i in 1..kept.length {
+        if kept[i] == "--ast" {
+            printAst = true
+        } else {
+            rest.append(kept[i])
+        }
+    }
+    unless tryReadSingleFile(in rest) { return exitUsage }
+    // `parseOne` reads stdin for `-`; the C# parses the file named `-` (CliApp.cs:128, :1107), so it is read as `./-`.
+    if printAst { return parser.parseOne(rest[0] == "-" ? "./-" : rest[0], by: lexer.Keywords.build()) }
+    // stub: T2 parse without --ast (blocked: Q940)
+    return refuse("parse")
+}
+
+/// CliApp.cs:141 `Types`.
+i32 typesCommand(in List<string> kept, by in DCtx d) {
+    let args = t2Rest(kept)
+    let o = t5ParseBuildOptions(in args, by: false, for: false) ?? return exitUsage
+    let symbols = semantics.t26Symbols(d.styleErr.ascii)
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var c = t5Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return exitFailure }
+    Io.stdout.write(semantics.typedDump(ref c))
+    return exitOk
+}
+
+/// CliApp.cs `Check` (src/Bayan.Cli/CliApp.cs:461).
+i32 checkCommand(in List<string> kept, by in DCtx d) {
+    let clock = Io.monotonicNanos()
+    let args = t2Rest(kept)
+    let o = t5ParseBuildOptions(in args, by: false, for: false) ?? return exitUsage
+    let symbols = semantics.t26Symbols(d.styleErr.ascii)
+    var reported = List<semantics.T26Reported>()
+    var ok = false
+    var c = t5Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    unless ok { return semantics.t26Failed(in t5T26(in o), from: in reported, by: in symbols) }
+    unless o.json {
+        let dot = semantics.t26Symbols(d.styleOut.ascii).dot
+        print(semantics.checkSummary(dot, for: semantics.programName(ref c, for: o.path), by: semantics.t26Seconds(Io.monotonicNanos() - clock)))
+    }
+    return exitOk
+}

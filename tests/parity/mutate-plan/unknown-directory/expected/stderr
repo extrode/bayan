@@ -1,1 +1,1 @@
-mutate-batch: selfhost/other/z.byn: the directory selfhost/other/ has no test family (selfhost/semantics, parser, lexer)
+mutate-batch: selfhost/other/z.byn: the directory selfhost/other/ has no test family (selfhost/semantics, parser, lexer, emitter)

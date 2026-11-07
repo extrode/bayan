@@ -71,6 +71,14 @@ public sealed class RuntimeNativeTests
         Assert.Equal("hex 0, zero-byte requests 0\n", Run(Build(driver), []).Replace("\r\n", "\n"));
     }
 
+    /// <summary>A growing <c>StrBuf</c> never frees or overwrites a block it outgrew: <c>append</c> after <c>finish()</c> is allowed (Q745).</summary>
+    [Fact]
+    public void StrBufGrowthKeepsTheOldBlock()
+    {
+        var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "strbuf-grow.c"));
+        Assert.Equal("cap 128, taken text unchanged 1, old blocks handed back 0\n", Run(Build(driver), []).Replace("\r\n", "\n"));
+    }
+
     /// <summary><c>replace</c> with items read from the list itself releases the copy it takes of them.</summary>
     [Fact]
     public void AliasingReplaceReleasesItsCopy()
@@ -118,6 +126,14 @@ public sealed class RuntimeNativeTests
         p.WaitForExit();
         Assert.NotEqual(0, p.ExitCode);
         Assert.Equal("flushed\n", stdout.Replace("\r\n", "\n"));
+    }
+
+    /// <summary>Seeded random checks of float and int formatting, UTF-8, search, sort, maps and hex against reference models.</summary>
+    [Fact]
+    public void RuntimePropertiesHold()
+    {
+        var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "runtime-properties.c"));
+        Assert.Equal("ok\n", Run(Build(driver), []).Replace("\r\n", "\n"));
     }
 
     private static string Build(string cSource)

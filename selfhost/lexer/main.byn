@@ -30,7 +30,7 @@ i32 unreadable(string path) {
 }
 
 /// Lexes `path` and appends its dump (`json`: the JSON form) to `sb`; returns whether any diagnostic is an error.
-bool dumpFile(string path, from move List<u8> bytes, by Keywords keywords, to ref StrBuf sb, bool json) {
+public bool dumpFile(string path, from move List<u8> bytes, by Keywords keywords, to ref StrBuf sb, bool json) uses alloc {
     var result = lex(SourceText.create(path, from: move bytes), by: keywords)
     if json {
         dumpJson(ref result, to: ref sb)
@@ -59,12 +59,12 @@ bool inside(TextSpan span, until i64 size) => span.start >= 0 && span.length >= 
 i32 lexOne(string path, by Keywords keywords, bool json) {
     var bytes = List<u8>()
     if path == "-" {
-        let input = Io.stdin.readAll()
+        let input = Io.stdin.readAllBytes()
         unless input.isOk {
             Io.stderr.write("bayan-lex: cannot read standard input\n")
             return exitInput
         }
-        for b in input.value.bytes { bytes.append(b) }
+        for b in input.value { bytes.append(b) }
     } else {
         bytes = Io.readFile(path) catch return unreadable(path)
     }

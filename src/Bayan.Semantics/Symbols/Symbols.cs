@@ -355,6 +355,9 @@ public enum BuiltinFunction
     IoReadFile,
     IoReadText,
     IoWriteFile,
+    IoRemove,
+    IoCreateDirectory,
+    IoRemoveDirectory,
     IoListDir,
     IoRun,
     IoRunBatch,
@@ -372,6 +375,15 @@ public enum BuiltinFunction
     IntParse,
     EnumFromOrdinal,
     EnumParse,
+    PathIsRooted,
+    PathRelative,
+    PathFileName,
+    PathDirectoryName,
+    PathCombine,
+    PathCombineSpan,
+    PathFullPath,
+    EnvGet,
+    FsFileExists,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }

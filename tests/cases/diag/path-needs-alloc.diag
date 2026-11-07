@@ -1,0 +1,17 @@
+error BYN6002: `undeclaredName` uses `alloc` but does not declare it
+
+  4 │     return Path.fileName(p)
+    │            ^^^^^^^^^^^^^^^^ uses `alloc`
+    │
+  help: add `alloc` to the `uses` clause, or remove the call
+    │ 3 │ public string undeclaredName(string p) uses alloc {
+    │   │                                       +++++++++++
+
+error BYN6002: `undeclaredRelative` uses `alloc` but does not declare it
+
+  8 │     return Path.relative(from: from, to: target)
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ uses `alloc`
+    │
+  help: add `alloc` to the `uses` clause, or remove the call
+    │ 7 │ public string undeclaredRelative(string from, to string target) uses alloc {
+    │   │                                                                +++++++++++

@@ -32,7 +32,7 @@ public sealed class SelfhostSemanticsT4Tests
         ["BoundStructLiteral"] = (new() { ["struct"] = "structId" }, ["type"]),
         ["BoundEnumValues"] = (new() { ["enum"] = "enumId" }, []),
         ["BoundStaticArray"] = (new() { ["const"] = "constId" }, ["type"]),
-        ["BoundIf"] = (new() { ["else"] = "elseBranch", ["never"] = "isNever" }, []),
+        ["BoundIf"] = (new() { ["else"] = "elseBranch", ["never"] = "isNever" }, ["guarded"]),
         ["BoundMemberStep"] = (new() { ["property"] = "propertyId" }, []),
         ["BoundLocal"] = (new(), ["type"]),
         ["BoundField"] = (new(), ["type"]),
@@ -157,6 +157,7 @@ public sealed class SelfhostSemanticsT4Tests
         ("literal", () => new BoundLiteral(null!, PrimitiveType.I8, new ConstantValue((Int128)1)),
             "addLiteral(ref c, from: BLiteral { span: $SP, type: prim(.i8), value: Constant { kind: .integer } })"),
         ("symbolLiteral", () => new BoundSymbolLiteral(null!, "s"), "addSymbolLiteral(ref c, from: BSymbolLiteral { span: $SP, text: \"s\" })"),
+        ("hostTarget", () => new BoundHostTarget(null!, true), "addHostTarget(ref c, from: BHostTarget { span: $SP, isOs: true })"),
         ("default", () => new BoundDefault(null!, PrimitiveType.U16), "addDefault(ref c, from: BDefault { span: $SP, type: prim(.u16) })"),
         ("local", () => new BoundLocal(null!, La), "addLocal(ref c, from: BLocal { span: $SP, local: 0 })"),
         ("this", () => new BoundThis(null!, PrimitiveType.U32), "addThis(ref c, from: BThis { span: $SP, type: prim(.u32) })"),
@@ -607,7 +608,7 @@ public sealed class SelfhostSemanticsT4Tests
 
         // The Bayan structs, read from bound.byn's declarations.
         var source = File.ReadAllText(Path.Combine(SelfhostSemanticsHarness.SemanticsDir, "bound.byn"));
-        var structs = Regex.Matches(source, @"^struct (\w+) \{\n((?:    .*\n)*?)\}", RegexOptions.Multiline)
+        var structs = Regex.Matches(source, @"^(?:public )?struct (\w+) \{\n((?:    .*\n)*?)\}", RegexOptions.Multiline)
             .ToDictionary(m => m.Groups[1].Value, m => string.Join(' ', m.Groups[2].Value.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Where(l => !l.TrimStart().StartsWith("///", StringComparison.Ordinal))
                 .Select(l => l.Split(" = ")[0].Trim().Split(' ')[^1])));

@@ -1,5 +1,5 @@
 # 011 — Self-hosting step 5: lowering and the C emitter in Bayan
-Status: draft
+Status: draft (rev 3)
 Created: 2026-11-02
 
 ## Problem
@@ -31,8 +31,8 @@ The handoff's "Road to self-hosting" puts lowering and the C emitter next (row 0
 
 ## Requirements
 
-- **R1 Program.** `selfhost/emitter/` (lowering included) is a Bayan program, `bayan-emit`. Given the same input and build mode as `bayan build --emit-c`, it prints the same C, byte for byte, and for an input with errors the same diagnostics and exit code as `bayan-check`. Paths are passed absolute, as in 010.
-- **R2 Reuse.** Tokens, trees and the bound program come from the `selfhost/lexer/`, `selfhost/parser/` and `selfhost/semantics/` modules, imported. Their behaviour is unchanged, so L001, L002, L017, L018, L022 and L023 still hold.
+- **R1 Program.** `selfhost/emitter/` (lowering included) is a Bayan program, `bayan-emit`. Given the same input and build mode as `bayan build --emit-c`, it prints the same C, byte for byte (for `*.test.byn`, the C the C# test run builds), and for an input with errors the same diagnostics and exit code as `bayan-check`. Paths are passed absolute, as in 010.
+- **R2 Reuse.** Tokens, trees and the bound program come from the `selfhost/lexer/`, `selfhost/parser/` and `selfhost/semantics/` modules, imported. Their behaviour is unchanged except the Q745 fix (a borrow escaping through a `ref`/`out` argument or a `ref this` receiver), landed in both checkers before T4; L001, L002, L017, L018, L022 and L023 hold.
 - **R3 Lowered tree, one printer (K1).** Lowering produces a lowered tree, mirroring the C# `LoweredNodes`; only one module of the Bayan emitter builds C text. A test fails if C text is built anywhere else in `selfhost/emitter/`.
 - **R4 C inventory (K2).** A document lists every compiler builtin, attribute and extension beyond C11 that the emitted C and `src/runtime/bayan-rt.{h,c}` use, each with where it is emitted and what a portable C11 replacement would be. A test fails when the emitter or the runtime uses one the list does not name. Output does not change.
 - **R5 Golden coverage.** The suite runs `bayan-emit` on every `tests/cases/run/` input, in the mode the C# run harness builds it (`// mode:` line, default `safe`; `*.test.byn` with tests included), and on every input `CliTests`/`CacheTests` passes to `--emit-c`, and compares with the C# output for the same compilation. A disagreement fails the run, naming the input and the first differing line.
@@ -44,19 +44,21 @@ The handoff's "Road to self-hosting" puts lowering and the C emitter next (row 0
 
 ## Acceptance criteria
 
-- **R1/R5.** Given any `run/` golden, `bayan-emit` output equals `bayan build --emit-c` output byte for byte in that golden's mode.
-- **R2.** Given the law checks for L001, L002, L017, L018, L022, L023, they still hold. `selfhost/emitter/` contains no copy of a lexer, parser or checker module.
+- **R1/R5.** Given any `run/` golden, `bayan-emit` output equals the C# backend's output for the same compilation byte for byte in that golden's mode: `bayan build --emit-c`, or for `*.test.byn` the C the test run builds.
+- **R1 (errors).** Given an input with errors, `bayan-emit`'s diagnostics and exit code equal `bayan-check`'s.
+- **R2.** Given the law checks for L001, L002, L017, L018, L022, L023, they still hold. Given the Q745 goldens, both checkers report them, and no other diagnostic changes. `selfhost/emitter/` contains no copy of a lexer, parser or checker module.
 - **R3.** Given a C string built outside the printer module (a break-test), the R3 test fails.
-- **R4.** Given a builtin added to the emitter or runtime and not to the list (a break-test), the R4 test fails. Given the list, every entry names a use site.
+- **R4.** Given a builtin or attribute added to the emitter or runtime and not to the list, including one inside a multi-item `__attribute__((a, b))` (a break-test), the R4 test fails. Given the list, every entry names a use site.
 - **R6.** Given the fixed seeds, every comparison is identical; given a deliberate change in one backend (a dropped cast, a reordered field), at least one seed fails.
 - **R7.** Given the 1 MB program, the median ratio is 10 or less.
 
 ## Law candidates
 
-- **L024 (emitter equivalence).** For every program `bayan check` accepts and every build mode, `bayan-emit` and `bayan build --emit-c` print the same C.
-- **L025 (no emitter panic).** For every program in the stated corpus (every `run/` golden, the generator's seeds), `bayan-emit` terminates without a panic in every build mode.
+- **L024 (emitter equivalence).** For every program `bayan check` accepts and every build mode, `bayan-emit` and the C# backend (`bayan build --emit-c`; the test build for `*.test.byn`) print the same C.
+- **L025 (no emitter panic).** For every program in the stated corpus (every `run/` golden, the generator's seeds), `bayan-emit` terminates without a panic in every build mode. Enacted only after L018 and L023.
 
 ## Open questions
 
-- **Q1 Round-4 lowering decisions (A1 blocker).** A1 says: settle the closure escape rule and the payload layout in round 4 before 011 is drafted, or accept a second port. Found while drafting: the payload layout is the tag plus a union of payloads (`CEmitter.cs:495-568`), which A1 keeps. Function values already lower as a code pointer plus an environment (`Lowerer.cs:1065-1074`, `CEmitter.cs:1920` passes `.env`), which A1 names as the case where the escape rule is "a checker addition only"; but the environment is a tuple in the creating frame, so a `move`-stored closure that outlives that frame may need a heap environment, which is a lowering change. Decide: (a) round 4 settles the escape rule's lowering before 011's plan; (b) 011 ports today's lowering and round 4 accepts a second port of the closure parts; (c) 011 stops before the lambda lowering until round 4 settles it. *Resolved 2026-11-02 (user): (b). 011 ports today's lowering; round 4 redoes the closure parts (about 100 lines of C# lowering). Until then an escaping `move` closure that captures locals is a compile error, as the checker already reports (BYN2782, BYN2822, BYN3002, BYN3003).*
+- **Q1 Round-4 lowering decisions (A1 blocker).** A1 says: settle the closure escape rule and the payload layout in round 4 before 011 is drafted, or accept a second port. Found while drafting: the payload layout is the tag plus a union of payloads (`CEmitter.cs:495-568`), which A1 keeps. Function values already lower as a code pointer plus an environment (`Lowerer.cs:1064-1074`, `CEmitter.cs:1717-1720` and `:1920` passes `.env`), which A1 names as the case where the escape rule is "a checker addition only"; but the environment is a tuple in the creating frame, so a `move`-stored closure that outlives that frame may need a heap environment, which is a lowering change. Decide: (a) round 4 settles the escape rule's lowering before 011's plan; (b) 011 ports today's lowering and round 4 accepts a second port of the closure parts; (c) 011 stops before the lambda lowering until round 4 settles it. *Resolved 2026-11-02 (user): (b). 011 ports today's lowering; round 4 redoes the closure parts (65 lines of C# lowering and printing, measured; about 35 more in the checker; the plan's Risks list every range). Until then a closure that would outlive its environment is a compile error: `move` on a lambda (BYN2782, `diag/lambda-move`), a function type as a field, return type or container element (BYN2822, `diag/function-type-placement`, `function-type-placement-declarations`), a lambda stored past its loop iteration or arena (BYN3002, `diag/lambda-escapes-region`, `lambda-capture-borrow-through-call`) and a lambda returned from a lambda (BYN3003, `diag/lambda-escapes-region`). Exception, found 2026-11-02: a borrow, a capturing lambda included, escapes through a `ref`/`out` argument that the callee assigns, or into the receiver of a `ref this` method (handoff Question 745), to be closed in both checkers before T4.*
+- **Q2 Paths (handoff Q743).** The printer prints file paths in `#line` directives and file-name statics, which C# derives with .NET path functions, and `std`'s path module (spec 014) is still a draft. *Resolved 2026-11-02 (user): a minimal slice of 014 lands in `std` before 011's wave, holding only the path functions 011 calls, with 014's Windows rules for those functions (drive letters, UNC paths, both separators, case-insensitive `relative`). The rest of 014 is unchanged and lands later. 011 adds no path logic of its own.*
 - Inferred, not asked: a separate program `bayan-emit` (as `bayan-check` in 010); C# is the reference; the speed bound and checks follow 009/010; L024/L025 are numbered after L023.
