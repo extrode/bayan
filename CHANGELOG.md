@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Spec 016: `import std.<name>` loads a std module shipped inside the `bayan` binary (`lib/std/`), from a script, a file or a project, in the C# and the self-hosted compiler alike; a package's own `std/` cannot shadow it, an unknown module lists the ones that exist, and diagnostics inside std source point at `<std>/…` paths.
+- Spec 016: `import std.<name>` loads a std module shipped inside the `bayan` binary (`lib/std/`), from a script, a file or a project, in the C# and the self-hosted compiler alike; a package's own `std/` cannot shadow it, an unknown module lists the ones that exist (BYN2032), a std module that imports a package module is BYN2033, and diagnostics inside std source point at `<std>/…` paths.
 - `import std.json`, the first std module: a pull reader (`JsonReader.over`, `next`, `JsonToken`), the tree `JsonValue` from `Json.parse` (`Untrusted`, fails `JsonError` with offset, line and column; nesting past 128 is `tooDeep`) and `Json.encode(v, indent:)` in the layout of Python's `json.dumps`, which fails `JsonError` on an infinite or NaN number (`nonFinite`) and on a tree nested past 128 levels (`nestedTooDeep`).
 - Lint BYN5103: a line starting with a joining token (`.`, `?.`, `??`, `&&`, `||`, `and`, `or`, `catch`, `fails`, …) must be indented deeper than its statement's first line; `bayan format` applies the fix.
 
