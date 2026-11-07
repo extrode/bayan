@@ -10,6 +10,9 @@
 ### Changed
 - `ensures` is no longer reserved and can be used as an identifier (revision 0019, round-4 batch 1); BYN0012 no longer fires on it.
 
+### Fixed
+- `bayan test --coverage` no longer counts the lines of an imported std module (`<std>/...`) in the summary, `bayan-quality.json` or the `test: Tests { lines: N }` gate.
+
 ### Security
 
 - Runtime (audit `docs/security/2026-11-06-runtime-audit.md`): an arena allocation near `i64.max` bytes panics "arena

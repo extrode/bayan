@@ -111,7 +111,8 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
         var unhit = timedOut ? "unknown" : "missed";
         string Status(CoverageCounter c) => hits.ContainsKey(c.Id) ? "hit" : unhit;
         var files = new List<ReportFile>();
-        foreach (var group in map.Counters.GroupBy(c => c.File))
+        // std modules (`<std>/...`) are the compiler's own source: they are no part of the package's coverage or its gate
+        foreach (var group in map.Counters.Where(c => !c.File.StartsWith("<std>/", StringComparison.Ordinal)).GroupBy(c => c.File))
         {
             var lines = new List<int>[3] { [], [], [] };
             foreach (var byLine in group.Where(c => c.Kind == CoverageInstrumenter.Line).GroupBy(c => c.Line).OrderBy(g => g.Key))

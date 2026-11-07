@@ -1,5 +1,6 @@
-// Tests of std.json. Expected encodings are python3 `json.dumps` output (indent 0 is `json.dumps(v)`, N is
-// `json.dumps(v, indent=N)`) for `json.loads` of the input, recorded from a run, not written by hand.
+// Tests of std.json. The "parse then encode" table's expected encodings are python3 `json.dumps` output (indent 0 is
+// `json.dumps(v)`, N is `json.dumps(v, indent=N)`) for `json.loads` of the input, recorded from a run, not written by hand.
+// Number text is kept as read (`1e400`, `1E2`; spec 016), so the cases with such numbers are not python's output.
 
 /// The tree of `text`, trusted for the test.
 JsonValue tree(string text) fails JsonError uses alloc {

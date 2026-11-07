@@ -132,6 +132,32 @@ public sealed class CoverageReportTests
     }
 
     [Fact]
+    public void StdModuleLinesAreNeitherReportedNorGated()
+    {
+        var app = Project("std", """
+            import std.json
+
+            json.JsonValue one() fails json.JsonError uses alloc {
+                return (try json.Json.parse("1")).trustUnchecked() because "literal"
+            }
+
+            test "one" {
+                let v = try one()
+                assert(v is .number(_, _))
+            }
+
+            """);
+        var manifest = Path.Combine(app, "package.byn");
+        var text = File.ReadAllText(manifest);
+        var at = text.LastIndexOf('}');
+        File.WriteAllText(manifest, text[..at].TrimEnd().TrimEnd(',') + ",\n    test: Tests { lines: 50 }\n}\n");
+        var r = Run("test", "--coverage", app);
+        Assert.True(r.Exit == CliApp.ExitOk, r.Out + r.Err);
+        Assert.DoesNotContain("<std>", r.Out);
+        Assert.DoesNotContain("<std>", File.ReadAllText(Path.Combine(app, "out", "test", "bayan-quality.json")));
+    }
+
+    [Fact]
     public void ASubsetRunSkipsTheCoverageGateAndPrintsNoPercentages()
     {
         var app = Project("subset", Main + "\ntest \"other\" {\n    let r = f(5) catch switch {\n        E.a => 1,\n        E.b => 2\n    }\n    assert(r == 5)\n}\n");

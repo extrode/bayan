@@ -15,6 +15,7 @@
 # A changed file the coverage report has no entry for (b.byn's run reports only b.byn) fails naming it (Q820).
 # lib/std (spec 016 T3): a changed lib/std/<m>/x.byn is in BAYAN_COVERAGE_FILES and adds StdTestFilesTests to the filter;
 # misformatted it fails the format check naming it, formatted it passes; covered it passes, a missed line of it fails by file:line.
+# A branch that does not touch lib/std gets no format item, even with a misformatted lib/std file or a failing pinned bayan.
 # A changed file whose name has a space is reported by its full name.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -140,6 +141,9 @@ stdcovpass=$(ALLOWX=,lib/std/m/x.byn g)
 a=$x cov 0 1 '[2]' '[]' '[]'
 printf '{"version": 1, "files": {"%s": [{"span": [1, 3], "lines": [0, 1], "branches": [0, 0]}]}}\n' "$x" > $aux/fns.json
 stdcovmiss=$(ALLOWX=,lib/std/m/x.byn g)
+# a branch that does not touch lib/std runs no format check, whatever lib/std holds and whether or not the pinned bayan works
+printf 'fn k() -> int {\n  return 1 /*BAD*/\n}\n' > lib/std/m/x.byn; git add lib/std/m/x.byn; git commit -qm "test: std in base"; git branch -qf base
+stduntouched=$(g); stduntouchedfail=$(PINNED_BAYAN=$aux/missing g)
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$pass" | grep -q '^GUARD PASS$' || fail "all killed (one marked) did not pass" "$pass"
@@ -192,5 +196,6 @@ echo "$stdgood" | grep -q '^- format:' && fail "a formatted lib/std file failed 
 [ "$stdfilter" = "(FullyQualifiedName~SelfhostSemanticsT99Tests)|FullyQualifiedName~StdTestFilesTests" ] || fail "a lib/std change did not add StdTestFilesTests to the test filter" "$stdfilter"
 echo "$stdcovpass" | grep -q '^GUARD PASS$' && echo "$stdcovpass" | grep -qF "coverage: lib/std/m/x.byn: touched functions: lines 1/1" || fail "a covered lib/std change did not pass with its coverage line" "$stdcovpass"
 echo "$stdcovmiss" | grep -q '^- coverage: missed line lib/std/m/x.byn:2; ' || fail "an uncovered lib/std function was not a FAIL item with file:line" "$stdcovmiss"
+echo "$stduntouched$stduntouchedfail" | grep -q '^- format:' && fail "a branch not touching lib/std ran the lib/std format check" "$stduntouched$stduntouchedfail"
 case ",$stdcover," in *,lib/std/m/x.byn,*) ;; *) fail "a changed lib/std file was not in BAYAN_COVERAGE_FILES ($stdcover)" "$stdbad";; esac
 echo PASS
