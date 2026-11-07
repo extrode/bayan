@@ -138,27 +138,6 @@ Gate: before merging, run it over `lib/` and `selfhost/` and report the hit coun
 | `Io.readFile`, `readText`, `listDir`, `run`, `remove`, `createDirectory` | `fails IoError` (`bayan-rt.h:446-474,564-570`) | keep |
 | `Fs.fileExists` | `bool` (`bayan-rt.h:561`): false for missing, for a directory, for a NUL in the path, and for permission denied | record: "exists" conflates "cannot tell" with "no"; propose `Fs.stat() fails IoError` for callers that need the difference, keep `fileExists` as the convenience |
 | `string.count(x)` | `0` for an empty `x` (`bayan-rt.h:211`) | keep: 0 is a count, not an error |
-| `Io.run` exit code | `i32` from `GetExitCodeProcess` or `waitpid` even when the wait failed (W1 rows) | fix in W1 |
-| `std.json` | `fails JsonError` throughout (`lib/std/json/value.byn:23,:36`) | keep |
-
-**Acceptance.** The table is complete for every public builtin (count them from `BuiltinMembers.cs:140`'s name list and `Builtins.cs`'s `Make` calls); each "fix" row has a `run/` golden; the `docs/bayan-library-tiers.md` §8 rules gain one line: "no in-band failure value; absence is `T?`, failure is `fails`". That line is a handoff Question, not an edit here.
-
-### W3. Std API sweep
-
-**Scope.** Every public function in `Builtins.cs`, `BuiltinMembers.cs` and `lib/std/**/*.byn` that returns a scalar or string where one value means "failed" or "not found".
-
-**Method.** One table in `docs/security/std-sentinel-sweep.md`: function, return type, in-band value if any, verdict (optional / `fails` / keep with reason). Known results from this reading:
-
-| Function | Today | Verdict |
-|---|---|---|
-| `string.position`, `lastPosition` | `i64?` (`BuiltinMembers.cs:64-66`) | keep |
-| `List.tryGet`, `Map.tryGet` | `V?` (`:102,:107`) | keep |
-| `Env.get` | `string?` (`Builtins.cs:128`) | keep |
-| `T.parse` / `T.tryParse`, `f64.tryParse` | `fails ParseError` / `T?` (`Builtins.cs:333-337`; `bayan-rt.h:334-340`) | keep |
-| `Hex.decode` | `fails ParseError` (`Builtins.cs:116,:190`) | keep |
-| `Io.readFile`, `readText`, `listDir`, `run`, `remove`, `createDirectory` | `fails IoError` (`bayan-rt.h:446-474,564-570`) | keep |
-| `Fs.fileExists` | `bool` (`bayan-rt.h:561`): false for missing, for a directory, for a NUL in the path, and for permission denied | record: "exists" conflates "cannot tell" with "no"; propose `Fs.stat() fails IoError` for callers that need the difference, keep `fileExists` as the convenience |
-| `string.count(x)` | `0` for an empty `x` (`bayan-rt.h:211`) | keep: 0 is a count, not an error |
 | `Io.run` exit code | `i32` from `GetExitCodeProcess` or `waitpid` even when the wait failed (W0) | fix in W0 |
 | `std.json` | `fails JsonError` throughout (`lib/std/json/value.byn:23,:36`) | keep |
 
