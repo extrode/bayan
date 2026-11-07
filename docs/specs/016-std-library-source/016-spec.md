@@ -66,9 +66,9 @@ The first sketch (struct `JsonValue` with `asBool`/`get`/`at` and `Json.object` 
 ```
 public union JsonValue { nothing, flag(bool value), number(f64 value, string text), text(string value), list(List<JsonValue> items), object(List<JsonMember> members) }
 public struct JsonMember { string key; JsonValue value }        // an object keeps its members in text order, duplicates included
-public union error JsonError { syntax(string message, i64 offset, i32 line, i32 column), tooDeep(i64 offset, i32 line, i32 column) }
+public union error JsonError { syntax(string message, i64 offset, i32 line, i32 column), tooDeep(i64 offset, i32 line, i32 column), nonFinite, nestedTooDeep }
 Untrusted<JsonValue> Json.parse(string text) fails JsonError   // static members of `public struct Json`
-string Json.encode(JsonValue v, i32 indent = 0)                // indent 2 = Python json.dumps(indent=2)
+string Json.encode(JsonValue v, i32 indent = 0) fails JsonError // indent 2 = Python json.dumps(indent=2); NaN/±inf: nonFinite; past 128 levels: nestedTooDeep
 JsonReader JsonReader.over(string text)                         // the public pull reader
 JsonToken? JsonReader.next() fails JsonError
 public union JsonToken { startObject, endObject, startList, endList, key(string name), text(string value), number(f64 value, string text), flag(bool value), nothing }

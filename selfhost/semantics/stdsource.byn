@@ -17,13 +17,39 @@ JsonValue tree(string text) fails JsonError uses alloc {
     return (try Json.parse(text)).trustUnchecked() because "test input is a literal"
 }
 
-/// `ok`, or the error `Json.parse(text)` fails with as `kind message @offset line:column`.
+/// `ok`, or the error `Json.parse(text)` fails with, as `describe` writes it.
 string errorOf(string text) uses alloc {
     let _ = Json.parse(text) catch switch {
-        .syntax e => return $"syntax {e.message} @{e.offset} {e.line}:{e.column}",
-        .tooDeep e => return $"tooDeep @{e.offset} {e.line}:{e.column}",
+        JsonError e => return describe(e),
     }
     return "ok"
+}
+
+/// `ok`, or the error `Json.encode(v)` fails with, as `describe` writes it.
+string encodeErrorOf(JsonValue v) uses alloc {
+    let _ = Json.encode(v) catch switch {
+        JsonError e => return describe(e),
+    }
+    return "ok"
+}
+
+/// `e` as `kind message @offset line:column`, or its kind alone when it has no position.
+string describe(JsonError e) uses alloc => e switch {
+    .syntax s => $"syntax {s.message} @{s.offset} {s.line}:{s.column}",
+    .tooDeep d => $"tooDeep @{d.offset} {d.line}:{d.column}",
+    .nonFinite => "nonFinite",
+    .nestedTooDeep => "nestedTooDeep",
+}
+
+/// `depth` lists, each holding the next, around `null`.
+JsonValue nested(i64 depth) uses alloc {
+    var v = JsonValue.nothing
+    for _ in 0..depth {
+        var items = List<JsonValue>()
+        items.append(move v)
+        v = .list(items: move items)
+    }
+    return v
 }
 
 /// The tokens of `text`, one word each.
@@ -99,7 +125,7 @@ string tokensOf(string text) fails JsonError uses alloc {
     ("[0, 10, -3.25, 0.5, 2.0, 1e+21, -1.5e-07]", 4, "[\n    0,\n    10,\n    -3.25,\n    0.5,\n    2.0,\n    1e+21,\n    -1.5e-07\n]")
 )
 test "parse then encode is json.dumps" (string input, i32 indent, string expected) {
-    assert Json.encode(try tree(input), indent: indent) == expected
+    assert (try Json.encode(try tree(input), indent: indent)) == expected
 }
 
 test "the reader gives every token kind, then null" {
@@ -114,7 +140,7 @@ test "next stays null after the end" {
 }
 
 test "a number keeps its text and its value" {
-    assert Json.encode(try tree("[1E5, 1.0, -0, 1e400]")) == "[1E5, 1.0, -0, 1e400]"
+    assert (try Json.encode(try tree("[1E5, 1.0, -0, 1e400]"))) == "[1E5, 1.0, -0, 1e400]"
     assert (try tree("2.5e-1")) is .number(let value, _) && value == 0.25
 }
 
@@ -136,22 +162,32 @@ test "encode writes a built tree as json.dumps does" {
     members.append(JsonMember { key: "n", value: .number(value: 3.0, text: "3") })
     members.append(JsonMember { key: "ok", value: .nothing })
     let v = JsonValue.object(members: move members)
-    assert Json.encode(v) == "{\"name\": \"Bay\\u0101n\", \"tags\": [], \"meta\": {}, \"n\": 3, \"ok\": null}"
-    assert Json.encode(v, indent: 2) == "{\n  \"name\": \"Bay\\u0101n\",\n  \"tags\": [],\n  \"meta\": {},\n  \"n\": 3,\n  \"ok\": null\n}"
+    assert (try Json.encode(v)) == "{\"name\": \"Bay\\u0101n\", \"tags\": [], \"meta\": {}, \"n\": 3, \"ok\": null}"
+    assert (try Json.encode(v, indent: 2)) == "{\n  \"name\": \"Bay\\u0101n\",\n  \"tags\": [],\n  \"meta\": {},\n  \"n\": 3,\n  \"ok\": null\n}"
 }
 
 test "encode writes a built number's text only when it is a JSON number" {
     let inf = f64.tryParse("1e400") ?? 0.0
     assert inf > 1e308
-    assert Json.encode(JsonValue.number(value: 1.0, text: "1, \"admin\": true")) == "1"
-    assert Json.encode(JsonValue.number(value: 2.5, text: "")) == "2.5"
-    assert Json.encode(JsonValue.number(value: 3.0, text: "nan")) == "3"
-    assert Json.encode(JsonValue.number(value: 0.25, text: "true")) == "0.25"
-    assert Json.encode(JsonValue.number(value: 100000.0, text: "1E5")) == "1E5"
-    assert Json.encode(JsonValue.number(value: -0.0005, text: "-0.5e-3")) == "-0.5e-3"
-    assert Json.encode(JsonValue.number(value: inf, text: "inf")) == "null"
-    assert Json.encode(JsonValue.number(value: -inf, text: "")) == "null"
-    assert Json.encode(JsonValue.number(value: inf - inf, text: "nan")) == "null"
+    assert (try Json.encode(JsonValue.number(value: 1.0, text: "1, \"admin\": true"))) == "1"
+    assert (try Json.encode(JsonValue.number(value: 2.5, text: ""))) == "2.5"
+    assert (try Json.encode(JsonValue.number(value: 3.0, text: "nan"))) == "3"
+    assert (try Json.encode(JsonValue.number(value: 0.25, text: "true"))) == "0.25"
+    assert (try Json.encode(JsonValue.number(value: 100000.0, text: "1E5"))) == "1E5"
+    assert (try Json.encode(JsonValue.number(value: -0.0005, text: "-0.5e-3"))) == "-0.5e-3"
+    assert Json.encode(JsonValue.number(value: inf, text: "inf")) fails JsonError.nonFinite
+    assert Json.encode(JsonValue.number(value: -inf, text: "")) fails JsonError.nonFinite
+    assert encodeErrorOf(JsonValue.number(value: inf - inf, text: "nan")) == "nonFinite"
+    assert (try Json.encode(JsonValue.number(value: inf, text: "1e400"))) == "1e400"
+}
+
+test "encode refuses a tree nested past 128 levels" {
+    assert (try Json.encode(nested(128))) == $"{"[".repeated(128)}null{"]".repeated(128)}"
+    assert encodeErrorOf(nested(129)) == "nestedTooDeep"
+    var members = List<JsonMember>()
+    members.append(JsonMember { key: "a", value: nested(128) })
+    assert Json.encode(JsonValue.object(members: move members)) fails JsonError.nestedTooDeep
+    assert encodeErrorOf(nested(1000000)) == "nestedTooDeep"
 }
 
 @cases(
@@ -225,14 +261,20 @@ public union JsonToken {
     nothing
 }
 
-/// Why a JSON text was refused: at a byte offset, with the 1-based line and column (in runes) of that offset.
+/// Why a JSON text was refused (at a byte offset, with the 1-based line and column in runes of that offset), or why
+/// `Json.encode` refused a tree.
 public union error JsonError {
     syntax(string message, i64 offset, i32 line, i32 column)
     tooDeep(i64 offset, i32 line, i32 column)
+    /// A number to encode is NaN or infinite and its text is not a JSON number.
+    nonFinite
+    /// A tree to encode nests deeper than `maxDepth`.
+    nestedTooDeep
 }
 
-/// Lists and objects nest at most this deep: a deeper text is `tooDeep`, never a stack overflow in a caller that
-/// recurses per level (docs/memory-leaks.md rule 5). 128 is the decoder default of spec §15.4.
+/// Lists and objects nest at most this deep: a deeper text is `tooDeep` and a deeper tree to encode `nestedTooDeep`,
+/// never a stack overflow in a caller that recurses per level (docs/memory-leaks.md rule 5). 128 is the decoder default
+/// of spec §15.4.
 const maxDepth: i64 = 128
 
 /// What the reader accepts next.
@@ -503,7 +545,7 @@ bool isDigit(u8 b) => b >= '0' && b <= '9'
 const stdSource2: string = """// std.json tree (spec 016 T4, 015 S7): `JsonValue` built on `JsonReader`, and `Json.encode`.
 
 /// A JSON value. A number keeps its text, so `Json.encode` writes it back as read (a built one whose text is not a
-/// JSON number is written from its value); an object keeps its members in text order, duplicate keys included.
+/// JSON number is written from its value, and refused when that is not finite); an object keeps its members in text order, duplicate keys included.
 public union JsonValue {
     nothing
     flag(bool value)
@@ -532,11 +574,12 @@ public struct Json {
 
     /// `v` as text, the layout of Python's `json.dumps(v, indent=indent)` with `ensure_ascii`: compact with `, ` and
     /// `: ` when `indent` is 0 or less, else one item per line, `indent` spaces per level. A number is its text when that
-    /// is a JSON number (RFC 8259 §6), else its value: shortest digits when finite, `null` for NaN and ±infinity, so a
-    /// built number never writes invalid JSON or text outside itself.
-    public static string encode(JsonValue v, i32 indent = 0) uses alloc {
+    /// is a JSON number (RFC 8259 §6), else its value as shortest digits, so a built number never writes invalid JSON or
+    /// text outside itself; NaN and ±infinity fail `nonFinite` (spec §6.6). Lists and objects nesting deeper than
+    /// `maxDepth` fail `nestedTooDeep`, before the recursion goes past that depth.
+    public static string encode(JsonValue v, i32 indent = 0) fails JsonError uses alloc {
         var sb = StrBuf()
-        encodeInto(ref sb, from: v, by: i64(indent), at: 0)
+        try encodeInto(ref sb, from: v, by: i64(indent), at: 0)
         return $"{sb.finish()}"
     }
 }
@@ -571,13 +614,15 @@ JsonValue treeOf(ref JsonReader reader, from JsonToken first) fails JsonError us
     }
 }
 
-void encodeInto(ref StrBuf sb, from JsonValue v, by i64 indent, at i64 level) uses alloc {
+/// `v` at nesting `level` (the number of lists and objects around it); a list or object at `maxDepth` fails.
+void encodeInto(ref StrBuf sb, from JsonValue v, by i64 indent, at i64 level) fails JsonError uses alloc {
     switch v {
         case .nothing: sb.append("null")
         case .flag(let value): sb.append(value ? "true" : "false")
-        case .number(let value, let text): numberInto(ref sb, from: value, as: text)
+        case .number(let value, let text): try numberInto(ref sb, from: value, as: text)
         case .text(let value): quoteInto(ref sb, from: value)
         case .list(let items):
+            fail .nestedTooDeep if level >= maxDepth
             if items.length == 0 {
                 sb.append("[]")
                 return
@@ -585,11 +630,12 @@ void encodeInto(ref StrBuf sb, from JsonValue v, by i64 indent, at i64 level) us
             sb.append("[")
             for i in 0..items.length {
                 separate(ref sb, by: indent, at: level + 1, first: i == 0)
-                encodeInto(ref sb, from: items[i], by: indent, at: level + 1)
+                try encodeInto(ref sb, from: items[i], by: indent, at: level + 1)
             }
             newline(ref sb, by: indent, at: level)
             sb.append("]")
         case .object(let members):
+            fail .nestedTooDeep if level >= maxDepth
             if members.length == 0 {
                 sb.append("{}")
                 return
@@ -599,22 +645,22 @@ void encodeInto(ref StrBuf sb, from JsonValue v, by i64 indent, at i64 level) us
                 separate(ref sb, by: indent, at: level + 1, first: i == 0)
                 quoteInto(ref sb, from: members[i].key)
                 sb.append(": ")
-                encodeInto(ref sb, from: members[i].value, by: indent, at: level + 1)
+                try encodeInto(ref sb, from: members[i].value, by: indent, at: level + 1)
             }
             newline(ref sb, by: indent, at: level)
             sb.append("}")
     }
 }
 
-/// `text` when it is one whole JSON number, else `value` (`null` when not finite: only then is `value - value` not 0).
-void numberInto(ref StrBuf sb, from f64 value, as string text) uses alloc {
+/// `text` when it is one whole JSON number, else `value`, which fails `nonFinite` when it is not finite (only then is
+/// `value - value` not 0).
+void numberInto(ref StrBuf sb, from f64 value, as string text) fails JsonError uses alloc {
     if isNumberText(text) {
         sb.append(text)
-    } else if value - value == 0.0 {
-        sb.append($"{value}")
-    } else {
-        sb.append("null")
+        return
     }
+    fail .nonFinite if value - value != 0.0
+    sb.append($"{value}")
 }
 
 /// Whether `text` is exactly one JSON number, as `JsonReader` reads it.

@@ -6,13 +6,39 @@ JsonValue tree(string text) fails JsonError uses alloc {
     return (try Json.parse(text)).trustUnchecked() because "test input is a literal"
 }
 
-/// `ok`, or the error `Json.parse(text)` fails with as `kind message @offset line:column`.
+/// `ok`, or the error `Json.parse(text)` fails with, as `describe` writes it.
 string errorOf(string text) uses alloc {
     let _ = Json.parse(text) catch switch {
-        .syntax e => return $"syntax {e.message} @{e.offset} {e.line}:{e.column}",
-        .tooDeep e => return $"tooDeep @{e.offset} {e.line}:{e.column}",
+        JsonError e => return describe(e),
     }
     return "ok"
+}
+
+/// `ok`, or the error `Json.encode(v)` fails with, as `describe` writes it.
+string encodeErrorOf(JsonValue v) uses alloc {
+    let _ = Json.encode(v) catch switch {
+        JsonError e => return describe(e),
+    }
+    return "ok"
+}
+
+/// `e` as `kind message @offset line:column`, or its kind alone when it has no position.
+string describe(JsonError e) uses alloc => e switch {
+    .syntax s => $"syntax {s.message} @{s.offset} {s.line}:{s.column}",
+    .tooDeep d => $"tooDeep @{d.offset} {d.line}:{d.column}",
+    .nonFinite => "nonFinite",
+    .nestedTooDeep => "nestedTooDeep",
+}
+
+/// `depth` lists, each holding the next, around `null`.
+JsonValue nested(i64 depth) uses alloc {
+    var v = JsonValue.nothing
+    for _ in 0..depth {
+        var items = List<JsonValue>()
+        items.append(move v)
+        v = .list(items: move items)
+    }
+    return v
 }
 
 /// The tokens of `text`, one word each.
@@ -88,7 +114,7 @@ string tokensOf(string text) fails JsonError uses alloc {
     ("[0, 10, -3.25, 0.5, 2.0, 1e+21, -1.5e-07]", 4, "[\n    0,\n    10,\n    -3.25,\n    0.5,\n    2.0,\n    1e+21,\n    -1.5e-07\n]")
 )
 test "parse then encode is json.dumps" (string input, i32 indent, string expected) {
-    assert Json.encode(try tree(input), indent: indent) == expected
+    assert (try Json.encode(try tree(input), indent: indent)) == expected
 }
 
 test "the reader gives every token kind, then null" {
@@ -103,7 +129,7 @@ test "next stays null after the end" {
 }
 
 test "a number keeps its text and its value" {
-    assert Json.encode(try tree("[1E5, 1.0, -0, 1e400]")) == "[1E5, 1.0, -0, 1e400]"
+    assert (try Json.encode(try tree("[1E5, 1.0, -0, 1e400]"))) == "[1E5, 1.0, -0, 1e400]"
     assert (try tree("2.5e-1")) is .number(let value, _) && value == 0.25
 }
 
@@ -125,22 +151,32 @@ test "encode writes a built tree as json.dumps does" {
     members.append(JsonMember { key: "n", value: .number(value: 3.0, text: "3") })
     members.append(JsonMember { key: "ok", value: .nothing })
     let v = JsonValue.object(members: move members)
-    assert Json.encode(v) == "{\"name\": \"Bay\\u0101n\", \"tags\": [], \"meta\": {}, \"n\": 3, \"ok\": null}"
-    assert Json.encode(v, indent: 2) == "{\n  \"name\": \"Bay\\u0101n\",\n  \"tags\": [],\n  \"meta\": {},\n  \"n\": 3,\n  \"ok\": null\n}"
+    assert (try Json.encode(v)) == "{\"name\": \"Bay\\u0101n\", \"tags\": [], \"meta\": {}, \"n\": 3, \"ok\": null}"
+    assert (try Json.encode(v, indent: 2)) == "{\n  \"name\": \"Bay\\u0101n\",\n  \"tags\": [],\n  \"meta\": {},\n  \"n\": 3,\n  \"ok\": null\n}"
 }
 
 test "encode writes a built number's text only when it is a JSON number" {
     let inf = f64.tryParse("1e400") ?? 0.0
     assert inf > 1e308
-    assert Json.encode(JsonValue.number(value: 1.0, text: "1, \"admin\": true")) == "1"
-    assert Json.encode(JsonValue.number(value: 2.5, text: "")) == "2.5"
-    assert Json.encode(JsonValue.number(value: 3.0, text: "nan")) == "3"
-    assert Json.encode(JsonValue.number(value: 0.25, text: "true")) == "0.25"
-    assert Json.encode(JsonValue.number(value: 100000.0, text: "1E5")) == "1E5"
-    assert Json.encode(JsonValue.number(value: -0.0005, text: "-0.5e-3")) == "-0.5e-3"
-    assert Json.encode(JsonValue.number(value: inf, text: "inf")) == "null"
-    assert Json.encode(JsonValue.number(value: -inf, text: "")) == "null"
-    assert Json.encode(JsonValue.number(value: inf - inf, text: "nan")) == "null"
+    assert (try Json.encode(JsonValue.number(value: 1.0, text: "1, \"admin\": true"))) == "1"
+    assert (try Json.encode(JsonValue.number(value: 2.5, text: ""))) == "2.5"
+    assert (try Json.encode(JsonValue.number(value: 3.0, text: "nan"))) == "3"
+    assert (try Json.encode(JsonValue.number(value: 0.25, text: "true"))) == "0.25"
+    assert (try Json.encode(JsonValue.number(value: 100000.0, text: "1E5"))) == "1E5"
+    assert (try Json.encode(JsonValue.number(value: -0.0005, text: "-0.5e-3"))) == "-0.5e-3"
+    assert Json.encode(JsonValue.number(value: inf, text: "inf")) fails JsonError.nonFinite
+    assert Json.encode(JsonValue.number(value: -inf, text: "")) fails JsonError.nonFinite
+    assert encodeErrorOf(JsonValue.number(value: inf - inf, text: "nan")) == "nonFinite"
+    assert (try Json.encode(JsonValue.number(value: inf, text: "1e400"))) == "1e400"
+}
+
+test "encode refuses a tree nested past 128 levels" {
+    assert (try Json.encode(nested(128))) == $"{"[".repeated(128)}null{"]".repeated(128)}"
+    assert encodeErrorOf(nested(129)) == "nestedTooDeep"
+    var members = List<JsonMember>()
+    members.append(JsonMember { key: "a", value: nested(128) })
+    assert Json.encode(JsonValue.object(members: move members)) fails JsonError.nestedTooDeep
+    assert encodeErrorOf(nested(1000000)) == "nestedTooDeep"
 }
 
 @cases(
