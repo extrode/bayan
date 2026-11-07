@@ -153,7 +153,7 @@ No code exists yet (`Secret` absent from `Builtins.cs`; §15.2-15.3 are spec-onl
 
 **Oracle.** The migration spec's oracle is the migrated compiler against itself: every `run/`, `diag`, `typed`, `parse`, `lex` golden unchanged, L027 fixpoint holds, and the W2c lint count over `selfhost/` goes from the W2 baseline to zero, file by file. Each task takes one file (`selfhost/semantics/states.byn` and `manifest.byn` lead with 13 `return -1` each, `binder.byn` 12).
 
-**Teaching material, now, not after parity.** These are what agents read first:
+**Teaching material.** Everything below is now except the porters' cheatsheet, which waits for parity. These are what agents read first:
 
 - `scripts/selfhost/bayan-cheatsheet.md:190-200` is the porters' reference and its `catch { return -1 }` example matches what they port, so it is not touched during the ports. After parity, replace it with `?? return .notFound` and `catch return` and add one line: "a failure is never a value; return `T?` or `fails`". Until then the same text goes in a separate guide for non-porters (the style doc below).
 - `docs/bayan-style.md`: a short "absence and failure" rule with the three shapes (`T?`, `fails`, `never`) and the one forbidden one (a literal that is also a valid result).
