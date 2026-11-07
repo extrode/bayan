@@ -1,5 +1,5 @@
 # 016 — Standard-library source: `import std.x`
-Status: approved
+Status: done
 Created: 2026-11-06
 
 ## Problem

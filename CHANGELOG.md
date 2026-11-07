@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- Spec 016: `import std.<name>` loads a std module shipped inside the `bayan` binary (`lib/std/`), from a script, a file or a project, in the C# and the self-hosted compiler alike; a package's own `std/` cannot shadow it, an unknown module lists the ones that exist, and diagnostics inside std source point at `<std>/…` paths.
+- `import std.json`, the first std module: a pull reader (`JsonReader.over`, `next`, `JsonToken`), the tree `JsonValue` from `Json.parse` (`Untrusted`, fails `JsonError` with offset, line and column; nesting past 128 is `tooDeep`) and `Json.encode(v, indent:)` in the layout of Python's `json.dumps`, which fails `JsonError` on an infinite or NaN number (`nonFinite`) and on a tree nested past 128 levels (`nestedTooDeep`).
 - Lint BYN5103: a line starting with a joining token (`.`, `?.`, `??`, `&&`, `||`, `and`, `or`, `catch`, `fails`, …) must be indented deeper than its statement's first line; `bayan format` applies the fix.
 
 ### Changed
@@ -29,7 +31,6 @@ builds itself again, with byte-identical C at every stage. The released binary i
   stage 1 builds stage 2, stage 2 builds stage 3, and their emitted C is identical. The golden suite runs against stage
   2 (L028). `bootstrap/bayan.c` and its README build a compiler with only a C compiler, no Zig and no .NET.
 
-- Spec 016 T4: `import std.json`, the first std module: a pull reader (`JsonReader.over`, `next`, `JsonToken`), the tree `JsonValue` from `Json.parse` (`Untrusted`, fails `JsonError` with offset, line and column; nesting past 128 is `tooDeep`) and `Json.encode(v, indent:)` in the layout of Python's `json.dumps`.
 - Spec 014: `Path.combine` (two strings or a `span<string>`), `Path.directoryName` (`string?`, null for a root), `Path.fullPath` and the existing `Path.isRooted`, `Path.relative` and `Path.fileName` agree with .NET's `Path.*` on each OS (Law L026, `StdPathLawTests`); the self-hosted checker calls them, so `tests/windows-known-failures.txt` is empty. Questions 900–1006
 
 ### Changed
