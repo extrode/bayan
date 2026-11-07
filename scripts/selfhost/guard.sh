@@ -107,13 +107,13 @@ while IFS= read -r f; do case "$f" in *.byn) [ -f "$f" ] || continue
 ;; esac; done <<< "$CHANGED" > "$LOG/banned.txt"
 while read -r l; do [ -n "$l" ] && note "$l"; done < "$LOG/banned.txt"
 
-# 5 bayan format --check over lib/std/ (only when it holds a .byn file; skipped on Windows, where pinned-bayan.sh exits 127)
+# 5 bayan format --check over lib/std/ (only when the branch changes a lib/std .byn file; skipped on Windows, where pinned-bayan.sh exits 127)
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *)
-  if [ -n "$(find lib/std -name '*.byn' 2> /dev/null | head -1)" ]; then
+  case ",$COVER" in *,lib/std/*)
     if CLI=$(bash "$(dirname "$0")/../pinned-bayan.sh" 2> "$LOG/pinned.txt" | tail -1) && [ -n "$CLI" ]; then
       fmt=$("$CLI" format --check lib/std 2>&1) || note "format: bayan format --check lib/std failed: $(echo "$fmt" | grep -v '^\s*$' | head -5 | tr '\n' ' ')"
-    else note "format: no pinned bayan for the lib/std format check — $(tail -1 "$LOG/pinned.txt")"; fi
-  fi;;
+    else note "format: no pinned bayan for the lib/std format check — $(tail -1 "$LOG/pinned.txt")"; fi;;
+  esac;;
 esac
 
 # 7 content checks (before mutations: they are cheap)

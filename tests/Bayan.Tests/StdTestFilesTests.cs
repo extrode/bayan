@@ -2,14 +2,18 @@ using System.Globalization;
 using Bayan.Cli;
 using Bayan.Lowering;
 using Bayan.Semantics;
+using Bayan.Syntax.Diagnostics;
 
 namespace Bayan.Tests;
 
 /// <summary>016 T4: the <c>*.test.byn</c> files beside each <c>lib/std/</c> module pass under <c>bayan test</c>.</summary>
 public sealed class StdTestFilesTests
 {
+    public static TheoryData<string> Modules() =>
+        [.. Directory.GetDirectories(Path.Combine(Golden.RepoRoot, "lib", "std")).Select(d => Path.GetFileName(d)!).Order(StringComparer.Ordinal)];
+
     [Theory]
-    [InlineData("json")]
+    [MemberData(nameof(Modules))]
     public void ModuleTestsPass(string module)
     {
         var stdout = new StringWriter();
@@ -22,7 +26,7 @@ public sealed class StdTestFilesTests
     /// <summary>The same tests built through the selfhost harness, each run as <c>bayan test</c> runs it, so a
     /// <c>BAYAN_COVERAGE</c> run (the guard's coverage of a <c>lib/std/</c> change) counts the module's own source.</summary>
     [Theory]
-    [InlineData("json")]
+    [MemberData(nameof(Modules))]
     public void ModuleTestsPassInAHarnessBuild(string module)
     {
         if (OperatingSystem.IsWindows()) return;
@@ -37,5 +41,21 @@ public sealed class StdTestFilesTests
             var (code, _, err) = SelfhostParserTests.Run(build.ExecutablePath!, "--test", i.ToString(CultureInfo.InvariantCulture));
             Assert.True(code == 0, $"test {i} exited {code}:\n{err}");
         }
+    }
+
+    /// <summary>A package importing the module compiles clean: the shipped source passes the <c>&lt;std&gt;</c> checks
+    /// (BYN2033, a std module importing a package), which compiling the module as the entry package never runs.</summary>
+    [Theory]
+    [MemberData(nameof(Modules))]
+    public void ImportingTheModuleCompilesClean(string module)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "std-import", module);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        var main = Path.Combine(dir, "main.byn");
+        File.WriteAllText(main, $"import std.{module}\nprint(\"x\")\n");
+        var c = Compilation.FromPath(main, new CompilationOptions());
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        Assert.Contains(c.Modules, m => m.Name == $"std.{module}");
     }
 }
